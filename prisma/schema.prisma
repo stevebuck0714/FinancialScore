@@ -1,0 +1,353 @@
+// Prisma Schema for Venturis Business Evaluation Tool
+// MySQL Database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  SITEADMIN
+  CONSULTANT
+  USER
+}
+
+enum UserType {
+  COMPANY
+  ASSESSMENT
+}
+
+enum BusinessStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+// Models
+
+model Consultant {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String?
+  fullName      String
+  address       String?
+  phone         String?
+  companies     Company[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Company {
+  id                      String                  @id @default(cuid())
+  name                    String
+  consultantId            String
+  consultant              Consultant              @relation(fields: [consultantId], references: [id], onDelete: Cascade)
+  addressStreet           String?
+  addressCity             String?
+  addressState            String?
+  addressZip              String?
+  addressCountry          String?
+  industrySector          Int?
+  subscriptionMonthlyPrice Float?
+  subscriptionQuarterlyPrice Float?
+  subscriptionAnnualPrice Float?
+  users                   User[]
+  financialRecords        FinancialRecord[]
+  assessmentRecords       AssessmentRecord[]
+  profile                 CompanyProfile?
+  accountingConnections   AccountingConnection[]
+  apiSyncLogs             ApiSyncLog[]
+  accountMappings         AccountMapping[]
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  @@index([consultantId])
+}
+
+model User {
+  id                  String              @id @default(cuid())
+  email               String              @unique
+  passwordHash        String
+  name                String
+  title               String?
+  phone               String?
+  role                UserRole
+  userType            UserType?
+  companyId           String?
+  company             Company?            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  consultant          Consultant?
+  financialRecords    FinancialRecord[]
+  assessmentRecords   AssessmentRecord[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([email])
+  @@index([companyId])
+}
+
+model FinancialRecord {
+  id                  String              @id @default(cuid())
+  companyId           String
+  company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedByUserId    String
+  uploadedBy          User                @relation(fields: [uploadedByUserId], references: [id])
+  fileName            String
+  fileUrl             String?             // Azure Blob Storage URL
+  rawData             Json                // Original Excel data
+  columnMapping       Json                // Column mappings
+  monthlyData         MonthlyFinancial[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([companyId])
+  @@index([uploadedByUserId])
+}
+
+model MonthlyFinancial {
+  id                      String          @id @default(cuid())
+  companyId               String
+  financialRecordId       String
+  financialRecord         FinancialRecord @relation(fields: [financialRecordId], references: [id], onDelete: Cascade)
+  monthDate               DateTime
+  
+  // Income Statement
+  revenue                 Float           @default(0)
+  revenueBreakdown        Json?           // Breakdown of revenue by source {accountName: value}
+  expense                 Float           @default(0)
+  cogsPayroll             Float           @default(0)
+  cogsOwnerPay            Float           @default(0)
+  cogsContractors         Float           @default(0)
+  cogsMaterials           Float           @default(0)
+  cogsCommissions         Float           @default(0)
+  cogsOther               Float           @default(0)
+  cogsTotal               Float           @default(0)
+  
+  // Operating Expenses
+  payroll                 Float           @default(0)
+  ownerBasePay            Float           @default(0)
+  benefits                Float           @default(0)
+  insurance               Float           @default(0)
+  professionalFees        Float           @default(0)
+  subcontractors          Float           @default(0)
+  rent                    Float           @default(0)
+  taxLicense              Float           @default(0)
+  phoneComm               Float           @default(0)
+  infrastructure          Float           @default(0)
+  autoTravel              Float           @default(0)
+  salesExpense            Float           @default(0)
+  marketing               Float           @default(0)
+  trainingCert            Float           @default(0)
+  mealsEntertainment      Float           @default(0)
+  interestExpense         Float           @default(0)
+  depreciationAmortization Float          @default(0)
+  otherExpense            Float           @default(0)
+  nonOperatingIncome      Float           @default(0)
+  extraordinaryItems      Float           @default(0)
+  
+  // Balance Sheet - Assets
+  cash                    Float           @default(0)
+  ar                      Float           @default(0)
+  inventory               Float           @default(0)
+  otherCA                 Float           @default(0)
+  tca                     Float           @default(0)
+  fixedAssets             Float           @default(0)
+  otherAssets             Float           @default(0)
+  totalAssets             Float           @default(0)
+  
+  // Balance Sheet - Liabilities
+  ap                      Float           @default(0)
+  otherCL                 Float           @default(0)
+  tcl                     Float           @default(0)
+  ltd                     Float           @default(0)
+  totalLiab               Float           @default(0)
+  
+  // Balance Sheet - Equity (Sub-accounts)
+  ownersCapital           Float           @default(0)
+  ownersDraw              Float           @default(0)
+  commonStock             Float           @default(0)
+  preferredStock          Float           @default(0)
+  retainedEarnings        Float           @default(0)
+  additionalPaidInCapital Float           @default(0)
+  treasuryStock           Float           @default(0)
+  
+  // Balance Sheet - Equity (Total)
+  totalEquity             Float           @default(0)
+  totalLAndE              Float           @default(0)
+  
+  createdAt               DateTime        @default(now())
+
+  @@index([companyId])
+  @@index([financialRecordId])
+  @@index([monthDate])
+}
+
+model AssessmentRecord {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  responses       Json      // Assessment responses object
+  notes           Json      // Category notes object
+  isCompleted     Boolean   @default(false) // true when assessment is finished
+  overallScore    Float?    // null for drafts, calculated when completed
+  completedAt     DateTime? // null for drafts, set when completed
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([isCompleted])
+  @@index([completedAt])
+}
+
+model CompanyProfile {
+  id                  String          @id @default(cuid())
+  companyId           String          @unique
+  company             Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  legalStructure      String?
+  businessStatus      String?
+  ownership           String?
+  workforce           String?
+  keyAdvisors         String?
+  specialNotes        String?
+  qoeNotes            String?
+  
+  // Disclosures (stored as JSON for flexibility)
+  disclosures         Json
+  
+  updatedAt           DateTime        @updatedAt
+  createdAt           DateTime        @default(now())
+
+  @@index([companyId])
+}
+
+// Audit log for tracking changes
+model AuditLog {
+  id              String    @id @default(cuid())
+  userId          String?
+  userEmail       String
+  action          String    // CREATE, UPDATE, DELETE, LOGIN, LOGOUT
+  entityType      String    // USER, COMPANY, FINANCIAL_RECORD, etc.
+  entityId        String?
+  changes         Json?     // What changed
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+// Industry benchmark data from IBISWorld reports
+model IndustryBenchmark {
+  id                String   @id @default(cuid())
+  industryId        String   // e.g., "51111"
+  industryName      String   // e.g., "Newspaper Publishing in the US"
+  assetSizeCategory String   // e.g., "All Asset Sizes", "<500k", "500k-1m"
+  metricName        String   // e.g., "Cash and Equivalents", "Current Ratio"
+  fiveYearValue     Float?   // The 5-year average value
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([industryId, assetSizeCategory, metricName])
+  @@index([industryId])
+  @@index([assetSizeCategory])
+}
+
+// Accounting API Connections
+enum AccountingPlatform {
+  QUICKBOOKS
+  SAGE
+  NETSUITE
+  DYNAMICS365
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  EXPIRED
+}
+
+model AccountingConnection {
+  id                  String              @id @default(cuid())
+  companyId           String
+  company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  platform            AccountingPlatform
+  status              ConnectionStatus    @default(INACTIVE)
+  
+  // OAuth tokens
+  accessToken         String?             // Encrypted OAuth access token
+  refreshToken        String?             // Encrypted OAuth refresh token
+  tokenExpiresAt      DateTime?           // When the access token expires
+  
+  // Platform-specific data
+  realmId             String?             // QuickBooks realm ID (company ID)
+  tenantId            String?             // For platforms that use tenants
+  organizationId      String?             // For Sage, NetSuite, etc.
+  
+  // Sync settings
+  lastSyncAt          DateTime?           // Last successful sync
+  autoSync            Boolean             @default(false)
+  syncFrequency       String              @default("manual") // manual, daily, weekly
+  
+  // Metadata
+  platformVersion     String?             // API version being used
+  connectionMetadata  Json?               // Additional platform-specific data
+  errorMessage        String?             // Last error if status is ERROR
+  
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@unique([companyId, platform])
+  @@index([companyId])
+  @@index([status])
+  @@index([lastSyncAt])
+}
+
+// API Sync Logs
+model ApiSyncLog {
+  id                  String              @id @default(cuid())
+  companyId           String
+  company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  platform            AccountingPlatform
+  syncType            String              // full, incremental, manual
+  status              String              // success, error, partial
+  recordsImported     Int                 @default(0)
+  errorCount          Int                 @default(0)
+  errorDetails        Json?
+  duration            Int?                // Sync duration in milliseconds
+  createdAt           DateTime            @default(now())
+
+  @@index([companyId])
+  @@index([platform])
+  @@index([createdAt])
+}
+
+// Account Mappings - Maps QuickBooks (or other accounting system) accounts to our standardized fields
+model AccountMapping {
+  id                      String              @id @default(cuid())
+  companyId               String
+  company                 Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  qbAccount               String              // QuickBooks account name
+  qbAccountId             String?             // QuickBooks account ID
+  qbAccountCode           String?             // Chart of Accounts code/number
+  qbAccountClassification String?             // Account type: Income, Expense, Asset, Liability, Equity
+  targetField             String              // Our standardized field name
+  confidence              String              @default("medium") // high, medium, low
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@unique([companyId, qbAccount])
+  @@index([companyId])
+}

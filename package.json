@@ -1,0 +1,50 @@
+{
+  "name": "financial-score",
+  "version": "1.0.0",
+  "description": "Corelytics Financial Score Calculator",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset",
+    "db:clear-users": "tsx scripts/clear-users.ts",
+    "db:clear-all": "tsx scripts/clear-all-users.ts",
+    "db:update-admin": "tsx scripts/update-admin-email.ts",
+    "import:benchmarks": "tsx scripts/import-benchmarks.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.17.1",
+    "bcryptjs": "^3.0.2",
+    "intuit-oauth": "^4.2.1",
+    "lucide-react": "^0.294.0",
+    "next": "^14.0.4",
+    "next-auth": "^5.0.0-beta.29",
+    "openai": "^6.3.0",
+    "prisma": "^6.17.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.10.5",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "adm-zip": "^0.5.16",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.0.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5.3.3"
+  }
+}

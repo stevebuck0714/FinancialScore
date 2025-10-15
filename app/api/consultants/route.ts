@@ -1,0 +1,144 @@
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { hashPassword } from '@/lib/auth';
+
+// GET all consultants (site admin only)
+export async function GET(request: NextRequest) {
+  try {
+    const consultants = await prisma.consultant.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true
+          }
+        },
+        companies: {
+          select: {
+            id: true,
+            name: true,
+            _count: {
+              select: {
+                users: true
+              }
+            }
+          }
+        },
+        _count: {
+          select: {
+            companies: true
+          }
+        }
+      },
+      orderBy: { fullName: 'asc' }
+    });
+
+    return NextResponse.json({ consultants });
+  } catch (error) {
+    console.error('Error fetching consultants:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST create new consultant
+export async function POST(request: NextRequest) {
+  try {
+    const { fullName, email, password, address, phone, type } = await request.json();
+
+    if (!fullName || !email || !password) {
+      return NextResponse.json(
+        { error: 'Full name, email, and password required' },
+        { status: 400 }
+      );
+    }
+
+    // Check if email already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (existingUser) {
+      return NextResponse.json(
+        { error: 'Email already registered' },
+        { status: 409 }
+      );
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          name: fullName,
+          passwordHash,
+          role: 'CONSULTANT'
+        }
+      });
+
+      const consultant = await tx.consultant.create({
+        data: {
+          userId: user.id,
+          fullName,
+          address: address || '',
+          phone: phone || '',
+          type: type || ''
+        }
+      });
+
+      return { user, consultant };
+    });
+
+    return NextResponse.json({
+      consultant: {
+        id: result.consultant.id,
+        fullName: result.consultant.fullName,
+        email: result.user.email,
+        phone: result.consultant.phone,
+        address: result.consultant.address,
+        type: result.consultant.type
+      }
+    }, { status: 201 });
+  } catch (error) {
+    console.error('Error creating consultant:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE consultant
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Consultant ID required' },
+        { status: 400 }
+      );
+    }
+
+    // This will cascade delete companies, users, records, etc.
+    await prisma.consultant.delete({
+      where: { id }
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting consultant:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+
