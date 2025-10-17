@@ -998,7 +998,7 @@ export default function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'data-review' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts'>('login');
 
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
@@ -1010,19 +1010,23 @@ export default function FinancialScorePage() {
   // Redirect assessment users if they try to access unauthorized views - but not during login
   useEffect(() => {
     if (currentUser?.userType === 'assessment' && isLoggedIn && currentView !== 'login' && !isAssessmentUserViewAllowed(currentView)) {
+      console.log('🚫 useEffect redirecting from', currentView, 'to ma-welcome');
       setCurrentView('ma-welcome');
     }
   }, [currentView, currentUser, isLoggedIn]);
 
   // Helper function to handle view changes for assessment users
   const handleViewChange = (newView: string) => {
+    console.log('🔄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
     if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
+      console.log('❌ View not allowed, redirecting to ma-welcome');
       setCurrentView('ma-welcome');
     } else {
+      console.log('✅ Setting view to:', newView);
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-mapping' | 'payments' | 'profile'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'payments' | 'profile'>('company-management');
   const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios'>('all-ratios');
   const [priorityRatios, setPriorityRatios] = useState<string[]>([
     'Current Ratio', 'Quick Ratio', 'ROE', 'ROA', 'Interest Coverage', 'Debt/Net Worth'
@@ -1120,6 +1124,7 @@ export default function FinancialScorePage() {
   
   // State - Trend Analysis
   const [selectedTrendItem, setSelectedTrendItem] = useState<string>('revenue');
+  const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
   
   // State - Valuation
   const [sdeMultiplier, setSdeMultiplier] = useState(2.5);
@@ -1190,13 +1195,18 @@ export default function FinancialScorePage() {
       priorityRatios: localStorage.getItem('fs_priorityRatios')
     };
     
+    // Check user type first to determine if we should load assessment data
+    const savedUser = saved.currentUser ? JSON.parse(saved.currentUser) : null;
+    const isAssessmentUser = savedUser?.userType === 'assessment';
+    
     if (saved.consultants) setConsultants(JSON.parse(saved.consultants));
     if (saved.companies) setCompanies(JSON.parse(saved.companies));
     if (saved.users) setUsers(JSON.parse(saved.users));
     if (saved.records) setFinancialDataRecords(JSON.parse(saved.records));
     if (saved.selectedCompany) setSelectedCompanyId(saved.selectedCompany);
-    if (saved.assessmentResponses) setAssessmentResponses(JSON.parse(saved.assessmentResponses));
-    if (saved.assessmentNotes) setAssessmentNotes(JSON.parse(saved.assessmentNotes));
+    // Don't load assessment responses from localStorage for assessment users - they'll load from DB
+    if (saved.assessmentResponses && !isAssessmentUser) setAssessmentResponses(JSON.parse(saved.assessmentResponses));
+    if (saved.assessmentNotes && !isAssessmentUser) setAssessmentNotes(JSON.parse(saved.assessmentNotes));
     if (saved.assessmentRecords) setAssessmentRecords(JSON.parse(saved.assessmentRecords));
     if (saved.companyProfiles) setCompanyProfiles(JSON.parse(saved.companyProfiles));
     if (saved.priorityRatios) setPriorityRatios(JSON.parse(saved.priorityRatios));
@@ -1242,8 +1252,8 @@ export default function FinancialScorePage() {
   useEffect(() => { if (currentUser) localStorage.setItem('fs_currentUser', JSON.stringify(currentUser)); }, [currentUser]);
   useEffect(() => { if (financialDataRecords.length > 0) localStorage.setItem('fs_financialDataRecords', JSON.stringify(financialDataRecords)); }, [financialDataRecords]);
   
-  useEffect(() => { if (Object.keys(assessmentResponses).length > 0) localStorage.setItem('fs_assessmentResponses', JSON.stringify(assessmentResponses)); }, [assessmentResponses]);
-  useEffect(() => { if (Object.keys(assessmentNotes).length > 0) localStorage.setItem('fs_assessmentNotes', JSON.stringify(assessmentNotes)); }, [assessmentNotes]);
+  useEffect(() => { if (Object.keys(assessmentResponses).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentResponses', JSON.stringify(assessmentResponses)); }, [assessmentResponses, currentUser]);
+  useEffect(() => { if (Object.keys(assessmentNotes).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentNotes', JSON.stringify(assessmentNotes)); }, [assessmentNotes, currentUser]);
   useEffect(() => { if (assessmentRecords.length > 0) localStorage.setItem('fs_assessmentRecords', JSON.stringify(assessmentRecords)); }, [assessmentRecords]);
   useEffect(() => { if (companyProfiles.length > 0) localStorage.setItem('fs_companyProfiles', JSON.stringify(companyProfiles)); }, [companyProfiles]);
   useEffect(() => { if (priorityRatios.length > 0) localStorage.setItem('fs_priorityRatios', JSON.stringify(priorityRatios)); }, [priorityRatios]);
@@ -1282,7 +1292,7 @@ export default function FinancialScorePage() {
     }
 
     // Set admin dashboard tab if specified
-    if (tab === 'api-connections' || tab === 'import-financials' || tab === 'company-management') {
+    if (tab === 'api-connections' || tab === 'import-financials' || tab === 'company-management' || tab === 'data-review') {
       setAdminDashboardTab(tab);
     }
 
@@ -1772,7 +1782,9 @@ export default function FinancialScorePage() {
       }
     };
     
-    saveFinancialData();
+    if (isFreshUpload) {
+      saveFinancialData();
+    }
   }, [mapping, rawRows, file, selectedCompanyId, currentUser, isFreshUpload]);
 
   // Auto-map columns
@@ -1863,6 +1875,14 @@ export default function FinancialScorePage() {
       
       setCurrentUser(normalizedUser);
       setIsLoggedIn(true);
+      
+      // Clear assessment data from localStorage for assessment users
+      if (normalizedUser.userType === 'assessment') {
+        localStorage.removeItem('fs_assessmentResponses');
+        localStorage.removeItem('fs_assessmentNotes');
+        setAssessmentResponses({});
+        setAssessmentNotes({});
+      }
       
       // Set appropriate default view based on user type
       if (normalizedUser.role === 'siteadmin') {
@@ -3289,6 +3309,8 @@ export default function FinancialScorePage() {
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
 
+  console.log('🎨 RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
+
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
       {/* Header - Different for Site Admin */}
@@ -3321,15 +3343,14 @@ export default function FinancialScorePage() {
               Venturis<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
             </div>
             <nav style={{ display: 'flex', gap: '24px' }}>
-              <button onClick={() => setCurrentView('data-review')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'data-review' ? '#f59e0b' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'data-review' ? '3px solid #f59e0b' : '3px solid transparent' }}>📊 Data Review</button>
-              <button onClick={() => setCurrentView('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>Trend Analysis</button>
+              <button onClick={() => setCurrentView('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'mda' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #667eea' : '3px solid transparent' }}>MD&A</button>
               <button onClick={() => setCurrentView('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>KPI Dashboard</button>
+              <button onClick={() => setCurrentView('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>Trend Analysis</button>
               <button onClick={() => setCurrentView('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>Projections</button>
               <button onClick={() => setCurrentView('working-capital')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'working-capital' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'working-capital' ? '3px solid #667eea' : '3px solid transparent' }}>Working Capital</button>
               <button onClick={() => setCurrentView('valuation')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'valuation' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'valuation' ? '3px solid #667eea' : '3px solid transparent' }}>Valuation</button>
               <button onClick={() => setCurrentView('cash-flow')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'cash-flow' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'cash-flow' ? '3px solid #667eea' : '3px solid transparent' }}>Cash Flow</button>
               <button onClick={() => setCurrentView('financial-statements')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'financial-statements' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'financial-statements' ? '3px solid #667eea' : '3px solid transparent' }}>Financial Statements</button>
-              <button onClick={() => setCurrentView('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'mda' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #667eea' : '3px solid transparent' }}>MD&A</button>
             </nav>
           </div>
         </header>
@@ -3927,7 +3948,7 @@ export default function FinancialScorePage() {
         {/* Main Content Area */}
         <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           {/* Restrict access for assessment users - only show Management Assessment views */}
-          {!(currentUser?.userType === 'assessment') && (
+          {(!(currentUser?.userType === 'assessment') || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
           {/* Site Administration */}
           {currentView === 'siteadmin' && currentUser?.role === 'siteadmin' && (
@@ -4184,6 +4205,23 @@ export default function FinancialScorePage() {
               }}
             >
               Accounting API Connections
+            </button>
+            <button
+              onClick={() => setAdminDashboardTab('data-review')}
+              style={{
+                padding: '12px 24px',
+                background: adminDashboardTab === 'data-review' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'data-review' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'data-review' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Data Review
             </button>
             <button
               onClick={() => setAdminDashboardTab('data-mapping')}
@@ -5111,6 +5149,13 @@ export default function FinancialScorePage() {
             </div>
           )}
 
+          {!selectedCompanyId && adminDashboardTab === 'data-review' && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to review financial data.</p>
+            </div>
+          )}
+
           {/* Payments Tab */}
           {adminDashboardTab === 'payments' && selectedCompanyId && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -5290,7 +5335,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* City, State, ZIP */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
                         City *
@@ -5468,7 +5513,7 @@ export default function FinancialScorePage() {
                   style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                   placeholder="Street Address" 
                 />
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '12px' }}>
                   <input 
                     type="text" 
                     value={companyAddressCity} 
@@ -5601,8 +5646,8 @@ export default function FinancialScorePage() {
         </div>
       )}
 
-      {/* Data Review View */}
-      {currentView === 'data-review' && selectedCompanyId && (
+      {/* Data Review Tab */}
+      {currentView === 'admin' && adminDashboardTab === 'data-review' && selectedCompanyId && (
         <div style={{ maxWidth: '100%', padding: '32px', overflowX: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>📊 Data Review - Financial Data</h1>
@@ -6094,128 +6139,463 @@ export default function FinancialScorePage() {
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Trend Analysis</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
-          
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
-                Select Item to Analyze:
-              </label>
-              <select 
-                value={selectedTrendItem} 
-                onChange={(e) => setSelectedTrendItem(e.target.value)}
-                style={{ width: '100%', maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
-              >
-                <optgroup label="Income Statement">
-                  <option value="revenue">Total Revenue</option>
-                  <option value="expense">Total Expenses</option>
-                  {mapping.cogsTotal && <option value="cogsTotal">COGS Total</option>}
-                  {mapping.cogsPayroll && <option value="cogsPayroll">COGS Payroll</option>}
-                  {mapping.cogsOwnerPay && <option value="cogsOwnerPay">COGS Owner Pay</option>}
-                  {mapping.cogsContractors && <option value="cogsContractors">COGS Contractors</option>}
-                  {mapping.cogsMaterials && <option value="cogsMaterials">COGS Materials</option>}
-                  {mapping.cogsCommissions && <option value="cogsCommissions">COGS Commissions</option>}
-                  {mapping.cogsOther && <option value="cogsOther">COGS Other</option>}
-                  {mapping.opexSalesMarketing && <option value="opexSalesMarketing">Sales & Marketing</option>}
-                  {mapping.rentLease && <option value="rentLease">Rent/Lease</option>}
-                  {mapping.utilities && <option value="utilities">Utilities</option>}
-                  {mapping.equipment && <option value="equipment">Equipment</option>}
-                  {mapping.travel && <option value="travel">Travel</option>}
-                  {mapping.professionalServices && <option value="professionalServices">Professional Services</option>}
-                  {mapping.insurance && <option value="insurance">Insurance</option>}
-                  {mapping.opexOther && <option value="opexOther">OPEX Other</option>}
-                  {mapping.opexPayroll && <option value="opexPayroll">OPEX Payroll</option>}
-                  {mapping.ownersBasePay && <option value="ownersBasePay">Owners Base Pay</option>}
-                  {mapping.ownersRetirement && <option value="ownersRetirement">Owners Retirement</option>}
-                  {mapping.contractorsDistribution && <option value="contractorsDistribution">Contractors/Distribution</option>}
-                  {mapping.interestExpense && <option value="interestExpense">Interest Expense</option>}
-                  {mapping.depreciationExpense && <option value="depreciationExpense">Depreciation Expense</option>}
-                  {mapping.operatingExpenseTotal && <option value="operatingExpenseTotal">Operating Expense Total</option>}
-                  {mapping.nonOperatingIncome && <option value="nonOperatingIncome">Non-Operating Income</option>}
-                  {mapping.extraordinaryItems && <option value="extraordinaryItems">Extraordinary Items</option>}
-                  {mapping.netProfit && <option value="netProfit">Net Profit</option>}
-                </optgroup>
-                <optgroup label="Balance Sheet - Assets">
-                  <option value="totalAssets">Total Assets</option>
-                  <option value="cash">Cash</option>
-                  <option value="ar">Accounts Receivable</option>
-                  <option value="inventory">Inventory</option>
-                  {mapping.otherCA && <option value="otherCA">Other Current Assets</option>}
-                  {mapping.tca && <option value="tca">Total Current Assets</option>}
-                  {mapping.fixedAssets && <option value="fixedAssets">Fixed Assets</option>}
-                  {mapping.otherAssets && <option value="otherAssets">Other Assets</option>}
-                </optgroup>
-                <optgroup label="Balance Sheet - Liabilities">
-                  <option value="totalLiab">Total Liabilities</option>
-                  <option value="ap">Accounts Payable</option>
-                  {mapping.otherCL && <option value="otherCL">Other Current Liabilities</option>}
-                  {mapping.tcl && <option value="tcl">Total Current Liabilities</option>}
-                  {mapping.ltd && <option value="ltd">Long Term Debt</option>}
-                </optgroup>
-                <optgroup label="Balance Sheet - Equity">
-                  <option value="totalEquity">Total Equity</option>
-                </optgroup>
-              </select>
-            </div>
 
-            <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <LineChart 
-                  title={`${selectedTrendItem.charAt(0).toUpperCase() + selectedTrendItem.slice(1).replace(/([A-Z])/g, ' $1')} Trend`}
-                  data={monthly.map(m => ({ month: m.month, value: m[selectedTrendItem as keyof typeof m] as number }))}
-                  color="#667eea"
-                  showTable={true}
-                />
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+            <button 
+              onClick={() => setTrendAnalysisTab('item-trends')}
+              style={{ 
+                padding: '12px 24px', 
+                background: 'none', 
+                border: 'none', 
+                fontSize: '16px', 
+                fontWeight: '600', 
+                color: trendAnalysisTab === 'item-trends' ? '#667eea' : '#64748b', 
+                cursor: 'pointer',
+                borderBottom: trendAnalysisTab === 'item-trends' ? '3px solid #667eea' : '3px solid transparent',
+                marginBottom: '-2px'
+              }}
+            >
+              Item Trends
+            </button>
+            <button 
+              onClick={() => setTrendAnalysisTab('expense-analysis')}
+              style={{ 
+                padding: '12px 24px', 
+                background: 'none', 
+                border: 'none', 
+                fontSize: '16px', 
+                fontWeight: '600', 
+                color: trendAnalysisTab === 'expense-analysis' ? '#667eea' : '#64748b', 
+                cursor: 'pointer',
+                borderBottom: trendAnalysisTab === 'expense-analysis' ? '3px solid #667eea' : '3px solid transparent',
+                marginBottom: '-2px'
+              }}
+            >
+              Expense Analysis
+            </button>
+          </div>
+
+          {/* Item Trends Tab */}
+          {trendAnalysisTab === 'item-trends' && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
+                  Select Item to Analyze:
+                </label>
+                <select 
+                  value={selectedTrendItem} 
+                  onChange={(e) => setSelectedTrendItem(e.target.value)}
+                  style={{ width: '100%', maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
+                >
+                  <optgroup label="Income Statement">
+                    <option value="revenue">Total Revenue</option>
+                    <option value="expense">Total Expenses</option>
+                    {mapping.cogsTotal && <option value="cogsTotal">COGS Total</option>}
+                    {mapping.cogsPayroll && <option value="cogsPayroll">COGS Payroll</option>}
+                    {mapping.cogsOwnerPay && <option value="cogsOwnerPay">COGS Owner Pay</option>}
+                    {mapping.cogsContractors && <option value="cogsContractors">COGS Contractors</option>}
+                    {mapping.cogsMaterials && <option value="cogsMaterials">COGS Materials</option>}
+                    {mapping.cogsCommissions && <option value="cogsCommissions">COGS Commissions</option>}
+                    {mapping.cogsOther && <option value="cogsOther">COGS Other</option>}
+                    {mapping.opexSalesMarketing && <option value="opexSalesMarketing">Sales & Marketing</option>}
+                    {mapping.rentLease && <option value="rentLease">Rent/Lease</option>}
+                    {mapping.utilities && <option value="utilities">Utilities</option>}
+                    {mapping.equipment && <option value="equipment">Equipment</option>}
+                    {mapping.travel && <option value="travel">Travel</option>}
+                    {mapping.professionalServices && <option value="professionalServices">Professional Services</option>}
+                    {mapping.insurance && <option value="insurance">Insurance</option>}
+                    {mapping.opexOther && <option value="opexOther">OPEX Other</option>}
+                    {mapping.opexPayroll && <option value="opexPayroll">OPEX Payroll</option>}
+                    {mapping.ownersBasePay && <option value="ownersBasePay">Owners Base Pay</option>}
+                    {mapping.ownersRetirement && <option value="ownersRetirement">Owners Retirement</option>}
+                    {mapping.contractorsDistribution && <option value="contractorsDistribution">Contractors/Distribution</option>}
+                    {mapping.interestExpense && <option value="interestExpense">Interest Expense</option>}
+                    {mapping.depreciationExpense && <option value="depreciationExpense">Depreciation Expense</option>}
+                    {mapping.operatingExpenseTotal && <option value="operatingExpenseTotal">Operating Expense Total</option>}
+                    {mapping.nonOperatingIncome && <option value="nonOperatingIncome">Non-Operating Income</option>}
+                    {mapping.extraordinaryItems && <option value="extraordinaryItems">Extraordinary Items</option>}
+                    {mapping.netProfit && <option value="netProfit">Net Profit</option>}
+                  </optgroup>
+                  <optgroup label="Balance Sheet - Assets">
+                    <option value="totalAssets">Total Assets</option>
+                    <option value="cash">Cash</option>
+                    <option value="ar">Accounts Receivable</option>
+                    <option value="inventory">Inventory</option>
+                    {mapping.otherCA && <option value="otherCA">Other Current Assets</option>}
+                    {mapping.tca && <option value="tca">Total Current Assets</option>}
+                    {mapping.fixedAssets && <option value="fixedAssets">Fixed Assets</option>}
+                    {mapping.otherAssets && <option value="otherAssets">Other Assets</option>}
+                  </optgroup>
+                  <optgroup label="Balance Sheet - Liabilities">
+                    <option value="totalLiab">Total Liabilities</option>
+                    <option value="ap">Accounts Payable</option>
+                    {mapping.otherCL && <option value="otherCL">Other Current Liabilities</option>}
+                    {mapping.tcl && <option value="tcl">Total Current Liabilities</option>}
+                    {mapping.ltd && <option value="ltd">Long Term Debt</option>}
+                  </optgroup>
+                  <optgroup label="Balance Sheet - Equity">
+                    <option value="totalEquity">Total Equity</option>
+                  </optgroup>
+                </select>
               </div>
-              
-              <div style={{ width: '280px', flexShrink: 0 }}>
-                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0', position: 'sticky', top: '100px' }}>
-                  <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', textAlign: 'center' }}>Growth Analysis</h3>
-                  
-                  <div style={{ marginBottom: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
-                    <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Last Year</div>
-                    <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 24 ? 
-                      (() => {
-                        const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                        const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                        const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
-                        return growthRate >= 0 ? '#10b981' : '#ef4444';
-                      })()
-                      : '#64748b'
-                    }}>
-                      {monthly.length >= 24 ? (() => {
-                        const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                        const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                        const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
-                        return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
-                      })() : 'N/A'}
-                    </div>
-                  </div>
 
-                  <div style={{ padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
-                    <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Previous Year</div>
-                    <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 36 ? 
-                      (() => {
-                        const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                        const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                        const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
-                        return growthRate >= 0 ? '#10b981' : '#ef4444';
-                      })()
-                      : '#64748b'
-                    }}>
-                      {monthly.length >= 36 ? (() => {
-                        const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                        const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                        const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
-                        return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
-                      })() : 'N/A'}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <LineChart 
+                    title={`${selectedTrendItem.charAt(0).toUpperCase() + selectedTrendItem.slice(1).replace(/([A-Z])/g, ' $1')} Trend`}
+                    data={monthly.map(m => ({ month: m.month, value: m[selectedTrendItem as keyof typeof m] as number }))}
+                    color="#667eea"
+                    showTable={true}
+                  />
+                </div>
+                
+                <div style={{ width: '280px', flexShrink: 0 }}>
+                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0', position: 'sticky', top: '100px' }}>
+                    <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', textAlign: 'center' }}>Growth Analysis</h3>
+                    
+                    <div style={{ marginBottom: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Last Year</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 24 ? 
+                        (() => {
+                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                          const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
+                          return growthRate >= 0 ? '#10b981' : '#ef4444';
+                        })()
+                        : '#64748b'
+                      }}>
+                        {monthly.length >= 24 ? (() => {
+                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                          const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
+                          return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
+                        })() : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Previous Year</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 36 ? 
+                        (() => {
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                          const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
+                          return growthRate >= 0 ? '#10b981' : '#ef4444';
+                        })()
+                        : '#64748b'
+                      }}>
+                        {monthly.length >= 36 ? (() => {
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                          const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
+                          return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
+                        })() : 'N/A'}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Expense Analysis Tab */}
+          {trendAnalysisTab === 'expense-analysis' && (
+            <div>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>Expense Items as % of Total Revenue</h2>
+              
+              <div style={{ marginBottom: '24px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>💡 How to Use This Analysis</h3>
+                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#15803d', lineHeight: '1.6' }}>
+                  <li>Each chart shows an expense category as a <strong>percentage of total revenue</strong> over time</li>
+                  <li>Look for categories with <strong>increasing trends</strong> that may need cost control</li>
+                  <li>Compare percentages to industry benchmarks to identify inefficiencies</li>
+                  <li>Watch for sudden spikes that may indicate one-time events or problems</li>
+                </ul>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+                {/* Total Expenses */}
+                <LineChart 
+                  title="Total Expenses (% of Revenue)"
+                  data={monthly.map(m => ({ 
+                    month: m.month, 
+                    value: m.revenue > 0 ? (m.expense / m.revenue) * 100 : 0 
+                  }))}
+                  color="#ef4444"
+                  compact
+                />
+
+                {/* COGS Total */}
+                {mapping.cogsTotal && (
+                  <LineChart 
+                    title="COGS Total (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.cogsTotal || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#f59e0b"
+                    compact
+                  />
+                )}
+
+                {/* COGS Breakdown */}
+                {mapping.cogsPayroll && (
+                  <LineChart 
+                    title="COGS Payroll (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.cogsPayroll || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#fb923c"
+                    compact
+                  />
+                )}
+
+                {mapping.cogsOwnerPay && (
+                  <LineChart 
+                    title="COGS Owner Pay (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.cogsOwnerPay || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#fdba74"
+                    compact
+                  />
+                )}
+
+                {mapping.cogsContractors && (
+                  <LineChart 
+                    title="COGS Contractors (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.cogsContractors || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#fed7aa"
+                    compact
+                  />
+                )}
+                
+                {mapping.cogsMaterials && (
+                  <LineChart 
+                    title="COGS Materials (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.cogsMaterials || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#fde047"
+                    compact
+                  />
+                )}
+                
+                {mapping.cogsCommissions && (
+                  <LineChart 
+                    title="COGS Commissions (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.cogsCommissions || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#bef264"
+                    compact
+                  />
+                )}
+                
+                {mapping.cogsOther && (
+                  <LineChart 
+                    title="COGS Other (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.cogsOther || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#86efac"
+                    compact
+                  />
+                )}
+                
+                {mapping.operatingExpenseTotal && (
+                  <LineChart 
+                    title="Operating Expense Total (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.operatingExpenseTotal || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#3b82f6"
+                    compact
+                  />
+                )}
+                
+                {mapping.opexPayroll && (
+                  <LineChart 
+                    title="OPEX Payroll (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.opexPayroll || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#60a5fa"
+                    compact
+                  />
+                )}
+                
+                {mapping.opexSalesMarketing && (
+                  <LineChart 
+                    title="Sales & Marketing (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.opexSalesMarketing || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#93c5fd"
+                    compact
+                  />
+                )}
+                
+                {mapping.rentLease && (
+                  <LineChart 
+                    title="Rent/Lease (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.rentLease || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#8b5cf6"
+                    compact
+                  />
+                )}
+                
+                {mapping.utilities && (
+                  <LineChart 
+                    title="Utilities (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.utilities || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#a78bfa"
+                    compact
+                  />
+                )}
+                
+                {mapping.equipment && (
+                  <LineChart 
+                    title="Equipment (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.equipment || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#c4b5fd"
+                    compact
+                  />
+                )}
+                
+                {mapping.travel && (
+                  <LineChart 
+                    title="Travel (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.travel || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#ec4899"
+                    compact
+                  />
+                )}
+                
+                {mapping.professionalServices && (
+                  <LineChart 
+                    title="Professional Services (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.professionalServices || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#f472b6"
+                    compact
+                  />
+                )}
+                
+                {mapping.insurance && (
+                  <LineChart 
+                    title="Insurance (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.insurance || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#f9a8d4"
+                    compact
+                  />
+                )}
+                
+                {mapping.ownersBasePay && (
+                  <LineChart 
+                    title="Owners Base Pay (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.ownersBasePay || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#14b8a6"
+                    compact
+                  />
+                )}
+                
+                {mapping.ownersRetirement && (
+                  <LineChart 
+                    title="Owners Retirement (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.ownersRetirement || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#2dd4bf"
+                    compact
+                  />
+                )}
+                
+                {mapping.contractorsDistribution && (
+                  <LineChart 
+                    title="Contractors/Distribution (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.contractorsDistribution || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#5eead4"
+                    compact
+                  />
+                )}
+                
+                {mapping.interestExpense && (
+                  <LineChart 
+                    title="Interest Expense (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.interestExpense || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#fb7185"
+                    compact
+                  />
+                )}
+                
+                {mapping.depreciationExpense && (
+                  <LineChart 
+                    title="Depreciation Expense (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.depreciationExpense || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#fca5a5"
+                    compact
+                  />
+                )}
+                
+                {mapping.opexOther && (
+                  <LineChart 
+                    title="OPEX Other (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.opexOther || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#fecaca"
+                    compact
+                  />
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -6479,24 +6859,85 @@ export default function FinancialScorePage() {
       {/* KPI Dashboard View */}
       {currentView === 'kpis' && selectedCompanyId && trendData.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+          <style>{`
+            @media print {
+              @page {
+                size: letter;
+                margin: 0.375in 0.375in 0.75in 0.375in;
+              }
+              
+              /* Hide navigation and UI elements */
+              .no-print,
+              header,
+              nav,
+              aside,
+              [role="navigation"],
+              button {
+                display: none !important;
+              }
+              
+              /* Show print header */
+              .print-header {
+                display: block !important;
+              }
+              
+              /* Scale down charts proportionally and adjust spacing */
+              .priority-ratios-print-content > div:last-child {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 0px !important;
+                row-gap: 0px !important;
+              }
+              
+              .priority-ratios-print-content > div:last-child > div {
+                transform: scale(0.75);
+                transform-origin: top left;
+                width: 133%;
+                height: 265px;
+                overflow: visible;
+              }
+              
+              /* First row */
+              .priority-ratios-print-content > div:last-child > div:nth-child(1),
+              .priority-ratios-print-content > div:last-child > div:nth-child(2) {
+                margin-bottom: 0px;
+              }
+              
+              /* Second row */
+              .priority-ratios-print-content > div:last-child > div:nth-child(3),
+              .priority-ratios-print-content > div:last-child > div:nth-child(4) {
+                margin-bottom: 0px;
+              }
+              
+              /* Third row */
+              .priority-ratios-print-content > div:last-child > div:nth-child(5),
+              .priority-ratios-print-content > div:last-child > div:nth-child(6) {
+                margin-bottom: 0;
+              }
+            }
+            
+            .print-header {
+              display: none;
+            }
+          `}</style>
+          <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>KPI Dashboard</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
           
           {/* Benchmark Status Indicator */}
           {benchmarks.length > 0 ? (
-            <div style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '24px', fontSize: '13px', color: '#065f46' }}>
+            <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '24px', fontSize: '13px', color: '#065f46' }}>
               ✓ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
             </div>
           ) : (
-            <div style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '24px', fontSize: '13px', color: '#991b1b' }}>
+            <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '24px', fontSize: '13px', color: '#991b1b' }}>
               ⚠ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
             </div>
           )}
 
           {/* Tab Navigation */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '32px', borderBottom: '2px solid #e2e8f0' }}>
+          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '32px', borderBottom: '2px solid #e2e8f0' }}>
             <button
               onClick={() => setKpiDashboardTab('all-ratios')}
               style={{
@@ -6591,7 +7032,7 @@ export default function FinancialScorePage() {
           {/* Priority Ratios Tab */}
           {kpiDashboardTab === 'priority-ratios' && (
             <div>
-              <div style={{ marginBottom: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div className="no-print" style={{ marginBottom: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Customize Your Priority Ratios</h3>
                 <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
                   Select up to 6 ratios to track as your priority KPIs. These selections will be saved and persist across sessions.
@@ -6668,10 +7109,36 @@ export default function FinancialScorePage() {
               {/* Display Selected Priority Ratios */}
               {priorityRatios.length > 0 && (
                 <div>
-                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-                    Your Priority Ratios ({priorityRatios.length}/6)
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+                  <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                      Your Priority Ratios ({priorityRatios.length}/6)
+                    </h3>
+                    <button
+                      onClick={() => window.print()}
+                      style={{
+                        padding: '10px 20px',
+                        background: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      🖨️ Print Priority Ratios
+                    </button>
+                  </div>
+                  <div className="priority-ratios-print-content">
+                    <div className="print-header" style={{ display: 'none' }}>
+                      <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px', marginTop: '0', textAlign: 'center' }}>
+                        Priority Ratios {companyName && `- ${companyName}`}
+                      </h1>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
                     {priorityRatios.map((ratio, index) => (
                       <div key={ratio} style={{ position: 'relative' }}>
                         <LineChart
@@ -6687,6 +7154,7 @@ export default function FinancialScorePage() {
                         />
                         <button
                           onClick={() => setPriorityRatios(prev => prev.filter((_, i) => i !== index))}
+                          className="no-print"
                           style={{
                             position: 'absolute',
                             top: '8px',
@@ -6708,6 +7176,7 @@ export default function FinancialScorePage() {
                         </button>
                       </div>
                     ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -6783,7 +7252,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Key Metrics
+              Critical Review Items
             </button>
           </div>
 
@@ -6933,14 +7402,669 @@ export default function FinancialScorePage() {
           </div>
           )}
 
-          {/* Key Metrics Tab */}
-          {mdaTab === 'key-metrics' && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
-            <div style={{ fontSize: '48px', marginBottom: '24px' }}>📊</div>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Key Metrics Coming Soon</h2>
-            <p style={{ fontSize: '15px', color: '#64748b', maxWidth: '600px', margin: '0 auto', lineHeight: '1.6' }}>
-              This section will contain detailed key performance metrics and comparative analysis. Content will be added soon.
+          {/* Critical Review Items Tab */}
+          {mdaTab === 'key-metrics' && monthly.length >= 12 && (
+          <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '24px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
+              ⚠️ Critical Review Items
+            </h2>
+            
+            <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' }}>
+              This analysis reviews all financial data across Trend Analysis, KPI Dashboard, Working Capital, and Cash Flow to identify issues requiring immediate attention.
             </p>
+
+            {(() => {
+              const issues: { category: string; severity: 'high' | 'medium' | 'low'; title: string; description: string; metric?: string }[] = [];
+              const last = monthly[monthly.length - 1];
+              const prev = monthly.length >= 2 ? monthly[monthly.length - 2] : last;
+              const last12 = monthly.slice(-12);
+              const prev12 = monthly.length >= 24 ? monthly.slice(-24, -12) : last12;
+
+              // === REVENUE TREND ANALYSIS ===
+              const revenueGrowth12mo = prev12.length > 0 ? 
+                ((last12.reduce((s, m) => s + m.revenue, 0) - prev12.reduce((s, m) => s + m.revenue, 0)) / prev12.reduce((s, m) => s + m.revenue, 0)) * 100 : 0;
+              
+              if (revenueGrowth12mo < -5) {
+                issues.push({
+                  category: 'Revenue Trends',
+                  severity: 'high',
+                  title: 'Declining Revenue',
+                  description: `Revenue has declined by ${Math.abs(revenueGrowth12mo).toFixed(1)}% over the past 12 months. This indicates potential market share loss, pricing pressure, or customer attrition.`,
+                  metric: `${revenueGrowth12mo.toFixed(1)}%`
+                });
+              }
+
+              // Check revenue volatility
+              const revenueStdDev = (() => {
+                const mean = last12.reduce((s, m) => s + m.revenue, 0) / last12.length;
+                const variance = last12.reduce((s, m) => s + Math.pow(m.revenue - mean, 2), 0) / last12.length;
+                return Math.sqrt(variance);
+              })();
+              const revenueCV = (revenueStdDev / (last12.reduce((s, m) => s + m.revenue, 0) / last12.length)) * 100;
+              
+              if (revenueCV > 25) {
+                issues.push({
+                  category: 'Revenue Trends',
+                  severity: 'medium',
+                  title: 'High Revenue Volatility',
+                  description: `Revenue shows high volatility (${revenueCV.toFixed(1)}% coefficient of variation). This indicates inconsistent sales performance and unpredictable cash flow.`,
+                  metric: `${revenueCV.toFixed(1)}% CV`
+                });
+              }
+
+              // === EXPENSE ANALYSIS ===
+              const expenseGrowth12mo = prev12.length > 0 ?
+                ((last12.reduce((s, m) => s + m.expense, 0) - prev12.reduce((s, m) => s + m.expense, 0)) / prev12.reduce((s, m) => s + m.expense, 0)) * 100 : 0;
+              
+              if (expenseGrowth12mo > revenueGrowth12mo + 5) {
+                issues.push({
+                  category: 'Expense Control',
+                  severity: 'high',
+                  title: 'Expenses Growing Faster Than Revenue',
+                  description: `Expenses have grown ${expenseGrowth12mo.toFixed(1)}% while revenue grew ${revenueGrowth12mo.toFixed(1)}%. This margin compression threatens profitability and requires immediate cost control measures.`,
+                  metric: `${(expenseGrowth12mo - revenueGrowth12mo).toFixed(1)}% gap`
+                });
+              }
+
+              // Expense as % of revenue trending
+              const expenseRatio = (last.expense / last.revenue) * 100;
+              const prevExpenseRatio = prev12.length > 0 ? (prev12.reduce((s, m) => s + m.expense, 0) / prev12.reduce((s, m) => s + m.revenue, 0)) * 100 : expenseRatio;
+              
+              if (expenseRatio > 90) {
+                issues.push({
+                  category: 'Expense Control',
+                  severity: 'high',
+                  title: 'Extremely High Expense Ratio',
+                  description: `Total expenses represent ${expenseRatio.toFixed(1)}% of revenue, leaving minimal profit margin. The business is operating near break-even or at a loss.`,
+                  metric: `${expenseRatio.toFixed(1)}%`
+                });
+              } else if (expenseRatio - prevExpenseRatio > 5) {
+                issues.push({
+                  category: 'Expense Control',
+                  severity: 'medium',
+                  title: 'Rising Expense Ratio',
+                  description: `Expenses as a percentage of revenue have increased from ${prevExpenseRatio.toFixed(1)}% to ${expenseRatio.toFixed(1)}%, indicating deteriorating operational efficiency.`,
+                  metric: `+${(expenseRatio - prevExpenseRatio).toFixed(1)}%`
+                });
+              }
+
+              // === LIQUIDITY & RATIOS ===
+              if (last.currentRatio < 1.0) {
+                issues.push({
+                  category: 'Liquidity',
+                  severity: 'high',
+                  title: 'Critical Liquidity Position',
+                  description: `Current ratio of ${last.currentRatio.toFixed(2)} indicates current liabilities exceed current assets. The company may struggle to meet short-term obligations.`,
+                  metric: `${last.currentRatio.toFixed(2)}`
+                });
+              } else if (last.currentRatio < 1.2) {
+                issues.push({
+                  category: 'Liquidity',
+                  severity: 'medium',
+                  title: 'Weak Liquidity Position',
+                  description: `Current ratio of ${last.currentRatio.toFixed(2)} is below the healthy threshold of 1.5, indicating potential difficulty covering short-term obligations.`,
+                  metric: `${last.currentRatio.toFixed(2)}`
+                });
+              }
+
+              // Quick ratio
+              if (last.quickRatio < 0.8) {
+                issues.push({
+                  category: 'Liquidity',
+                  severity: last.quickRatio < 0.5 ? 'high' : 'medium',
+                  title: 'Poor Quick Ratio',
+                  description: `Quick ratio of ${last.quickRatio.toFixed(2)} shows the company cannot cover current liabilities with liquid assets. Heavy reliance on inventory or other less liquid assets.`,
+                  metric: `${last.quickRatio.toFixed(2)}`
+                });
+              }
+
+              // Debt ratios
+              const debtToEquity = last.totalEquity > 0 ? last.totalLiab / last.totalEquity : 999;
+              if (debtToEquity > 2.0) {
+                issues.push({
+                  category: 'Leverage',
+                  severity: 'high',
+                  title: 'High Debt Leverage',
+                  description: `Debt-to-equity ratio of ${debtToEquity.toFixed(2)} indicates the company is heavily leveraged. High debt levels increase financial risk and interest expenses.`,
+                  metric: `${debtToEquity.toFixed(2)}x`
+                });
+              }
+
+              const debtRatio = last.totalAssets > 0 ? (last.totalLiab / last.totalAssets) * 100 : 0;
+              if (debtRatio > 70) {
+                issues.push({
+                  category: 'Leverage',
+                  severity: 'medium',
+                  title: 'High Debt Ratio',
+                  description: `${debtRatio.toFixed(1)}% of assets are financed by debt, indicating high financial leverage and potential vulnerability to economic downturns.`,
+                  metric: `${debtRatio.toFixed(1)}%`
+                });
+              }
+
+              // === PROFITABILITY ===
+              const netMargin = last.revenue > 0 ? ((last.revenue - last.expense) / last.revenue) * 100 : 0;
+              if (netMargin < 0) {
+                issues.push({
+                  category: 'Profitability',
+                  severity: 'high',
+                  title: 'Operating at a Loss',
+                  description: `Net margin of ${netMargin.toFixed(1)}% indicates the company is losing money on operations. Immediate action required to restore profitability.`,
+                  metric: `${netMargin.toFixed(1)}%`
+                });
+              } else if (netMargin < 5) {
+                issues.push({
+                  category: 'Profitability',
+                  severity: 'medium',
+                  title: 'Thin Profit Margins',
+                  description: `Net margin of ${netMargin.toFixed(1)}% provides little buffer for unexpected costs or revenue shortfalls. Margin improvement strategies should be prioritized.`,
+                  metric: `${netMargin.toFixed(1)}%`
+                });
+              }
+
+              // ROE
+              if (last.roe < 0) {
+                issues.push({
+                  category: 'Profitability',
+                  severity: 'high',
+                  title: 'Negative Return on Equity',
+                  description: `ROE of ${(last.roe * 100).toFixed(1)}% indicates the company is destroying shareholder value. Equity holders are receiving negative returns.`,
+                  metric: `${(last.roe * 100).toFixed(1)}%`
+                });
+              } else if (last.roe < 0.05) {
+                issues.push({
+                  category: 'Profitability',
+                  severity: 'medium',
+                  title: 'Low Return on Equity',
+                  description: `ROE of ${(last.roe * 100).toFixed(1)}% is below typical market returns. Shareholders could achieve better returns elsewhere.`,
+                  metric: `${(last.roe * 100).toFixed(1)}%`
+                });
+              }
+
+              // === WORKING CAPITAL ===
+              const workingCapital = last.tca - last.tcl;
+              const wcRatio = last.revenue > 0 ? (workingCapital / (last.revenue / 12)) * 100 : 0;
+              
+              if (workingCapital < 0) {
+                issues.push({
+                  category: 'Working Capital',
+                  severity: 'high',
+                  title: 'Negative Working Capital',
+                  description: `Working capital of $${workingCapital.toLocaleString()} indicates current liabilities exceed current assets. This creates immediate cash flow pressure and operational constraints.`,
+                  metric: `$${workingCapital.toLocaleString()}`
+                });
+              }
+
+              // Days Sales Outstanding
+              const dso = last.revenue > 0 ? (last.ar / (last.revenue / 365)) : 0;
+              if (dso > 60) {
+                issues.push({
+                  category: 'Working Capital',
+                  severity: 'medium',
+                  title: 'Slow Accounts Receivable Collection',
+                  description: `Days Sales Outstanding of ${dso.toFixed(0)} days indicates slow customer payments. This ties up cash and may signal credit quality issues.`,
+                  metric: `${dso.toFixed(0)} days`
+                });
+              }
+
+              // Days Payable Outstanding
+              const dpo = last.expense > 0 ? (last.ap / (last.expense / 365)) : 0;
+              if (dpo > 90) {
+                issues.push({
+                  category: 'Working Capital',
+                  severity: 'medium',
+                  title: 'Extended Payment Terms to Suppliers',
+                  description: `Days Payable Outstanding of ${dpo.toFixed(0)} days may indicate cash flow stress, causing the company to delay supplier payments.`,
+                  metric: `${dpo.toFixed(0)} days`
+                });
+              }
+
+              // === CASH FLOW (if we have the data) ===
+              const netIncome = last.revenue - last.expense;
+              const workingCapitalChange = monthly.length >= 2 ? (last.tca - last.tcl) - (prev.tca - prev.tcl) : 0;
+              const estimatedOCF = netIncome - workingCapitalChange;
+              
+              if (estimatedOCF < 0 && netIncome > 0) {
+                issues.push({
+                  category: 'Cash Flow',
+                  severity: 'high',
+                  title: 'Negative Operating Cash Flow Despite Profits',
+                  description: `While showing accounting profits, the company is consuming cash in operations (estimated -$${Math.abs(estimatedOCF).toLocaleString()}). This often results from working capital build-up or non-cash revenue.`,
+                  metric: `-$${Math.abs(estimatedOCF).toLocaleString()}`
+                });
+              }
+
+              // Cash position declining
+              if (monthly.length >= 6) {
+                const cashTrend = last.cash - monthly[monthly.length - 6].cash;
+                const cashTrendPct = monthly[monthly.length - 6].cash > 0 ? (cashTrend / monthly[monthly.length - 6].cash) * 100 : 0;
+                if (cashTrendPct < -20) {
+                  issues.push({
+                    category: 'Cash Flow',
+                    severity: 'high',
+                    title: 'Rapid Cash Depletion',
+                    description: `Cash has declined ${Math.abs(cashTrendPct).toFixed(1)}% over the past 6 months. At this burn rate, cash reserves may be exhausted quickly without corrective action.`,
+                    metric: `${cashTrendPct.toFixed(1)}%`
+                  });
+                }
+              }
+
+              // === ASSET EFFICIENCY ===
+              const assetTurnover = last.totalAssets > 0 ? (last.revenue * 12) / last.totalAssets : 0;
+              if (assetTurnover < 0.5) {
+                issues.push({
+                  category: 'Asset Efficiency',
+                  severity: 'low',
+                  title: 'Low Asset Turnover',
+                  description: `Asset turnover of ${assetTurnover.toFixed(2)}x indicates assets are not being utilized efficiently to generate revenue. Consider asset optimization or divestiture.`,
+                  metric: `${assetTurnover.toFixed(2)}x`
+                });
+              }
+
+              // === EXPENSE CATEGORY ANALYSIS (% of Revenue) ===
+              const expenseCategories = [
+                { key: 'cogsTotal', name: 'COGS Total', threshold: 70 },
+                { key: 'cogsPayroll', name: 'COGS Payroll', threshold: 35 },
+                { key: 'operatingExpenseTotal', name: 'Operating Expenses', threshold: 40 },
+                { key: 'opexPayroll', name: 'OPEX Payroll', threshold: 25 },
+                { key: 'opexSalesMarketing', name: 'Sales & Marketing', threshold: 15 },
+                { key: 'rentLease', name: 'Rent/Lease', threshold: 10 },
+                { key: 'professionalServices', name: 'Professional Services', threshold: 8 }
+              ];
+
+              expenseCategories.forEach(cat => {
+                if (mapping[cat.key as keyof typeof mapping] && last[cat.key as keyof typeof last]) {
+                  const currentPct = last.revenue > 0 ? ((last[cat.key as keyof typeof last] as number) / last.revenue) * 100 : 0;
+                  
+                  // Check if expense category is too high
+                  if (currentPct > cat.threshold) {
+                    issues.push({
+                      category: 'Expense Control',
+                      severity: currentPct > cat.threshold * 1.3 ? 'high' : 'medium',
+                      title: `High ${cat.name} Expense`,
+                      description: `${cat.name} represents ${currentPct.toFixed(1)}% of revenue, which is above the recommended threshold of ${cat.threshold}%. This indicates potential inefficiencies or cost control issues in this area.`,
+                      metric: `${currentPct.toFixed(1)}%`
+                    });
+                  }
+
+                  // Check if trending upward
+                  if (monthly.length >= 6) {
+                    const sixMonthsAgo = monthly[monthly.length - 6];
+                    const prevPct = sixMonthsAgo.revenue > 0 ? ((sixMonthsAgo[cat.key as keyof typeof sixMonthsAgo] as number || 0) / sixMonthsAgo.revenue) * 100 : 0;
+                    const pctChange = currentPct - prevPct;
+                    
+                    if (pctChange > 3) {
+                      issues.push({
+                        category: 'Expense Trends',
+                        severity: pctChange > 5 ? 'medium' : 'low',
+                        title: `Rising ${cat.name} as % of Revenue`,
+                        description: `${cat.name} has increased from ${prevPct.toFixed(1)}% to ${currentPct.toFixed(1)}% of revenue over the past 6 months. This trend indicates deteriorating cost control or operational inefficiency.`,
+                        metric: `+${pctChange.toFixed(1)}%`
+                      });
+                    }
+                  }
+                }
+              });
+
+              // === BENCHMARK COMPARISON ===
+              if (benchmarks && benchmarks.length > 0) {
+                // Current Ratio vs Benchmark
+                const currentRatioBM = benchmarks.find(b => b.metric === 'Current Ratio');
+                if (currentRatioBM && last.currentRatio < currentRatioBM.p25) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: 'medium',
+                    title: 'Current Ratio Below Industry Benchmark',
+                    description: `Current ratio of ${last.currentRatio.toFixed(2)} is below the industry 25th percentile of ${currentRatioBM.p25.toFixed(2)}. This indicates weaker liquidity compared to industry peers.`,
+                    metric: `${last.currentRatio.toFixed(2)} vs ${currentRatioBM.p25.toFixed(2)}`
+                  });
+                }
+
+                // Quick Ratio vs Benchmark
+                const quickRatioBM = benchmarks.find(b => b.metric === 'Quick Ratio');
+                if (quickRatioBM && last.quickRatio < quickRatioBM.p25) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: 'medium',
+                    title: 'Quick Ratio Below Industry Benchmark',
+                    description: `Quick ratio of ${last.quickRatio.toFixed(2)} is below the industry 25th percentile of ${quickRatioBM.p25.toFixed(2)}. This suggests inadequate liquid assets compared to peers.`,
+                    metric: `${last.quickRatio.toFixed(2)} vs ${quickRatioBM.p25.toFixed(2)}`
+                  });
+                }
+
+                // Debt to Equity vs Benchmark
+                const debtToEquityBM = benchmarks.find(b => b.metric === 'Debt to Equity');
+                if (debtToEquityBM && debtToEquity < 900 && debtToEquity > debtToEquityBM.p75) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: 'medium',
+                    title: 'Debt-to-Equity Above Industry Benchmark',
+                    description: `Debt-to-equity ratio of ${debtToEquity.toFixed(2)} exceeds the industry 75th percentile of ${debtToEquityBM.p75.toFixed(2)}. The company is more leveraged than most peers.`,
+                    metric: `${debtToEquity.toFixed(2)} vs ${debtToEquityBM.p75.toFixed(2)}`
+                  });
+                }
+
+                // ROE vs Benchmark
+                const roeBM = benchmarks.find(b => b.metric === 'Return on Equity (ROE)');
+                if (roeBM && last.roe < roeBM.p25) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: 'medium',
+                    title: 'ROE Below Industry Benchmark',
+                    description: `Return on Equity of ${(last.roe * 100).toFixed(1)}% is below the industry 25th percentile of ${(roeBM.p25 * 100).toFixed(1)}%. The company is generating lower returns than most competitors.`,
+                    metric: `${(last.roe * 100).toFixed(1)}% vs ${(roeBM.p25 * 100).toFixed(1)}%`
+                  });
+                }
+
+                // ROA vs Benchmark
+                const roaBM = benchmarks.find(b => b.metric === 'Return on Assets (ROA)');
+                if (roaBM && last.roa < roaBM.p25) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: 'low',
+                    title: 'ROA Below Industry Benchmark',
+                    description: `Return on Assets of ${(last.roa * 100).toFixed(1)}% is below the industry 25th percentile of ${(roaBM.p25 * 100).toFixed(1)}%. Asset utilization is weaker than industry peers.`,
+                    metric: `${(last.roa * 100).toFixed(1)}% vs ${(roaBM.p25 * 100).toFixed(1)}%`
+                  });
+                }
+
+                // Profit Margin vs Benchmark
+                const profitMarginBM = benchmarks.find(b => b.metric === 'Profit Margin');
+                if (profitMarginBM && netMargin < profitMarginBM.p25) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: netMargin < 0 ? 'high' : 'medium',
+                    title: 'Profit Margin Below Industry Benchmark',
+                    description: `Net profit margin of ${netMargin.toFixed(1)}% is below the industry 25th percentile of ${profitMarginBM.p25.toFixed(1)}%. Profitability is weaker than most competitors.`,
+                    metric: `${netMargin.toFixed(1)}% vs ${profitMarginBM.p25.toFixed(1)}%`
+                  });
+                }
+
+                // Asset Turnover vs Benchmark
+                const assetTurnoverBM = benchmarks.find(b => b.metric === 'Asset Turnover');
+                if (assetTurnoverBM && assetTurnover < assetTurnoverBM.p25) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: 'low',
+                    title: 'Asset Turnover Below Industry Benchmark',
+                    description: `Asset turnover of ${assetTurnover.toFixed(2)}x is below the industry 25th percentile of ${assetTurnoverBM.p25.toFixed(2)}x. Assets are being used less efficiently than peers.`,
+                    metric: `${assetTurnover.toFixed(2)}x vs ${assetTurnoverBM.p25.toFixed(2)}x`
+                  });
+                }
+
+                // DSO vs Benchmark  
+                const dsoBM = benchmarks.find(b => b.metric === 'Days Sales Outstanding (DSO)');
+                if (dsoBM && dso > dsoBM.p75) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: 'medium',
+                    title: 'DSO Above Industry Benchmark',
+                    description: `Days Sales Outstanding of ${dso.toFixed(0)} days exceeds the industry 75th percentile of ${dsoBM.p75.toFixed(0)} days. Collections are slower than most competitors.`,
+                    metric: `${dso.toFixed(0)} vs ${dsoBM.p75.toFixed(0)} days`
+                  });
+                }
+
+                // Expense Ratio vs Benchmark
+                const expenseRatioBM = benchmarks.find(b => b.metric === 'Expense Ratio');
+                if (expenseRatioBM && expenseRatio > expenseRatioBM.p75) {
+                  issues.push({
+                    category: 'Benchmarks',
+                    severity: 'medium',
+                    title: 'Expense Ratio Above Industry Benchmark',
+                    description: `Total expense ratio of ${expenseRatio.toFixed(1)}% exceeds the industry 75th percentile of ${expenseRatioBM.p75.toFixed(1)}%. Operating costs are higher than most competitors.`,
+                    metric: `${expenseRatio.toFixed(1)}% vs ${expenseRatioBM.p75.toFixed(1)}%`
+                  });
+                }
+              }
+
+              // === FINANCIAL SCORE ANALYSIS ===
+              // Check overall Financial Score
+              if (finalScore < 40) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'high',
+                  title: 'Critical Financial Score',
+                  description: `Overall Financial Score of ${finalScore.toFixed(1)} is critically low, indicating severe financial distress. Both profitability and asset development require immediate attention.`,
+                  metric: `${finalScore.toFixed(1)}/100`
+                });
+              } else if (finalScore < 60) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'medium',
+                  title: 'Below Average Financial Score',
+                  description: `Financial Score of ${finalScore.toFixed(1)} is below industry standards. The company needs to improve both revenue growth/profitability and asset management.`,
+                  metric: `${finalScore.toFixed(1)}/100`
+                });
+              } else if (finalScore < 70) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'low',
+                  title: 'Moderate Financial Score',
+                  description: `Financial Score of ${finalScore.toFixed(1)} shows room for improvement. Consider strategies to enhance profitability and strengthen the balance sheet.`,
+                  metric: `${finalScore.toFixed(1)}/100`
+                });
+              }
+
+              // Check Profitability Score component
+              if (profitabilityScore < 40) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'high',
+                  title: 'Critical Profitability Score',
+                  description: `Profitability Score of ${profitabilityScore.toFixed(1)} indicates severe issues with revenue growth and expense management. Revenue may be declining or expenses growing faster than revenue.`,
+                  metric: `${profitabilityScore.toFixed(1)}/100`
+                });
+              } else if (profitabilityScore < 60) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'medium',
+                  title: 'Weak Profitability Score',
+                  description: `Profitability Score of ${profitabilityScore.toFixed(1)} suggests underperformance in revenue growth or expense control. Review pricing strategies, cost structure, and market positioning.`,
+                  metric: `${profitabilityScore.toFixed(1)}/100`
+                });
+              }
+
+              // Check Asset Development Score component
+              if (assetDevScore < 40) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'high',
+                  title: 'Critical Asset Development Score',
+                  description: `Asset Development Score of ${assetDevScore.toFixed(1)} indicates a weak balance sheet with assets barely exceeding liabilities. Asset-to-Liability ratio of ${alr1.toFixed(2)}:1 suggests potential solvency issues.`,
+                  metric: `${assetDevScore.toFixed(1)}/100 (ALR: ${alr1.toFixed(2)})`
+                });
+              } else if (assetDevScore < 60) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'medium',
+                  title: 'Weak Asset Development Score',
+                  description: `Asset Development Score of ${assetDevScore.toFixed(1)} indicates limited asset growth relative to liabilities. Asset-to-Liability ratio of ${alr1.toFixed(2)}:1 could be stronger to support future growth.`,
+                  metric: `${assetDevScore.toFixed(1)}/100 (ALR: ${alr1.toFixed(2)})`
+                });
+              }
+
+              // Check Asset-to-Liability Ratio trend
+              if (alr1 < 1.0) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'high',
+                  title: 'Liabilities Exceed Assets',
+                  description: `Asset-to-Liability ratio of ${alr1.toFixed(2)}:1 means liabilities exceed assets, indicating the company is technically insolvent on paper. This requires immediate financial restructuring or capital injection.`,
+                  metric: `${alr1.toFixed(2)}:1`
+                });
+              } else if (alr1 < 1.2 && alrGrowth < -10) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'high',
+                  title: 'Deteriorating Asset-to-Liability Ratio',
+                  description: `Asset-to-Liability ratio has declined by ${Math.abs(alrGrowth).toFixed(1)}% to ${alr1.toFixed(2)}:1. The balance sheet is weakening, with liabilities growing faster than assets.`,
+                  metric: `${alr1.toFixed(2)}:1 (${alrGrowth.toFixed(1)}%)`
+                });
+              } else if (alrGrowth < -5) {
+                issues.push({
+                  category: 'Financial Score',
+                  severity: 'medium',
+                  title: 'Declining Asset Quality',
+                  description: `Asset-to-Liability ratio decreased by ${Math.abs(alrGrowth).toFixed(1)}%, suggesting assets are not growing as fast as liabilities. Monitor debt levels and asset utilization.`,
+                  metric: `${alrGrowth.toFixed(1)}% decline`
+                });
+              }
+
+              // Check Financial Score trend if we have historical data
+              if (trendData && trendData.length >= 6) {
+                const currentFinScore = trendData[trendData.length - 1].financialScore;
+                const sixMonthsAgoFinScore = trendData[trendData.length - 6].financialScore;
+                const finScoreChange = currentFinScore - sixMonthsAgoFinScore;
+                
+                if (finScoreChange < -15) {
+                  issues.push({
+                    category: 'Financial Score',
+                    severity: 'high',
+                    title: 'Rapidly Declining Financial Score',
+                    description: `Financial Score has dropped ${Math.abs(finScoreChange).toFixed(1)} points over the past 6 months, from ${sixMonthsAgoFinScore.toFixed(1)} to ${currentFinScore.toFixed(1)}. This rapid deterioration requires immediate management attention.`,
+                    metric: `${finScoreChange.toFixed(1)} pts`
+                  });
+                } else if (finScoreChange < -10) {
+                  issues.push({
+                    category: 'Financial Score',
+                    severity: 'medium',
+                    title: 'Declining Financial Score Trend',
+                    description: `Financial Score has decreased by ${Math.abs(finScoreChange).toFixed(1)} points over the past 6 months. The company's financial health is trending in the wrong direction.`,
+                    metric: `${finScoreChange.toFixed(1)} pts`
+                  });
+                }
+
+                // Check Profitability Score trend
+                const currentProfScore = trendData[trendData.length - 1].profitabilityScore;
+                const sixMonthsAgoProfScore = trendData[trendData.length - 6].profitabilityScore;
+                const profScoreChange = currentProfScore - sixMonthsAgoProfScore;
+                
+                if (profScoreChange < -15) {
+                  issues.push({
+                    category: 'Financial Score',
+                    severity: 'medium',
+                    title: 'Deteriorating Profitability Trend',
+                    description: `Profitability Score has fallen ${Math.abs(profScoreChange).toFixed(1)} points over 6 months, indicating worsening revenue growth and/or expense control.`,
+                    metric: `${profScoreChange.toFixed(1)} pts`
+                  });
+                }
+
+                // Check Asset Development Score trend
+                const currentAdsScore = trendData[trendData.length - 1].adsScore;
+                const sixMonthsAgoAdsScore = trendData[trendData.length - 6].adsScore;
+                const adsScoreChange = currentAdsScore - sixMonthsAgoAdsScore;
+                
+                if (adsScoreChange < -15) {
+                  issues.push({
+                    category: 'Financial Score',
+                    severity: 'medium',
+                    title: 'Weakening Balance Sheet Trend',
+                    description: `Asset Development Score has dropped ${Math.abs(adsScoreChange).toFixed(1)} points over 6 months, indicating the balance sheet is deteriorating relative to historical levels.`,
+                    metric: `${adsScoreChange.toFixed(1)} pts`
+                  });
+                }
+              }
+
+              // Sort by severity
+              const severityOrder = { high: 0, medium: 1, low: 2 };
+              issues.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+
+              return (
+                <div>
+                  {/* Summary Stats */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px' }}>
+                    <div style={{ background: '#fee2e2', borderRadius: '12px', padding: '20px', border: '2px solid #ef4444' }}>
+                      <div style={{ fontSize: '32px', fontWeight: '700', color: '#991b1b', marginBottom: '8px' }}>
+                        {issues.filter(i => i.severity === 'high').length}
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#7f1d1d' }}>High Priority Issues</div>
+                    </div>
+                    <div style={{ background: '#fef3c7', borderRadius: '12px', padding: '20px', border: '2px solid #f59e0b' }}>
+                      <div style={{ fontSize: '32px', fontWeight: '700', color: '#92400e', marginBottom: '8px' }}>
+                        {issues.filter(i => i.severity === 'medium').length}
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#78350f' }}>Medium Priority Issues</div>
+                    </div>
+                    <div style={{ background: '#dbeafe', borderRadius: '12px', padding: '20px', border: '2px solid #3b82f6' }}>
+                      <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e40af', marginBottom: '8px' }}>
+                        {issues.filter(i => i.severity === 'low').length}
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e3a8a' }}>Low Priority Issues</div>
+                    </div>
+                  </div>
+
+                  {/* Issues List */}
+                  {issues.length === 0 ? (
+                    <div style={{ background: '#d1fae5', borderRadius: '12px', padding: '32px', textAlign: 'center', border: '2px solid #10b981' }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>✅</div>
+                      <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>No Critical Issues Detected</h3>
+                      <p style={{ fontSize: '15px', color: '#047857', margin: 0 }}>
+                        All analyzed metrics are within acceptable ranges. Continue monitoring for any changes.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {issues.map((issue, idx) => {
+                        const bgColor = issue.severity === 'high' ? '#fee2e2' : issue.severity === 'medium' ? '#fef3c7' : '#dbeafe';
+                        const borderColor = issue.severity === 'high' ? '#ef4444' : issue.severity === 'medium' ? '#f59e0b' : '#3b82f6';
+                        const textColor = issue.severity === 'high' ? '#991b1b' : issue.severity === 'medium' ? '#92400e' : '#1e40af';
+                        const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🔵';
+                        
+                        return (
+                          <div key={idx} style={{ background: bgColor, borderRadius: '12px', padding: '20px', border: `2px solid ${borderColor}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                  <span style={{ fontSize: '18px' }}>{icon}</span>
+                                  <span style={{ fontSize: '11px', fontWeight: '700', color: textColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    {issue.category}
+                                  </span>
+                                </div>
+                                <h3 style={{ fontSize: '18px', fontWeight: '700', color: textColor, marginBottom: '8px', margin: 0 }}>
+                                  {issue.title}
+                                </h3>
+                              </div>
+                              {issue.metric && (
+                                <div style={{ background: 'white', borderRadius: '8px', padding: '8px 16px', border: `1px solid ${borderColor}` }}>
+                                  <div style={{ fontSize: '18px', fontWeight: '700', color: textColor }}>{issue.metric}</div>
+                                </div>
+                              )}
+                            </div>
+                            <p style={{ fontSize: '14px', color: textColor, margin: 0, lineHeight: '1.6' }}>
+                              {issue.description}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Action Items */}
+                  {issues.filter(i => i.severity === 'high').length > 0 && (
+                    <div style={{ marginTop: '32px', background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #667eea' }}>
+                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>📋 Recommended Actions</h3>
+                      <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
+                        {issues.filter(i => i.severity === 'high').length > 0 && (
+                          <li><strong>Immediate attention required:</strong> Address all high-priority issues within the next 30 days</li>
+                        )}
+                        {issues.some(i => i.category === 'Liquidity') && (
+                          <li><strong>Improve liquidity:</strong> Focus on accelerating collections, managing payables, and securing additional working capital if needed</li>
+                        )}
+                        {issues.some(i => i.category === 'Expense Control') && (
+                          <li><strong>Cost reduction:</strong> Conduct detailed expense review to identify cost-saving opportunities without impacting revenue</li>
+                        )}
+                        {issues.some(i => i.category === 'Revenue Trends') && (
+                          <li><strong>Revenue growth:</strong> Develop strategies to stabilize and grow revenue through new markets, products, or customer acquisition</li>
+                        )}
+                        {issues.some(i => i.category === 'Cash Flow') && (
+                          <li><strong>Cash management:</strong> Implement cash flow forecasting and monitoring to prevent liquidity crises</li>
+                        )}
+                        <li><strong>Regular monitoring:</strong> Review these metrics weekly until trends improve</li>
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           )}
         </div>
@@ -10179,7 +11303,7 @@ export default function FinancialScorePage() {
                     return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, opexPayroll, ownersBasePay, ownersRetirement, professionalServices, rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution, depreciationExpense, opexOther, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
                   });
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
-                    <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                       <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
                       {values.map((v: number, i: number) => (
                         <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${(v / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -10192,8 +11316,8 @@ export default function FinancialScorePage() {
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Income Statement</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
-                      <div style={{ minWidth: `${300 + (periodsData.length * 150)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
+                      <div style={{ minWidth: `${200 + (periodsData.length * 110)}px` }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
                           <div>Line Item</div>
                           {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{p.label}</div>)}
                         </div>
@@ -10206,7 +11330,7 @@ export default function FinancialScorePage() {
                         {periodsData.some(p => p.cogsCommissions > 0) && <Row label="COGS - Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
                         {periodsData.some(p => p.cogsOther > 0) && <Row label="COGS - Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
                         <Row label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Gross Profit</div>
                           {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${(p.grossProfit / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>)}
                         </div>
@@ -10225,7 +11349,7 @@ export default function FinancialScorePage() {
                         {periodsData.some(p => p.depreciationExpense > 0) && <Row label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
                         {periodsData.some(p => p.opexOther > 0) && <Row label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
                         <Row label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Operating Income</div>
                           {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${(p.operatingIncome / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>)}
                         </div>
@@ -10237,7 +11361,7 @@ export default function FinancialScorePage() {
                             {periodsData.some(p => p.extraordinaryItems !== 0) && <Row label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
                           </>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
@@ -10538,7 +11662,7 @@ export default function FinancialScorePage() {
                       return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, opexPayroll, ownersBasePay, ownersRetirement, professionalServices, rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution, depreciationExpense, opexOther, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
                     });
                     const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
-                      <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                         <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
                         {values.map((v: number, i: number) => {
                           const pct = periodsData[i].revenue > 0 ? (v / periodsData[i].revenue) * 100 : 0;
@@ -10557,8 +11681,8 @@ export default function FinancialScorePage() {
                           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Common Size Income Statement</h2>
                           <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                         </div>
-                        <div style={{ minWidth: `${300 + (periodsData.length * 200)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
+                        <div style={{ minWidth: `${200 + (periodsData.length * 150)}px` }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
                           <div>Line Item</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ display: 'contents' }}>
@@ -10576,7 +11700,7 @@ export default function FinancialScorePage() {
                           {periodsData.some(p => p.cogsCommissions > 0) && <RowWithPercent label="COGS - Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
                           {periodsData.some(p => p.cogsOther > 0) && <RowWithPercent label="COGS - Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
                           <RowWithPercent label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                             <div>Gross Profit</div>
                             {periodsData.map((p, i) => {
                               const pct = p.revenue > 0 ? (p.grossProfit / p.revenue) * 100 : 0;
@@ -10603,7 +11727,7 @@ export default function FinancialScorePage() {
                           {periodsData.some(p => p.depreciationExpense > 0) && <RowWithPercent label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
                           {periodsData.some(p => p.opexOther > 0) && <RowWithPercent label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
                           <RowWithPercent label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                             <div>Operating Income</div>
                             {periodsData.map((p, i) => {
                               const pct = p.revenue > 0 ? (p.operatingIncome / p.revenue) * 100 : 0;
@@ -10623,7 +11747,7 @@ export default function FinancialScorePage() {
                               {periodsData.some(p => p.extraordinaryItems !== 0) && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
                             </>
                           )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                             <div style={{ color: '#166534' }}>Net Income</div>
                             {periodsData.map((p, i) => {
                               const pct = p.revenue > 0 ? (p.netIncome / p.revenue) * 100 : 0;
@@ -10690,14 +11814,14 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* Header Row */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '12px 0', borderBottom: '2px solid #1e293b', marginBottom: '16px', fontWeight: '600', color: '#1e293b' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 0', borderBottom: '2px solid #1e293b', marginBottom: '16px', fontWeight: '600', color: '#1e293b' }}>
                           <div>Line Item</div>
                           <div style={{ textAlign: 'right' }}>Amount</div>
                           <div style={{ textAlign: 'right' }}>% of Revenue</div>
                         </div>
 
                         {/* Revenue */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
                           <div style={{ color: '#1e293b' }}>Revenue</div>
                           <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           <div style={{ textAlign: 'right', color: '#1e293b' }}>100.0%</div>
@@ -10707,48 +11831,48 @@ export default function FinancialScorePage() {
                         <div style={{ marginTop: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Cost of Goods Sold</div>
                           {cogsPayroll > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Payroll</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsPayroll)}</div>
                             </div>
                           )}
                           {cogsOwnerPay > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Owner Pay</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOwnerPay)}</div>
                             </div>
                           )}
                           {cogsContractors > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Contractors</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsContractors)}</div>
                             </div>
                           )}
                           {cogsMaterials > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Materials</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsMaterials)}</div>
                             </div>
                           )}
                           {cogsCommissions > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Commissions</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsCommissions)}</div>
                             </div>
                           )}
                           {cogsOther > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Other</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOther)}</div>
                             </div>
                           )}
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                             <div style={{ color: '#475569' }}>Total COGS</div>
                             <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(cogs)}</div>
@@ -10756,7 +11880,7 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* Gross Profit */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Gross Profit</div>
                           <div style={{ textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           <div style={{ textAlign: 'right' }}>{calcPercent(grossProfit)}</div>
@@ -10766,97 +11890,97 @@ export default function FinancialScorePage() {
                         <div style={{ marginTop: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Operating Expenses</div>
                           {opexPayroll > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Payroll</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexPayroll)}</div>
                             </div>
                           )}
                           {ownersBasePay > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Owner's Base Pay</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersBasePay)}</div>
                             </div>
                           )}
                           {ownersRetirement > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Owner's Retirement</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersRetirement)}</div>
                             </div>
                           )}
                           {professionalServices > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Professional Services</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalServices)}</div>
                             </div>
                           )}
                           {rentLease > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Rent/Lease</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rentLease)}</div>
                             </div>
                           )}
                           {utilities > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Utilities</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(utilities)}</div>
                             </div>
                           )}
                           {equipment > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Equipment</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(equipment)}</div>
                             </div>
                           )}
                           {travel > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Travel</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(travel)}</div>
                             </div>
                           )}
                           {insurance > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Insurance</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(insurance)}</div>
                             </div>
                           )}
                           {opexSalesMarketing > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Sales & Marketing</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexSalesMarketing)}</div>
                             </div>
                           )}
                           {contractorsDistribution > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Contractors - Distribution</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(contractorsDistribution)}</div>
                             </div>
                           )}
                           {depreciationExpense > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Depreciation & Amortization</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationExpense)}</div>
                             </div>
                           )}
                           {opexOther > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Other Operating Expenses</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexOther)}</div>
                             </div>
                           )}
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                             <div style={{ color: '#475569' }}>Total Operating Expenses</div>
                             <div style={{ textAlign: 'right', color: '#475569' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(totalOpex)}</div>
@@ -10864,7 +11988,7 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* Operating Income */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Operating Income</div>
                           <div style={{ textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           <div style={{ textAlign: 'right' }}>{calcPercent(operatingIncome)}</div>
@@ -10875,21 +11999,21 @@ export default function FinancialScorePage() {
                           <div style={{ marginTop: '16px' }}>
                             <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Other Income/(Expense)</div>
                             {interestExpense > 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b' }}>Interest Expense</div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(interestExpense)})</div>
                               </div>
                             )}
                             {nonOperatingIncome > 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b' }}>Non-Operating Income</div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(nonOperatingIncome)}</div>
                               </div>
                             )}
                             {extraordinaryItems !== 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b' }}>Extraordinary Items</div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>
                                   {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{extraordinaryItems < 0 ? ')' : ''}
@@ -10903,7 +12027,7 @@ export default function FinancialScorePage() {
                         )}
 
                         {/* Net Income */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
                           <div>Net Income</div>
                           <div style={{ textAlign: 'right' }}>
                             {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{netIncome < 0 ? ')' : ''}
@@ -10971,9 +12095,9 @@ export default function FinancialScorePage() {
                         </div>
                         
                         {/* Table with multiple columns */}
-                        <div style={{ minWidth: `${300 + (balanceData.length * 150)}px` }}>
+                        <div style={{ minWidth: `${200 + (balanceData.length * 110)}px` }}>
                           {/* Header Row */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', position: 'sticky', top: 0, background: 'white' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', position: 'sticky', top: 0, background: 'white' }}>
                             <div>Line Item</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right' }}>{p.label}</div>
@@ -10981,20 +12105,20 @@ export default function FinancialScorePage() {
                           </div>
                           
                           {/* ASSETS Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '8px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '8px' }}>
                             <div style={{ color: '#1e293b' }}>ASSETS</div>
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
                           {/* Current Assets Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
                             <div style={{ color: '#475569' }}>Current Assets</div>
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
                           {/* Current Assets Details */}
                           {balanceData.some(p => p.cash > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Cash & Cash Equivalents</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.cash / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11002,7 +12126,7 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.ar > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Receivable</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.ar / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11010,7 +12134,7 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.inventory > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Inventory</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.inventory / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11018,14 +12142,14 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.otherCA > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Assets</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.otherCA / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
                               ))}
                             </div>
                           )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Current Assets</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.tca / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11033,13 +12157,13 @@ export default function FinancialScorePage() {
                           </div>
                           
                           {/* Non-Current Assets Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
                             <div style={{ color: '#475569' }}>Non-Current Assets</div>
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
                           {balanceData.some(p => p.fixedAssets > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Property, Plant & Equipment</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.fixedAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11047,7 +12171,7 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.intangibleAssets > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Intangible Assets</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.intangibleAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11055,14 +12179,14 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.otherNonCurrentAssets > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Non-Current Assets</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.otherNonCurrentAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
                               ))}
                             </div>
                           )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Non-Current Assets</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.nonCurrentAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11070,7 +12194,7 @@ export default function FinancialScorePage() {
                           </div>
                           
                           {/* TOTAL ASSETS */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
                             <div style={{ color: '#1e40af' }}>TOTAL ASSETS</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#1e40af' }}>${(p.totalAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11078,19 +12202,19 @@ export default function FinancialScorePage() {
                           </div>
                           
                           {/* LIABILITIES Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '16px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '16px' }}>
                             <div style={{ color: '#1e293b' }}>LIABILITIES</div>
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
                           {/* Current Liabilities Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
                             <div style={{ color: '#475569' }}>Current Liabilities</div>
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
                           {balanceData.some(p => p.ap > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Payable</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.ap / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11098,7 +12222,7 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.shortTermDebt > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Short-Term Debt</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.shortTermDebt / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11106,7 +12230,7 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.currentPortionLTD > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Current Portion of LT Debt</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.currentPortionLTD / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11114,14 +12238,14 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.otherCurrentLiabilities > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Liabilities</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.otherCurrentLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
                               ))}
                             </div>
                           )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Current Liabilities</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.totalCurrentLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11129,13 +12253,13 @@ export default function FinancialScorePage() {
                           </div>
                           
                           {/* Long-Term Liabilities Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
                             <div style={{ color: '#475569' }}>Long-Term Liabilities</div>
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
                           {balanceData.some(p => p.ltd > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Long-Term Debt</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.ltd / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11143,14 +12267,14 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.otherLongTermLiabilities > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Long-Term Liabilities</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.otherLongTermLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
                               ))}
                             </div>
                           )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Long-Term Liabilities</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.totalLongTermLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11158,7 +12282,7 @@ export default function FinancialScorePage() {
                           </div>
                           
                           {/* TOTAL LIABILITIES */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
                             <div style={{ color: '#92400e' }}>TOTAL LIABILITIES</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#92400e' }}>${(p.totalLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11166,13 +12290,13 @@ export default function FinancialScorePage() {
                           </div>
                           
                           {/* EQUITY Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '16px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '16px' }}>
                             <div style={{ color: '#1e293b' }}>EQUITY</div>
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
                           {balanceData.some(p => p.paidInCapital > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Paid-in Capital</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.paidInCapital / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -11180,7 +12304,7 @@ export default function FinancialScorePage() {
                             </div>
                           )}
                           {balanceData.some(p => p.retainedEarnings !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Retained Earnings</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
@@ -11191,7 +12315,7 @@ export default function FinancialScorePage() {
                           )}
                           
                           {/* TOTAL EQUITY */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
                             <div style={{ color: '#166534' }}>TOTAL EQUITY</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: p.totalEquity >= 0 ? '#166534' : '#991b1b' }}>
@@ -12070,16 +13194,58 @@ export default function FinancialScorePage() {
       {/* Financial Statements View - Works with CSV or QB data via monthly array */}
       {currentView === 'financial-statements' && selectedCompanyId && !qbRawData && monthly.length > 0 && (
         <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <style>{`
+            @media print {
+              @page {
+                size: letter;
+                margin: 0.1in 0.15in 0.1in 0.15in;
+              }
+              
+              /* Hide navigation and UI elements */
+              .no-print,
+              header,
+              nav,
+              aside,
+              [role="navigation"],
+              button {
+                display: none !important;
+              }
+              
+              /* Remove background colors and shadows */
+              * {
+                box-shadow: none !important;
+              }
+              
+              /* Force very tight column spacing */
+              [style*="display: grid"] {
+                gap: 2px !important;
+                column-gap: 2px !important;
+              }
+              
+              /* Reduce padding to bring content closer */
+              [style*="display: grid"] > * {
+                padding-left: 2px !important;
+                padding-right: 2px !important;
+              }
+              
+              /* Reduce font sizes slightly for better fit */
+              div[style*="fontSize: '14px'"],
+              div[style*="fontSize: '13px'"] {
+                font-size: 11px !important;
+              }
+            }
+          `}</style>
+          
+          <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Statements</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
-          <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+          <p className="no-print" style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
             Based on imported financial data
           </p>
 
           {/* Tab Navigation */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
             <button
               onClick={() => setFinancialStatementsTab('aggregated')}
               style={{
@@ -12120,8 +13286,8 @@ export default function FinancialScorePage() {
           {financialStatementsTab === 'aggregated' && (
           <>
           {/* Statement Controls */}
-          <div style={{ marginBottom: '32px', padding: '24px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+          <div className="no-print" style={{ marginBottom: '32px', padding: '24px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
               {/* Type of Statement */}
               <div>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
@@ -12198,6 +13364,30 @@ export default function FinancialScorePage() {
                   <option value="quarterly">Quarterly</option>
                   <option value="annual">Annual</option>
                 </select>
+              </div>
+              
+              {/* Print Button */}
+              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button
+                  onClick={() => window.print()}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  🖨️ Print
+                </button>
               </div>
             </div>
           </div>
@@ -13116,9 +14306,9 @@ export default function FinancialScorePage() {
                       </div>
                       
                       {/* Table with multiple columns */}
-                      <div style={{ minWidth: `${300 + (periodsData.length * 150)}px` }}>
+                      <div style={{ minWidth: `${200 + (periodsData.length * 110)}px` }}>
                         {/* Header Row */}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', position: 'sticky', top: 0, background: 'white' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', position: 'sticky', top: 0, background: 'white' }}>
                           <div>Line Item</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right' }}>{p.label}</div>
@@ -13126,7 +14316,7 @@ export default function FinancialScorePage() {
                         </div>
                         
                         {/* Revenue */}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
                           <div style={{ color: '#1e293b' }}>Revenue</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>${(p.revenue / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13134,14 +14324,14 @@ export default function FinancialScorePage() {
                         </div>
                         
                         {/* COGS Section Header */}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
                           <div style={{ color: '#475569' }}>Cost of Goods Sold</div>
                           {periodsData.map((p, i) => <div key={i}></div>)}
                         </div>
                         
                         {/* COGS Details */}
                         {periodsData.some(p => p.cogsPayroll > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Payroll</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.cogsPayroll / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13149,7 +14339,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.cogsOwnerPay > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Owner Pay</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.cogsOwnerPay / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13157,7 +14347,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.cogsContractors > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Contractors</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.cogsContractors / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13165,7 +14355,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.cogsMaterials > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Materials</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.cogsMaterials / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13173,7 +14363,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.cogsCommissions > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Commissions</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.cogsCommissions / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13181,14 +14371,14 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.cogsOther > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Other</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.cogsOther / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
                             ))}
                           </div>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                           <div style={{ color: '#475569' }}>Total COGS</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.cogs / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13196,7 +14386,7 @@ export default function FinancialScorePage() {
                         </div>
                         
                         {/* Gross Profit */}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
                           <div style={{ color: '#1e40af' }}>Gross Profit</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: '#1e40af' }}>${(p.grossProfit / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13204,14 +14394,14 @@ export default function FinancialScorePage() {
                         </div>
                         
                         {/* Operating Expenses Section Header */}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '12px' }}>
                           <div style={{ color: '#475569' }}>Operating Expenses</div>
                           {periodsData.map((p, i) => <div key={i}></div>)}
                         </div>
                         
                         {/* Operating Expenses Details */}
                         {periodsData.some(p => p.opexPayroll > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Payroll</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.opexPayroll / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13219,7 +14409,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.ownersBasePay > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Base Pay</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.ownersBasePay / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13227,7 +14417,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.ownersRetirement > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Retirement</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.ownersRetirement / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13235,7 +14425,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.professionalServices > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Professional Services</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.professionalServices / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13243,7 +14433,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.rentLease > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Rent/Lease</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.rentLease / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13251,7 +14441,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.utilities > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Utilities</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.utilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13259,7 +14449,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.equipment > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Equipment</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.equipment / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13267,7 +14457,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.travel > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Travel</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.travel / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13275,7 +14465,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.insurance > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Insurance</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.insurance / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13283,7 +14473,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.opexSalesMarketing > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Sales & Marketing</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.opexSalesMarketing / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13291,7 +14481,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.contractorsDistribution > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Contractors - Distribution</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.contractorsDistribution / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13299,7 +14489,7 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.depreciationExpense > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Depreciation & Amortization</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.depreciationExpense / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13307,14 +14497,14 @@ export default function FinancialScorePage() {
                           </div>
                         )}
                         {periodsData.some(p => p.opexOther > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Operating Expenses</div>
                             {periodsData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.opexOther / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
                             ))}
                           </div>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                           <div style={{ color: '#475569' }}>Total Operating Expenses</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.totalOpex / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13322,7 +14512,7 @@ export default function FinancialScorePage() {
                         </div>
                         
                         {/* Operating Income */}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
                           <div style={{ color: '#1e40af' }}>Operating Income</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: '#1e40af' }}>${(p.operatingIncome / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13332,12 +14522,12 @@ export default function FinancialScorePage() {
                         {/* Other Income/Expense Section */}
                         {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
                           <>
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '12px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '12px' }}>
                               <div style={{ color: '#475569' }}>Other Income/(Expense)</div>
                               {periodsData.map((p, i) => <div key={i}></div>)}
                             </div>
                             {periodsData.some(p => p.interestExpense > 0) && (
-                              <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b', paddingLeft: '20px' }}>Interest Expense</div>
                                 {periodsData.map((p, i) => (
                                   <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${ (p.interestExpense / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K)</div>
@@ -13345,7 +14535,7 @@ export default function FinancialScorePage() {
                               </div>
                             )}
                             {periodsData.some(p => p.nonOperatingIncome > 0) && (
-                              <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b', paddingLeft: '20px' }}>Non-Operating Income</div>
                                 {periodsData.map((p, i) => (
                                   <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.nonOperatingIncome / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -13353,7 +14543,7 @@ export default function FinancialScorePage() {
                               </div>
                             )}
                             {periodsData.some(p => p.extraordinaryItems !== 0) && (
-                              <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b', paddingLeft: '20px' }}>Extraordinary Items</div>
                                 {periodsData.map((p, i) => (
                                   <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
@@ -13366,7 +14556,7 @@ export default function FinancialScorePage() {
                         )}
                         
                         {/* Net Income */}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 150px)`, gap: '8px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '12px', fontWeight: '700', fontSize: '15px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '12px', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
@@ -13667,7 +14857,7 @@ export default function FinancialScorePage() {
                     return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, opexPayroll, ownersBasePay, ownersRetirement, professionalServices, rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution, depreciationExpense, opexOther, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
                   });
                   const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
-                    <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                       <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
                       {values.map((v: number, i: number) => {
                         const pct = periodsData[i].revenue > 0 ? (v / periodsData[i].revenue) * 100 : 0;
@@ -13686,8 +14876,8 @@ export default function FinancialScorePage() {
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Common Size Income Statement</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
-                      <div style={{ minWidth: `${300 + (periodsData.length * 200)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
+                      <div style={{ minWidth: `${200 + (periodsData.length * 150)}px` }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
                           <div>Line Item</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ display: 'contents' }}>
@@ -13705,7 +14895,7 @@ export default function FinancialScorePage() {
                         {periodsData.some(p => p.cogsCommissions > 0) && <RowWithPercent label="COGS - Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
                         {periodsData.some(p => p.cogsOther > 0) && <RowWithPercent label="COGS - Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
                         <RowWithPercent label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Gross Profit</div>
                           {periodsData.map((p, i) => {
                             const pct = p.revenue > 0 ? (p.grossProfit / p.revenue) * 100 : 0;
@@ -13732,7 +14922,7 @@ export default function FinancialScorePage() {
                         {periodsData.some(p => p.depreciationExpense > 0) && <RowWithPercent label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
                         {periodsData.some(p => p.opexOther > 0) && <RowWithPercent label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
                         <RowWithPercent label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Operating Income</div>
                           {periodsData.map((p, i) => {
                             const pct = p.revenue > 0 ? (p.operatingIncome / p.revenue) * 100 : 0;
@@ -13752,7 +14942,7 @@ export default function FinancialScorePage() {
                             {periodsData.some(p => p.extraordinaryItems !== 0) && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
                           </>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${periodsData.length}, 120px 80px)`, gap: '8px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
                           {periodsData.map((p, i) => {
                             const pct = p.revenue > 0 ? (p.netIncome / p.revenue) * 100 : 0;
@@ -13819,14 +15009,14 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Header Row */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '12px 0', borderBottom: '2px solid #1e293b', marginBottom: '16px', fontWeight: '600', color: '#1e293b' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 0', borderBottom: '2px solid #1e293b', marginBottom: '16px', fontWeight: '600', color: '#1e293b' }}>
                         <div>Line Item</div>
                         <div style={{ textAlign: 'right' }}>Amount</div>
                         <div style={{ textAlign: 'right' }}>% of Revenue</div>
                       </div>
 
                       {/* Revenue */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
                         <div style={{ color: '#1e293b' }}>Revenue</div>
                         <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                         <div style={{ textAlign: 'right', color: '#1e293b' }}>100.0%</div>
@@ -13836,48 +15026,48 @@ export default function FinancialScorePage() {
                       <div style={{ marginTop: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Cost of Goods Sold</div>
                         {cogsPayroll > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Payroll</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsPayroll)}</div>
                           </div>
                         )}
                         {cogsOwnerPay > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Owner Pay</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOwnerPay)}</div>
                           </div>
                         )}
                         {cogsContractors > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Contractors</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsContractors)}</div>
                           </div>
                         )}
                         {cogsMaterials > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Materials</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsMaterials)}</div>
                           </div>
                         )}
                         {cogsCommissions > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Commissions</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsCommissions)}</div>
                           </div>
                         )}
                         {cogsOther > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Other</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOther)}</div>
                           </div>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <div style={{ color: '#475569' }}>Total COGS</div>
                           <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(cogs)}</div>
@@ -13885,7 +15075,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Gross Profit */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
                         <div>Gross Profit</div>
                         <div style={{ textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                         <div style={{ textAlign: 'right' }}>{calcPercent(grossProfit)}</div>
@@ -13895,97 +15085,97 @@ export default function FinancialScorePage() {
                       <div style={{ marginTop: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Operating Expenses</div>
                         {opexPayroll > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Payroll</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexPayroll)}</div>
                           </div>
                         )}
                         {ownersBasePay > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Owner's Base Pay</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersBasePay)}</div>
                           </div>
                         )}
                         {ownersRetirement > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Owner's Retirement</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersRetirement)}</div>
                           </div>
                         )}
                         {professionalServices > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Professional Services</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalServices)}</div>
                           </div>
                         )}
                         {rentLease > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Rent/Lease</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rentLease)}</div>
                           </div>
                         )}
                         {utilities > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Utilities</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(utilities)}</div>
                           </div>
                         )}
                         {equipment > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Equipment</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(equipment)}</div>
                           </div>
                         )}
                         {travel > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Travel</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(travel)}</div>
                           </div>
                         )}
                         {insurance > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Insurance</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(insurance)}</div>
                           </div>
                         )}
                         {opexSalesMarketing > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Sales & Marketing</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexSalesMarketing)}</div>
                           </div>
                         )}
                         {contractorsDistribution > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Contractors - Distribution</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(contractorsDistribution)}</div>
                           </div>
                         )}
                         {depreciationExpense > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Depreciation & Amortization</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationExpense)}</div>
                           </div>
                         )}
                         {opexOther > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Other Operating Expenses</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexOther)}</div>
                           </div>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <div style={{ color: '#475569' }}>Total Operating Expenses</div>
                           <div style={{ textAlign: 'right', color: '#475569' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                           <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(totalOpex)}</div>
@@ -13993,7 +15183,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Operating Income */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
                         <div>Operating Income</div>
                         <div style={{ textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                         <div style={{ textAlign: 'right' }}>{calcPercent(operatingIncome)}</div>
@@ -14004,21 +15194,21 @@ export default function FinancialScorePage() {
                         <div style={{ marginTop: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Other Income/(Expense)</div>
                           {interestExpense > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Interest Expense</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(interestExpense)})</div>
                             </div>
                           )}
                           {nonOperatingIncome > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Non-Operating Income</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(nonOperatingIncome)}</div>
                             </div>
                           )}
                           {extraordinaryItems !== 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Extraordinary Items</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>
                                 {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{extraordinaryItems < 0 ? ')' : ''}
@@ -14032,7 +15222,7 @@ export default function FinancialScorePage() {
                       )}
 
                       {/* Net Income */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
                         <div>Net Income</div>
                         <div style={{ textAlign: 'right' }}>
                           {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{netIncome < 0 ? ')' : ''}
@@ -14074,7 +15264,7 @@ export default function FinancialScorePage() {
                     return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, intangibleAssets, otherNonCurrentAssets, nonCurrentAssets, totalAssets, ap, shortTermDebt, currentPortionLTD, otherCurrentLiabilities, totalCurrentLiabilities, ltd, otherLongTermLiabilities, totalLongTermLiabilities, totalLiabilities, paidInCapital, retainedEarnings, totalEquity };
                   });
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
-                    <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                       <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
                       {values.map((v: number, i: number) => (
                         <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${(v / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
@@ -14087,8 +15277,8 @@ export default function FinancialScorePage() {
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Balance Sheet</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
-                      <div style={{ minWidth: `${300 + (balanceData.length * 150)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
+                      <div style={{ minWidth: `${200 + (balanceData.length * 110)}px` }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
                           <div>Line Item</div>
                           {balanceData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{p.label}</div>)}
                         </div>
@@ -14104,7 +15294,7 @@ export default function FinancialScorePage() {
                         {balanceData.some(p => p.intangibleAssets > 0) && <Row label="Intangible Assets" values={balanceData.map(p => p.intangibleAssets)} indent={20} />}
                         {balanceData.some(p => p.otherNonCurrentAssets > 0) && <Row label="Other Non-Current Assets" values={balanceData.map(p => p.otherNonCurrentAssets)} indent={20} />}
                         <Row label="Total Non-Current Assets" values={balanceData.map(p => p.nonCurrentAssets)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>TOTAL ASSETS</div>
                           {balanceData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${(p.totalAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>)}
                         </div>
@@ -14119,14 +15309,14 @@ export default function FinancialScorePage() {
                         {balanceData.some(p => p.ltd > 0) && <Row label="Long-Term Debt" values={balanceData.map(p => p.ltd)} indent={20} />}
                         {balanceData.some(p => p.otherLongTermLiabilities > 0) && <Row label="Other Long-Term Liabilities" values={balanceData.map(p => p.otherLongTermLiabilities)} indent={20} />}
                         <Row label="Total Long-Term Liabilities" values={balanceData.map(p => p.totalLongTermLiabilities)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#92400e' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#92400e' }}>
                           <div>TOTAL LIABILITIES</div>
                           {balanceData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${(p.totalLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>EQUITY</div>
                         {balanceData.some(p => p.paidInCapital > 0) && <Row label="Paid-in Capital" values={balanceData.map(p => p.paidInCapital)} indent={20} />}
                         {balanceData.some(p => p.retainedEarnings !== 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '4px 0', fontSize: '13px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Retained Earnings</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
@@ -14135,7 +15325,7 @@ export default function FinancialScorePage() {
                             ))}
                           </div>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${balanceData.length}, 150px)`, gap: '8px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>TOTAL EQUITY</div>
                           {balanceData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: p.totalEquity >= 0 ? '#166534' : '#991b1b' }}>
@@ -15153,7 +16343,25 @@ export default function FinancialScorePage() {
       )}
 
       {/* Management Assessment - Questionnaire View */}
-      {currentView === 'ma-questionnaire' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+      {(() => {
+        const hasCompanyId = selectedCompanyId || currentUser?.companyId;
+        const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
+        const canView = currentView === 'ma-questionnaire' && hasCompanyId && hasCorrectRole;
+        
+        console.log('📋 Questionnaire render check:', {
+          currentView,
+          isQuestionnaireView: currentView === 'ma-questionnaire',
+          selectedCompanyId,
+          userCompanyId: currentUser?.companyId,
+          hasCompanyId,
+          role: currentUser?.role,
+          userType: currentUser?.userType,
+          hasCorrectRole,
+          canView
+        });
+        
+        return canView;
+      })() && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Management Assessment Questionnaire</h1>
@@ -15247,7 +16455,8 @@ export default function FinancialScorePage() {
                         companyId: selectedCompanyId,
                         responses: assessmentResponses,
                         notes: assessmentNotes,
-                        overallScore: totalScore
+                        overallScore: totalScore,
+                        isCompleted: true
                       });
                       
                       // Add to local state with proper structure
@@ -15502,27 +16711,47 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Assessment Charts</h1>
           
-          {Object.keys(assessmentResponses).length === 0 ? (
+          {(currentUser?.role === 'consultant' ? assessmentRecords.filter(r => r.companyId === selectedCompanyId).length === 0 : Object.keys(assessmentResponses).length === 0) ? (
             <div style={{ background: 'white', borderRadius: '12px', padding: '40px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#64748b', marginBottom: '16px' }}>No Assessment Data</h2>
-              <p style={{ fontSize: '16px', color: '#94a3b8', marginBottom: '24px' }}>Please complete the questionnaire first to view charts.</p>
-              <button 
-                onClick={() => setCurrentView('ma-questionnaire')}
-                style={{ padding: '12px 32px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
-              >
-                Go to Questionnaire
-              </button>
+              <p style={{ fontSize: '16px', color: '#94a3b8', marginBottom: '24px' }}>
+                {currentUser?.role === 'consultant' ? 'No users have completed assessments for this company yet.' : 'Please complete the questionnaire first to view charts.'}
+              </p>
+              {currentUser?.role !== 'consultant' && (
+                <button 
+                  onClick={() => setCurrentView('ma-questionnaire')}
+                  style={{ padding: '12px 32px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Go to Questionnaire
+                </button>
+              )}
             </div>
           ) : (
             <>
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Category Scores - Bar Chart</h2>
+                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>
+                  {currentUser?.role === 'consultant' ? 'Average Category Scores - All Participants' : 'Category Scores - Bar Chart'}
+                </h2>
                 
                 <div style={{ padding: '20px' }}>
               {assessmentData.map((category) => {
                 const categoryQuestions = category.questions.map(q => q.id);
-                const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
-                const avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                
+                let avgScore = 0;
+                if (currentUser?.role === 'consultant') {
+                  // Calculate average across all assessment records for this company
+                  const companyRecords = assessmentRecords.filter(r => r.companyId === selectedCompanyId);
+                  const allCategoryScores = companyRecords.map(record => {
+                    const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
+                    return categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                  }).filter(s => s > 0);
+                  avgScore = allCategoryScores.length > 0 ? allCategoryScores.reduce((sum, val) => sum + val, 0) / allCategoryScores.length : 0;
+                } else {
+                  // Use current user's responses
+                  const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
+                  avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                }
+                
                 const percentage = (avgScore / 5) * 100;
                 
                 return (
@@ -15591,8 +16820,22 @@ export default function FinancialScorePage() {
                   <polygon
                     points={assessmentData.map((category, idx) => {
                       const categoryQuestions = category.questions.map(q => q.id);
-                      const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
-                      const avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                      
+                      let avgScore = 0;
+                      if (currentUser?.role === 'consultant') {
+                        // Calculate average across all assessment records for this company
+                        const companyRecords = assessmentRecords.filter(r => r.companyId === selectedCompanyId);
+                        const allCategoryScores = companyRecords.map(record => {
+                          const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
+                          return categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                        }).filter(s => s > 0);
+                        avgScore = allCategoryScores.length > 0 ? allCategoryScores.reduce((sum, val) => sum + val, 0) / allCategoryScores.length : 0;
+                      } else {
+                        // Use current user's responses
+                        const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
+                        avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                      }
+                      
                       const angle = (idx * 2 * Math.PI) / assessmentData.length - Math.PI / 2;
                       const radius = (avgScore / 5) * 200;
                       const x = Math.cos(angle) * radius;
@@ -15607,8 +16850,22 @@ export default function FinancialScorePage() {
                   {/* Draw data points */}
                   {assessmentData.map((category, idx) => {
                     const categoryQuestions = category.questions.map(q => q.id);
-                    const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
-                    const avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                    
+                    let avgScore = 0;
+                    if (currentUser?.role === 'consultant') {
+                      // Calculate average across all assessment records for this company
+                      const companyRecords = assessmentRecords.filter(r => r.companyId === selectedCompanyId);
+                      const allCategoryScores = companyRecords.map(record => {
+                        const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
+                        return categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                      }).filter(s => s > 0);
+                      avgScore = allCategoryScores.length > 0 ? allCategoryScores.reduce((sum, val) => sum + val, 0) / allCategoryScores.length : 0;
+                    } else {
+                      // Use current user's responses
+                      const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
+                      avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
+                    }
+                    
                     const angle = (idx * 2 * Math.PI) / assessmentData.length - Math.PI / 2;
                     const radius = (avgScore / 5) * 200;
                     const x = Math.cos(angle) * radius;
