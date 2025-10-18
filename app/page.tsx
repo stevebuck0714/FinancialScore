@@ -8276,9 +8276,37 @@ export default function FinancialScorePage() {
                     title="" 
                     data={wcData.map(d => ({ month: d.month, value: d.workingCapital }))} 
                     color="#667eea"
-                    showTable={true}
+                    showTable={false}
                     formatter={(val) => `$${Math.round(val).toLocaleString()}`}
                   />
+                  
+                  {/* Custom Quarterly Table */}
+                  <div style={{ marginTop: '16px', overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                      <tbody>
+                        <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                          <td style={{ padding: '8px 12px', fontWeight: '700', color: '#1e293b', minWidth: '80px' }}>
+                            Quarter
+                          </td>
+                          {wcData.filter((_, i) => i % 3 === 2).map((d, i) => (
+                            <td key={`quarter-${i}`} style={{ padding: '8px 12px', textAlign: 'center', fontWeight: '600', color: '#64748b' }}>
+                              {d.month}
+                            </td>
+                          ))}
+                        </tr>
+                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '8px 12px', fontWeight: '700', color: '#1e293b' }}>
+                            Value
+                          </td>
+                          {wcData.filter((_, i) => i % 3 === 2).map((d, i) => (
+                            <td key={`val-${i}`} style={{ padding: '8px 12px', textAlign: 'center', fontWeight: '700', color: '#667eea' }}>
+                              ${Math.round(d.workingCapital).toLocaleString()}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
                 
                 {/* Components Breakdown */}
