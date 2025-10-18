@@ -8878,7 +8878,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Monthly
+              Last 36 Months
             </button>
             <button
               onClick={() => setCashFlowDisplay('quarterly')}
@@ -8895,7 +8895,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Quarterly
+              Last 4 Quarters
             </button>
             <button
               onClick={() => setCashFlowDisplay('annual')}
@@ -8912,16 +8912,17 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Annual
+              Last 3 Years
             </button>
           </div>
 
           {(() => {
-            // Calculate cash flow for last 12 months
-            const last12 = monthly.slice(-12);
+            // Calculate cash flow data based on view
+            const dataMonths = cashFlowDisplay === 'monthly' ? Math.min(36, monthly.length) : 12;
+            const dataSet = monthly.slice(-dataMonths);
             
-            const cashFlowData = last12.map((curr, idx) => {
-              const prev = idx === 0 && monthly.length > 12 ? monthly[monthly.length - 13] : (idx > 0 ? last12[idx - 1] : curr);
+            const cashFlowData = dataSet.map((curr, idx) => {
+              const prev = idx === 0 && monthly.length > dataMonths ? monthly[monthly.length - dataMonths - 1] : (idx > 0 ? dataSet[idx - 1] : curr);
               
               // Operating Activities
               const netIncome = curr.revenue - curr.expense;
@@ -8996,25 +8997,37 @@ export default function FinancialScorePage() {
                 displayData.push(aggregated);
               }
             } else if (cashFlowDisplay === 'annual') {
-              // Aggregate into one annual period
-              const year = cashFlowData[cashFlowData.length - 1].month.split(' ')[1] || '';
-              displayData = [{
-                month: `Annual ${year}`,
-                netIncome: cashFlowData.reduce((sum, d) => sum + d.netIncome, 0),
-                depreciation: cashFlowData.reduce((sum, d) => sum + d.depreciation, 0),
-                changeInWorkingCapital: cashFlowData.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
-                operatingCashFlow: cashFlowData.reduce((sum, d) => sum + d.operatingCashFlow, 0),
-                capitalExpenditures: cashFlowData.reduce((sum, d) => sum + d.capitalExpenditures, 0),
-                investingCashFlow: cashFlowData.reduce((sum, d) => sum + d.investingCashFlow, 0),
-                changeInDebt: cashFlowData.reduce((sum, d) => sum + d.changeInDebt, 0),
-                changeInEquity: cashFlowData.reduce((sum, d) => sum + d.changeInEquity, 0),
-                financingCashFlow: cashFlowData.reduce((sum, d) => sum + d.financingCashFlow, 0),
-                netCashChange: cashFlowData.reduce((sum, d) => sum + d.netCashChange, 0),
-                freeCashFlow: cashFlowData.reduce((sum, d) => sum + d.freeCashFlow, 0),
-                cashFlowMargin: cashFlowData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / cashFlowData.length,
-                daysCashOnHand: cashFlowData[cashFlowData.length - 1].daysCashOnHand,
-                endingCash: cashFlowData[cashFlowData.length - 1].endingCash
-              }];
+              // Aggregate into 3 annual periods (12 months each)
+              displayData = [];
+              const totalMonths = cashFlowData.length;
+              const yearsToShow = Math.min(3, Math.floor(totalMonths / 12));
+              
+              for (let i = 0; i < yearsToShow; i++) {
+                const yearStart = totalMonths - (yearsToShow - i) * 12;
+                const yearEnd = yearStart + 12;
+                const yearData = cashFlowData.slice(yearStart, yearEnd);
+                
+                if (yearData.length > 0) {
+                  const year = yearData[yearData.length - 1].month.split(' ')[1] || '';
+                  displayData.push({
+                    month: `Year ${i + 1} (${year})`,
+                    netIncome: yearData.reduce((sum, d) => sum + d.netIncome, 0),
+                    depreciation: yearData.reduce((sum, d) => sum + d.depreciation, 0),
+                    changeInWorkingCapital: yearData.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
+                    operatingCashFlow: yearData.reduce((sum, d) => sum + d.operatingCashFlow, 0),
+                    capitalExpenditures: yearData.reduce((sum, d) => sum + d.capitalExpenditures, 0),
+                    investingCashFlow: yearData.reduce((sum, d) => sum + d.investingCashFlow, 0),
+                    changeInDebt: yearData.reduce((sum, d) => sum + d.changeInDebt, 0),
+                    changeInEquity: yearData.reduce((sum, d) => sum + d.changeInEquity, 0),
+                    financingCashFlow: yearData.reduce((sum, d) => sum + d.financingCashFlow, 0),
+                    netCashChange: yearData.reduce((sum, d) => sum + d.netCashChange, 0),
+                    freeCashFlow: yearData.reduce((sum, d) => sum + d.freeCashFlow, 0),
+                    cashFlowMargin: yearData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / yearData.length,
+                    daysCashOnHand: yearData[yearData.length - 1].daysCashOnHand,
+                    endingCash: yearData[yearData.length - 1].endingCash
+                  });
+                }
+              }
             }
 
             // Summary metrics
