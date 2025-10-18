@@ -8856,9 +8856,106 @@ export default function FinancialScorePage() {
       {/* Cash Flow View */}
       {currentView === 'cash-flow' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+          <style>{`
+            @media print {
+              @page {
+                size: portrait;
+                margin: 0.3in;
+              }
+              
+              /* Hide navigation and UI elements */
+              .no-print,
+              header,
+              nav,
+              aside,
+              [role="navigation"],
+              button {
+                display: none !important;
+              }
+              
+              /* Remove background colors and shadows */
+              * {
+                box-shadow: none !important;
+              }
+              
+              /* First page: Summary cards and start of table */
+              .cf-summary-cards {
+                page-break-after: avoid;
+              }
+              
+              /* Force page break before metrics section */
+              .cf-metrics-section {
+                page-break-before: always;
+                margin-top: 0 !important;
+              }
+              
+              /* Scale down content to fit portrait */
+              .cf-table-container {
+                transform: scale(0.75);
+                transform-origin: top left;
+                width: 133.33%;
+              }
+              
+              /* Reduce font sizes for compact display */
+              h1 {
+                font-size: 20px !important;
+                margin-bottom: 12px !important;
+              }
+              
+              h2 {
+                font-size: 16px !important;
+                margin-bottom: 12px !important;
+              }
+              
+              /* Compress summary cards */
+              .cf-summary-cards > div {
+                padding: 12px !important;
+              }
+              
+              .cf-summary-cards > div > div:first-child {
+                font-size: 10px !important;
+              }
+              
+              .cf-summary-cards > div > div:nth-child(2) {
+                font-size: 20px !important;
+              }
+              
+              .cf-summary-cards > div > div:last-child {
+                font-size: 9px !important;
+              }
+              
+              /* Table styling */
+              table {
+                font-size: 9px !important;
+              }
+              
+              th, td {
+                padding: 4px 6px !important;
+              }
+            }
+          `}</style>
+          
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+              <button 
+                className="no-print"
+                onClick={() => window.print()} 
+                style={{ 
+                  padding: '12px 24px', 
+                  background: '#667eea', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '8px', 
+                  fontSize: '14px', 
+                  fontWeight: '600', 
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
+                }}>
+                🖨️ Print
+              </button>
+            </div>
           </div>
           
           {/* Display Period Tabs */}
@@ -9041,7 +9138,7 @@ export default function FinancialScorePage() {
             return (
               <>
                 {/* Summary Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+                <div className="cf-summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '32px' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Operating Cash Flow (12mo)</div>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
@@ -9084,7 +9181,7 @@ export default function FinancialScorePage() {
                 </div>
 
                 {/* Cash Flow Statement Table */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div className="cf-table-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Statement of Cash Flows</h2>
                   
                   <div style={{ overflowX: 'auto' }}>
@@ -9224,7 +9321,7 @@ export default function FinancialScorePage() {
                 </div>
 
                 {/* Cash Flow Metrics */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div className="cf-metrics-section" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Cash Flow Metrics</h2>
                   
                   <div style={{ overflowX: 'auto' }}>
