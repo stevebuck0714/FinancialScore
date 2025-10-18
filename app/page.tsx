@@ -679,26 +679,26 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
           return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{p.month}</text>;
         })}
       </svg>
-      <div style={{ display: 'grid', gridTemplateColumns: benchmarkValue != null ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginTop: '15px', padding: '12px', background: 'white', borderRadius: '8px' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '2px', fontWeight: '600' }}>CURRENT</div>
+      <div style={{ display: 'grid', gridTemplateColumns: benchmarkValue != null ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginTop: '15px', padding: '3px 12px', background: 'white', borderRadius: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>CURRENT:</div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: color }}>{formatter ? formatter(validData[validData.length - 1].value!) : validData[validData.length - 1].value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
         </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '2px', fontWeight: '600' }}>AVG</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>AVG:</div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{formatter ? formatter(sum(values) / values.length) : (sum(values) / values.length).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
         </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '2px', fontWeight: '600' }}>MIN</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>MIN:</div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: '#64748b' }}>{formatter ? formatter(Math.min(...values)) : Math.min(...values).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
         </div>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '2px', fontWeight: '600' }}>MAX</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>MAX:</div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: '#64748b' }}>{formatter ? formatter(Math.max(...values)) : Math.max(...values).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
         </div>
         {benchmarkValue != null && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '10px', color: '#f59e0b', marginBottom: '2px', fontWeight: '600' }}>INDUSTRY</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ fontSize: '10px', color: '#f59e0b', fontWeight: '600' }}>INDUSTRY:</div>
             <div style={{ fontSize: '16px', fontWeight: '700', color: '#f59e0b' }}>{formatter ? formatter(benchmarkValue) : benchmarkValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
           </div>
         )}
