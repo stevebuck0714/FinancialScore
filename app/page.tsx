@@ -9130,12 +9130,31 @@ export default function FinancialScorePage() {
               }
             }
 
-            // Summary metrics
-            const totalOperatingCF = cashFlowData.reduce((sum, d) => sum + d.operatingCashFlow, 0);
-            const totalInvestingCF = cashFlowData.reduce((sum, d) => sum + d.investingCashFlow, 0);
-            const totalFinancingCF = cashFlowData.reduce((sum, d) => sum + d.financingCashFlow, 0);
-            const totalFreeCF = cashFlowData.reduce((sum, d) => sum + d.freeCashFlow, 0);
-            const avgCashFlowMargin = cashFlowData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / cashFlowData.length;
+            // Summary metrics - always use last 12 months for consistency
+            const last12MonthsData = monthly.slice(-12).map((curr, idx) => {
+              const prev = idx === 0 && monthly.length > 12 ? monthly[monthly.length - 13] : (idx > 0 ? monthly.slice(-12)[idx - 1] : curr);
+              const netIncome = curr.revenue - curr.expense;
+              const depreciation = curr.depreciationExpense || 0;
+              const changeInAR = curr.ar - prev.ar;
+              const changeInInventory = curr.inventory - prev.inventory;
+              const changeInAP = curr.ap - prev.ap;
+              const changeInWorkingCapital = -(changeInAR + changeInInventory - changeInAP);
+              const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
+              const changeInFixedAssets = curr.fixedAssets - prev.fixedAssets;
+              const capitalExpenditures = changeInFixedAssets + depreciation;
+              const investingCashFlow = -capitalExpenditures;
+              const changeInDebt = curr.ltd - prev.ltd;
+              const changeInEquity = curr.totalEquity - prev.totalEquity - netIncome;
+              const financingCashFlow = changeInDebt + changeInEquity;
+              const freeCashFlow = operatingCashFlow - Math.max(0, capitalExpenditures);
+              const cashFlowMargin = curr.revenue > 0 ? (operatingCashFlow / curr.revenue) * 100 : 0;
+              return { operatingCashFlow, investingCashFlow, financingCashFlow, freeCashFlow, cashFlowMargin };
+            });
+            const totalOperatingCF = last12MonthsData.reduce((sum, d) => sum + d.operatingCashFlow, 0);
+            const totalInvestingCF = last12MonthsData.reduce((sum, d) => sum + d.investingCashFlow, 0);
+            const totalFinancingCF = last12MonthsData.reduce((sum, d) => sum + d.financingCashFlow, 0);
+            const totalFreeCF = last12MonthsData.reduce((sum, d) => sum + d.freeCashFlow, 0);
+            const avgCashFlowMargin = last12MonthsData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / last12MonthsData.length;
 
             return (
               <>
