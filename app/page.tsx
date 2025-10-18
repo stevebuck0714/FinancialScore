@@ -8504,21 +8504,6 @@ export default function FinancialScorePage() {
                         </div>
                       </div>
                     )}
-                    
-                    <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Historical Metrics</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', fontSize: '13px', color: '#64748b' }}>
-                        <div>
-                          <span style={{ fontWeight: '600' }}>Average WC:</span> ${(avgWC / 1000).toFixed(0)}K
-                        </div>
-                        <div>
-                          <span style={{ fontWeight: '600' }}>Minimum WC:</span> ${(minWC / 1000).toFixed(0)}K
-                        </div>
-                        <div>
-                          <span style={{ fontWeight: '600' }}>Maximum WC:</span> ${(maxWC / 1000).toFixed(0)}K
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </>
