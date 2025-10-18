@@ -8977,8 +8977,10 @@ export default function FinancialScorePage() {
               displayData = [];
               for (let i = 0; i < cashFlowData.length; i += 3) {
                 const quarter = cashFlowData.slice(i, i + 3);
+                const startMonth = quarter[0].month;
+                const endMonth = quarter[quarter.length - 1].month;
                 const aggregated = {
-                  month: `Q${Math.floor(i / 3) + 1} ${quarter[quarter.length - 1].month.split(' ')[1] || ''}`,
+                  month: `${startMonth} - ${endMonth}`,
                   netIncome: quarter.reduce((sum, d) => sum + d.netIncome, 0),
                   depreciation: quarter.reduce((sum, d) => sum + d.depreciation, 0),
                   changeInWorkingCapital: quarter.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
