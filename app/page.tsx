@@ -8135,7 +8135,7 @@ export default function FinancialScorePage() {
             @media print {
               @page {
                 size: landscape;
-                margin: 0.5in;
+                margin: 0.15in;
               }
               
               /* Hide navigation and UI elements */
