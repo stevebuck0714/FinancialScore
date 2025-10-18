@@ -8170,6 +8170,34 @@ export default function FinancialScorePage() {
                 transform-origin: top left;
                 width: 117.65%; /* Compensate for scale */
               }
+              
+              /* Reduce spacing for print */
+              @media print {
+                h1 {
+                  font-size: 24px !important;
+                  margin-bottom: 16px !important;
+                }
+                
+                h2 {
+                  font-size: 16px !important;
+                  margin-bottom: 12px !important;
+                }
+                
+                .wc-first-page-content {
+                  margin-bottom: 16px !important;
+                  gap: 12px !important;
+                }
+                
+                .page-break-after {
+                  margin-bottom: 16px !important;
+                  padding: 16px !important;
+                }
+                
+                /* Reduce padding in cards */
+                .wc-first-page-content > div {
+                  padding: 12px !important;
+                }
+              }
             }
           `}</style>
           
