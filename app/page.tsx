@@ -8211,6 +8211,37 @@ export default function FinancialScorePage() {
                 .wc-first-page-content > div > div:last-of-type {
                   font-size: 10px !important;
                 }
+                
+                /* Compress second page content */
+                .page-break-after ~ div {
+                  margin-bottom: 12px !important;
+                  padding: 16px !important;
+                  gap: 12px !important;
+                }
+                
+                .page-break-after ~ div h2 {
+                  font-size: 16px !important;
+                  margin-bottom: 8px !important;
+                }
+                
+                .page-break-after ~ div > div {
+                  padding: 12px !important;
+                  margin-bottom: 0 !important;
+                }
+                
+                /* Reduce spacing in asset/liability breakdown items */
+                .page-break-after ~ div > div > div > div {
+                  padding: 8px !important;
+                  margin-bottom: 0 !important;
+                }
+                
+                /* Reduce spacing in insights section */
+                .page-break-after ~ div:last-child > div > div {
+                  padding: 10px !important;
+                  margin-bottom: 0 !important;
+                  font-size: 11px !important;
+                  line-height: 1.4 !important;
+                }
               }
             }
           `}</style>
