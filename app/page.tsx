@@ -8939,22 +8939,24 @@ export default function FinancialScorePage() {
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-              <button 
-                className="no-print"
-                onClick={() => window.print()} 
-                style={{ 
-                  padding: '12px 24px', 
-                  background: '#667eea', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
-                }}>
-                🖨️ Print
-              </button>
+              {cashFlowDisplay !== 'monthly' && (
+                <button 
+                  className="no-print"
+                  onClick={() => window.print()} 
+                  style={{ 
+                    padding: '12px 24px', 
+                    background: '#667eea', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '8px', 
+                    fontSize: '14px', 
+                    fontWeight: '600', 
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
+                  }}>
+                  🖨️ Print
+                </button>
+              )}
             </div>
           </div>
           
