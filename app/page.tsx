@@ -8182,6 +8182,12 @@ export default function FinancialScorePage() {
               .page-break-after svg {
                 transform: scaleX(0.95) !important;
                 transform-origin: left center !important;
+                overflow: visible !important;
+              }
+              
+              /* Ensure chart container doesn't clip overflow labels */
+              .page-break-after > div {
+                overflow: visible !important;
               }
               
               /* Reduce spacing for print */
