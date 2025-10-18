@@ -8185,7 +8185,7 @@ export default function FinancialScorePage() {
                 
                 .wc-first-page-content {
                   margin-bottom: 16px !important;
-                  gap: 12px !important;
+                  gap: 8px !important;
                 }
                 
                 .page-break-after {
@@ -8193,9 +8193,23 @@ export default function FinancialScorePage() {
                   padding: 16px !important;
                 }
                 
-                /* Reduce padding in cards */
+                /* Reduce padding and font sizes in metric cards */
                 .wc-first-page-content > div {
-                  padding: 12px !important;
+                  padding: 10px !important;
+                }
+                
+                .wc-first-page-content > div h3 {
+                  font-size: 11px !important;
+                  margin-bottom: 6px !important;
+                }
+                
+                .wc-first-page-content > div > div:first-of-type {
+                  font-size: 22px !important;
+                  margin-bottom: 2px !important;
+                }
+                
+                .wc-first-page-content > div > div:last-of-type {
+                  font-size: 10px !important;
                 }
               }
             }
@@ -8263,7 +8277,7 @@ export default function FinancialScorePage() {
             return (
               <>
                 {/* Key Metrics Cards */}
-                <div className="wc-first-page-content" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
+                <div className="wc-first-page-content" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 200px))', gap: '20px', marginBottom: '32px', justifyContent: 'center' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                     <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Current Working Capital</h3>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
@@ -8274,7 +8288,7 @@ export default function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                     <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Working Capital Ratio</h3>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: wcRatio >= 1.5 ? '#10b981' : wcRatio >= 1.0 ? '#f59e0b' : '#ef4444', marginBottom: '4px' }}>
                       {wcRatio.toFixed(2)}
@@ -8284,7 +8298,7 @@ export default function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                     <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Days Working Capital</h3>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
                       {daysWC.toFixed(0)}
@@ -8294,7 +8308,7 @@ export default function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                     <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Cash Conversion Cycle</h3>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
                       {cashConversionCycle.toFixed(0)}
