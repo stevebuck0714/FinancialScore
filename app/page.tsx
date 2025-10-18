@@ -1042,7 +1042,7 @@ export default function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print'>('login');
 
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
@@ -1222,6 +1222,20 @@ export default function FinancialScorePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
+
+  // State - Custom Print Package
+  const [printPackageSelections, setPrintPackageSelections] = useState({
+    mda: false,
+    financialScore: false,
+    priorityRatios: false,
+    workingCapital: false,
+    cashFlow4Quarters: false,
+    cashFlow3Years: false,
+    incomeStatement12MonthsQuarterly: false,
+    incomeStatement3YearsAnnual: false,
+    balanceSheet12MonthsQuarterly: false,
+    balanceSheet3YearsAnnual: false
+  });
 
   // Load from localStorage (DEPRECATED - will be removed)
   useEffect(() => {
@@ -3354,6 +3368,117 @@ export default function FinancialScorePage() {
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
 
+  // Custom Print Package Handler
+  const handleGeneratePrintPackage = () => {
+    // Check if any items are selected
+    const hasSelection = Object.values(printPackageSelections).some(val => val);
+    if (!hasSelection) {
+      alert('Please select at least one report to include in the print package.');
+      return;
+    }
+
+    // Build array of print instructions
+    const printQueue = [];
+    
+    if (printPackageSelections.mda) {
+      printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)' });
+    }
+    if (printPackageSelections.financialScore) {
+      printQueue.push({ view: 'fs-score', title: 'Financial Score' });
+    }
+    if (printPackageSelections.priorityRatios) {
+      printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios' });
+    }
+    if (printPackageSelections.workingCapital) {
+      printQueue.push({ view: 'working-capital', title: 'Working Capital' });
+    }
+    if (printPackageSelections.cashFlow4Quarters) {
+      printQueue.push({ view: 'cash-flow', display: 'quarterly', title: 'Cash Flow - Last 4 Quarters' });
+    }
+    if (printPackageSelections.cashFlow3Years) {
+      printQueue.push({ view: 'cash-flow', display: 'annual', title: 'Cash Flow - Last 3 Years' });
+    }
+    if (printPackageSelections.incomeStatement12MonthsQuarterly) {
+      printQueue.push({ 
+        view: 'financial-statements', 
+        type: 'income-statement', 
+        display: 'quarterly',
+        title: 'Income Statement - Last 12 Months (Quarterly)' 
+      });
+    }
+    if (printPackageSelections.incomeStatement3YearsAnnual) {
+      printQueue.push({ 
+        view: 'financial-statements', 
+        type: 'income-statement', 
+        display: 'annual',
+        title: 'Income Statement - Last 3 Years (Annual)' 
+      });
+    }
+    if (printPackageSelections.balanceSheet12MonthsQuarterly) {
+      printQueue.push({ 
+        view: 'financial-statements', 
+        type: 'balance-sheet', 
+        display: 'quarterly',
+        title: 'Balance Sheet - Last 12 Months (Quarterly)' 
+      });
+    }
+    if (printPackageSelections.balanceSheet3YearsAnnual) {
+      printQueue.push({ 
+        view: 'financial-statements', 
+        type: 'balance-sheet', 
+        display: 'annual',
+        title: 'Balance Sheet - Last 3 Years (Annual)' 
+      });
+    }
+
+    if (printQueue.length === 0) {
+      alert('Please select at least one report to print.');
+      return;
+    }
+
+    // Show confirmation
+    const reportNames = printQueue.map(p => p.title).join('\n• ');
+    if (!confirm(`You are about to print the following reports in sequence:\n\n• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
+      return;
+    }
+
+    // Print each report in sequence with a delay
+    let currentIndex = 0;
+    const printNext = () => {
+      if (currentIndex >= printQueue.length) {
+        alert('All reports have been sent to print!');
+        return;
+      }
+
+      const report = printQueue[currentIndex];
+      
+      // Set the appropriate view and parameters
+      if (report.view === 'financial-statements') {
+        setStatementType(report.type as any);
+        setStatementDisplay(report.display as any);
+        setCurrentView('financial-statements');
+      } else if (report.view === 'cash-flow') {
+        setCashFlowDisplay(report.display as any);
+        setCurrentView('cash-flow');
+      } else if (report.view === 'kpis' && report.tab) {
+        setKpiDashboardTab(report.tab as any);
+        setCurrentView('kpis');
+      } else {
+        setCurrentView(report.view as any);
+      }
+
+      // Wait for render then print
+      setTimeout(() => {
+        window.print();
+        currentIndex++;
+        // Wait for print dialog to close before next one
+        setTimeout(printNext, 1000);
+      }, 500);
+    };
+
+    printNext();
+  };
+
   console.log('🎨 RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
 
   return (
@@ -3752,6 +3877,31 @@ export default function FinancialScorePage() {
               </div>
               )}
             </div>
+            )}
+
+            {/* Custom Print Section - For Consultants and Company Users only */}
+            {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
+              <div style={{ marginBottom: '24px' }}>
+                <h3 
+                  onClick={() => setCurrentView('custom-print')}
+                  style={{ 
+                    fontSize: '14px', 
+                    fontWeight: '700', 
+                    color: currentView === 'custom-print' ? '#667eea' : '#1e293b',
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.5px',
+                    padding: '8px 24px',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    transition: 'color 0.2s',
+                    borderLeft: currentView === 'custom-print' ? '4px solid #667eea' : '4px solid transparent'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#667eea' : '#1e293b'}
+                >
+                  Custom Print
+                </h3>
+              </div>
             )}
 
             {/* Consultant Dashboard Section */}
@@ -17558,6 +17708,240 @@ export default function FinancialScorePage() {
           </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* Custom Print View - For Consultants and Company Users */}
+      {currentView === 'custom-print' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
+        <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '32px' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Custom Print Package</h1>
+            <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
+              Select the reports you want to include in your custom print package
+            </p>
+            
+            <div style={{ marginBottom: '32px' }}>
+              {/* MD&A Report */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={printPackageSelections.mda}
+                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, mda: e.target.checked})}
+                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>MD&A (Management Discussion & Analysis)</div>
+                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Includes all 3 tabs: Key Metrics, Analysis, and Recommendations</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Financial Score */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={printPackageSelections.financialScore}
+                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, financialScore: e.target.checked})}
+                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Financial Score</div>
+                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Score summary and trends</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Priority Ratios */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={printPackageSelections.priorityRatios}
+                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, priorityRatios: e.target.checked})}
+                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Priority Ratios</div>
+                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Key financial ratios and metrics</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Working Capital */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={printPackageSelections.workingCapital}
+                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, workingCapital: e.target.checked})}
+                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Working Capital</div>
+                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Working capital analysis</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Cash Flow Tabs */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Cash Flow Analysis</div>
+                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Cash flow reports</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginLeft: '0px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={printPackageSelections.cashFlow4Quarters}
+                      onChange={(e) => setPrintPackageSelections({...printPackageSelections, cashFlow4Quarters: e.target.checked})}
+                      style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
+                    />
+                    Last 4 Quarters
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={printPackageSelections.cashFlow3Years}
+                      onChange={(e) => setPrintPackageSelections({...printPackageSelections, cashFlow3Years: e.target.checked})}
+                      style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
+                    />
+                    Last 3 Years
+                  </label>
+                </div>
+              </div>
+
+              {/* Financial Statements */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Financial Statements</div>
+                  <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Select specific financial statements</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '0px' }}>
+                    {/* Income Statement with sub-options */}
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Statement</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginLeft: '16px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={printPackageSelections.incomeStatement12MonthsQuarterly}
+                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, incomeStatement12MonthsQuarterly: e.target.checked})}
+                            style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
+                          />
+                          Income Statement, Last 12 months, Quarterly
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={printPackageSelections.incomeStatement3YearsAnnual}
+                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, incomeStatement3YearsAnnual: e.target.checked})}
+                            style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
+                          />
+                          Income Statement, Last 3 Years, Annual
+                        </label>
+                      </div>
+                    </div>
+                    {/* Balance Sheet with sub-options */}
+                    <div style={{ marginTop: '12px' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Balance Sheet</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginLeft: '16px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={printPackageSelections.balanceSheet12MonthsQuarterly}
+                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, balanceSheet12MonthsQuarterly: e.target.checked})}
+                            style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
+                          />
+                          Balance Sheet, Last 12 months, Quarterly
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={printPackageSelections.balanceSheet3YearsAnnual}
+                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, balanceSheet3YearsAnnual: e.target.checked})}
+                            style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
+                          />
+                          Balance Sheet, Last 3 Years, Annual
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+              <button
+                onClick={handleGeneratePrintPackage}
+                style={{
+                  padding: '14px 32px',
+                  background: '#667eea',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
+              >
+                🖨️ Generate Print Package
+              </button>
+              <button
+                onClick={() => {
+                  setPrintPackageSelections({
+                    mda: false,
+                    financialScore: false,
+                    priorityRatios: false,
+                    workingCapital: false,
+                    cashFlow4Quarters: false,
+                    cashFlow3Years: false,
+                    incomeStatement12MonthsQuarterly: false,
+                    incomeStatement3YearsAnnual: false,
+                    balanceSheet12MonthsQuarterly: false,
+                    balanceSheet3YearsAnnual: false
+                  });
+                }}
+                style={{
+                  padding: '14px 32px',
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#e2e8f0';
+                  e.currentTarget.style.borderColor = '#94a3b8';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#f1f5f9';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+
+            {/* Info Box */}
+            <div style={{ marginTop: '32px', padding: '16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '20px' }}>ℹ️</span>
+                <div style={{ fontSize: '14px', color: '#1e40af', lineHeight: '1.6' }}>
+                  <strong>How it works:</strong> Select the reports you want to include, then click "Generate Print Package" to create a combined PDF with all selected reports in a single document ready for printing.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
         </main>
