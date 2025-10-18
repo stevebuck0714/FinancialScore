@@ -8918,7 +8918,7 @@ export default function FinancialScorePage() {
 
           {(() => {
             // Calculate cash flow data based on view
-            const dataMonths = cashFlowDisplay === 'monthly' ? Math.min(36, monthly.length) : 12;
+            const dataMonths = cashFlowDisplay === 'quarterly' ? 12 : Math.min(36, monthly.length);
             const dataSet = monthly.slice(-dataMonths);
             
             const cashFlowData = dataSet.map((curr, idx) => {
@@ -8977,10 +8977,9 @@ export default function FinancialScorePage() {
               displayData = [];
               for (let i = 0; i < cashFlowData.length; i += 3) {
                 const quarter = cashFlowData.slice(i, i + 3);
-                const startMonth = quarter[0].month;
-                const endMonth = quarter[quarter.length - 1].month;
+                const quarterEnd = quarter[quarter.length - 1].month;
                 const aggregated = {
-                  month: `${startMonth} - ${endMonth}`,
+                  month: quarterEnd,
                   netIncome: quarter.reduce((sum, d) => sum + d.netIncome, 0),
                   depreciation: quarter.reduce((sum, d) => sum + d.depreciation, 0),
                   changeInWorkingCapital: quarter.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
@@ -9010,9 +9009,9 @@ export default function FinancialScorePage() {
                 const yearData = cashFlowData.slice(yearStart, yearEnd);
                 
                 if (yearData.length > 0) {
-                  const year = yearData[yearData.length - 1].month.split(' ')[1] || '';
+                  const yearEndDate = yearData[yearData.length - 1].month;
                   displayData.push({
-                    month: `Year ${i + 1} (${year})`,
+                    month: yearEndDate,
                     netIncome: yearData.reduce((sum, d) => sum + d.netIncome, 0),
                     depreciation: yearData.reduce((sum, d) => sum + d.depreciation, 0),
                     changeInWorkingCapital: yearData.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
