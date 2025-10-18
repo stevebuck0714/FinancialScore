@@ -537,7 +537,7 @@ const KPI_FORMULAS: Record<string, { formula: string; period: string; descriptio
 };
 
 // LineChart Component
-function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick }: { 
+function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat }: { 
   title: string; 
   data: Array<any>;
   valueKey?: string;
@@ -549,6 +549,7 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
   benchmarkValue?: number | null;
   showFormulaButton?: boolean;
   onFormulaClick?: () => void;
+  labelFormat?: 'monthly' | 'quarterly' | 'semi-annual';
 }) {
   const chartData = valueKey ? data.map(d => ({ month: d.month, value: d[valueKey] })) : data;
   const validData = chartData.filter(d => d.value !== null && Number.isFinite(d.value));
@@ -582,8 +583,8 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
   }
 
   const width = compact ? 500 : 1100;
-  const height = compact ? 250 : 300;
-  const padding = { top: 15, right: 30, bottom: 50, left: 50 };
+  const height = compact ? 250 : 320;
+  const padding = { top: 15, right: 30, bottom: 40, left: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
@@ -624,7 +625,7 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
           </button>
         )}
       </div>
-      <svg width={width} height={height} style={{ maxWidth: '100%', height: 'auto' }}>
+      <svg width={width} height={height} style={{ maxWidth: '100%', marginBottom: '10px' }} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
         {(() => {
           const gridValues = [];
           const step = range / 4;
@@ -674,9 +675,52 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
           </circle>
         ))}
         {points.map((p, i) => {
-          const showLabel = i === 0 || i === points.length - 1 || i % Math.ceil(points.length / 8) === 0;
-          if (!showLabel) return null;
-          return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{p.month}</text>;
+          // Determine label format based on prop (default to semi-annual)
+          const format = labelFormat || 'semi-annual';
+          
+          if (format === 'quarterly') {
+            // Convert month to quarterly label (e.g., "2023-03" -> "Q1 '23", "2023-06" -> "Q2 '23")
+            const getQuarterLabel = (monthStr: string) => {
+              const parts = monthStr.split('-');
+              if (parts.length >= 2) {
+                const year = parts[0];
+                const month = parseInt(parts[1]);
+                const quarter = Math.ceil(month / 3);
+                return `Q${quarter} '${year.slice(-2)}`;
+              }
+              return monthStr;
+            };
+            
+            // Show labels at regular intervals - every 3rd point, first point, and last point
+            const showEveryNth = 3;
+            const shouldShow = i === 0 || i === points.length - 1 || i % showEveryNth === 0;
+            
+            if (!shouldShow) return null;
+            return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{getQuarterLabel(p.month)}</text>;
+          } else {
+            // Semi-annual format (default)
+            const getSemiAnnualLabel = (monthStr: string) => {
+              const parts = monthStr.split('-');
+              if (parts.length >= 2) {
+                const year = parts[0];
+                const month = parseInt(parts[1]);
+                const half = month <= 6 ? 1 : 2;
+                return `H${half} '${year.slice(-2)}`;
+              }
+              return monthStr;
+            };
+            
+            const parts = p.month.split('-');
+            const month = parts.length >= 2 ? parseInt(parts[1]) : 0;
+            const isSemiAnnualEnd = month === 6 || month === 12;
+            
+            // Fallback: show label every 6 data points if no semi-annual matches
+            const showEveryNth = points.length > 12 ? Math.floor(points.length / 4) : 3;
+            const showAsBackup = i % showEveryNth === 0 || i === points.length - 1;
+            
+            if (!isSemiAnnualEnd && !showAsBackup) return null;
+            return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{getSemiAnnualLabel(p.month)}</text>;
+          }
         })}
       </svg>
       <div style={{ display: 'grid', gridTemplateColumns: benchmarkValue != null ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginTop: '15px', padding: '3px 12px', background: 'white', borderRadius: '8px' }}>
@@ -6248,6 +6292,7 @@ export default function FinancialScorePage() {
                     data={monthly.map(m => ({ month: m.month, value: m[selectedTrendItem as keyof typeof m] as number }))}
                     color="#667eea"
                     showTable={true}
+                    labelFormat="quarterly"
                   />
                 </div>
                 
@@ -6757,8 +6802,21 @@ export default function FinancialScorePage() {
                 transform: scale(0.65);
                 transform-origin: top left;
                 width: 153.85%;
-                height: auto;
-                margin-bottom: -80px;
+                height: 250px;
+                margin-bottom: -69px;
+              }
+              
+              /* Force page break after row 2 (after 4th chart) */
+              .fs-charts-grid > div:nth-child(4) {
+                page-break-after: always;
+                break-after: page;
+              }
+              
+              /* Show page 2 header only on print */
+              .page-2-header {
+                display: block !important;
+                margin-top: 72px !important;
+                padding-bottom: 72px !important;
               }
               
               h2 {
@@ -6795,7 +6853,7 @@ export default function FinancialScorePage() {
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>Financial Score Analysis</h2>
               
-              <div className="fs-score-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+              <div className="fs-score-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px', maxWidth: '900px' }}>
                 <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', padding: '20px', color: 'white', boxShadow: '0 4px 12px rgba(102,126,234,0.3)' }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Venturis Financial Score</div>
                   <div style={{ fontSize: '42px', fontWeight: '700' }}>{finalScore.toFixed(2)}</div>
@@ -6810,7 +6868,7 @@ export default function FinancialScorePage() {
                 </div>
               </div>
 
-              <div className="fs-detail-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              <div className="fs-detail-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
                 <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Base RGS (24mo)</div>
                   <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{baseRGS.toFixed(0)}</div>
@@ -6832,7 +6890,7 @@ export default function FinancialScorePage() {
                 </div>
                 <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>ALR-1 (Current)</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{alr1}</div>
+                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{typeof alr1 === 'number' ? alr1.toFixed(2) : alr1}</div>
                 </div>
                 <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>ALR Growth %</div>
@@ -6849,6 +6907,15 @@ export default function FinancialScorePage() {
             <LineChart title="Profitability Score Trend" data={trendData} valueKey="profitabilityScore" color="#10b981" compact />
             <LineChart title="Revenue Growth Score (RGS)" data={trendData} valueKey="rgs" color="#f59e0b" compact />
             <LineChart title="RGS with 6-Month Adjustment" data={trendData} valueKey="rgsAdj" color="#3b82f6" compact />
+            
+            {/* Page 2 Header - only visible in print */}
+            <div className="page-2-header" style={{ display: 'none', gridColumn: '1 / -1', paddingBottom: '72px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Score Trends (cont)</h1>
+                {companyName && <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+              </div>
+            </div>
+            
             <LineChart title="Expense Adjustment" data={trendData} valueKey="expenseAdj" color="#8b5cf6" compact />
             <LineChart title="Asset Development Score (ADS)" data={trendData} valueKey="adsScore" color="#ec4899" compact />
             <LineChart title="ALR-1 (Asset-Liability Ratio)" data={trendData} valueKey="alr1" color="#14b8a6" compact />
@@ -7311,11 +7378,71 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Management Discussion & Analysis</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+              <button 
+                className="no-print"
+                onClick={() => window.print()} 
+                style={{ 
+                  padding: '12px 24px', 
+                  background: '#667eea', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '8px', 
+                  fontSize: '14px', 
+                  fontWeight: '600', 
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
+                }}>
+                🖨️ Print
+              </button>
+            </div>
           </div>
           
+          <style>{`
+            @media print {
+              @page {
+                size: portrait;
+                margin: 0.5in;
+              }
+              
+              /* Hide navigation and UI elements */
+              .no-print,
+              header,
+              nav,
+              aside,
+              [role="navigation"] {
+                display: none !important;
+              }
+              
+              /* Hide tab navigation buttons */
+              button[onclick*="setMdaTab"] {
+                display: none !important;
+              }
+              
+              /* Remove box shadows and backgrounds */
+              * {
+                box-shadow: none !important;
+              }
+              
+              /* Ensure text is readable */
+              body, p, li, div {
+                color: #000 !important;
+              }
+              
+              h1, h2, h3 {
+                page-break-after: avoid;
+              }
+              
+              /* Avoid breaking inside sections */
+              div[style*="background: white"] {
+                page-break-inside: avoid;
+              }
+            }
+          `}</style>
+          
           {/* Tab Navigation */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
             <button
               onClick={() => setMdaTab('executive-summary')}
               style={{
