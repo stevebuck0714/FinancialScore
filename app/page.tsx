@@ -8162,6 +8162,14 @@ export default function FinancialScorePage() {
               .wc-print-content {
                 width: 100%;
               }
+              
+              /* Scale down first page content to fit */
+              .wc-first-page-content,
+              .page-break-after {
+                transform: scale(0.85);
+                transform-origin: top left;
+                width: 117.65%; /* Compensate for scale */
+              }
             }
           `}</style>
           
@@ -8227,7 +8235,7 @@ export default function FinancialScorePage() {
             return (
               <>
                 {/* Key Metrics Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
+                <div className="wc-first-page-content" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '32px' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                     <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Current Working Capital</h3>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
