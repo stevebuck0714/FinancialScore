@@ -8212,35 +8212,58 @@ export default function FinancialScorePage() {
                   font-size: 10px !important;
                 }
                 
-                /* Compress second page content */
-                .page-break-after ~ div {
+                /* Compress second page - Components Breakdown */
+                .wc-components-breakdown {
                   margin-bottom: 12px !important;
+                  gap: 16px !important;
+                }
+                
+                .wc-components-breakdown > div {
                   padding: 16px !important;
-                  gap: 12px !important;
                 }
                 
-                .page-break-after ~ div h2 {
+                .wc-components-breakdown h2 {
                   font-size: 16px !important;
-                  margin-bottom: 8px !important;
+                  margin-bottom: 12px !important;
                 }
                 
-                .page-break-after ~ div > div {
-                  padding: 12px !important;
-                  margin-bottom: 0 !important;
+                .wc-components-breakdown > div > div {
+                  gap: 8px !important;
                 }
                 
-                /* Reduce spacing in asset/liability breakdown items */
-                .page-break-after ~ div > div > div > div {
+                .wc-components-breakdown > div > div > div {
                   padding: 8px !important;
+                  font-size: 12px !important;
+                }
+                
+                /* Compress second page - Insights Section */
+                .wc-insights {
+                  padding: 16px !important;
                   margin-bottom: 0 !important;
                 }
                 
-                /* Reduce spacing in insights section */
-                .page-break-after ~ div:last-child > div > div {
+                .wc-insights h2 {
+                  font-size: 16px !important;
+                  margin-bottom: 12px !important;
+                }
+                
+                .wc-insights > div {
+                  gap: 10px !important;
+                }
+                
+                .wc-insights > div > div {
                   padding: 10px !important;
-                  margin-bottom: 0 !important;
                   font-size: 11px !important;
                   line-height: 1.4 !important;
+                }
+                
+                .wc-insights > div > div > div:first-child {
+                  font-size: 12px !important;
+                  margin-bottom: 4px !important;
+                }
+                
+                .wc-insights > div > div > div:last-child {
+                  font-size: 11px !important;
                 }
               }
             }
@@ -8391,7 +8414,7 @@ export default function FinancialScorePage() {
                 </div>
                 
                 {/* Components Breakdown */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '24px' }}>
+                <div className="wc-components-breakdown" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '24px' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Current Assets</h2>
                     <div style={{ display: 'grid', gap: '12px' }}>
@@ -8442,7 +8465,7 @@ export default function FinancialScorePage() {
                 </div>
                 
                 {/* Working Capital Analysis */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div className="wc-insights" style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Insights</h2>
                   
                   <div style={{ display: 'grid', gap: '16px' }}>
