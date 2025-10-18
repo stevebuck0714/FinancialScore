@@ -8158,6 +8158,13 @@ export default function FinancialScorePage() {
                 page-break-after: always;
               }
               
+              /* Show second page header only when printing */
+              .wc-page-2-header {
+                display: block !important;
+                margin-top: 0 !important;
+                padding-top: 24px !important;
+              }
+              
               /* Ensure content fits on landscape pages */
               .wc-print-content {
                 width: 100%;
@@ -8411,6 +8418,13 @@ export default function FinancialScorePage() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+                
+                {/* Second Page Header */}
+                <div className="wc-page-2-header" style={{ display: 'none', marginTop: '32px', marginBottom: '24px', textAlign: 'center' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                    Working Capital Analysis - {companyName}
+                  </h2>
                 </div>
                 
                 {/* Components Breakdown */}
