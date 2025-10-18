@@ -8274,22 +8274,7 @@ export default function FinancialScorePage() {
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend</h2>
                   <LineChart 
                     title="" 
-                    data={(() => {
-                      // Create quarterly data from monthly data
-                      const quarterlyData = [];
-                      for (let i = 0; i < wcData.length; i += 3) {
-                        const quarter = wcData.slice(i, i + 3);
-                        if (quarter.length > 0) {
-                          // Use the last month of the quarter
-                          const lastMonth = quarter[quarter.length - 1];
-                          quarterlyData.push({
-                            month: lastMonth.month,
-                            value: lastMonth.workingCapital
-                          });
-                        }
-                      }
-                      return quarterlyData;
-                    })()} 
+                    data={wcData.map(d => ({ month: d.month, value: d.workingCapital }))} 
                     color="#667eea"
                     showTable={true}
                     formatter={(val) => `$${Math.round(val).toLocaleString()}`}
