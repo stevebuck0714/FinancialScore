@@ -8131,9 +8131,61 @@ export default function FinancialScorePage() {
       {/* Working Capital View */}
       {currentView === 'working-capital' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+          <style>{`
+            @media print {
+              @page {
+                size: landscape;
+                margin: 0.5in;
+              }
+              
+              /* Hide navigation and UI elements */
+              .no-print,
+              header,
+              nav,
+              aside,
+              [role="navigation"],
+              button {
+                display: none !important;
+              }
+              
+              /* Remove background colors and shadows */
+              * {
+                box-shadow: none !important;
+              }
+              
+              /* Page breaks */
+              .page-break-after {
+                page-break-after: always;
+              }
+              
+              /* Ensure content fits on landscape pages */
+              .wc-print-content {
+                width: 100%;
+              }
+            }
+          `}</style>
+          
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Working Capital Analysis</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+              <button 
+                className="no-print"
+                onClick={() => window.print()} 
+                style={{ 
+                  padding: '12px 24px', 
+                  background: '#667eea', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '8px', 
+                  fontSize: '14px', 
+                  fontWeight: '600', 
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
+                }}>
+                🖨️ Print
+              </button>
+            </div>
           </div>
           
           {(() => {
@@ -8218,7 +8270,7 @@ export default function FinancialScorePage() {
                 </div>
                 
                 {/* Working Capital Trend Chart */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div className="page-break-after" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend</h2>
                   <LineChart 
                     title="" 
