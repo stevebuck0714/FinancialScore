@@ -1151,6 +1151,7 @@ export default function FinancialScorePage() {
   const [financialStatementsTab, setFinancialStatementsTab] = useState<'aggregated' | 'line-of-business'>('aggregated');
   const [selectedLineOfBusiness, setSelectedLineOfBusiness] = useState<string>('all');
   const [statementDisplay, setStatementDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
+  const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
   
   // State - MD&A Tabs
   const [mdaTab, setMdaTab] = useState<'executive-summary' | 'strengths-insights' | 'key-metrics'>('executive-summary');
@@ -8855,9 +8856,64 @@ export default function FinancialScorePage() {
       {/* Cash Flow View */}
       {currentView === 'cash-flow' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+          </div>
+          
+          {/* Display Period Tabs */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '32px', borderBottom: '2px solid #e2e8f0' }}>
+            <button
+              onClick={() => setCashFlowDisplay('monthly')}
+              style={{
+                padding: '12px 24px',
+                background: cashFlowDisplay === 'monthly' ? '#667eea' : 'transparent',
+                color: cashFlowDisplay === 'monthly' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: cashFlowDisplay === 'monthly' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setCashFlowDisplay('quarterly')}
+              style={{
+                padding: '12px 24px',
+                background: cashFlowDisplay === 'quarterly' ? '#667eea' : 'transparent',
+                color: cashFlowDisplay === 'quarterly' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: cashFlowDisplay === 'quarterly' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Quarterly
+            </button>
+            <button
+              onClick={() => setCashFlowDisplay('annual')}
+              style={{
+                padding: '12px 24px',
+                background: cashFlowDisplay === 'annual' ? '#667eea' : 'transparent',
+                color: cashFlowDisplay === 'annual' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: cashFlowDisplay === 'annual' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Annual
+            </button>
           </div>
 
           {(() => {
@@ -8912,6 +8968,54 @@ export default function FinancialScorePage() {
                 endingCash: curr.cash
               };
             });
+
+            // Aggregate data based on display selection
+            let displayData = cashFlowData;
+            if (cashFlowDisplay === 'quarterly') {
+              // Aggregate into quarters (3 months each)
+              displayData = [];
+              for (let i = 0; i < cashFlowData.length; i += 3) {
+                const quarter = cashFlowData.slice(i, i + 3);
+                const aggregated = {
+                  month: `Q${Math.floor(i / 3) + 1} ${quarter[quarter.length - 1].month.split(' ')[1] || ''}`,
+                  netIncome: quarter.reduce((sum, d) => sum + d.netIncome, 0),
+                  depreciation: quarter.reduce((sum, d) => sum + d.depreciation, 0),
+                  changeInWorkingCapital: quarter.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
+                  operatingCashFlow: quarter.reduce((sum, d) => sum + d.operatingCashFlow, 0),
+                  capitalExpenditures: quarter.reduce((sum, d) => sum + d.capitalExpenditures, 0),
+                  investingCashFlow: quarter.reduce((sum, d) => sum + d.investingCashFlow, 0),
+                  changeInDebt: quarter.reduce((sum, d) => sum + d.changeInDebt, 0),
+                  changeInEquity: quarter.reduce((sum, d) => sum + d.changeInEquity, 0),
+                  financingCashFlow: quarter.reduce((sum, d) => sum + d.financingCashFlow, 0),
+                  netCashChange: quarter.reduce((sum, d) => sum + d.netCashChange, 0),
+                  freeCashFlow: quarter.reduce((sum, d) => sum + d.freeCashFlow, 0),
+                  cashFlowMargin: quarter.reduce((sum, d) => sum + d.cashFlowMargin, 0) / quarter.length,
+                  daysCashOnHand: quarter[quarter.length - 1].daysCashOnHand,
+                  endingCash: quarter[quarter.length - 1].endingCash
+                };
+                displayData.push(aggregated);
+              }
+            } else if (cashFlowDisplay === 'annual') {
+              // Aggregate into one annual period
+              const year = cashFlowData[cashFlowData.length - 1].month.split(' ')[1] || '';
+              displayData = [{
+                month: `Annual ${year}`,
+                netIncome: cashFlowData.reduce((sum, d) => sum + d.netIncome, 0),
+                depreciation: cashFlowData.reduce((sum, d) => sum + d.depreciation, 0),
+                changeInWorkingCapital: cashFlowData.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
+                operatingCashFlow: cashFlowData.reduce((sum, d) => sum + d.operatingCashFlow, 0),
+                capitalExpenditures: cashFlowData.reduce((sum, d) => sum + d.capitalExpenditures, 0),
+                investingCashFlow: cashFlowData.reduce((sum, d) => sum + d.investingCashFlow, 0),
+                changeInDebt: cashFlowData.reduce((sum, d) => sum + d.changeInDebt, 0),
+                changeInEquity: cashFlowData.reduce((sum, d) => sum + d.changeInEquity, 0),
+                financingCashFlow: cashFlowData.reduce((sum, d) => sum + d.financingCashFlow, 0),
+                netCashChange: cashFlowData.reduce((sum, d) => sum + d.netCashChange, 0),
+                freeCashFlow: cashFlowData.reduce((sum, d) => sum + d.freeCashFlow, 0),
+                cashFlowMargin: cashFlowData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / cashFlowData.length,
+                daysCashOnHand: cashFlowData[cashFlowData.length - 1].daysCashOnHand,
+                endingCash: cashFlowData[cashFlowData.length - 1].endingCash
+              }];
+            }
 
             // Summary metrics
             const totalOperatingCF = cashFlowData.reduce((sum, d) => sum + d.operatingCashFlow, 0);
@@ -8974,7 +9078,7 @@ export default function FinancialScorePage() {
                       <thead>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                           <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: '600', color: '#64748b', position: 'sticky', left: 0, background: 'white', minWidth: '200px' }}>Cash Flow Item</th>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <th key={i} style={{ textAlign: 'right', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '90px' }}>
                               {cf.month}
                             </th>
@@ -8990,7 +9094,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Net Income</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                               ${cf.netIncome.toLocaleString()}
                             </td>
@@ -8998,7 +9102,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>+ Depreciation</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                               ${cf.depreciation.toLocaleString()}
                             </td>
@@ -9006,7 +9110,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>+ Change in Working Capital</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInWorkingCapital >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
                               ${cf.changeInWorkingCapital.toLocaleString()}
                             </td>
@@ -9014,7 +9118,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '2px solid #10b981', background: '#f0fdf4' }}>
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#065f46' }}>Operating Cash Flow</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#065f46', textAlign: 'right' }}>
                               ${cf.operatingCashFlow.toLocaleString()}
                             </td>
@@ -9029,7 +9133,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Capital Expenditures</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>
                               (${cf.capitalExpenditures.toLocaleString()})
                             </td>
@@ -9037,7 +9141,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '2px solid #ef4444', background: '#fef2f2' }}>
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#991b1b' }}>Investing Cash Flow</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#991b1b', textAlign: 'right' }}>
                               ${cf.investingCashFlow.toLocaleString()}
                             </td>
@@ -9052,7 +9156,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Long-Term Debt</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInDebt >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
                               ${cf.changeInDebt.toLocaleString()}
                             </td>
@@ -9060,7 +9164,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Equity</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInEquity >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
                               ${cf.changeInEquity.toLocaleString()}
                             </td>
@@ -9068,7 +9172,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '2px solid #3b82f6', background: '#eff6ff' }}>
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#1e40af' }}>Financing Cash Flow</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>
                               ${cf.financingCashFlow.toLocaleString()}
                             </td>
@@ -9078,7 +9182,7 @@ export default function FinancialScorePage() {
                         {/* Net Change */}
                         <tr style={{ borderBottom: '3px double #1e293b', background: '#f8fafc' }}>
                           <td style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>Net Change in Cash</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: cf.netCashChange >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
                               ${cf.netCashChange.toLocaleString()}
                             </td>
@@ -9086,7 +9190,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ background: '#fef3c7' }}>
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#92400e' }}>Free Cash Flow</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: cf.freeCashFlow >= 0 ? '#065f46' : '#991b1b', textAlign: 'right' }}>
                               ${cf.freeCashFlow.toLocaleString()}
                             </td>
@@ -9094,7 +9198,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Ending Cash Balance</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>
                               ${cf.endingCash.toLocaleString()}
                             </td>
@@ -9114,7 +9218,7 @@ export default function FinancialScorePage() {
                       <thead>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                           <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: '600', color: '#64748b', position: 'sticky', left: 0, background: 'white', minWidth: '180px' }}>Metric</th>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <th key={i} style={{ textAlign: 'right', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '90px' }}>
                               {cf.month}
                             </th>
@@ -9124,7 +9228,7 @@ export default function FinancialScorePage() {
                       <tbody>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>Cash Flow Margin (%)</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                               {cf.cashFlowMargin.toFixed(1)}%
                             </td>
@@ -9132,7 +9236,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>Days Cash on Hand</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                               {cf.daysCashOnHand.toFixed(0)} days
                             </td>
@@ -9140,7 +9244,7 @@ export default function FinancialScorePage() {
                         </tr>
                         <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>Cash Conversion Rate</td>
-                          {cashFlowData.map((cf, i) => (
+                          {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                               {cf.netIncome > 0 ? ((cf.operatingCashFlow / cf.netIncome) * 100).toFixed(0) : 'N/A'}%
                             </td>
