@@ -8178,6 +8178,12 @@ export default function FinancialScorePage() {
                 width: 117.65%; /* Compensate for scale */
               }
               
+              /* Additionally scale the chart horizontally to fit within page */
+              .page-break-after svg {
+                transform: scaleX(0.95) !important;
+                transform-origin: left center !important;
+              }
+              
               /* Reduce spacing for print */
               @media print {
                 h1 {
