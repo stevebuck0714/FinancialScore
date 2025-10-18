@@ -9142,7 +9142,7 @@ export default function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Operating Cash Flow (12mo)</div>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
-                      ${(totalOperatingCF / 1000).toFixed(0)}K
+                      ${(totalOperatingCF / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Cash from operations</div>
                   </div>
@@ -9150,7 +9150,7 @@ export default function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #ef4444' }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Investing Cash Flow (12mo)</div>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#ef4444' }}>
-                      ${(totalInvestingCF / 1000).toFixed(0)}K
+                      ${(totalInvestingCF / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>CapEx & investments</div>
                   </div>
@@ -9158,7 +9158,7 @@ export default function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #3b82f6' }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Financing Cash Flow (12mo)</div>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#3b82f6' }}>
-                      ${(totalFinancingCF / 1000).toFixed(0)}K
+                      ${(totalFinancingCF / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Debt & equity changes</div>
                   </div>
@@ -9166,7 +9166,7 @@ export default function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Free Cash Flow (12mo)</div>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: totalFreeCF >= 0 ? '#10b981' : '#ef4444' }}>
-                      ${(totalFreeCF / 1000).toFixed(0)}K
+                      ${(totalFreeCF / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>OCF - CapEx</div>
                   </div>
