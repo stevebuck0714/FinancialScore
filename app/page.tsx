@@ -6674,16 +6674,128 @@ export default function FinancialScorePage() {
       {/* Financial Score Trends View */}
       {currentView === 'fs-score' && selectedCompanyId && trendData.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+          <style>{`
+            @media print {
+              @page {
+                size: portrait;
+                margin: 0.3in;
+              }
+              
+              /* Hide navigation and UI elements */
+              .no-print,
+              header,
+              nav,
+              aside,
+              [role="navigation"],
+              button {
+                display: none !important;
+              }
+              
+              /* Remove backgrounds and shadows for print */
+              * {
+                box-shadow: none !important;
+              }
+              
+              /* Compress title and header */
+              .fs-header h1 {
+                font-size: 18px !important;
+                margin-bottom: 8px !important;
+              }
+              
+              .fs-header > div {
+                font-size: 16px !important;
+              }
+              
+              /* Compress main score cards */
+              .fs-score-cards {
+                margin-bottom: 12px !important;
+                gap: 10px !important;
+              }
+              
+              .fs-score-cards > div {
+                padding: 10px !important;
+                border-radius: 6px !important;
+              }
+              
+              .fs-score-cards > div > div:first-child {
+                font-size: 9px !important;
+                margin-bottom: 4px !important;
+              }
+              
+              .fs-score-cards > div > div:nth-child(2) {
+                font-size: 22px !important;
+              }
+              
+              /* Compress detail cards */
+              .fs-detail-cards {
+                gap: 8px !important;
+                margin-bottom: 12px !important;
+              }
+              
+              .fs-detail-cards > div {
+                padding: 8px !important;
+              }
+              
+              .fs-detail-cards > div > div:first-child {
+                font-size: 8px !important;
+              }
+              
+              .fs-detail-cards > div > div:nth-child(2) {
+                font-size: 14px !important;
+              }
+              
+              .fs-detail-cards > div > div:last-child {
+                font-size: 7px !important;
+              }
+              
+              /* Compress chart grid */
+              .fs-charts-grid {
+                gap: 8px !important;
+              }
+              
+              .fs-charts-grid > div {
+                transform: scale(0.65);
+                transform-origin: top left;
+                width: 153.85%;
+                height: auto;
+                margin-bottom: -80px;
+              }
+              
+              h2 {
+                font-size: 12px !important;
+                margin-bottom: 8px !important;
+              }
+            }
+          `}</style>
+          
+          <div className="fs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Score Trends</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+              <button 
+                className="no-print"
+                onClick={() => window.print()} 
+                style={{ 
+                  padding: '12px 24px', 
+                  background: '#667eea', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '8px', 
+                  fontSize: '14px', 
+                  fontWeight: '600', 
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
+                }}>
+                🖨️ Print
+              </button>
+            </div>
           </div>
           
           {monthly.length >= 24 && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>Financial Score Analysis</h2>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+              <div className="fs-score-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '32px' }}>
                 <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', padding: '20px', color: 'white', boxShadow: '0 4px 12px rgba(102,126,234,0.3)' }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Venturis Financial Score</div>
                   <div style={{ fontSize: '42px', fontWeight: '700' }}>{finalScore.toFixed(2)}</div>
@@ -6698,7 +6810,7 @@ export default function FinancialScorePage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              <div className="fs-detail-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                 <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Base RGS (24mo)</div>
                   <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{baseRGS.toFixed(0)}</div>
@@ -6732,7 +6844,7 @@ export default function FinancialScorePage() {
             </div>
           )}
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+          <div className="fs-charts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
             <LineChart title="Financial Score Trend" data={trendData} valueKey="financialScore" color="#667eea" compact />
             <LineChart title="Profitability Score Trend" data={trendData} valueKey="profitabilityScore" color="#10b981" compact />
             <LineChart title="Revenue Growth Score (RGS)" data={trendData} valueKey="rgs" color="#f59e0b" compact />
