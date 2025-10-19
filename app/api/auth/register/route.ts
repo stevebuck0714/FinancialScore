@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Create user and consultant in a transaction
+    // Create user, consultant, and company (for business users) in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -49,7 +49,18 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      return { user, consultant };
+      // Automatically create a company for business users
+      let company = null;
+      if (type === 'business') {
+        company = await tx.company.create({
+          data: {
+            name: name, // Use the business name as company name
+            consultantId: consultant.id
+          }
+        });
+      }
+
+      return { user, consultant, company };
     });
 
     return NextResponse.json({
@@ -58,7 +69,9 @@ export async function POST(request: NextRequest) {
         email: result.user.email,
         name: result.user.name,
         role: result.user.role,
-        consultantId: result.consultant.id
+        consultantId: result.consultant.id,
+        companyId: result.company?.id,
+        consultantType: result.consultant.type
       }
     }, { status: 201 });
   } catch (error) {

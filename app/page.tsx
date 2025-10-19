@@ -3485,7 +3485,7 @@ export default function FinancialScorePage() {
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
       {/* Header - Different for Site Admin */}
       {currentUser?.role === 'siteadmin' ? (
-        <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'sticky', top: 0, zIndex: 100 }}>
+        <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '80px' }}>
             <div 
               style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', cursor: 'pointer', letterSpacing: '-0.5px' }} 
@@ -3504,7 +3504,7 @@ export default function FinancialScorePage() {
         <>
         {/* Hide top navigation for assessment users */}
         {!(currentUser?.userType === 'assessment') && (
-        <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'sticky', top: 0, zIndex: 100 }}>
+        <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '80px' }}>
             <div 
               style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', cursor: 'pointer', letterSpacing: '-0.5px' }} 
@@ -3528,7 +3528,7 @@ export default function FinancialScorePage() {
         
         {/* Simple header for assessment users */}
         {currentUser?.userType === 'assessment' && (
-        <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'sticky', top: 0, zIndex: 100 }}>
+        <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
           <div style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', letterSpacing: '-0.5px' }}>
             Venturis<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup> - Management Assessment
           </div>
@@ -3542,7 +3542,7 @@ export default function FinancialScorePage() {
       )}
 
       {/* Main Content Area with Sidebar */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', paddingTop: '70px' }}>
         {/* Left Navigation Sidebar - Not for Site Admin */}
         {currentUser?.role !== 'siteadmin' && !(currentUser?.userType === 'assessment') && (
         <aside style={{ 

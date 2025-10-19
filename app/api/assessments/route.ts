@@ -42,10 +42,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST create assessment record
+// POST create or update assessment record
 export async function POST(request: NextRequest) {
   try {
-    const { userId, companyId, responses, notes, overallScore } = await request.json();
+    const { userId, companyId, responses, notes, overallScore, isCompleted } = await request.json();
 
     if (!userId || !companyId || !responses || overallScore === undefined) {
       return NextResponse.json(
@@ -54,27 +54,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const record = await prisma.assessmentRecord.create({
-      data: {
+    // Check if record already exists for this user and company
+    const existingRecord = await prisma.assessmentRecord.findFirst({
+      where: {
         userId,
-        companyId,
-        responses,
-        notes: notes || {},
-        overallScore
-      },
-      include: {
-        user: {
-          select: {
-            name: true,
-            email: true
-          }
-        }
+        companyId
       }
     });
 
-    return NextResponse.json({ record }, { status: 201 });
+    let record;
+    
+    if (existingRecord) {
+      // Update existing record
+      record = await prisma.assessmentRecord.update({
+        where: { id: existingRecord.id },
+        data: {
+          responses,
+          notes: notes || {},
+          overallScore,
+          isCompleted: isCompleted || false,
+          completedAt: isCompleted ? new Date() : null
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true
+            }
+          }
+        }
+      });
+    } else {
+      // Create new record
+      record = await prisma.assessmentRecord.create({
+        data: {
+          userId,
+          companyId,
+          responses,
+          notes: notes || {},
+          overallScore,
+          isCompleted: isCompleted || false,
+          completedAt: isCompleted ? new Date() : null
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true
+            }
+          }
+        }
+      });
+    }
+
+    return NextResponse.json({ record }, { status: existingRecord ? 200 : 201 });
   } catch (error) {
-    console.error('Error creating assessment:', error);
+    console.error('Error creating/updating assessment:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

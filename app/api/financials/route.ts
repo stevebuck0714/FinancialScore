@@ -105,6 +105,13 @@ export async function POST(request: NextRequest) {
             tcl: month.tcl || 0,
             ltd: month.ltd || 0,
             totalLiab: month.totalLiab || 0,
+            ownersCapital: month.ownersCapital || 0,
+            ownersDraw: month.ownersDraw || 0,
+            commonStock: month.commonStock || 0,
+            preferredStock: month.preferredStock || 0,
+            retainedEarnings: month.retainedEarnings || 0,
+            additionalPaidInCapital: month.additionalPaidInCapital || 0,
+            treasuryStock: month.treasuryStock || 0,
             totalEquity: month.totalEquity || 0,
             totalLAndE: month.totalLAndE || 0
           }))

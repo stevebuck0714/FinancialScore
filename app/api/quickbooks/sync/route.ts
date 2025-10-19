@@ -264,6 +264,13 @@ export async function POST(request: NextRequest) {
         tcl: record.tcl,
         ltd: record.ltd,
         totalLiab: record.totalLiab,
+        ownersCapital: 0, // TODO: Parse from QB Balance Sheet
+        ownersDraw: 0,
+        commonStock: 0,
+        preferredStock: 0,
+        retainedEarnings: 0,
+        additionalPaidInCapital: 0,
+        treasuryStock: 0,
         totalEquity: record.totalEquity,
         totalLAndE: record.totalLAndE,
       }));

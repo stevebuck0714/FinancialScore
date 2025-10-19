@@ -46,7 +46,8 @@ export async function POST(request: NextRequest) {
         role: user.role,
         userType: user.userType,
         companyId: user.companyId,
-        consultantId: user.consultant?.id
+        consultantId: user.consultant?.id,
+        consultantType: user.consultant?.type
       }
     });
   } catch (error) {
