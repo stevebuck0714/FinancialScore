@@ -19,6 +19,11 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             name: true,
+            consultantId: true,
+            industrySector: true,
+            subscriptionMonthlyPrice: true,
+            subscriptionQuarterlyPrice: true,
+            subscriptionAnnualPrice: true,
             _count: {
               select: {
                 users: true
@@ -106,6 +111,93 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
   } catch (error) {
     console.error('Error creating consultant:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT update consultant
+export async function PUT(request: NextRequest) {
+  try {
+    const { id, fullName, email, address, phone, type } = await request.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Consultant ID required' },
+        { status: 400 }
+      );
+    }
+
+    // Get the consultant with user info
+    const consultant = await prisma.consultant.findUnique({
+      where: { id },
+      include: { user: true }
+    });
+
+    if (!consultant) {
+      return NextResponse.json(
+        { error: 'Consultant not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if email is being changed and if it's already taken by another user
+    if (email && email !== consultant.user.email) {
+      const existingUser = await prisma.user.findUnique({
+        where: { email }
+      });
+
+      if (existingUser && existingUser.id !== consultant.userId) {
+        return NextResponse.json(
+          { error: 'Email already registered' },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Update consultant and user in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Update user email and name if provided
+      const updateData: any = {};
+      if (email) updateData.email = email;
+      if (fullName) updateData.name = fullName;
+
+      if (Object.keys(updateData).length > 0) {
+        await tx.user.update({
+          where: { id: consultant.userId },
+          data: updateData
+        });
+      }
+
+      // Update consultant info
+      const consultantUpdateData: any = {};
+      if (fullName !== undefined) consultantUpdateData.fullName = fullName;
+      if (address !== undefined) consultantUpdateData.address = address;
+      if (phone !== undefined) consultantUpdateData.phone = phone;
+      if (type !== undefined) consultantUpdateData.type = type;
+
+      const updatedConsultant = await tx.consultant.update({
+        where: { id },
+        data: consultantUpdateData,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true
+            }
+          }
+        }
+      });
+
+      return updatedConsultant;
+    });
+
+    return NextResponse.json({ consultant: result });
+  } catch (error) {
+    console.error('Error updating consultant:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

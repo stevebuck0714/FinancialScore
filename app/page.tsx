@@ -1128,6 +1128,7 @@ export default function FinancialScorePage() {
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
+  const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
   const [expandedConsultantInfo, setExpandedConsultantInfo] = useState<Set<string>>(new Set());
   const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
   const [showAddConsultantForm, setShowAddConsultantForm] = useState(false);
@@ -2518,6 +2519,37 @@ export default function FinancialScorePage() {
       alert('Pricing updated successfully');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
+    }
+  };
+
+  const updateConsultantInfo = async (consultantId: string, info: { fullName: string; email: string; address: string; phone: string; type: string }) => {
+    try {
+      const response = await consultantsApi.update(consultantId, info);
+      
+      // Update local state
+      setConsultants(consultants.map(c => 
+        c.id === consultantId 
+          ? { 
+              ...c, 
+              fullName: info.fullName,
+              email: info.email,
+              address: info.address,
+              phone: info.phone,
+              type: info.type
+            } 
+          : c
+      ));
+      
+      // Clear editing state
+      setEditingConsultantInfo((prev) => {
+        const newState = { ...prev };
+        delete newState[consultantId];
+        return newState;
+      });
+      
+      alert('Consultant information updated successfully');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to update consultant information');
     }
   };
 
@@ -4459,13 +4491,124 @@ export default function FinancialScorePage() {
                           <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', marginTop: '10px' }}>
                             {/* Consultant Information */}
                             <div style={{ marginBottom: '10px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
-                              <h4 style={{ fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Consultant Information</h4>
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '11px', color: '#64748b' }}>
-                                <div><span style={{ fontWeight: '600' }}>Type:</span> {consultant.type}</div>
-                                <div><span style={{ fontWeight: '600' }}>Email:</span> {consultant.email}</div>
-                                <div><span style={{ fontWeight: '600' }}>Address:</span> {consultant.address}</div>
-                                <div><span style={{ fontWeight: '600' }}>Phone:</span> {consultant.phone}</div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                <h4 style={{ fontSize: '12px', fontWeight: '600', color: '#475569', margin: 0 }}>Consultant Information</h4>
+                                {!editingConsultantInfo[consultant.id] && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingConsultantInfo({
+                                        ...editingConsultantInfo,
+                                        [consultant.id]: {
+                                          fullName: consultant.fullName,
+                                          email: consultant.email,
+                                          address: consultant.address || '',
+                                          phone: consultant.phone || '',
+                                          type: consultant.type || ''
+                                        }
+                                      });
+                                    }}
+                                    style={{ padding: '3px 8px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                  >
+                                    Edit
+                                  </button>
+                                )}
                               </div>
+                              
+                              {editingConsultantInfo[consultant.id] ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+                                    <div>
+                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Full Name</label>
+                                      <input
+                                        type="text"
+                                        value={editingConsultantInfo[consultant.id].fullName}
+                                        onChange={(e) => setEditingConsultantInfo({
+                                          ...editingConsultantInfo,
+                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], fullName: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Type</label>
+                                      <input
+                                        type="text"
+                                        value={editingConsultantInfo[consultant.id].type}
+                                        onChange={(e) => setEditingConsultantInfo({
+                                          ...editingConsultantInfo,
+                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], type: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Email</label>
+                                      <input
+                                        type="email"
+                                        value={editingConsultantInfo[consultant.id].email}
+                                        onChange={(e) => setEditingConsultantInfo({
+                                          ...editingConsultantInfo,
+                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], email: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Phone</label>
+                                      <input
+                                        type="text"
+                                        value={editingConsultantInfo[consultant.id].phone}
+                                        onChange={(e) => setEditingConsultantInfo({
+                                          ...editingConsultantInfo,
+                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], phone: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Address</label>
+                                    <input
+                                      type="text"
+                                      value={editingConsultantInfo[consultant.id].address}
+                                      onChange={(e) => setEditingConsultantInfo({
+                                        ...editingConsultantInfo,
+                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], address: e.target.value }
+                                      })}
+                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                                    <button
+                                      onClick={() => {
+                                        updateConsultantInfo(consultant.id, editingConsultantInfo[consultant.id]);
+                                      }}
+                                      style={{ padding: '4px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setEditingConsultantInfo((prev) => {
+                                          const newState = { ...prev };
+                                          delete newState[consultant.id];
+                                          return newState;
+                                        });
+                                      }}
+                                      style={{ padding: '4px 12px', background: '#64748b', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '11px', color: '#64748b' }}>
+                                  <div><span style={{ fontWeight: '600' }}>Type:</span> {consultant.type}</div>
+                                  <div><span style={{ fontWeight: '600' }}>Email:</span> {consultant.email}</div>
+                                  <div><span style={{ fontWeight: '600' }}>Address:</span> {consultant.address}</div>
+                                  <div><span style={{ fontWeight: '600' }}>Phone:</span> {consultant.phone}</div>
+                                </div>
+                              )}
                             </div>
 
                             <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>

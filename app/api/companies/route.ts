@@ -1,21 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// GET all companies for a consultant
+// GET all companies (optionally filtered by consultant)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const consultantId = searchParams.get('consultantId');
 
-    if (!consultantId) {
-      return NextResponse.json(
-        { error: 'Consultant ID required' },
-        { status: 400 }
-      );
-    }
+    // Build where clause - if consultantId provided, filter by it; otherwise return all companies
+    const where = consultantId ? { consultantId } : {};
 
     const companies = await prisma.company.findMany({
-      where: { consultantId },
+      where,
       include: {
         users: {
           select: {
@@ -101,6 +97,43 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting company:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT update company pricing
+export async function PUT(request: NextRequest) {
+  try {
+    const { 
+      id, 
+      subscriptionMonthly,
+      subscriptionQuarterly,
+      subscriptionAnnual
+    } = await request.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Company ID required' },
+        { status: 400 }
+      );
+    }
+
+    const updateData: any = {};
+    if (subscriptionMonthly !== undefined) updateData.subscriptionMonthlyPrice = subscriptionMonthly;
+    if (subscriptionQuarterly !== undefined) updateData.subscriptionQuarterlyPrice = subscriptionQuarterly;
+    if (subscriptionAnnual !== undefined) updateData.subscriptionAnnualPrice = subscriptionAnnual;
+
+    const company = await prisma.company.update({
+      where: { id },
+      data: updateData
+    });
+
+    return NextResponse.json({ company });
+  } catch (error) {
+    console.error('Error updating company pricing:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

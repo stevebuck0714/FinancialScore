@@ -92,6 +92,18 @@ export const companiesApi = {
     });
   },
 
+  async updatePricing(id: string, monthly: number, quarterly: number, annual: number) {
+    return fetchApi('/api/companies', {
+      method: 'PUT',
+      body: JSON.stringify({ 
+        id, 
+        subscriptionMonthly: monthly,
+        subscriptionQuarterly: quarterly,
+        subscriptionAnnual: annual
+      }),
+    });
+  },
+
   async delete(id: string) {
     return fetchApi(`/api/companies?id=${id}`, {
       method: 'DELETE',
@@ -148,6 +160,19 @@ export const consultantsApi = {
     return fetchApi('/api/consultants', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  async update(id: string, data: {
+    fullName?: string;
+    email?: string;
+    address?: string;
+    phone?: string;
+    type?: string;
+  }) {
+    return fetchApi('/api/consultants', {
+      method: 'PUT',
+      body: JSON.stringify({ id, ...data }),
     });
   },
 

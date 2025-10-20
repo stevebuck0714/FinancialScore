@@ -4,7 +4,9 @@ import { verifyPassword } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔐 Login attempt starting...');
     const { email, password } = await request.json();
+    console.log('📧 Email:', email);
 
     if (!email || !password) {
       return NextResponse.json(
@@ -13,6 +15,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('🔍 Querying database for user...');
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
@@ -20,6 +23,7 @@ export async function POST(request: NextRequest) {
         consultant: true
       }
     });
+    console.log('✅ User found:', user ? 'YES' : 'NO');
 
     if (!user) {
       return NextResponse.json(
