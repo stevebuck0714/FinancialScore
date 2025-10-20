@@ -1052,6 +1052,60 @@ export default function FinancialScorePage() {
   };
 
   // Redirect assessment users if they try to access unauthorized views - but not during login
+  // Handle pending login after business registration redirect
+  useEffect(() => {
+    const pendingLoginStr = sessionStorage.getItem('pendingLogin');
+    if (pendingLoginStr && !isLoggedIn) {
+      try {
+        const { user, timestamp } = JSON.parse(pendingLoginStr);
+        // Only process if less than 10 seconds old
+        if (Date.now() - timestamp < 10000) {
+          // Normalize role and userType to lowercase
+          const normalizedUser = {
+            ...user,
+            role: user.role.toLowerCase(),
+            userType: user.userType?.toLowerCase(),
+            consultantType: user.consultantType // Preserve consultantType
+          };
+          
+          setCurrentUser(normalizedUser);
+          setIsLoggedIn(true);
+          
+          // Set appropriate view for business users (consultants)
+          if (normalizedUser.role === 'consultant') {
+            setCurrentView('admin');
+            // Load companies for the consultant
+            if (user.consultantId) {
+              companiesApi.getAll(user.consultantId).then(({ companies: loadedCompanies }) => {
+                setCompanies(loadedCompanies || []);
+                // If user just registered and has a company, select it automatically
+                if (user.companyId && loadedCompanies && loadedCompanies.length > 0) {
+                  const newCompany = loadedCompanies.find((c: any) => c.id === user.companyId);
+                  if (newCompany) {
+                    setSelectedCompanyId(newCompany.id);
+                    setExpandedCompanyInfoId(newCompany.id);
+                  }
+                }
+              });
+            }
+          } else if (normalizedUser.role === 'siteadmin') {
+            setCurrentView('siteadmin');
+          } else if (normalizedUser.userType === 'assessment') {
+            setCurrentView('ma-welcome');
+          } else {
+            setCurrentView('upload');
+            setSelectedCompanyId(user.companyId || '');
+          }
+        }
+        // Clear the pending login data
+        sessionStorage.removeItem('pendingLogin');
+      } catch (error) {
+        console.error('Error processing pending login:', error);
+        sessionStorage.removeItem('pendingLogin');
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (currentUser?.userType === 'assessment' && isLoggedIn && currentView !== 'login' && !isAssessmentUserViewAllowed(currentView)) {
       console.log('🚫 useEffect redirecting from', currentView, 'to ma-welcome');
@@ -1071,6 +1125,12 @@ export default function FinancialScorePage() {
     }
   };
   const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'payments' | 'profile'>('company-management');
+  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses'>('consultants');
+  const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
+  const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
+  const [expandedConsultantInfo, setExpandedConsultantInfo] = useState<Set<string>>(new Set());
+  const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
+  const [showAddConsultantForm, setShowAddConsultantForm] = useState(false);
   const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios'>('all-ratios');
   const [priorityRatios, setPriorityRatios] = useState<string[]>([
     'Current Ratio', 'Quick Ratio', 'ROE', 'ROA', 'Interest Coverage', 'Debt/Net Worth'
@@ -2431,6 +2491,35 @@ export default function FinancialScorePage() {
     }
   };
 
+  const updateCompanyPricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number }) => {
+    try {
+      await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual);
+      
+      // Update local state
+      setCompanies(companies.map(c => 
+        c.id === companyId 
+          ? { 
+              ...c, 
+              subscriptionMonthlyPrice: pricing.monthly,
+              subscriptionQuarterlyPrice: pricing.quarterly,
+              subscriptionAnnualPrice: pricing.annual
+            } 
+          : c
+      ));
+      
+      // Clear editing state
+      setEditingPricing((prev) => {
+        const newState = { ...prev };
+        delete newState[companyId];
+        return newState;
+      });
+      
+      alert('Pricing updated successfully');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
+    }
+  };
+
   const deleteConsultant = async (consultantId: string) => {
     if (!confirm('Delete this consultant? This will also delete all their companies and users.')) return;
     setIsLoading(true);
@@ -3356,7 +3445,10 @@ export default function FinancialScorePage() {
               <button type="submit" disabled={isLoading} style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '16px', opacity: isLoading ? 0.7 : 1 }}>
                 {isLoading ? 'Signing In...' : 'Sign In'}
               </button>
-              <button type="button" onClick={() => { setIsRegistering(true); setLoginError(''); setShowPassword(false); }} disabled={isLoading} style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}>Register as Consultant</button>
+              <button type="button" onClick={() => { setIsRegistering(true); setLoginError(''); setShowPassword(false); }} disabled={isLoading} style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px' }}>Register as Consultant</button>
+              <button type="button" onClick={() => window.location.href = '/register-business'} disabled={isLoading} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)' }}>
+                🏢 Register Your Business
+              </button>
             </form>
           )}
         </div>
@@ -3924,83 +4016,109 @@ export default function FinancialScorePage() {
                   onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
                   onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'admin' ? '#667eea' : '#1e293b'}
                 >
-                  Consultant Dashboard
+                  {currentUser.consultantType === 'business' ? 'Business Dashboard' : 'Consultant Dashboard'}
                 </h3>
-                <div style={{ paddingLeft: '28px' }}>
-                  {/* List of Companies */}
-                  {companies.filter(c => c.consultantId === currentUser.consultantId).length > 0 ? (
-                    <div>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', padding: '4px 0' }}>
-                        My Companies
-                      </div>
-                      {companies.filter(c => c.consultantId === currentUser.consultantId).map(comp => (
-                        <div
-                          key={comp.id}
-                          onClick={() => handleSelectCompany(comp.id)}
-                          style={{
-                            fontSize: '14px',
-                            color: selectedCompanyId === comp.id ? '#667eea' : '#475569',
-                            padding: '8px 12px',
-                            cursor: 'pointer',
-                            borderRadius: '6px',
-                            marginBottom: '4px',
-                            background: selectedCompanyId === comp.id ? '#ede9fe' : 'transparent',
-                            fontWeight: selectedCompanyId === comp.id ? '600' : '400',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (selectedCompanyId !== comp.id) {
-                              e.currentTarget.style.background = '#f8fafc';
-                              e.currentTarget.style.color = '#667eea';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (selectedCompanyId !== comp.id) {
-                              e.currentTarget.style.background = 'transparent';
-                              e.currentTarget.style.color = '#475569';
-                            }
-                          }}
-                        >
-                          {selectedCompanyId === comp.id && '• '}{comp.name}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '13px', color: '#94a3b8', padding: '8px 0', fontStyle: 'italic' }}>
-                      No companies yet
-                    </div>
-                  )}
-                  
-                  {/* Add Company Button */}
-                  <button
-                    onClick={() => {
-                      setCurrentView('admin');
-                      setSelectedCompanyId('');
-                      setAdminDashboardTab('company-management');
-                    }}
-                    style={{
-                      marginTop: '12px',
-                      width: '100%',
+                
+                {/* Selected Company Name Display for Business Users */}
+                {currentUser.consultantType === 'business' && selectedCompanyId && companies.find(c => c.id === selectedCompanyId) && (
+                  <div style={{ 
+                    paddingLeft: '28px', 
+                    marginBottom: '12px',
+                    paddingBottom: '12px',
+                    borderBottom: '2px solid #e2e8f0'
+                  }}>
+                    <div style={{ 
+                      fontSize: '16px', 
+                      fontWeight: '600', 
+                      color: '#667eea',
                       padding: '8px 12px',
-                      background: '#10b981',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
-                  >
-                    <span style={{ fontSize: '16px', fontWeight: '700' }}>+</span> Add Company
-                  </button>
-                </div>
+                      background: '#f0f9ff',
+                      borderRadius: '8px',
+                      border: '2px solid #bfdbfe'
+                    }}>
+                      {companies.find(c => c.id === selectedCompanyId)?.name}
+                    </div>
+                  </div>
+                )}
+                
+                {/* My Companies List - Only for Regular Consultants */}
+                {currentUser.consultantType !== 'business' && (
+                  <div style={{ paddingLeft: '28px' }}>
+                    {/* List of Companies */}
+                    {companies.filter(c => c.consultantId === currentUser.consultantId).length > 0 ? (
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', padding: '4px 0' }}>
+                          My Companies
+                        </div>
+                        {companies.filter(c => c.consultantId === currentUser.consultantId).map(comp => (
+                          <div
+                            key={comp.id}
+                            onClick={() => handleSelectCompany(comp.id)}
+                            style={{
+                              fontSize: '14px',
+                              color: selectedCompanyId === comp.id ? '#667eea' : '#475569',
+                              padding: '8px 12px',
+                              cursor: 'pointer',
+                              borderRadius: '6px',
+                              marginBottom: '4px',
+                              background: selectedCompanyId === comp.id ? '#ede9fe' : 'transparent',
+                              fontWeight: selectedCompanyId === comp.id ? '600' : '400',
+                              transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (selectedCompanyId !== comp.id) {
+                                e.currentTarget.style.background = '#f8fafc';
+                                e.currentTarget.style.color = '#667eea';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (selectedCompanyId !== comp.id) {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.color = '#475569';
+                              }
+                            }}
+                          >
+                            {selectedCompanyId === comp.id && '• '}{comp.name}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '13px', color: '#94a3b8', padding: '8px 0', fontStyle: 'italic' }}>
+                        No companies yet
+                      </div>
+                    )}
+                    
+                    {/* Add Company Button */}
+                    <button
+                      onClick={() => {
+                        setCurrentView('admin');
+                        setSelectedCompanyId('');
+                        setAdminDashboardTab('company-management');
+                      }}
+                      style={{
+                        marginTop: '12px',
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
+                    >
+                      <span style={{ fontSize: '16px', fontWeight: '700' }}>+</span> Add Company
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </nav>
@@ -4147,185 +4265,370 @@ export default function FinancialScorePage() {
           <>
           {/* Site Administration */}
           {currentView === 'siteadmin' && currentUser?.role === 'siteadmin' && (
-            <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '32px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Site Administration</h1>
+            <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
+              <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Site Administration</h1>
               
-              {/* Add Consultant Form */}
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Add New Consultant</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
-                  <input
-                    type="text"
-                    placeholder="Consultant Type"
-                    value={newConsultantType}
-                    onChange={(e) => setNewConsultantType(e.target.value)}
-                    style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Full Name"
-                    value={newConsultantFullName}
-                    onChange={(e) => setNewConsultantFullName(e.target.value)}
-                    style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Address"
-                    value={newConsultantAddress}
-                    onChange={(e) => setNewConsultantAddress(e.target.value)}
-                    style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email Address"
-                    value={newConsultantEmail}
-                    onChange={(e) => setNewConsultantEmail(e.target.value)}
-                    style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Phone Number"
-                    value={newConsultantPhone}
-                    onChange={(e) => setNewConsultantPhone(e.target.value)}
-                    style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <input
-                    type="password"
-                    placeholder="Password"
-                    value={newConsultantPassword}
-                    onChange={(e) => setNewConsultantPassword(e.target.value)}
-                    style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                </div>
+              {/* Tab Navigation */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '2px solid #e2e8f0' }}>
                 <button
-                  onClick={addConsultant}
-                  style={{ padding: '12px 32px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                  onClick={() => setSiteAdminTab('consultants')}
+                  style={{
+                    padding: '8px 16px',
+                    background: siteAdminTab === 'consultants' ? '#667eea' : 'transparent',
+                    color: siteAdminTab === 'consultants' ? 'white' : '#64748b',
+                    border: 'none',
+                    borderBottom: siteAdminTab === 'consultants' ? '3px solid #667eea' : '3px solid transparent',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    borderRadius: '6px 6px 0 0',
+                    transition: 'all 0.2s'
+                  }}
                 >
-                  Add Consultant
+                  Consultants
+                </button>
+                <button
+                  onClick={() => setSiteAdminTab('businesses')}
+                  style={{
+                    padding: '8px 16px',
+                    background: siteAdminTab === 'businesses' ? '#667eea' : 'transparent',
+                    color: siteAdminTab === 'businesses' ? 'white' : '#64748b',
+                    border: 'none',
+                    borderBottom: siteAdminTab === 'businesses' ? '3px solid #667eea' : '3px solid transparent',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    borderRadius: '6px 6px 0 0',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Businesses
                 </button>
               </div>
 
-              {/* Consultants List */}
-              <div style={{ fontSize: '20px', fontWeight: '600', color: '#64748b', marginBottom: '16px' }}>
-                Total Consultants: {consultants.length}
+              {/* Consultants Tab */}
+              {siteAdminTab === 'consultants' && (
+              <>
+              {/* Add Consultant Form */}
+              <div style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showAddConsultantForm ? '12px' : '0' }}>
+                  <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Add New Consultant</h2>
+                  <button
+                    onClick={() => setShowAddConsultantForm(!showAddConsultantForm)}
+                    style={{ 
+                      padding: '4px 12px', 
+                      background: showAddConsultantForm ? '#f1f5f9' : '#667eea', 
+                      color: showAddConsultantForm ? '#475569' : 'white', 
+                      border: 'none', 
+                      borderRadius: '6px', 
+                      fontSize: '12px', 
+                      fontWeight: '600', 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    {showAddConsultantForm ? '▲' : '▼'}
+                  </button>
+                </div>
+                {showAddConsultantForm && (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
+                      <input
+                        type="text"
+                        placeholder="Type"
+                        value={newConsultantType}
+                        onChange={(e) => setNewConsultantType(e.target.value)}
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Full Name"
+                        value={newConsultantFullName}
+                        onChange={(e) => setNewConsultantFullName(e.target.value)}
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Address"
+                        value={newConsultantAddress}
+                        onChange={(e) => setNewConsultantAddress(e.target.value)}
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                      <input
+                        type="email"
+                        placeholder="Email"
+                        value={newConsultantEmail}
+                        onChange={(e) => setNewConsultantEmail(e.target.value)}
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                      <input
+                        type="tel"
+                        placeholder="Phone"
+                        value={newConsultantPhone}
+                        onChange={(e) => setNewConsultantPhone(e.target.value)}
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Password"
+                        value={newConsultantPassword}
+                        onChange={(e) => setNewConsultantPassword(e.target.value)}
+                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                    <button
+                      onClick={addConsultant}
+                      style={{ padding: '8px 20px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                    >
+                      Add Consultant
+                    </button>
+                  </>
+                )}
               </div>
 
-              {consultants.length === 0 ? (
-                <div style={{ background: 'white', borderRadius: '12px', padding: '60px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>👥</div>
-                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Consultants</h3>
-                  <p style={{ fontSize: '14px', color: '#94a3b8' }}>Add your first consultant to get started</p>
+              {/* Consultants List */}
+              <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '10px' }}>
+                Total Consultants: {consultants.filter(c => c.type !== 'business').length}
+              </div>
+
+              {consultants.filter(c => c.type !== 'business').length === 0 ? (
+                <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                  <div style={{ fontSize: '36px', marginBottom: '12px' }}>👥</div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No Consultants</h3>
+                  <p style={{ fontSize: '13px', color: '#94a3b8' }}>Add your first consultant to get started</p>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gap: '24px' }}>
-                  {consultants.map((consultant) => {
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  {consultants.filter(c => c.type !== 'business').map((consultant) => {
                     const consultantCompanies = getConsultantCompanies(consultant.id);
                     const expanded = selectedConsultantId === consultant.id;
 
                     return (
-                      <div key={consultant.id} style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #e2e8f0' }}>
+                      <div key={consultant.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
                         {/* Consultant Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ flex: 1 }}>
-                            <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{consultant.fullName}</h3>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '13px', color: '#64748b' }}>
-                              <div><span style={{ fontWeight: '600' }}>Type:</span> {consultant.type}</div>
-                              <div><span style={{ fontWeight: '600' }}>Email:</span> {consultant.email}</div>
-                              <div><span style={{ fontWeight: '600' }}>Address:</span> {consultant.address}</div>
-                              <div><span style={{ fontWeight: '600' }}>Phone:</span> {consultant.phone}</div>
-                            </div>
+                            <h3 
+                              onClick={() => {
+                                // Save current admin user
+                                setSiteAdminViewingAs(currentUser);
+                                // Switch to viewing this consultant's dashboard
+                                setCurrentUser({
+                                  ...consultant.user,
+                                  role: 'consultant',
+                                  consultantId: consultant.id,
+                                  consultantType: consultant.type
+                                });
+                                setCurrentView('admin');
+                              }}
+                              style={{ 
+                                fontSize: '15px', 
+                                fontWeight: '600', 
+                                color: '#667eea', 
+                                marginBottom: '0',
+                                cursor: 'pointer',
+                                textDecoration: 'underline'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.color = '#5568d3'}
+                              onMouseLeave={(e) => e.currentTarget.style.color = '#667eea'}
+                            >
+                              {consultant.fullName}
+                            </h3>
                           </div>
-                          <div style={{ display: 'flex', gap: '12px' }}>
+                          <div style={{ display: 'flex', gap: '8px' }}>
                             <button
                               onClick={() => setSelectedConsultantId(expanded ? '' : consultant.id)}
-                              style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                              style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                             >
                               {expanded ? 'Collapse' : 'Expand'}
                             </button>
                             <button
                               onClick={() => deleteConsultant(consultant.id)}
-                              style={{ padding: '8px 16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                              style={{ padding: '6px 12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                             >
                               Delete
                             </button>
                           </div>
                         </div>
 
-                        {/* Companies and Users */}
+                        {/* Expanded Details */}
                         {expanded && (
-                          <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '16px' }}>
-                            <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
+                          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', marginTop: '10px' }}>
+                            {/* Consultant Information */}
+                            <div style={{ marginBottom: '10px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
+                              <h4 style={{ fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Consultant Information</h4>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '11px', color: '#64748b' }}>
+                                <div><span style={{ fontWeight: '600' }}>Type:</span> {consultant.type}</div>
+                                <div><span style={{ fontWeight: '600' }}>Email:</span> {consultant.email}</div>
+                                <div><span style={{ fontWeight: '600' }}>Address:</span> {consultant.address}</div>
+                                <div><span style={{ fontWeight: '600' }}>Phone:</span> {consultant.phone}</div>
+                              </div>
+                            </div>
+
+                            <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                               Companies ({consultantCompanies.length})
                             </h4>
                             
                             {consultantCompanies.length === 0 ? (
-                              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '32px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>
-                                <p style={{ fontSize: '14px', color: '#64748b' }}>No companies yet</p>
+                              <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '16px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>
+                                <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>No companies yet</p>
                               </div>
                             ) : (
-                              <div style={{ display: 'grid', gap: '16px' }}>
+                              <div style={{ display: 'grid', gap: '8px' }}>
                                 {consultantCompanies.map((company) => {
                                   const companyUsers = getCompanyUsers(company.id);
                                   const isCompanyExpanded = expandedCompanyIds.includes(company.id);
+                                  const editing = editingPricing[company.id];
                                   
                                   return (
-                                    <div key={company.id} style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '12px' : '0' }}>
+                                    <div key={company.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '8px' : '0' }}>
                                         <div style={{ flex: 1 }}>
-                                          <h5 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{company.name}</h5>
-                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                            <span style={{ fontWeight: '600' }}>Location:</span> {company.location || 'Not set'} | 
-                                            <span style={{ fontWeight: '600', marginLeft: '8px' }}>Industry:</span> {
+                                          <h5 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>{company.name}</h5>
+                                          <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                            <span style={{ fontWeight: '600' }}>Industry:</span> {
                                               company.industrySector 
                                                 ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` 
                                                 : 'Not set'
                                             }
                                           </div>
                                         </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                          <div style={{ fontSize: '13px', fontWeight: '600', color: '#667eea' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                          <div style={{ fontSize: '11px', fontWeight: '600', color: '#667eea' }}>
                                             {companyUsers.length} user{companyUsers.length !== 1 ? 's' : ''}
                                           </div>
-                                          {companyUsers.length > 0 && (
-                                            <button
-                                              onClick={() => {
-                                                setExpandedCompanyIds(prev => 
-                                                  prev.includes(company.id) 
-                                                    ? prev.filter(id => id !== company.id)
-                                                    : [...prev, company.id]
-                                                );
-                                              }}
-                                              style={{ 
-                                                padding: '6px 12px', 
-                                                background: isCompanyExpanded ? '#f1f5f9' : '#667eea', 
-                                                color: isCompanyExpanded ? '#475569' : 'white', 
-                                                border: 'none', 
-                                                borderRadius: '6px', 
-                                                fontSize: '12px', 
-                                                fontWeight: '600', 
-                                                cursor: 'pointer' 
-                                              }}
-                                            >
-                                              {isCompanyExpanded ? '▲ Hide' : '▼ Show'} Users
-                                            </button>
-                                          )}
+                                          <button
+                                            onClick={() => {
+                                              setExpandedCompanyIds(prev => 
+                                                prev.includes(company.id) 
+                                                  ? prev.filter(id => id !== company.id)
+                                                  : [...prev, company.id]
+                                              );
+                                            }}
+                                            style={{ 
+                                              padding: '4px 10px', 
+                                              background: isCompanyExpanded ? '#f1f5f9' : '#667eea', 
+                                              color: isCompanyExpanded ? '#475569' : 'white', 
+                                              border: 'none', 
+                                              borderRadius: '4px', 
+                                              fontSize: '11px', 
+                                              fontWeight: '600', 
+                                              cursor: 'pointer' 
+                                            }}
+                                          >
+                                            {isCompanyExpanded ? '▲' : '▼'}
+                                          </button>
                                         </div>
                                       </div>
 
-                                      {/* Users */}
-                                      {companyUsers.length > 0 && isCompanyExpanded && (
-                                        <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '12px', marginTop: '12px' }}>
-                                          <h6 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Users:</h6>
-                                          <div style={{ display: 'grid', gap: '6px' }}>
-                                            {companyUsers.map((user) => (
-                                              <div key={user.id} style={{ background: 'white', borderRadius: '6px', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      {/* Expanded Details */}
+                                      {isCompanyExpanded && (
+                                        <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
+                                          {/* Subscription Pricing */}
+                                          <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h6>
+                                            {editing ? (
+                                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
                                                 <div>
-                                                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>{user.name}</div>
-                                                  <div style={{ fontSize: '11px', color: '#64748b' }}>{user.email}</div>
+                                                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
+                                                  <input
+                                                    type="number"
+                                                    value={editing.monthly}
+                                                    onChange={(e) => setEditingPricing({
+                                                      ...editingPricing,
+                                                      [company.id]: { ...editing, monthly: parseFloat(e.target.value) || 0 }
+                                                    })}
+                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                  />
+                                                </div>
+                                                <div>
+                                                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Quarterly ($)</label>
+                                                  <input
+                                                    type="number"
+                                                    value={editing.quarterly}
+                                                    onChange={(e) => setEditingPricing({
+                                                      ...editingPricing,
+                                                      [company.id]: { ...editing, quarterly: parseFloat(e.target.value) || 0 }
+                                                    })}
+                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                  />
+                                                </div>
+                                                <div>
+                                                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Annual ($)</label>
+                                                  <input
+                                                    type="number"
+                                                    value={editing.annual}
+                                                    onChange={(e) => setEditingPricing({
+                                                      ...editingPricing,
+                                                      [company.id]: { ...editing, annual: parseFloat(e.target.value) || 0 }
+                                                    })}
+                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                  />
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '6px', gridColumn: 'span 3' }}>
+                                                  <button
+                                                    onClick={() => {
+                                                      updateCompanyPricing(company.id, editing);
+                                                    }}
+                                                    style={{ padding: '4px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Save
+                                                  </button>
+                                                  <button
+                                                    onClick={() => {
+                                                      setEditingPricing((prev) => {
+                                                        const newState = { ...prev };
+                                                        delete newState[company.id];
+                                                        return newState;
+                                                      });
+                                                    }}
+                                                    style={{ padding: '4px 10px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Cancel
+                                                  </button>
                                                 </div>
                                               </div>
-                                            ))}
+                                            ) : (
+                                              <div>
+                                                <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
+                                                  <div><strong>Monthly:</strong> ${company.subscriptionMonthlyPrice?.toFixed(2) || '195.00'}</div>
+                                                  <div><strong>Quarterly:</strong> ${company.subscriptionQuarterlyPrice?.toFixed(2) || '500.00'}</div>
+                                                  <div><strong>Annual:</strong> ${company.subscriptionAnnualPrice?.toFixed(2) || '1750.00'}</div>
+                                                </div>
+                                                <button
+                                                  onClick={() => {
+                                                    setEditingPricing({
+                                                      ...editingPricing,
+                                                      [company.id]: {
+                                                        monthly: company.subscriptionMonthlyPrice || 195,
+                                                        quarterly: company.subscriptionQuarterlyPrice || 500,
+                                                        annual: company.subscriptionAnnualPrice || 1750
+                                                      }
+                                                    });
+                                                  }}
+                                                  style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                                >
+                                                  Edit Pricing
+                                                </button>
+                                              </div>
+                                            )}
                                           </div>
+
+                                          {/* Users */}
+                                          {companyUsers.length > 0 && (
+                                            <div>
+                                              <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Users:</h6>
+                                              <div style={{ display: 'grid', gap: '4px' }}>
+                                                {companyUsers.map((user) => (
+                                                  <div key={user.id} style={{ background: 'white', borderRadius: '4px', padding: '6px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div>
+                                                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>{user.name}</div>
+                                                      <div style={{ fontSize: '10px', color: '#64748b' }}>{user.email}</div>
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
                                         </div>
                                       )}
                                     </div>
@@ -4340,13 +4643,242 @@ export default function FinancialScorePage() {
                   })}
                 </div>
               )}
+              </>
+              )}
+
+              {/* Businesses Tab */}
+              {siteAdminTab === 'businesses' && (
+                <div>
+                  {/* Businesses List */}
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '10px' }}>
+                    Total Businesses: {consultants.filter(c => c.type === 'business').length}
+                  </div>
+
+                  {consultants.filter(c => c.type === 'business').length === 0 ? (
+                    <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                      <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses registered yet</h3>
+                      <p style={{ fontSize: '13px', color: '#94a3b8' }}>Businesses will appear here once they register</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: '12px' }}>
+                      {consultants.filter(c => c.type === 'business').map((business) => {
+                        const businessCompany = companies.find(comp => comp.consultantId === business.id);
+                        const isExpanded = expandedBusinessIds.has(business.id);
+                        const editing = editingPricing[business.id];
+                        
+                        return (
+                          <div key={business.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                            {/* Business Header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <h3 
+                                    onClick={() => {
+                                      // Save current admin user
+                                      setSiteAdminViewingAs(currentUser);
+                                      // Switch to viewing this business's dashboard
+                                      setCurrentUser({
+                                        ...business.user,
+                                        role: 'consultant',
+                                        consultantId: business.id,
+                                        consultantType: business.type
+                                      });
+                                      setCurrentView('admin');
+                                    }}
+                                    style={{ 
+                                      fontSize: '15px', 
+                                      fontWeight: '600', 
+                                      color: '#667eea', 
+                                      margin: 0,
+                                      cursor: 'pointer',
+                                      textDecoration: 'underline'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.color = '#5568d3'}
+                                    onMouseLeave={(e) => e.currentTarget.style.color = '#667eea'}
+                                  >
+                                    {business.fullName}
+                                  </h3>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setExpandedBusinessIds(prev => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(business.id)) {
+                                      newSet.delete(business.id);
+                                    } else {
+                                      newSet.add(business.id);
+                                    }
+                                    return newSet;
+                                  });
+                                }}
+                                style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                {isExpanded ? 'Collapse' : 'Expand'}
+                              </button>
+                            </div>
+
+                            {/* Expanded Details */}
+                            {isExpanded && (
+                              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '10px', paddingTop: '10px' }}>
+
+                                {/* Business Information */}
+                                <div style={{ marginBottom: '8px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
+                                  <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Business Information</h4>
+                                  <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
+                                    <div><strong>Type:</strong> {business.type}</div>
+                                    <div><strong>Email:</strong> {business.user?.email}</div>
+                                    <div><strong>Phone:</strong> {business.phone}</div>
+                                    <div><strong>Address:</strong> {business.address || 'Not provided'}</div>
+                                  </div>
+                                </div>
+
+                                {/* Company Details */}
+                                {businessCompany && (
+                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#f0f9ff', borderRadius: '6px' }}>
+                                    <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Company Details</h4>
+                                    <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
+                                      <div><strong>Company Name:</strong> {businessCompany.name}</div>
+                                      <div><strong>Industry:</strong> {businessCompany.industrySector || 'Not set'}</div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Subscription Pricing */}
+                                <div style={{ padding: '8px', background: '#fef3c7', borderRadius: '6px' }}>
+                                  <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h4>
+                                  {editing ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                                      <div>
+                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
+                                        <input
+                                          type="number"
+                                          value={editing.monthly}
+                                          onChange={(e) => setEditingPricing({
+                                            ...editingPricing,
+                                            [business.id]: { ...editing, monthly: parseFloat(e.target.value) || 0 }
+                                          })}
+                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Quarterly ($)</label>
+                                        <input
+                                          type="number"
+                                          value={editing.quarterly}
+                                          onChange={(e) => setEditingPricing({
+                                            ...editingPricing,
+                                            [business.id]: { ...editing, quarterly: parseFloat(e.target.value) || 0 }
+                                          })}
+                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Annual ($)</label>
+                                        <input
+                                          type="number"
+                                          value={editing.annual}
+                                          onChange={(e) => setEditingPricing({
+                                            ...editingPricing,
+                                            [business.id]: { ...editing, annual: parseFloat(e.target.value) || 0 }
+                                          })}
+                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                        />
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          if (businessCompany) {
+                                            updateCompanyPricing(businessCompany.id, editing);
+                                          }
+                                        }}
+                                        style={{ padding: '4px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setEditingPricing((prev) => {
+                                            const newState = { ...prev };
+                                            delete newState[business.id];
+                                            return newState;
+                                          });
+                                        }}
+                                        style={{ padding: '4px 10px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
+                                        <div><strong>Monthly:</strong> ${businessCompany?.subscriptionMonthlyPrice?.toFixed(2) || '195.00'}</div>
+                                        <div><strong>Quarterly:</strong> ${businessCompany?.subscriptionQuarterlyPrice?.toFixed(2) || '500.00'}</div>
+                                        <div><strong>Annual:</strong> ${businessCompany?.subscriptionAnnualPrice?.toFixed(2) || '1750.00'}</div>
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          setEditingPricing({
+                                            ...editingPricing,
+                                            [business.id]: {
+                                              monthly: businessCompany?.subscriptionMonthlyPrice || 195,
+                                              quarterly: businessCompany?.subscriptionQuarterlyPrice || 500,
+                                              annual: businessCompany?.subscriptionAnnualPrice || 1750
+                                            }
+                                          });
+                                        }}
+                                        style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                      >
+                                        Edit Pricing
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           {/* Admin Dashboard */}
           {currentView === 'admin' && currentUser?.role === 'consultant' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Consultant Dashboard</h1>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+              {currentUser.consultantType === 'business' ? 'Business Dashboard' : 'Consultant Dashboard'}
+            </h1>
+            {siteAdminViewingAs && (
+              <button
+                onClick={() => {
+                  // Restore admin user
+                  setCurrentUser(siteAdminViewingAs);
+                  setSiteAdminViewingAs(null);
+                  setCurrentView('siteadmin');
+                }}
+                style={{ 
+                  padding: '10px 20px', 
+                  background: '#f59e0b', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '8px', 
+                  fontSize: '14px', 
+                  fontWeight: '600', 
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                ← Back to Site Admin
+              </button>
+            )}
+          </div>
           
           {/* Tab Navigation */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
@@ -4366,6 +4898,23 @@ export default function FinancialScorePage() {
               }}
             >
               Company Management
+            </button>
+            <button
+              onClick={() => setAdminDashboardTab('payments')}
+              style={{
+                padding: '12px 24px',
+                background: adminDashboardTab === 'payments' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'payments' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'payments' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Billing
             </button>
             <button
               onClick={() => setAdminDashboardTab('import-financials')}
@@ -4436,23 +4985,6 @@ export default function FinancialScorePage() {
               Data Mapping
             </button>
             <button
-              onClick={() => setAdminDashboardTab('payments')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'payments' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'payments' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'payments' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Payments
-            </button>
-            <button
               onClick={() => setAdminDashboardTab('profile')}
               style={{
                 padding: '12px 24px',
@@ -4477,41 +5009,61 @@ export default function FinancialScorePage() {
             <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Company Management</h2>
             
             {/* Show selected company or add new company option */}
-            {!selectedCompanyId ? (
-              <>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-                  Select a company from the sidebar or create a new one:
-                </p>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Company Name" 
-                    value={newCompanyName} 
-                    onChange={(e) => setNewCompanyName(e.target.value)} 
-                    onKeyDown={(e) => e.key === 'Enter' && !isLoading && addCompany()}
-                    disabled={isLoading}
-                    style={{ flex: 1, padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
-                  />
-                  <button 
-                    onClick={addCompany} 
-                    disabled={isLoading}
-                    style={{ 
-                      padding: '12px 24px', 
-                      background: isLoading ? '#94a3b8' : '#667eea', 
-                      color: 'white', 
-                      border: 'none', 
-                      borderRadius: '8px', 
-                      fontSize: '14px', 
-                      fontWeight: '600', 
-                      cursor: isLoading ? 'not-allowed' : 'pointer',
-                      opacity: isLoading ? 0.7 : 1 
-                    }}
-                  >
-                    {isLoading ? 'Adding...' : 'Add Company'}
-                  </button>
-                </div>
-              </>
-            ) : (
+            {(() => {
+              // For business users, auto-select their company if not already selected
+              if (currentUser.consultantType === 'business' && !selectedCompanyId && companies.length > 0) {
+                const businessCompany = companies.find(c => c.consultantId === currentUser.consultantId);
+                if (businessCompany) {
+                  setTimeout(() => setSelectedCompanyId(businessCompany.id), 0);
+                }
+              }
+              
+              return !selectedCompanyId ? (
+                <>
+                  {/* Only show Add Company for regular consultants */}
+                  {currentUser.consultantType !== 'business' && (
+                    <>
+                      <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                        Select a company from the sidebar or create a new one:
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                        <input 
+                          type="text" 
+                          placeholder="Company Name" 
+                          value={newCompanyName} 
+                          onChange={(e) => setNewCompanyName(e.target.value)} 
+                          onKeyDown={(e) => e.key === 'Enter' && !isLoading && addCompany()}
+                          disabled={isLoading}
+                          style={{ flex: 1, padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                        />
+                        <button 
+                          onClick={addCompany} 
+                          disabled={isLoading}
+                          style={{ 
+                            padding: '12px 24px', 
+                            background: isLoading ? '#94a3b8' : '#667eea', 
+                            color: 'white', 
+                            border: 'none', 
+                            borderRadius: '8px', 
+                            fontSize: '14px', 
+                            fontWeight: '600', 
+                            cursor: isLoading ? 'not-allowed' : 'pointer',
+                            opacity: isLoading ? 0.7 : 1 
+                          }}
+                        >
+                          {isLoading ? 'Adding...' : 'Add Company'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {/* For business users with no company selected, show loading message */}
+                  {currentUser.consultantType === 'business' && (
+                    <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                      <p>Loading your company information...</p>
+                    </div>
+                  )}
+                </>
+              ) : (
               <>
                 {/* Only show the selected company - always expanded */}
                 {companies.filter(c => c.id === selectedCompanyId).map(comp => (
@@ -4521,7 +5073,10 @@ export default function FinancialScorePage() {
                       <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{comp.name}</h3>
                       <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>✓ Active Company</div>
                     </div>
-                    <button onClick={() => deleteCompany(comp.id)} style={{ padding: '8px 16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: '600' }}>Delete Company</button>
+                    {/* Only show Delete button for regular consultants, not business users */}
+                    {currentUser.consultantType !== 'business' && (
+                      <button onClick={() => deleteCompany(comp.id)} style={{ padding: '8px 16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: '600' }}>Delete Company</button>
+                    )}
                   </div>
                   
                   {/* Company Information */}
@@ -4751,7 +5306,8 @@ export default function FinancialScorePage() {
                 </div>
               ))}
               </>
-            )}
+              );
+            })()}
           </div>
           )}
           
@@ -5351,138 +5907,108 @@ export default function FinancialScorePage() {
             </div>
           )}
 
-          {/* Payments Tab */}
-          {adminDashboardTab === 'payments' && selectedCompanyId && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Subscription Management</h2>
-              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
-                Manage your subscription and billing for {companyName || 'your company'}.
-              </p>
+          {/* Payments/Billing Tab */}
+          {adminDashboardTab === 'payments' && selectedCompanyId && (() => {
+            const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+            const monthlyPrice = selectedCompany?.subscriptionMonthlyPrice || 195;
+            const quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice || 500;
+            const annualPrice = selectedCompany?.subscriptionAnnualPrice || 1750;
+            
+            return (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Billing & Subscription</h2>
 
-              {/* Subscription Plan Selection */}
-              <div style={{ marginBottom: '32px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>Select Subscription Plan</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+              {/* Subscription Plans - Read Only */}
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>Subscription Plans</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                   {/* Monthly Plan */}
-                  <div 
-                    onClick={() => {/* TODO: setSelectedPlan('monthly') */}}
-                    style={{ 
-                      border: '2px solid #e2e8f0', 
-                      borderRadius: '12px', 
-                      padding: '24px', 
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      background: 'white'
-                    }}
-                  >
-                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Monthly</div>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
-                      $<input 
-                        type="number" 
-                        placeholder="99" 
-                        value={subscriptionMonthlyPrice || ''}
-                        onChange={(e) => setSubscriptionMonthlyPrice(e.target.value ? parseFloat(e.target.value) : undefined)}
-                        style={{ width: '80px', border: 'none', borderBottom: '2px solid #667eea', fontSize: '32px', fontWeight: '700', color: '#667eea', outline: 'none' }}
-                      />
-                      <span style={{ fontSize: '16px', color: '#64748b' }}>/mo</span>
+                  <div style={{ 
+                    border: '2px solid #e2e8f0', 
+                    borderRadius: '8px', 
+                    padding: '14px', 
+                    background: '#fafafa'
+                  }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Monthly</div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>
+                      ${monthlyPrice.toFixed(2)}
+                      <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>/mo</span>
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>Billed monthly</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Billed monthly</div>
                   </div>
 
                   {/* Quarterly Plan */}
-                  <div 
-                    onClick={() => {/* TODO: setSelectedPlan('quarterly') */}}
-                    style={{ 
-                      border: '2px solid #e2e8f0', 
-                      borderRadius: '12px', 
-                      padding: '24px', 
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      background: 'white'
-                    }}
-                  >
-                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Quarterly</div>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
-                      $<input 
-                        type="number" 
-                        placeholder="279" 
-                        value={subscriptionQuarterlyPrice || ''}
-                        onChange={(e) => setSubscriptionQuarterlyPrice(e.target.value ? parseFloat(e.target.value) : undefined)}
-                        style={{ width: '90px', border: 'none', borderBottom: '2px solid #667eea', fontSize: '32px', fontWeight: '700', color: '#667eea', outline: 'none' }}
-                      />
-                      <span style={{ fontSize: '16px', color: '#64748b' }}>/quarter</span>
+                  <div style={{ 
+                    border: '2px solid #e2e8f0', 
+                    borderRadius: '8px', 
+                    padding: '14px', 
+                    background: '#fafafa'
+                  }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Quarterly</div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>
+                      ${quarterlyPrice.toFixed(2)}
+                      <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>/qtr</span>
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>Billed every 3 months • Save 5%</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Billed every 3 months</div>
                   </div>
 
                   {/* Annual Plan */}
-                  <div 
-                    onClick={() => {/* TODO: setSelectedPlan('annual') */}}
-                    style={{ 
-                      border: '2px solid #667eea', 
-                      borderRadius: '12px', 
-                      padding: '24px', 
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      background: '#f0f4ff',
-                      position: 'relative'
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: '8px', right: '8px', background: '#10b981', color: 'white', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600' }}>
+                  <div style={{ 
+                    border: '2px solid #10b981', 
+                    borderRadius: '8px', 
+                    padding: '14px', 
+                    background: '#f0fdf4',
+                    position: 'relative'
+                  }}>
+                    <div style={{ position: 'absolute', top: '6px', right: '6px', background: '#10b981', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: '600' }}>
                       BEST VALUE
                     </div>
-                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Annual</div>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
-                      $<input 
-                        type="number" 
-                        placeholder="999" 
-                        value={subscriptionAnnualPrice || ''}
-                        onChange={(e) => setSubscriptionAnnualPrice(e.target.value ? parseFloat(e.target.value) : undefined)}
-                        style={{ width: '100px', border: 'none', borderBottom: '2px solid #667eea', fontSize: '32px', fontWeight: '700', color: '#667eea', outline: 'none', background: 'transparent' }}
-                      />
-                      <span style={{ fontSize: '16px', color: '#64748b' }}>/year</span>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Annual</div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#059669' }}>
+                      ${annualPrice.toFixed(2)}
+                      <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>/yr</span>
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>Billed annually • Save 15%</div>
+                    <div style={{ fontSize: '11px', color: '#059669', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
                   </div>
                 </div>
               </div>
 
               {/* Payment Information */}
-              <div style={{ marginBottom: '32px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>Payment Information</h3>
-                <div style={{ display: 'grid', gap: '16px' }}>
-                  {/* Cardholder Name */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-                      Cardholder Name *
-                    </label>
-                    <input 
-                      type="text"
-                      placeholder="John Doe"
-                      style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                    />
-                  </div>
-
-                  {/* Card Number */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-                      Card Number *
-                    </label>
-                    <input 
-                      type="text"
-                      placeholder="1234 5678 9012 3456"
-                      maxLength={19}
-                      style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                    />
-                  </div>
-
-                  {/* Expiration and CVV */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>Payment Information</h3>
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {/* Cardholder & Card Number - 2 columns */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-                        Expiration Month *
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                        Cardholder Name *
                       </label>
-                      <select style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}>
+                      <input 
+                        type="text"
+                        placeholder="John Doe"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                        Card Number *
+                      </label>
+                      <input 
+                        type="text"
+                        placeholder="1234 5678 9012 3456"
+                        maxLength={19}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Exp Month, Exp Year, CVV - 4 columns with fixed widths */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 80px 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                        Exp Month *
+                      </label>
+                      <select style={{ width: '100%', padding: '8px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}>
                         <option value="">MM</option>
                         {Array.from({length: 12}, (_, i) => i + 1).map(month => (
                           <option key={month} value={month.toString().padStart(2, '0')}>
@@ -5492,10 +6018,10 @@ export default function FinancialScorePage() {
                       </select>
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-                        Expiration Year *
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                        Exp Year *
                       </label>
-                      <select style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}>
+                      <select style={{ width: '100%', padding: '8px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}>
                         <option value="">YYYY</option>
                         {Array.from({length: 10}, (_, i) => new Date().getFullYear() + i).map(year => (
                           <option key={year} value={year}>
@@ -5505,108 +6031,132 @@ export default function FinancialScorePage() {
                       </select>
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                         CVV *
                       </label>
                       <input 
                         type="text"
                         placeholder="123"
                         maxLength={4}
-                        style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                     </div>
+                    <div></div>
                   </div>
 
-                  {/* Billing Address */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-                      Billing Address *
-                    </label>
-                    <input 
-                      type="text"
-                      placeholder="123 Main St"
-                      style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', marginBottom: '12px' }}
-                    />
-                  </div>
-
-                  {/* City, State, ZIP */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px' }}>
+                  {/* Address, City, State, ZIP - Single row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '420px 200px 100px 120px', gap: '10px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                        Billing Address *
+                      </label>
+                      <input 
+                        type="text"
+                        placeholder="123 Main St"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                         City *
                       </label>
                       <input 
                         type="text"
                         placeholder="San Francisco"
-                        style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                         State *
                       </label>
-                      <input 
-                        type="text"
-                        placeholder="CA"
-                        maxLength={2}
-                        style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                      />
+                      <select style={{ width: '100%', padding: '8px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}>
+                        <option value="">State</option>
+                        <option value="AL">AL</option>
+                        <option value="AK">AK</option>
+                        <option value="AZ">AZ</option>
+                        <option value="AR">AR</option>
+                        <option value="CA">CA</option>
+                        <option value="CO">CO</option>
+                        <option value="CT">CT</option>
+                        <option value="DE">DE</option>
+                        <option value="FL">FL</option>
+                        <option value="GA">GA</option>
+                        <option value="HI">HI</option>
+                        <option value="ID">ID</option>
+                        <option value="IL">IL</option>
+                        <option value="IN">IN</option>
+                        <option value="IA">IA</option>
+                        <option value="KS">KS</option>
+                        <option value="KY">KY</option>
+                        <option value="LA">LA</option>
+                        <option value="ME">ME</option>
+                        <option value="MD">MD</option>
+                        <option value="MA">MA</option>
+                        <option value="MI">MI</option>
+                        <option value="MN">MN</option>
+                        <option value="MS">MS</option>
+                        <option value="MO">MO</option>
+                        <option value="MT">MT</option>
+                        <option value="NE">NE</option>
+                        <option value="NV">NV</option>
+                        <option value="NH">NH</option>
+                        <option value="NJ">NJ</option>
+                        <option value="NM">NM</option>
+                        <option value="NY">NY</option>
+                        <option value="NC">NC</option>
+                        <option value="ND">ND</option>
+                        <option value="OH">OH</option>
+                        <option value="OK">OK</option>
+                        <option value="OR">OR</option>
+                        <option value="PA">PA</option>
+                        <option value="RI">RI</option>
+                        <option value="SC">SC</option>
+                        <option value="SD">SD</option>
+                        <option value="TN">TN</option>
+                        <option value="TX">TX</option>
+                        <option value="UT">UT</option>
+                        <option value="VT">VT</option>
+                        <option value="VA">VA</option>
+                        <option value="WA">WA</option>
+                        <option value="WV">WV</option>
+                        <option value="WI">WI</option>
+                        <option value="WY">WY</option>
+                        <option value="DC">DC</option>
+                      </select>
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                         ZIP *
                       </label>
                       <input 
                         type="text"
                         placeholder="94102"
                         maxLength={10}
-                        style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Pricing Actions */}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '24px', marginBottom: '32px' }}>
-                <button
-                  onClick={saveSubscriptionPricing}
-                  disabled={isLoading}
-                  style={{
-                    padding: '12px 32px',
-                    background: '#10b981',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: isLoading ? 'not-allowed' : 'pointer',
-                    opacity: isLoading ? 0.6 : 1,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {isLoading ? 'Saving...' : '💾 Save Pricing'}
-                </button>
-              </div>
-
               {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '24px' }}>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
                 <button
                   onClick={() => {
-                    if (confirm('Are you sure you want to cancel your subscription? Your access will end at the end of the current billing period.')) {
-                      alert('Subscription cancelled. Your access will continue until the end of the current billing period.');
+                    if (confirm('Are you sure you want to cancel your subscription?')) {
+                      alert('Subscription cancelled.');
                     }
                   }}
                   style={{
-                    padding: '12px 24px',
+                    padding: '8px 16px',
                     background: 'white',
                     color: '#ef4444',
-                    border: '2px solid #ef4444',
-                    borderRadius: '8px',
-                    fontSize: '14px',
+                    border: '1px solid #ef4444',
+                    borderRadius: '6px',
+                    fontSize: '13px',
                     fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    cursor: 'pointer'
                   }}
                 >
                   Cancel Subscription
@@ -5616,15 +6166,14 @@ export default function FinancialScorePage() {
                     alert('Processing payment... This will integrate with USAePay API');
                   }}
                   style={{
-                    padding: '12px 32px',
+                    padding: '8px 20px',
                     background: '#667eea',
                     color: 'white',
                     border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
+                    borderRadius: '6px',
+                    fontSize: '13px',
                     fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    cursor: 'pointer'
                   }}
                 >
                   Start Subscription
@@ -5632,17 +6181,17 @@ export default function FinancialScorePage() {
               </div>
 
               {/* Security Notice */}
-              <div style={{ marginTop: '24px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '16px' }}>🔒</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#065f46' }}>Secure Payment Processing</span>
+              <div style={{ marginTop: '16px', padding: '10px 12px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '14px' }}>🔒</span>
+                  <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
+                    Secure payment processing via USAePay. Card data is encrypted and never stored on our servers.
+                  </span>
                 </div>
-                <p style={{ fontSize: '13px', color: '#059669', margin: 0 }}>
-                  All payments are processed securely through USAePay. Your card information is encrypted and never stored on our servers.
-                </p>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {!selectedCompanyId && adminDashboardTab === 'payments' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
