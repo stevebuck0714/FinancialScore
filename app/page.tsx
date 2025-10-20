@@ -132,6 +132,11 @@ interface Company {
   consultantId?: string;
   createdDate: string;
   location?: string;
+  addressStreet?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZip?: string;
+  addressCountry?: string;
   industrySector?: number;
   subscriptionMonthlyPrice?: number;
   subscriptionQuarterlyPrice?: number;
@@ -4892,8 +4897,18 @@ export default function FinancialScorePage() {
                                   <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
                                     <div><strong>Type:</strong> {business.type}</div>
                                     <div><strong>Email:</strong> {business.user?.email}</div>
-                                    <div><strong>Phone:</strong> {business.phone}</div>
-                                    <div><strong>Address:</strong> {business.address || 'Not provided'}</div>
+                                    <div><strong>Phone:</strong> {business.phone || 'Not provided'}</div>
+                                    <div><strong>Address:</strong> {
+                                      businessCompany && (businessCompany.addressStreet || businessCompany.addressCity) ? (
+                                        <>
+                                          {businessCompany.addressStreet && <>{businessCompany.addressStreet}<br /></>}
+                                          {businessCompany.addressCity && businessCompany.addressCity}
+                                          {businessCompany.addressState && `, ${businessCompany.addressState}`}
+                                          {businessCompany.addressZip && ` ${businessCompany.addressZip}`}
+                                          {businessCompany.addressCountry && <><br />{businessCompany.addressCountry}</>}
+                                        </>
+                                      ) : 'Not provided'
+                                    }</div>
                                   </div>
                                 </div>
 
