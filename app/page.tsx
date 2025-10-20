@@ -1294,7 +1294,8 @@ export default function FinancialScorePage() {
     incomeStatement12MonthsQuarterly: false,
     incomeStatement3YearsAnnual: false,
     balanceSheet12MonthsQuarterly: false,
-    balanceSheet3YearsAnnual: false
+    balanceSheet3YearsAnnual: false,
+    profile: false
   });
 
   // Load from localStorage (DEPRECATED - will be removed)
@@ -3522,6 +3523,9 @@ export default function FinancialScorePage() {
         title: 'Balance Sheet - Last 3 Years (Annual)' 
       });
     }
+    if (printPackageSelections.profile) {
+      printQueue.push({ view: 'profile', title: 'Company Profile' });
+    }
 
     if (printQueue.length === 0) {
       alert('Please select at least one report to print.');
@@ -4523,6 +4527,22 @@ export default function FinancialScorePage() {
                                       {/* Expanded Details */}
                                       {isCompanyExpanded && (
                                         <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
+                                          {/* Company Address */}
+                                          {(company.addressStreet || company.addressCity) && (
+                                            <div style={{ marginBottom: '8px', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                              <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Address</h6>
+                                              <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
+                                                {company.addressStreet && <div>{company.addressStreet}</div>}
+                                                <div>
+                                                  {company.addressCity && company.addressCity}
+                                                  {company.addressState && `, ${company.addressState}`}
+                                                  {company.addressZip && ` ${company.addressZip}`}
+                                                </div>
+                                                {company.addressCountry && <div>{company.addressCountry}</div>}
+                                              </div>
+                                            </div>
+                                          )}
+                                          
                                           {/* Subscription Pricing */}
                                           <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                             <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h6>
@@ -4849,7 +4869,7 @@ export default function FinancialScorePage() {
           {/* Admin Dashboard */}
           {currentView === 'admin' && currentUser?.role === 'consultant' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+          <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
               {currentUser.consultantType === 'business' ? 'Business Dashboard' : 'Consultant Dashboard'}
             </h1>
@@ -4881,7 +4901,7 @@ export default function FinancialScorePage() {
           </div>
           
           {/* Tab Navigation */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+          <div className="dashboard-tabs-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
             <button
               onClick={() => setAdminDashboardTab('company-management')}
               style={{
@@ -17001,33 +17021,53 @@ export default function FinancialScorePage() {
 
       {/* Profile View */}
       {currentView === 'admin' && adminDashboardTab === 'profile' && selectedCompanyId && currentUser?.role === 'consultant' && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '8px 32px 32px 32px' }}>
           <style>{`
             @media print {
               @page {
-                margin: 0.75in;
+                margin: 0.75in 0.75in 0.75in 0.75in;
+              }
+              
+              body, main, main * {
+                margin-top: 0 !important;
+              }
+              
+              #first-profile-section {
+                padding: 0 32px 32px 32px !important;
+                margin-top: 0 !important;
+                margin-bottom: 0 !important;
               }
               
               .page-break {
                 page-break-after: always;
                 break-after: page;
+                padding: 32px !important;
+                margin: 0 !important;
               }
               
               .print-page-header {
-                display: flex !important;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 20px;
-                padding-bottom: 12px;
-                border-bottom: 2px solid #1e293b;
+                display: none !important;
               }
               
-              aside, header, .no-print {
+              aside, header, .no-print, .dashboard-header-print-hide, .dashboard-tabs-print-hide {
                 display: none !important;
               }
               
               body {
                 background: white !important;
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              
+              main {
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              
+              main > div {
+                padding: 0 !important;
+                margin: 0 !important;
+                max-width: none !important;
               }
               
               * {
@@ -17128,7 +17168,7 @@ export default function FinancialScorePage() {
             return (
               <>
                 {/* Section 1: Business Profile */}
-                <div className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div id="first-profile-section" className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div className="print-page-header">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
@@ -17174,7 +17214,21 @@ export default function FinancialScorePage() {
                     />
                     
                     <div style={{ fontWeight: '600', color: '#475569' }}>ADDRESS</div>
-                    <div style={{ color: '#1e293b' }}>{company?.location || 'Not set'}</div>
+                    <div style={{ color: '#1e293b' }}>
+                      {company?.addressStreet || company?.addressCity ? (
+                        <>
+                          {company?.addressStreet && <div>{company.addressStreet}</div>}
+                          <div>
+                            {company?.addressCity && company.addressCity}
+                            {company?.addressState && `, ${company.addressState}`}
+                            {company?.addressZip && ` ${company.addressZip}`}
+                          </div>
+                          {company?.addressCountry && <div>{company.addressCountry}</div>}
+                        </>
+                      ) : (
+                        'Not set'
+                      )}
+                    </div>
                     
                     <div style={{ fontWeight: '600', color: '#475569' }}>INDUSTRY</div>
                     <div style={{ color: '#1e293b' }}>
@@ -18419,6 +18473,22 @@ export default function FinancialScorePage() {
                   </div>
                 </div>
               </div>
+
+              {/* Company Profile */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={printPackageSelections.profile}
+                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, profile: e.target.checked})}
+                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Company Profile</div>
+                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Business profile, financial overview, ratios, and disclosures</div>
+                  </div>
+                </label>
+              </div>
             </div>
 
             {/* Action Buttons */}
@@ -18454,7 +18524,8 @@ export default function FinancialScorePage() {
                     incomeStatement12MonthsQuarterly: false,
                     incomeStatement3YearsAnnual: false,
                     balanceSheet12MonthsQuarterly: false,
-                    balanceSheet3YearsAnnual: false
+                    balanceSheet3YearsAnnual: false,
+                    profile: false
                   });
                 }}
                 style={{
