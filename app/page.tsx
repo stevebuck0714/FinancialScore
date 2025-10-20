@@ -9666,18 +9666,23 @@ export default function FinancialScorePage() {
           {(() => {
             // Calculate trailing 12 months values
             const last12 = monthly.slice(-12);
-            const ttmRevenue = last12.reduce((sum, m) => sum + m.revenue, 0);
-            const ttmExpense = last12.reduce((sum, m) => sum + m.expense, 0);
-            const ttmNetIncome = ttmRevenue - ttmExpense;
+            const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
+            const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
+            const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
+            const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+            const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
             
-            // Estimate EBITDA (simplified - assumes depreciation is ~5% of revenue and interest is minimal)
-            const estimatedDepreciation = ttmRevenue * 0.05;
-            const estimatedInterest = ttmRevenue * 0.02;
-            const ttmEBITDA = ttmNetIncome + estimatedDepreciation + estimatedInterest;
+            // Calculate Net Income correctly: Revenue - COGS - Operating Expenses
+            const ttmGrossProfit = ttmRevenue - ttmCOGS;
+            const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
             
-            // Estimate SDE (add back owner's compensation - estimate at 15% of revenue)
-            const estimatedOwnerComp = ttmRevenue * 0.15;
-            const ttmSDE = ttmEBITDA + estimatedOwnerComp;
+            // Calculate EBITDA: Net Income + Interest + Taxes + Depreciation + Amortization
+            const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
+            // Note: We don't have a separate tax field, so this is technically EBIT if taxes are in 'expense'
+            
+            // Calculate SDE using ACTUAL Owner Base Pay from income statement
+            const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+            const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
             
             // Calculate valuations
             const sdeValuation = ttmSDE * sdeMultiplier;
@@ -9689,16 +9694,16 @@ export default function FinancialScorePage() {
             const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
             
             // Working capital change over last 12 months
-            const currentWC = (currentMonth.cash + currentMonth.ar + currentMonth.inventory) - (currentMonth.ap + currentMonth.otherCL);
-            const priorWC = (month12Ago.cash + month12Ago.ar + month12Ago.inventory) - (month12Ago.ap + month12Ago.otherCL);
+            const currentWC = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
+            const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
             const changeInWC = currentWC - priorWC;
             
             // Capital expenditures (change in fixed assets + depreciation)
-            const changeInFixedAssets = currentMonth.fixedAssets - month12Ago.fixedAssets;
-            const ttmCapEx = Math.max(0, changeInFixedAssets + estimatedDepreciation);
+            const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
+            const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
             
-            // Free Cash Flow
-            const ttmFreeCashFlow = ttmNetIncome + estimatedDepreciation - changeInWC - ttmCapEx;
+            // Free Cash Flow using ACTUAL depreciation
+            const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
             
             // DCF calculation with adjustable parameters using FCF
             const growthRate = growth_24mo / 100;
@@ -9718,8 +9723,8 @@ export default function FinancialScorePage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                     <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>SDE Valuation</h3>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
-                      ${(sdeValuation / 1000000).toFixed(0)}M
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
+                      ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
                       TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
@@ -9728,8 +9733,8 @@ export default function FinancialScorePage() {
                   
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                     <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>EBITDA Valuation</h3>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
-                      ${(ebitdaValuation / 1000000).toFixed(0)}M
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
+                      ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
                       TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
@@ -9738,8 +9743,8 @@ export default function FinancialScorePage() {
                   
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #f59e0b' }}>
                     <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>DCF Valuation</h3>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#f59e0b', marginBottom: '8px' }}>
-                      ${(dcfValue / 1000000).toFixed(0)}M
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b', marginBottom: '8px' }}>
+                      ${Math.round(dcfValue).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
                       5-year @ {dcfDiscountRate.toFixed(1)}% discount, {dcfTerminalGrowth.toFixed(1)}% terminal
@@ -9760,9 +9765,9 @@ export default function FinancialScorePage() {
                     </div>
                     
                     <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                      <strong>Calculation:</strong> Net Income + Owner Compensation + Interest + Depreciation + Discretionary Expenses
+                      <strong>Calculation:</strong> EBITDA + Owner Base Pay + Discretionary Expenses
                       <br/>
-                      = ${(ttmNetIncome / 1000).toFixed(0)}K + ${(estimatedOwnerComp / 1000).toFixed(0)}K + ${(estimatedInterest / 1000).toFixed(0)}K + ${(estimatedDepreciation / 1000).toFixed(0)}K
+                      = ${(ttmEBITDA / 1000).toFixed(0)}K + ${(ttmOwnerBasePay / 1000).toFixed(0)}K
                     </div>
                   </div>
                   
@@ -9790,10 +9795,10 @@ export default function FinancialScorePage() {
                       Estimated Business Value (SDE)
                     </div>
                     <div style={{ fontSize: '36px', fontWeight: '700', color: '#10b981' }}>
-                      ${(sdeValuation / 1000000).toFixed(0)}M
+                      ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      Range: ${((ttmSDE * 1.5) / 1000000).toFixed(0)}M - ${((ttmSDE * 4.0) / 1000000).toFixed(0)}M
+                      Range: ${Math.round(ttmSDE * 1.5).toLocaleString()} - ${Math.round(ttmSDE * 4.0).toLocaleString()}
                     </div>
                   </div>
                 </div>
@@ -9811,9 +9816,11 @@ export default function FinancialScorePage() {
                     </div>
                     
                     <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                      <strong>Calculation:</strong> Net Income + Interest + Taxes + Depreciation + Amortization
+                      <strong>Calculation:</strong> Net Income + Interest + Depreciation & Amortization
                       <br/>
-                      = ${(ttmNetIncome / 1000).toFixed(0)}K + ${(estimatedInterest / 1000).toFixed(0)}K + ${(estimatedDepreciation / 1000).toFixed(0)}K
+                      = ${(ttmNetIncome / 1000).toFixed(0)}K + ${(ttmInterest / 1000).toFixed(0)}K + ${(ttmDepreciation / 1000).toFixed(0)}K
+                      <br/>
+                      <em style={{ fontSize: '12px', color: '#64748b' }}>Note: D&A and Interest are added back to Net Income</em>
                     </div>
                   </div>
                   
@@ -9841,10 +9848,10 @@ export default function FinancialScorePage() {
                       Estimated Business Value (EBITDA)
                     </div>
                     <div style={{ fontSize: '36px', fontWeight: '700', color: '#667eea' }}>
-                      ${(ebitdaValuation / 1000000).toFixed(0)}M
+                      ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      Range: ${((ttmEBITDA * 3.0) / 1000000).toFixed(0)}M - ${((ttmEBITDA * 8.0) / 1000000).toFixed(0)}M
+                      Range: ${Math.round(ttmEBITDA * 3.0).toLocaleString()} - ${Math.round(ttmEBITDA * 8.0).toLocaleString()}
                     </div>
                   </div>
                 </div>
@@ -9888,12 +9895,24 @@ export default function FinancialScorePage() {
                     
                     <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>Net Income</span>
+                        <span>TTM Revenue</span>
+                        <span style={{ fontWeight: '600' }}>${(ttmRevenue / 1000).toFixed(0)}K</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span>- COGS</span>
+                        <span style={{ fontWeight: '600' }}>${(ttmCOGS / 1000).toFixed(0)}K</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span>- Operating Expenses</span>
+                        <span style={{ fontWeight: '600' }}>${(ttmExpense / 1000).toFixed(0)}K</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '6px', borderBottom: '1px solid #fcd34d' }}>
+                        <span style={{ fontWeight: '600' }}>= Net Income</span>
                         <span style={{ fontWeight: '600' }}>${(ttmNetIncome / 1000).toFixed(0)}K</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>+ Depreciation/Amortization</span>
-                        <span style={{ fontWeight: '600' }}>${(estimatedDepreciation / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${(ttmDepreciation / 1000).toFixed(0)}K</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>- Change in Working Capital</span>
@@ -9956,7 +9975,7 @@ export default function FinancialScorePage() {
                       Estimated Business Value (DCF)
                     </div>
                     <div style={{ fontSize: '36px', fontWeight: '700', color: '#f59e0b' }}>
-                      ${(dcfValue / 1000000).toFixed(0)}M
+                      ${Math.round(dcfValue).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>
                       <strong>Note:</strong> DCF based on Free Cash Flow (FCF) projections. Valuations are highly sensitive to assumptions about growth rates, discount rates, working capital, and capital expenditures.
