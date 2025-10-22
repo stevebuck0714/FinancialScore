@@ -4064,6 +4064,33 @@ export default function FinancialScorePage() {
                 >
                   {currentView === 'ma-charts' && '• '}Charts
                 </div>
+                <div
+                  onClick={() => {
+                    // URL will be provided later
+                    console.log('Digital Presence Analysis clicked - URL to be added');
+                  }}
+                  style={{
+                    fontSize: '14px',
+                    color: '#475569',
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    borderRadius: '6px',
+                    marginBottom: '4px',
+                    background: 'transparent',
+                    fontWeight: '400',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f8fafc';
+                    e.currentTarget.style.color = '#667eea';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = '#475569';
+                  }}
+                >
+                  Digital Presence Analysis
+                </div>
               </div>
               )}
             </div>
@@ -4348,6 +4375,33 @@ export default function FinancialScorePage() {
                     }}
                   >
                     Results
+                  </div>
+                  <div
+                    onClick={() => {
+                      // URL will be provided later
+                      console.log('Digital Presence Analysis clicked - URL to be added');
+                    }}
+                    style={{
+                      fontSize: '14px',
+                      color: '#475569',
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                      borderRadius: '6px',
+                      marginBottom: '4px',
+                      background: 'transparent',
+                      fontWeight: '400',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#f8fafc';
+                      e.currentTarget.style.color = '#667eea';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = '#475569';
+                    }}
+                  >
+                    Digital Presence Analysis
                   </div>
                 </div>
               )}
