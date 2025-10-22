@@ -9396,6 +9396,8 @@ export default function FinancialScorePage() {
                     });
                     
                     const avg6mo = last6Percentages.reduce((sum, val) => sum + val, 0) / last6Percentages.length;
+                    const goalPct = expenseGoals[category.key];
+                    const hasGoal = goalPct && goalPct > 0;
 
                     return (
                       <tr key={category.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -9403,11 +9405,11 @@ export default function FinancialScorePage() {
                           {category.label}
                         </td>
                         {last6Percentages.map((pct, i) => (
-                          <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: '#64748b' }}>
+                          <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: hasGoal && pct > goalPct ? '#ef4444' : '#64748b' }}>
                             {pct.toFixed(1)}%
                           </td>
                         ))}
-                        <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                        <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: hasGoal && avg6mo > goalPct ? '#ef4444' : '#1e293b' }}>
                           {avg6mo.toFixed(1)}%
                         </td>
                         <td style={{ textAlign: 'center', padding: '12px' }}>
