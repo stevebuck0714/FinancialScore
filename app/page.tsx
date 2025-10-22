@@ -542,7 +542,7 @@ const KPI_FORMULAS: Record<string, { formula: string; period: string; descriptio
 };
 
 // LineChart Component
-function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat }: { 
+function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat, goalLineData }: { 
   title: string; 
   data: Array<any>;
   valueKey?: string;
@@ -555,6 +555,7 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
   showFormulaButton?: boolean;
   onFormulaClick?: () => void;
   labelFormat?: 'monthly' | 'quarterly' | 'semi-annual';
+  goalLineData?: number[];
 }) {
   const chartData = valueKey ? data.map(d => ({ month: d.month, value: d[valueKey] })) : data;
   const validData = chartData.filter(d => d.value !== null && Number.isFinite(d.value));
@@ -652,6 +653,31 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
         <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
         <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
         <path d={pathD} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        {goalLineData && goalLineData.length === validData.length && (() => {
+          const goalPoints = validData.map((d, i) => {
+            const x = padding.left + (i / (validData.length - 1)) * chartWidth;
+            const goalValue = goalLineData[i];
+            const clampedValue = Math.max(yMinCalc, Math.min(yMaxCalc, goalValue));
+            const y = padding.top + chartHeight - ((clampedValue - yMinCalc) / range) * chartHeight;
+            return { x, y, value: goalValue };
+          });
+          const goalPathD = goalPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+          return (
+            <>
+              <path d={goalPathD} fill="none" stroke="#10b981" strokeWidth="2" strokeDasharray="5,5" />
+              <text 
+                x={width - padding.right - 5} 
+                y={goalPoints[goalPoints.length - 1].y - 10} 
+                fontSize="10" 
+                fill="#10b981" 
+                fontWeight="600"
+                textAnchor="end"
+              >
+                Goal
+              </text>
+            </>
+          );
+        })()}
         {benchmarkValue != null && benchmarkValue >= yMinCalc && benchmarkValue <= yMaxCalc && (
           <>
             <line 
@@ -1407,9 +1433,9 @@ export default function FinancialScorePage() {
     }
   }, [selectedCompanyId, financialDataRecords]);
 
-  // Load expense goals when Goals view is accessed
+  // Load expense goals when Goals or Trend Analysis view is accessed
   useEffect(() => {
-    if (selectedCompanyId && currentView === 'goals') {
+    if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis')) {
       fetch(`/api/expense-goals?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
@@ -7376,6 +7402,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#60a5fa"
                     compact
+                    goalLineData={expenseGoals.opexPayroll ? monthly.map(() => expenseGoals.opexPayroll) : undefined}
                   />
                 )}
                 
@@ -7388,6 +7415,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#93c5fd"
                     compact
+                    goalLineData={expenseGoals.opexSalesMarketing ? monthly.map(() => expenseGoals.opexSalesMarketing) : undefined}
                   />
                 )}
                 
@@ -7400,6 +7428,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#8b5cf6"
                     compact
+                    goalLineData={expenseGoals.rentLease ? monthly.map(() => expenseGoals.rentLease) : undefined}
                   />
                 )}
                 
@@ -7412,6 +7441,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#a78bfa"
                     compact
+                    goalLineData={expenseGoals.utilities ? monthly.map(() => expenseGoals.utilities) : undefined}
                   />
                 )}
                 
@@ -7424,6 +7454,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#c4b5fd"
                     compact
+                    goalLineData={expenseGoals.equipment ? monthly.map(() => expenseGoals.equipment) : undefined}
                   />
                 )}
                 
@@ -7436,6 +7467,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#ec4899"
                     compact
+                    goalLineData={expenseGoals.travel ? monthly.map(() => expenseGoals.travel) : undefined}
                   />
                 )}
                 
@@ -7448,6 +7480,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#f472b6"
                     compact
+                    goalLineData={expenseGoals.professionalServices ? monthly.map(() => expenseGoals.professionalServices) : undefined}
                   />
                 )}
                 
@@ -7460,6 +7493,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#f9a8d4"
                     compact
+                    goalLineData={expenseGoals.insurance ? monthly.map(() => expenseGoals.insurance) : undefined}
                   />
                 )}
                 
@@ -7472,6 +7506,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#14b8a6"
                     compact
+                    goalLineData={expenseGoals.ownersBasePay ? monthly.map(() => expenseGoals.ownersBasePay) : undefined}
                   />
                 )}
                 
@@ -7496,6 +7531,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#5eead4"
                     compact
+                    goalLineData={expenseGoals.contractorsDistribution ? monthly.map(() => expenseGoals.contractorsDistribution) : undefined}
                   />
                 )}
                 
@@ -7508,6 +7544,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fb7185"
                     compact
+                    goalLineData={expenseGoals.interestExpense ? monthly.map(() => expenseGoals.interestExpense) : undefined}
                   />
                 )}
                 
@@ -7520,6 +7557,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fca5a5"
                     compact
+                    goalLineData={expenseGoals.depreciationExpense ? monthly.map(() => expenseGoals.depreciationExpense) : undefined}
                   />
                 )}
                 
@@ -7532,6 +7570,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fecaca"
                     compact
+                    goalLineData={expenseGoals.opexOther ? monthly.map(() => expenseGoals.opexOther) : undefined}
                   />
                 )}
               </div>
