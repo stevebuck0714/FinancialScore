@@ -1270,6 +1270,7 @@ export default function FinancialScorePage() {
 
   // State - Goals
   const [expenseGoals, setExpenseGoals] = useState<{[key: string]: number}>({});
+  const [goalsSaveStatus, setGoalsSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // State - Industry Benchmarks
   const [benchmarks, setBenchmarks] = useState<any[]>([]);
@@ -9435,6 +9436,7 @@ export default function FinancialScorePage() {
               <button
                 onClick={async () => {
                   if (!selectedCompanyId) return;
+                  setGoalsSaveStatus('saving');
                   try {
                     const response = await fetch('/api/expense-goals', {
                       method: 'POST',
@@ -9445,28 +9447,33 @@ export default function FinancialScorePage() {
                       })
                     });
                     if (response.ok) {
-                      alert('Goals saved successfully!');
+                      setGoalsSaveStatus('saved');
+                      setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                     } else {
-                      alert('Failed to save goals');
+                      setGoalsSaveStatus('error');
+                      setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                     }
                   } catch (error) {
                     console.error('Error saving goals:', error);
-                    alert('Error saving goals');
+                    setGoalsSaveStatus('error');
+                    setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                   }
                 }}
+                disabled={goalsSaveStatus === 'saving'}
                 style={{
                   padding: '12px 32px',
-                  background: '#667eea',
+                  background: goalsSaveStatus === 'saved' ? '#10b981' : goalsSaveStatus === 'error' ? '#ef4444' : goalsSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
                   color: 'white',
                   border: 'none',
                   borderRadius: '8px',
                   fontSize: '16px',
                   fontWeight: '600',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
+                  cursor: goalsSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.3s ease'
                 }}
               >
-                Save Goals
+                {goalsSaveStatus === 'saving' ? '💾 Saving...' : goalsSaveStatus === 'saved' ? '✓ Saved!' : goalsSaveStatus === 'error' ? '✗ Error' : 'Save Goals'}
               </button>
             </div>
           </div>
