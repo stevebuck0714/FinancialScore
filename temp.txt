@@ -1,0 +1,3614 @@
+'use client';
+
+import { useState, useMemo, useEffect, ChangeEvent } from 'react';
+import * as XLSX from 'xlsx';
+import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lucide-react';
+import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
+import { assessmentData } from '../data/assessmentData';
+import { authApi, companiesApi, usersApi, consultantsApi, financialsApi, assessmentsApi, profilesApi, benchmarksApi, ApiError } from '@/lib/api-client';
+
+// Types
+type Mappings = {
+  date: string;
+  // Income Statement
+  revenue?: string;
+  cogsPayroll?: string;
+  cogsOwnerPay?: string;
+  cogsContractors?: string;
+  cogsMaterials?: string;
+  cogsCommissions?: string;
+  cogsOther?: string;
+  cogsTotal?: string;
+  opexSalesMarketing?: string;
+  rentLease?: string;
+  utilities?: string;
+  equipment?: string;
+  travel?: string;
+  professionalServices?: string;
+  insurance?: string;
+  opexOther?: string;
+  opexPayroll?: string;
+  ownersBasePay?: string;
+  ownersRetirement?: string;
+  contractorsDistribution?: string;
+  interestExpense?: string;
+  depreciationExpense?: string;
+  operatingExpenseTotal?: string;
+  nonOperatingIncome?: string;
+  extraordinaryItems?: string;
+  expense?: string;
+  netProfit?: string;
+  // Balance Sheet - Assets
+  cash?: string;
+  ar?: string;
+  inventory?: string;
+  otherCA?: string;
+  tca?: string;
+  fixedAssets?: string;
+  otherAssets?: string;
+  totalAssets?: string;
+  // Balance Sheet - Liabilities & Equity
+  ap?: string;
+  otherCL?: string;
+  tcl?: string;
+  ltd?: string;
+  totalLiab?: string;
+  totalEquity?: string;
+  totalLAndE?: string;
+};
+
+type NormalRow = {
+  date: Date;
+  month: string;
+  revenue: number;
+  expense: number;
+  cash: number;
+  ar: number;
+  inventory: number;
+  otherCA: number;
+  tca: number;
+  fixedAssets: number;
+  otherAssets: number;
+  totalAssets: number;
+  ap: number;
+  otherCL: number;
+  tcl: number;
+  ltd: number;
+  totalLiab: number;
+  totalEquity: number;
+  totalLAndE: number;
+};
+
+type MonthlyDataRow = {
+  month: string;
+  revenue: number;
+  expense: number;
+  cogsPayroll: number;
+  cogsOwnerPay: number;
+  cogsContractors: number;
+  cogsMaterials: number;
+  cogsCommissions: number;
+  cogsOther: number;
+  cogsTotal: number;
+  opexSalesMarketing: number;
+  rentLease: number;
+  utilities: number;
+  equipment: number;
+  travel: number;
+  professionalServices: number;
+  insurance: number;
+  opexOther: number;
+  opexPayroll: number;
+  ownersBasePay: number;
+  ownersRetirement: number;
+  contractorsDistribution: number;
+  interestExpense: number;
+  depreciationExpense: number;
+  operatingExpenseTotal: number;
+  nonOperatingIncome: number;
+  extraordinaryItems: number;
+  netProfit: number;
+  totalAssets: number;
+  totalLiab: number;
+  cash: number;
+  ar: number;
+  inventory: number;
+  otherCA: number;
+  tca: number;
+  fixedAssets: number;
+  otherAssets: number;
+  ap: number;
+  otherCL: number;
+  tcl: number;
+  ltd: number;
+  totalEquity: number;
+  totalLAndE: number;
+};
+
+interface Company {
+  id: string;
+  name: string;
+  consultantEmail: string;
+  consultantId?: string;
+  createdDate: string;
+  location?: string;
+  addressStreet?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZip?: string;
+  addressCountry?: string;
+  industrySector?: number;
+  subscriptionMonthlyPrice?: number;
+  subscriptionQuarterlyPrice?: number;
+  subscriptionAnnualPrice?: number;
+}
+
+interface CompanyProfile {
+  companyId: string;
+  legalStructure: string;
+  businessStatus: string;
+  ownership: string;
+  workforce: string;
+  keyAdvisors: string;
+  specialNotes: string;
+  qoeNotes: string;
+  disclosures: {
+    bankruptcies: string;
+    liens: string;
+    contracts: string;
+    lawsuits: string;
+    mostFavoredNation: string;
+    equityControl: string;
+    rightOfFirstRefusal: string;
+    shareholderProtections: string;
+    changeInControl: string;
+    regulatoryApprovals: string;
+    auditedFinancials: string;
+  };
+}
+
+interface AssessmentResponses {
+  [questionId: string]: number;
+}
+
+interface AssessmentNotes {
+  [categoryId: number]: string;
+}
+
+interface AssessmentRecord {
+  id: string;
+  userId: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  companyId: string;
+  company?: {
+    id: string;
+    name: string;
+  };
+  responses: AssessmentResponses;
+  notes: AssessmentNotes;
+  completedAt: string;
+  overallScore: number;
+  // Legacy fields for backward compatibility
+  userEmail?: string;
+  userName?: string;
+  companyName?: string;
+  completedDate?: string;
+}
+
+interface Consultant {
+  id: string;
+  type: string;
+  fullName: string;
+  address: string;
+  email: string;
+  phone: string;
+  password: string;
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  companyId: string;
+  consultantId?: string;
+  role: 'consultant' | 'user' | 'siteadmin';
+  userType?: 'company' | 'assessment'; // company = management team, assessment = fills questionnaire
+}
+
+interface FinancialDataRecord {
+  id: string;
+  companyId: string;
+  uploadedBy: string;
+  uploadDate: string;
+  rawRows: any[];
+  mapping: Mappings;
+  fileName: string;
+}
+
+// Helper functions
+function parseDateLike(v: any): Date | null {
+  if (v instanceof Date && !isNaN(v.getTime())) return v;
+  if (typeof v === 'number') {
+    const d = XLSX.SSF.parse_date_code(v);
+    if (d) return new Date(Date.UTC(d.y, d.m - 1, d.d || 1));
+  }
+  if (typeof v === 'string') {
+    const s = v.trim();
+    const iso = new Date(s);
+    if (!isNaN(iso.getTime())) return iso;
+    const m = s.match(/^(\d{1,2})\/(\d{4})$/);
+    if (m) {
+      const mm = Number(m[1]);
+      const yyyy = Number(m[2]);
+      return new Date(Date.UTC(yyyy, mm - 1, 1));
+    }
+  }
+  return null;
+}
+
+function monthKey(d: Date) {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function sum(arr: number[]) {
+  return arr.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+}
+
+function pctChange(curr: number, prior: number) {
+  if (!Number.isFinite(curr) || !Number.isFinite(prior) || prior === 0) return null;
+  return (curr / prior - 1) * 100;
+}
+
+function getAssetSizeCategory(totalAssets: number): string {
+  if (totalAssets < 500000) return '<500k';
+  if (totalAssets < 1000000) return '500k-1m';
+  if (totalAssets < 5000000) return '1m-5m';
+  if (totalAssets < 10000000) return '5m-10m';
+  if (totalAssets < 25000000) return '10m-25m';
+  if (totalAssets < 50000000) return '25m-50m';
+  if (totalAssets < 100000000) return '50m-100m';
+  if (totalAssets < 250000000) return '100m-250m';
+  if (totalAssets < 500000000) return '250m-500m';
+  return '>500m';
+}
+
+// Map KPI ratio names to benchmark metric names
+const KPI_TO_BENCHMARK_MAP: Record<string, string[]> = {
+  // Liquidity
+  'Current Ratio': ['Current Ratio'],
+  'Quick Ratio': ['Quick Ratio', 'Acid Test Ratio'],
+  // Activity
+  'Inventory Turnover': ['Inventory Turnover'],
+  'Receivables Turnover': ['Sales/Receivables', 'Receivables Turnover', 'Receivable Turnover', 'Accounts Receivable Turnover'],
+  'Payables Turnover': ['Payables Turnover', 'Payable Turnover', 'Accounts Payable Turnover'],
+  'Days Inventory': ['Days Inventory', 'Days\' Inventory', 'Days Inventory on Hand'],
+  'Days Receivables': ['Days Receivables', 'Days\' Receivables', 'Days Receivable', 'Days Sales Outstanding'],
+  'Days Payables': ['Days Payables', 'Days\' Payables', 'Days Payable', 'Days Payables Outstanding'],
+  'Sales/Working Capital': ['Sales to Working Capital', 'Sales/Working Capital'],
+  // Coverage
+  'Interest Coverage': ['Times Interest Earned', 'Interest Coverage', 'Interest Coverage Ratio'],
+  'Debt Service Coverage': ['Debt Service Coverage Ratio', 'Debt Service Coverage'],
+  'Cash Flow to Debt': ['Cash Flow to Total Debt', 'Cash Flow/Total Debt'],
+  // Leverage
+  'Debt/Net Worth': ['Debt to Net Worth', 'Debt/Net Worth'],
+  'Fixed Assets/Net Worth': ['Fixed Assets to Net Worth', 'Fixed Assets/Net Worth'],
+  'Leverage Ratio': ['Total Debt to Assets', 'Debt to Assets', 'Leverage Ratio'],
+  // Operating
+  'Total Asset Turnover': ['Sales/Total Assets', 'Total Asset Turnover', 'Asset Turnover'],
+  'ROE': ['Return on Equity', 'Return on Net Worth, %', 'Return on Equity (%)', 'ROE'],
+  'ROA': ['Return on Assets', 'Return on Assets, %', 'Return on Assets (%)', 'ROA'],
+  'EBITDA/Revenue': ['EBITDA Margin', 'EBITDA Margin (%)', 'EBITDA/Revenue'],
+  'EBIT/Revenue': ['EBIT Margin', 'EBIT Margin (%)', 'EBIT/Revenue']
+};
+
+function getBenchmarkValue(benchmarks: any[], metricName: string): number | null {
+  if (!benchmarks || benchmarks.length === 0) return null;
+  
+  // Try exact match first
+  const exactMatch = benchmarks.find(b => b.metricName === metricName);
+  if (exactMatch && exactMatch.fiveYearValue != null) {
+    return exactMatch.fiveYearValue;
+  }
+  
+  // Try all possible mapped names
+  const possibleNames = KPI_TO_BENCHMARK_MAP[metricName];
+  if (possibleNames) {
+    for (const name of possibleNames) {
+      const match = benchmarks.find(b => b.metricName === name);
+      if (match && match.fiveYearValue != null) {
+        return match.fiveYearValue;
+      }
+    }
+  }
+  
+  // Log missing benchmark for debugging
+  if (benchmarks.length > 0) {
+    console.log(`No benchmark found for "${metricName}". Available: ${benchmarks.map(b => b.metricName).slice(0, 5).join(', ')}...`);
+  }
+  
+  return null;
+}
+
+function revenueGrowthScore_24mo(growthPct: number | null) {
+  if (growthPct === null) return null;
+  const g = growthPct;
+  if (g >= 25) return 100;
+  if (g >= 15) return 80;
+  if (g >= 5) return 60;
+  if (g >= 0) return 50;
+  if (g >= -5) return 40;
+  if (g >= -15) return 20;
+  return 10;
+}
+
+function rgsAdjustmentFrom6mo(rgs: number | null, growth6moPct: number | null) {
+  if (rgs === null || growth6moPct === null) return null;
+  const g = growth6moPct;
+  if (g >= 25) return rgs + 50;
+  if (g >= 15) return ((100 - rgs) * 0.8) + rgs;
+  if (g >= 5) return ((100 - rgs) * 0.6) + rgs;
+  if (g >= 0) return ((100 - rgs) * 0.4) + rgs;
+  if (g >= -5) return rgs * 0.9;
+  if (g >= -15) return rgs * 0.7;
+  if (g >= -25) return rgs * 0.5;
+  return rgs * 0.3;
+}
+
+function clamp(x: number, min = 10, max = 100) {
+  return Math.min(max, Math.max(min, x));
+}
+
+function sixMonthGrowthFromMonthly(series: Array<{ month: string; value: number }>) {
+  if (series.length < 12) return null;
+  const keys = [...series.map(r => r.month)].sort();
+  const uniq = Array.from(new Set(keys));
+  if (uniq.length < 12) return null;
+  const map = new Map(series.map(r => [r.month, r.value]));
+  const last6 = uniq.slice(-6);
+  const prev6 = uniq.slice(-12, -6);
+  const qsum = (months: string[]) => sum(months.map(m => map.get(m) || 0));
+  const curr = qsum(last6);
+  const prior = qsum(prev6);
+  return pctChange(curr, prior);
+}
+
+function normalizeRows(raw: any[], mapping: Mappings): NormalRow[] {
+  const rows: NormalRow[] = [];
+  for (const r of raw) {
+    const d = parseDateLike(r[mapping.date]);
+    if (!d) continue;
+    function N(col?: string) {
+      const v = col ? r[col] : null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    }
+    const row: NormalRow = {
+      date: d,
+      month: monthKey(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))),
+      revenue: N(mapping.revenue),
+      expense: N(mapping.expense),
+      cash: N(mapping.cash),
+      ar: N(mapping.ar),
+      inventory: N(mapping.inventory),
+      otherCA: N(mapping.otherCA),
+      tca: N(mapping.tca),
+      fixedAssets: N(mapping.fixedAssets),
+      otherAssets: N(mapping.otherAssets),
+      totalAssets: N(mapping.totalAssets),
+      ap: N(mapping.ap),
+      otherCL: N(mapping.otherCL),
+      tcl: N(mapping.tcl),
+      ltd: N(mapping.ltd),
+      totalLiab: N(mapping.totalLiab),
+      totalEquity: N(mapping.totalEquity),
+      totalLAndE: N(mapping.totalLAndE),
+    };
+    rows.push(row);
+  }
+  
+  const acc = new Map<string, NormalRow>();
+  for (const r of rows) {
+    const k = r.month;
+    const v = acc.get(k) || { ...r };
+    if (acc.has(k)) {
+      for (const key of Object.keys(r) as (keyof NormalRow)[]) {
+        if (key === 'date' || key === 'month') continue;
+        (v as any)[key] = ((v as any)[key] || 0) + ((r as any)[key] || 0);
+      }
+    }
+    acc.set(k, v);
+  }
+  const months = Array.from(acc.keys()).sort();
+  return months.map(m => acc.get(m)!);
+}
+
+function ltmVsPrior(series: Array<{ month: string; value: number }>) {
+  if (series.length < 24) return { curr: null, prior: null, pct: null };
+  const values = [...series].sort((a, b) => a.month.localeCompare(b.month));
+  const last12 = values.slice(-12);
+  const prev12 = values.slice(-24, -12);
+  const curr = sum(last12.map(r => r.value));
+  const prior = sum(prev12.map(r => r.value));
+  return { curr, prior, pct: pctChange(curr, prior) };
+}
+
+// KPI Formula Definitions
+const KPI_FORMULAS: Record<string, { formula: string; period: string; description: string }> = {
+  'Current Ratio': {
+    formula: 'Current Assets ÷ Current Liabilities',
+    period: 'Point in Time (End of Month)',
+    description: 'Measures the company\'s ability to pay short-term obligations. Current Assets include Cash, AR, Inventory, and Other Current Assets. Current Liabilities include AP and Other Current Liabilities.'
+  },
+  'Quick Ratio': {
+    formula: '(Current Assets - Inventory) ÷ Current Liabilities',
+    period: 'Point in Time (End of Month)',
+    description: 'Measures the company\'s ability to meet short-term obligations without relying on inventory sales. Also known as the Acid Test Ratio.'
+  },
+  'Inventory Turnover': {
+    formula: 'Cost of Goods Sold (LTM) ÷ Average Inventory',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures how many times inventory is sold and replaced over the period. Higher values indicate efficient inventory management.'
+  },
+  'Receivables Turnover': {
+    formula: 'Revenue (LTM) ÷ Average Accounts Receivable',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures how efficiently a company collects revenue from its credit customers. Higher values indicate faster collection.'
+  },
+  'Payables Turnover': {
+    formula: 'Cost of Goods Sold (LTM) ÷ Average Accounts Payable',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures how quickly a company pays off its suppliers. Lower values may indicate better use of supplier financing.'
+  },
+  'Days\' Inventory': {
+    formula: '365 ÷ Inventory Turnover',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Average number of days it takes to sell inventory. Lower values indicate faster inventory movement.'
+  },
+  'Days\' Receivables': {
+    formula: '365 ÷ Receivables Turnover',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Average number of days to collect payment after a sale. Also known as Days Sales Outstanding (DSO).'
+  },
+  'Days\' Payables': {
+    formula: '365 ÷ Payables Turnover',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Average number of days a company takes to pay its suppliers. Also known as Days Payable Outstanding (DPO).'
+  },
+  'Sales/Working Capital': {
+    formula: 'Revenue (LTM) ÷ (Current Assets - Current Liabilities)',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures how efficiently a company uses working capital to generate sales. Higher values indicate more efficient use of working capital.'
+  },
+  'Interest Coverage': {
+    formula: 'EBIT (LTM) ÷ Interest Expense (LTM)',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures the company\'s ability to pay interest on outstanding debt. Values above 2.5 are generally considered healthy.'
+  },
+  'Debt Service Coverage': {
+    formula: 'Net Income (LTM) ÷ (Principal Payments + Interest Expense)',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures ability to service total debt obligations. Values above 1.25 indicate sufficient cash flow to cover debt payments.'
+  },
+  'Cash Flow to Debt': {
+    formula: 'Operating Cash Flow (LTM) ÷ Total Debt',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures the company\'s ability to cover total debt with its operating cash flow. Higher values indicate better debt coverage.'
+  },
+  'Debt/Net Worth': {
+    formula: 'Total Liabilities ÷ Total Equity',
+    period: 'Point in Time (End of Month)',
+    description: 'Measures financial leverage. Also known as Debt-to-Equity ratio. Lower values indicate less leverage and lower financial risk.'
+  },
+  'Fixed Assets/Net Worth': {
+    formula: 'Fixed Assets ÷ Total Equity',
+    period: 'Point in Time (End of Month)',
+    description: 'Indicates the proportion of equity invested in fixed assets. Shows how much of the company\'s equity is tied up in long-term assets.'
+  },
+  'Leverage Ratio': {
+    formula: 'Total Assets ÷ Total Equity',
+    period: 'Point in Time (End of Month)',
+    description: 'Measures the degree to which a company is utilizing borrowed money. Higher values indicate higher financial leverage.'
+  },
+  'Total Asset Turnover': {
+    formula: 'Revenue (LTM) ÷ Average Total Assets',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures how efficiently a company uses its assets to generate sales. Higher values indicate better asset utilization.'
+  },
+  'Return on Equity (ROE)': {
+    formula: 'Net Income (LTM) ÷ Average Total Equity',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures profitability relative to shareholders\' equity. Indicates how effectively management is using equity to generate profits.'
+  },
+  'Return on Assets (ROA)': {
+    formula: 'Net Income (LTM) ÷ Average Total Assets',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures how profitable a company is relative to its total assets. Indicates how efficiently management uses assets to generate earnings.'
+  },
+  'EBITDA Margin': {
+    formula: 'EBITDA (LTM) ÷ Revenue (LTM)',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures operating profitability before interest, taxes, depreciation, and amortization. Shows pure operational efficiency.'
+  },
+  'EBIT Margin': {
+    formula: 'EBIT (LTM) ÷ Revenue (LTM)',
+    period: 'Last Twelve Months (LTM)',
+    description: 'Measures operating profitability before interest and taxes. Also known as Operating Profit Margin.'
+  }
+};
+
+// LineChart Component
+function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat }: { 
+  title: string; 
+  data: Array<any>;
+  valueKey?: string;
+  color: string;
+  yMax?: number | null;
+  showTable?: boolean;
+  compact?: boolean;
+  formatter?: (val: number) => string;
+  benchmarkValue?: number | null;
+  showFormulaButton?: boolean;
+  onFormulaClick?: () => void;
+  labelFormat?: 'monthly' | 'quarterly' | 'semi-annual';
+}) {
+  const chartData = valueKey ? data.map(d => ({ month: d.month, value: d[valueKey] })) : data;
+  const validData = chartData.filter(d => d.value !== null && Number.isFinite(d.value));
+  if (validData.length === 0) return null;
+
+  const values = validData.map(d => d.value as number);
+  const sorted = [...values].sort((a, b) => a - b);
+  const q1 = sorted[Math.floor(sorted.length * 0.25)];
+  const q3 = sorted[Math.floor(sorted.length * 0.75)];
+  const iqr = q3 - q1;
+  const lowerBound = q1 - 3 * iqr;
+  const upperBound = q3 + 3 * iqr;
+  
+  const filteredValues = values.filter(v => v >= lowerBound && v <= upperBound);
+  const minValue = filteredValues.length > 0 ? Math.min(...filteredValues) : Math.min(...values);
+  const maxValue = filteredValues.length > 0 ? Math.max(...filteredValues) : Math.max(...values);
+  
+  const yMaxCalc = yMax || Math.ceil(maxValue * 1.1);
+  const yMinCalc = yMax ? 0 : Math.floor(minValue * 0.9);
+  const range = yMaxCalc - yMinCalc;
+  
+  if (range === 0 || !Number.isFinite(range)) {
+    return (
+      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '15px' }}>{title}</h3>
+        <p style={{ fontSize: '14px', color: '#64748b', textAlign: 'center', padding: '40px 0' }}>
+          Unable to display chart - insufficient data variation
+        </p>
+      </div>
+    );
+  }
+
+  const width = compact ? 500 : 1100;
+  const height = compact ? 250 : 320;
+  const padding = { top: 15, right: 30, bottom: 40, left: 50 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+
+  const points = validData.map((d, i) => {
+    const x = padding.left + (i / (validData.length - 1)) * chartWidth;
+    const clampedValue = Math.max(yMinCalc, Math.min(yMaxCalc, d.value!));
+    const y = padding.top + chartHeight - ((clampedValue - yMinCalc) / range) * chartHeight;
+    return { x, y, month: d.month, value: d.value!, isOutOfRange: d.value! < yMinCalc || d.value! > yMaxCalc };
+  });
+
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+  return (
+    <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', margin: 0 }}>{title}</h3>
+        {showFormulaButton && (
+          <button
+            onClick={onFormulaClick}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              color: '#667eea',
+              fontSize: '14px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.color = '#4f46e5'}
+            onMouseOut={(e) => e.currentTarget.style.color = '#667eea'}
+            title="View formula"
+          >
+            <span style={{ fontSize: '16px' }}>ℹ️</span> Formula
+          </button>
+        )}
+      </div>
+      <svg width={width} height={height} style={{ maxWidth: '100%', marginBottom: '10px' }} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+        {(() => {
+          const gridValues = [];
+          const step = range / 4;
+          for (let i = 0; i <= 4; i++) {
+            gridValues.push(yMinCalc + step * i);
+          }
+          return gridValues.map((val, idx) => {
+            const y = padding.top + chartHeight - ((val - yMinCalc) / range) * chartHeight;
+            return (
+              <g key={idx}>
+                <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#94a3b8">
+                  {Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(1)}
+                </text>
+              </g>
+            );
+          });
+        })()}
+        <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+        <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+        <path d={pathD} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        {benchmarkValue != null && benchmarkValue >= yMinCalc && benchmarkValue <= yMaxCalc && (
+          <>
+            <line 
+              x1={padding.left} 
+              y1={padding.top + chartHeight - ((benchmarkValue - yMinCalc) / range) * chartHeight} 
+              x2={width - padding.right} 
+              y2={padding.top + chartHeight - ((benchmarkValue - yMinCalc) / range) * chartHeight} 
+              stroke="#f59e0b" 
+              strokeWidth="2" 
+              strokeDasharray="5,5"
+            />
+            <text 
+              x={width - padding.right + 5} 
+              y={padding.top + chartHeight - ((benchmarkValue - yMinCalc) / range) * chartHeight + 4} 
+              fontSize="10" 
+              fill="#f59e0b" 
+              fontWeight="600"
+            >
+              Industry
+            </text>
+          </>
+        )}
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="5" fill={p.isOutOfRange ? '#ef4444' : color} stroke="white" strokeWidth="2">
+            <title>{`${p.month}: ${p.value.toFixed(1)}${p.isOutOfRange ? ' (out of range)' : ''}`}</title>
+          </circle>
+        ))}
+        {points.map((p, i) => {
+          // Determine label format based on prop (default to semi-annual)
+          const format = labelFormat || 'semi-annual';
+          
+          if (format === 'quarterly') {
+            // Convert month to quarterly label (e.g., "2023-03" -> "Q1 '23", "2023-06" -> "Q2 '23")
+            const getQuarterLabel = (monthStr: string) => {
+              const parts = monthStr.split('-');
+              if (parts.length >= 2) {
+                const year = parts[0];
+                const month = parseInt(parts[1]);
+                const quarter = Math.ceil(month / 3);
+                return `Q${quarter} '${year.slice(-2)}`;
+              }
+              return monthStr;
+            };
+            
+            // Show labels at regular intervals - every 3rd point, first point, and last point
+            const showEveryNth = 3;
+            const shouldShow = i === 0 || i === points.length - 1 || i % showEveryNth === 0;
+            
+            if (!shouldShow) return null;
+            return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{getQuarterLabel(p.month)}</text>;
+          } else {
+            // Semi-annual format (default)
+            const getSemiAnnualLabel = (monthStr: string) => {
+              const parts = monthStr.split('-');
+              if (parts.length >= 2) {
+                const year = parts[0];
+                const month = parseInt(parts[1]);
+                const half = month <= 6 ? 1 : 2;
+                return `H${half} '${year.slice(-2)}`;
+              }
+              return monthStr;
+            };
+            
+            const parts = p.month.split('-');
+            const month = parts.length >= 2 ? parseInt(parts[1]) : 0;
+            const isSemiAnnualEnd = month === 6 || month === 12;
+            
+            // Fallback: show label every 6 data points if no semi-annual matches
+            const showEveryNth = points.length > 12 ? Math.floor(points.length / 4) : 3;
+            const showAsBackup = i % showEveryNth === 0 || i === points.length - 1;
+            
+            if (!isSemiAnnualEnd && !showAsBackup) return null;
+            return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{getSemiAnnualLabel(p.month)}</text>;
+          }
+        })}
+      </svg>
+      <div style={{ display: 'grid', gridTemplateColumns: benchmarkValue != null ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginTop: '15px', padding: '3px 12px', background: 'white', borderRadius: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>CURRENT:</div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: color }}>{formatter ? formatter(validData[validData.length - 1].value!) : validData[validData.length - 1].value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>AVG:</div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{formatter ? formatter(sum(values) / values.length) : (sum(values) / values.length).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>MIN:</div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#64748b' }}>{formatter ? formatter(Math.min(...values)) : Math.min(...values).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>MAX:</div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#64748b' }}>{formatter ? formatter(Math.max(...values)) : Math.max(...values).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+        </div>
+        {benchmarkValue != null && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ fontSize: '10px', color: '#f59e0b', fontWeight: '600' }}>INDUSTRY:</div>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#f59e0b' }}>{formatter ? formatter(benchmarkValue) : benchmarkValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+          </div>
+        )}
+      </div>
+      
+      {showTable && (
+        <div style={{ marginTop: '16px', overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
+            <tbody>
+              <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 1, minWidth: '60px' }}>
+                  Month
+                </td>
+                {validData.map((d, i) => (
+                  <td key={`month-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '600', color: '#64748b', minWidth: '70px' }}>
+                    {d.month}
+                  </td>
+                ))}
+              </tr>
+              <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 1 }}>
+                  Value
+                </td>
+                {validData.map((d, i) => (
+                  <td key={`val-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '700', color: color }}>
+                    {formatter ? formatter(d.value!) : d.value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ProjectionChart Component
+function ProjectionChart({ title, historicalData, projectedData, valueKey, formatValue }: {
+  title: string;
+  historicalData: any[];
+  projectedData: { mostLikely: any[]; bestCase: any[]; worstCase: any[] };
+  valueKey: string;
+  formatValue?: (val: number) => string;
+}) {
+  if (!historicalData || historicalData.length === 0) return null;
+  
+  const formatter = formatValue || ((v: number) => v.toFixed(1));
+  const hist = historicalData.slice(-12).map(d => ({ month: d.month, value: d[valueKey], type: 'historical' }));
+  const mostLikely = projectedData.mostLikely.map(d => ({ month: d.month, value: d[valueKey], type: 'mostLikely' }));
+  const bestCase = projectedData.bestCase.map(d => ({ month: d.month, value: d[valueKey], type: 'bestCase' }));
+  const worstCase = projectedData.worstCase.map(d => ({ month: d.month, value: d[valueKey], type: 'worstCase' }));
+  
+  const allData = [...hist, ...mostLikely];
+  const allValues = [...hist.map(d => d.value), ...mostLikely.map(d => d.value), ...bestCase.map(d => d.value), ...worstCase.map(d => d.value)];
+  const minValue = Math.min(...allValues);
+  const maxValue = Math.max(...allValues);
+  const yMin = Math.floor(minValue * 0.9);
+  const yMax = Math.ceil(maxValue * 1.1);
+  const range = yMax - yMin;
+  
+  const width = 580;
+  const height = 300;
+  const padding = { top: 20, right: 15, bottom: 50, left: 55 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  
+  const toPoint = (d: any, i: number) => {
+    const x = padding.left + (i / (allData.length - 1)) * chartWidth;
+    const y = padding.top + chartHeight - ((d.value - yMin) / range) * chartHeight;
+    return { x, y, ...d };
+  };
+  
+  const histPoints = hist.map((d, i) => toPoint(d, i));
+  const mlPoints = mostLikely.map((d, i) => toPoint(d, hist.length + i));
+  const bcPoints = bestCase.map((d, i) => toPoint(d, hist.length + i));
+  const wcPoints = worstCase.map((d, i) => toPoint(d, hist.length + i));
+  const lastHistPoint = histPoints[histPoints.length - 1];
+  
+  const histPath = histPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const mlPath = `M ${lastHistPoint.x} ${lastHistPoint.y} ` + mlPoints.map(p => `L ${p.x} ${p.y}`).join(' ');
+  const bcPath = `M ${lastHistPoint.x} ${lastHistPoint.y} ` + bcPoints.map(p => `L ${p.x} ${p.y}`).join(' ');
+  const wcPath = `M ${lastHistPoint.x} ${lastHistPoint.y} ` + wcPoints.map(p => `L ${p.x} ${p.y}`).join(' ');
+  
+  const firstHistMonth = hist[0].month;
+  const lastHistMonth = hist[hist.length - 1].month;
+  const lastProjMonth = mostLikely[mostLikely.length - 1].month;
+  
+  return (
+    <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <div style={{ marginBottom: '12px' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>{title}</h3>
+        <div style={{ fontSize: '12px', color: '#64748b' }}>
+          <span style={{ fontWeight: '600' }}>Historical:</span> {firstHistMonth} to {lastHistMonth} (12 months) 
+          <span style={{ margin: '0 8px', color: '#cbd5e1' }}>|</span>
+          <span style={{ fontWeight: '600' }}>Projected:</span> {hist[hist.length - 1].month} to {lastProjMonth} (12 months)
+        </div>
+      </div>
+      
+      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1', minWidth: '400px', maxWidth: '580px' }}>
+          <svg width={width} height={height} style={{ width: '100%', height: 'auto' }}>
+            {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => {
+              const val = yMin + range * pct;
+              const y = padding.top + chartHeight - (chartHeight * pct);
+              return (
+                <g key={idx}>
+                  <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                  <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#94a3b8">
+                    {formatter(val)}
+                  </text>
+                </g>
+              );
+            })}
+            <line x1={lastHistPoint.x} y1={padding.top} x2={lastHistPoint.x} y2={height - padding.bottom} stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,5" />
+            <text x={lastHistPoint.x} y={padding.top - 5} textAnchor="middle" fontSize="11" fill="#64748b" fontWeight="600">Now</text>
+            <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+            <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+            <path d={histPath} fill="none" stroke="#1e293b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            <path d={mlPath} fill="none" stroke="#667eea" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            <path d={bcPath} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="5,5" />
+            <path d={wcPath} fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="5,5" />
+            {histPoints.map((p, i) => (
+              <circle key={`hist-${i}`} cx={p.x} cy={p.y} r="4" fill="#1e293b" stroke="white" strokeWidth="2">
+                <title>Historical {p.month}: {formatter(p.value)}</title>
+              </circle>
+            ))}
+            {mlPoints.map((p, i) => (
+              <circle key={`ml-${i}`} cx={p.x} cy={p.y} r="5" fill="#667eea" stroke="white" strokeWidth="2">
+                <title>Most Likely {p.month}: {formatter(p.value)}</title>
+              </circle>
+            ))}
+            {allData.map((d, i) => {
+              const showLabel = i === 0 || i === hist.length - 1 || i === allData.length - 1 || i % 4 === 0;
+              if (!showLabel) return null;
+              const p = toPoint(d, i);
+              return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="10" fill="#64748b">{d.month}</text>;
+            })}
+          </svg>
+        </div>
+        
+        <div style={{ width: '280px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div style={{ background: 'white', borderRadius: '8px', padding: '12px', border: '2px solid #1e293b', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            <div style={{ fontSize: '9px', fontWeight: '700', color: '#64748b', letterSpacing: '0.5px', marginBottom: '2px' }}>CURRENT</div>
+            <div style={{ fontSize: '9px', color: '#64748b', marginBottom: '6px' }}>Now</div>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b' }}>
+              {formatter(hist[hist.length - 1].value)}
+            </div>
+          </div>
+          <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '12px', border: '2px solid #667eea', boxShadow: '0 2px 4px rgba(102,126,234,0.2)' }}>
+            <div style={{ fontSize: '9px', fontWeight: '700', color: '#5b21b6', letterSpacing: '0.5px', marginBottom: '2px' }}>MOST LIKELY</div>
+            <div style={{ fontSize: '9px', color: '#7c3aed', marginBottom: '6px' }}>{lastProjMonth}</div>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: '#667eea' }}>
+              {formatter(mostLikely[11].value)}
+            </div>
+            <div style={{ fontSize: '10px', color: '#5b21b6', marginTop: '2px', fontWeight: '600' }}>
+              {((mostLikely[11].value / hist[hist.length - 1].value - 1) * 100) >= 0 ? '+' : ''}
+              {((mostLikely[11].value / hist[hist.length - 1].value - 1) * 100).toFixed(2)}%
+            </div>
+          </div>
+          <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px', border: '2px solid #10b981', boxShadow: '0 2px 4px rgba(16,185,129,0.2)' }}>
+            <div style={{ fontSize: '9px', fontWeight: '700', color: '#166534', letterSpacing: '0.5px', marginBottom: '2px' }}>BEST CASE</div>
+            <div style={{ fontSize: '9px', color: '#059669', marginBottom: '6px' }}>{lastProjMonth}</div>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: '#10b981' }}>
+              {formatter(bestCase[11].value)}
+            </div>
+            <div style={{ fontSize: '10px', color: '#166534', marginTop: '2px', fontWeight: '600' }}>
+              {((bestCase[11].value / hist[hist.length - 1].value - 1) * 100) >= 0 ? '+' : ''}
+              {((bestCase[11].value / hist[hist.length - 1].value - 1) * 100).toFixed(2)}%
+            </div>
+          </div>
+          <div style={{ background: '#fef2f2', borderRadius: '8px', padding: '12px', border: '2px solid #ef4444', boxShadow: '0 2px 4px rgba(239,68,68,0.2)' }}>
+            <div style={{ fontSize: '9px', fontWeight: '700', color: '#991b1b', letterSpacing: '0.5px', marginBottom: '2px' }}>WORST CASE</div>
+            <div style={{ fontSize: '9px', color: '#dc2626', marginBottom: '6px' }}>{lastProjMonth}</div>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: '#ef4444' }}>
+              {formatter(worstCase[11].value)}
+            </div>
+            <div style={{ fontSize: '10px', color: '#991b1b', marginTop: '2px', fontWeight: '600' }}>
+              {((worstCase[11].value / hist[hist.length - 1].value - 1) * 100) >= 0 ? '+' : ''}
+              {((worstCase[11].value / hist[hist.length - 1].value - 1) * 100).toFixed(2)}%
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div style={{ marginTop: '20px', overflowX: 'auto', maxWidth: '100%' }}>
+        <table style={{ fontSize: '10px', borderCollapse: 'collapse', width: '100%' }}>
+          <tbody>
+            <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+              <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 1, minWidth: '50px' }}>Month</td>
+              {hist.map((d, i) => (
+                <td key={`month-hist-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '600', color: '#64748b', background: 'white', minWidth: '60px' }}>
+                  {d.month}
+                </td>
+              ))}
+              {mostLikely.slice(0, 6).map((d, i) => (
+                <td key={`month-proj-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '600', color: '#667eea', background: '#ede9fe', minWidth: '60px' }}>
+                  {d.month}
+                </td>
+              ))}
+            </tr>
+            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+              <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 1, minWidth: '50px' }}>Value</td>
+              {hist.map((d, i) => (
+                <td key={`val-hist-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '700', color: '#1e293b', background: 'white', fontSize: '10px' }}>
+                  {formatter(d.value)}
+                </td>
+              ))}
+              {mostLikely.slice(0, 6).map((d, i) => (
+                <td key={`val-proj-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '700', color: '#667eea', background: '#ede9fe', fontSize: '10px' }}>
+                  {formatter(d.value)}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export default function FinancialScorePage() {
+  // State - Authentication
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginName, setLoginName] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
+  
+  // State - Consultants
+  const [consultants, setConsultants] = useState<Consultant[]>([]);
+  const [newConsultantType, setNewConsultantType] = useState('');
+  const [newConsultantFullName, setNewConsultantFullName] = useState('');
+  const [newConsultantAddress, setNewConsultantAddress] = useState('');
+  const [newConsultantEmail, setNewConsultantEmail] = useState('');
+  const [newConsultantPhone, setNewConsultantPhone] = useState('');
+  const [newConsultantPassword, setNewConsultantPassword] = useState('');
+  const [selectedConsultantId, setSelectedConsultantId] = useState('');
+  const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
+  
+  // State - Companies & Users
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  // Separate state for Company Users
+  const [newCompanyUserName, setNewCompanyUserName] = useState('');
+  const [newCompanyUserTitle, setNewCompanyUserTitle] = useState('');
+  const [newCompanyUserEmail, setNewCompanyUserEmail] = useState('');
+  const [newCompanyUserPhone, setNewCompanyUserPhone] = useState('');
+  const [newCompanyUserPassword, setNewCompanyUserPassword] = useState('');
+  // Separate state for Assessment Users (no phone field)
+  const [newAssessmentUserName, setNewAssessmentUserName] = useState('');
+  const [newAssessmentUserTitle, setNewAssessmentUserTitle] = useState('');
+  const [newAssessmentUserEmail, setNewAssessmentUserEmail] = useState('');
+  const [newAssessmentUserPassword, setNewAssessmentUserPassword] = useState('');
+  
+  // State - Company Details
+  const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false);
+  const [editingCompanyId, setEditingCompanyId] = useState('');
+  const [companyAddressStreet, setCompanyAddressStreet] = useState('');
+  const [companyAddressCity, setCompanyAddressCity] = useState('');
+  const [companyAddressState, setCompanyAddressState] = useState('');
+  const [companyAddressZip, setCompanyAddressZip] = useState('');
+  const [companyAddressCountry, setCompanyAddressCountry] = useState('USA');
+  const [companyIndustrySector, setCompanyIndustrySector] = useState<number | ''>('');
+  const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
+  const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
+  const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false);
+  
+  // State - Projections
+  const [defaultBestCaseRevMult, setDefaultBestCaseRevMult] = useState(1.5);
+  const [defaultBestCaseExpMult, setDefaultBestCaseExpMult] = useState(0.7);
+  const [defaultWorstCaseRevMult, setDefaultWorstCaseRevMult] = useState(0.5);
+  const [defaultWorstCaseExpMult, setDefaultWorstCaseExpMult] = useState(1.3);
+  const [bestCaseRevMultiplier, setBestCaseRevMultiplier] = useState(1.5);
+  const [bestCaseExpMultiplier, setBestCaseExpMultiplier] = useState(0.7);
+  const [worstCaseRevMultiplier, setWorstCaseRevMultiplier] = useState(0.5);
+  const [worstCaseExpMultiplier, setWorstCaseExpMultiplier] = useState(1.3);
+  const [showDefaultSettings, setShowDefaultSettings] = useState(false);
+  
+  // State - Financial Data
+  const [financialDataRecords, setFinancialDataRecords] = useState<FinancialDataRecord[]>([]);
+  const [file, setFile] = useState<File | null>(null);
+  const [rawRows, setRawRows] = useState<any[]>([]);
+  const [columns, setColumns] = useState<string[]>([]);
+  const [mapping, setMapping] = useState<Mappings>({ date: '' });
+  const [error, setError] = useState<string | null>(null);
+  const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
+  const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print'>('login');
+
+  // Check if current view is allowed for assessment users
+  const isAssessmentUserViewAllowed = (view: string) => {
+    if (currentUser?.userType !== 'assessment') return true;
+    const allowedViews = ['ma-welcome', 'ma-questionnaire', 'ma-your-results', 'ma-scores-summary', 'ma-scoring-guide', 'ma-charts'];
+    return allowedViews.includes(view);
+  };
+
+  // Redirect assessment users if they try to access unauthorized views - but not during login
+  // Handle pending login after business registration redirect
+  useEffect(() => {
+    const pendingLoginStr = sessionStorage.getItem('pendingLogin');
+    if (pendingLoginStr && !isLoggedIn) {
+      try {
+        const { user, timestamp } = JSON.parse(pendingLoginStr);
+        // Only process if less than 10 seconds old
+        if (Date.now() - timestamp < 10000) {
+          // Normalize role and userType to lowercase
+          const normalizedUser = {
+            ...user,
+            role: user.role.toLowerCase(),
+            userType: user.userType?.toLowerCase(),
+            consultantType: user.consultantType // Preserve consultantType
+          };
+          
+          setCurrentUser(normalizedUser);
+          setIsLoggedIn(true);
+          
+          // Set appropriate view for business users (consultants)
+          if (normalizedUser.role === 'consultant') {
+            setCurrentView('admin');
+            // Load companies for the consultant
+            if (user.consultantId) {
+              companiesApi.getAll(user.consultantId).then(({ companies: loadedCompanies }) => {
+                setCompanies(loadedCompanies || []);
+                // If user just registered and has a company, select it automatically
+                if (user.companyId && loadedCompanies && loadedCompanies.length > 0) {
+                  const newCompany = loadedCompanies.find((c: any) => c.id === user.companyId);
+                  if (newCompany) {
+                    setSelectedCompanyId(newCompany.id);
+                    setExpandedCompanyInfoId(newCompany.id);
+                  }
+                }
+              });
+            }
+          } else if (normalizedUser.role === 'siteadmin') {
+            setCurrentView('siteadmin');
+          } else if (normalizedUser.userType === 'assessment') {
+            setCurrentView('ma-welcome');
+          } else {
+            setCurrentView('upload');
+            setSelectedCompanyId(user.companyId || '');
+          }
+        }
+        // Clear the pending login data
+        sessionStorage.removeItem('pendingLogin');
+      } catch (error) {
+        console.error('Error processing pending login:', error);
+        sessionStorage.removeItem('pendingLogin');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.userType === 'assessment' && isLoggedIn && currentView !== 'login' && !isAssessmentUserViewAllowed(currentView)) {
+      console.log('🚫 useEffect redirecting from', currentView, 'to ma-welcome');
+      setCurrentView('ma-welcome');
+    }
+  }, [currentView, currentUser, isLoggedIn]);
+
+  // Helper function to handle view changes for assessment users
+  const handleViewChange = (newView: string) => {
+    console.log('🔄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
+    if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
+      console.log('❌ View not allowed, redirecting to ma-welcome');
+      setCurrentView('ma-welcome');
+    } else {
+      console.log('✅ Setting view to:', newView);
+      setCurrentView(newView as any);
+    }
+  };
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping'>('company-management');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'company-management' | 'billing' | 'profile'>('company-management');
+  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses'>('consultants');
+  const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
+  const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
+  const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
+  const [expandedConsultantInfo, setExpandedConsultantInfo] = useState<Set<string>>(new Set());
+  const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
+  const [showAddConsultantForm, setShowAddConsultantForm] = useState(false);
+  const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios'>('all-ratios');
+  const [priorityRatios, setPriorityRatios] = useState<string[]>([
+    'Current Ratio', 'Quick Ratio', 'ROE', 'ROA', 'Interest Coverage', 'Debt/Net Worth'
+  ]);
+
+  // Available ratios by category for Priority Ratios tab
+  const ratioCategories = {
+    'Liquidity': ['Current Ratio', 'Quick Ratio'],
+    'Activity': ['Inventory Turnover', 'Receivables Turnover', 'Payables Turnover', 'Days Inventory', 'Days Receivables', 'Days Payables', 'Sales/Working Capital'],
+    'Coverage': ['Interest Coverage', 'Debt Service Coverage', 'Cash Flow to Debt'],
+    'Leverage': ['Debt/Net Worth', 'Fixed Assets/Net Worth', 'Leverage Ratio'],
+    'Operating': ['Total Asset Turnover', 'ROE', 'ROA', 'EBITDA Margin', 'EBIT Margin']
+  };
+
+  const allAvailableRatios = Object.values(ratioCategories).flat();
+
+  // Helper function to get ratio value key for LineChart
+  const getRatioValueKey = (ratioName: string): string => {
+    const ratioMap: Record<string, string> = {
+      'Current Ratio': 'currentRatio',
+      'Quick Ratio': 'quickRatio',
+      'Inventory Turnover': 'invTurnover',
+      'Receivables Turnover': 'arTurnover',
+      'Payables Turnover': 'apTurnover',
+      'Days Inventory': 'daysInv',
+      'Days Receivables': 'daysAR',
+      'Days Payables': 'daysAP',
+      'Sales/Working Capital': 'salesWC',
+      'Interest Coverage': 'interestCov',
+      'Debt Service Coverage': 'debtSvcCov',
+      'Cash Flow to Debt': 'cfToDebt',
+      'Debt/Net Worth': 'debtToNW',
+      'Fixed Assets/Net Worth': 'fixedToNW',
+      'Leverage Ratio': 'leverage',
+      'Total Asset Turnover': 'totalAssetTO',
+      'ROE': 'roe',
+      'ROA': 'roa',
+      'EBITDA Margin': 'ebitdaMargin',
+      'EBIT Margin': 'ebitMargin'
+    };
+    return ratioMap[ratioName] || '';
+  };
+
+  // Helper function to get ratio color
+  const getRatioColor = (ratioName: string): string => {
+    const colorMap: Record<string, string> = {
+      'Current Ratio': '#10b981',
+      'Quick Ratio': '#14b8a6',
+      'Inventory Turnover': '#f59e0b',
+      'Receivables Turnover': '#f97316',
+      'Payables Turnover': '#ef4444',
+      'Days Inventory': '#fbbf24',
+      'Days Receivables': '#fb923c',
+      'Days Payables': '#f87171',
+      'Sales/Working Capital': '#06b6d4',
+      'Interest Coverage': '#8b5cf6',
+      'Debt Service Coverage': '#a78bfa',
+      'Cash Flow to Debt': '#c4b5fd',
+      'Debt/Net Worth': '#ec4899',
+      'Fixed Assets/Net Worth': '#f472b6',
+      'Leverage Ratio': '#f9a8d4',
+      'Total Asset Turnover': '#3b82f6',
+      'ROE': '#60a5fa',
+      'ROA': '#93c5fd',
+      'EBITDA Margin': '#2563eb',
+      'EBIT Margin': '#1e40af'
+    };
+    return colorMap[ratioName] || '#64748b';
+  };
+
+  // Helper function to get ratio formatter
+  const getRatioFormatter = (ratioName: string): ((v: number) => string) => {
+    if (ratioName.includes('Days')) {
+      return (v: number) => v.toFixed(0);
+    }
+    return (v: number) => v.toFixed(1);
+  };
+
+  // Function to save priority ratios
+  const savePriorityRatios = () => {
+    localStorage.setItem('fs_priorityRatios', JSON.stringify(priorityRatios));
+    alert('Priority ratios saved successfully!');
+  };
+  
+  // State - Subscription Pricing
+  const [subscriptionMonthlyPrice, setSubscriptionMonthlyPrice] = useState<number | undefined>();
+  const [subscriptionQuarterlyPrice, setSubscriptionQuarterlyPrice] = useState<number | undefined>();
+  const [subscriptionAnnualPrice, setSubscriptionAnnualPrice] = useState<number | undefined>();
+  
+  // State - Management Assessment
+  const [assessmentResponses, setAssessmentResponses] = useState<AssessmentResponses>({});
+  const [assessmentNotes, setAssessmentNotes] = useState<AssessmentNotes>({});
+  const [assessmentRecords, setAssessmentRecords] = useState<AssessmentRecord[]>([]);
+  const [unansweredQuestions, setUnansweredQuestions] = useState<string[]>([]);
+  
+  // State - Trend Analysis
+  const [selectedTrendItem, setSelectedTrendItem] = useState<string>('revenue');
+  const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
+  
+  // State - Valuation
+  const [sdeMultiplier, setSdeMultiplier] = useState(2.5);
+  const [ebitdaMultiplier, setEbitdaMultiplier] = useState(5.0);
+  const [dcfDiscountRate, setDcfDiscountRate] = useState(10.0);
+  const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
+
+  // State - Industry Benchmarks
+  const [benchmarks, setBenchmarks] = useState<any[]>([]);
+
+  // State - Company Profiles
+  const [companyProfiles, setCompanyProfiles] = useState<CompanyProfile[]>([]);
+  
+  // State - QuickBooks Raw Data
+  const [qbRawData, setQbRawData] = useState<any>(null);
+  const [dataRefreshKey, setDataRefreshKey] = useState(0);
+
+  // State - QuickBooks Connection
+  const [qbConnected, setQbConnected] = useState(false);
+
+  // State - Financial Statements
+  const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent'>('income-statement');
+  const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
+  const [financialStatementsTab, setFinancialStatementsTab] = useState<'aggregated' | 'line-of-business'>('aggregated');
+  const [selectedLineOfBusiness, setSelectedLineOfBusiness] = useState<string>('all');
+  const [statementDisplay, setStatementDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
+  const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
+  
+  // State - MD&A Tabs
+  const [mdaTab, setMdaTab] = useState<'executive-summary' | 'strengths-insights' | 'key-metrics'>('executive-summary');
+  
+  // State - Formula Popup
+  const [showFormulaPopup, setShowFormulaPopup] = useState<string | null>(null);
+
+  // State - AI Mapping
+  const [aiMappings, setAiMappings] = useState<any[]>([]);
+  const [isGeneratingMappings, setIsGeneratingMappings] = useState(false);
+  const [isSavingMappings, setIsSavingMappings] = useState(false);
+  
+  // State - Lines of Business
+  const [linesOfBusiness, setLinesOfBusiness] = useState<string[]>(['', '', '', '', '']);
+  const [showMappingSection, setShowMappingSection] = useState(false);
+  const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
+  const [qbStatus, setQbStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
+  const [qbLastSync, setQbLastSync] = useState<Date | null>(null);
+  const [qbSyncing, setQbSyncing] = useState(false);
+  const [qbError, setQbError] = useState<string | null>(null);
+  
+
+  // State - API Loading & Errors
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // State - Custom Print Package
+  const [printPackageSelections, setPrintPackageSelections] = useState({
+    mda: false,
+    financialScore: false,
+    priorityRatios: false,
+    workingCapital: false,
+    cashFlow4Quarters: false,
+    cashFlow3Years: false,
+    incomeStatement12MonthsQuarterly: false,
+    incomeStatement3YearsAnnual: false,
+    balanceSheet12MonthsQuarterly: false,
+    balanceSheet3YearsAnnual: false,
+    profile: false
+  });
+
+  // Load from localStorage (DEPRECATED - will be removed)
+  useEffect(() => {
+    const saved = {
+      consultants: localStorage.getItem('fs_consultants'),
+      companies: localStorage.getItem('fs_companies'),
+      users: localStorage.getItem('fs_users'),
+      currentUser: localStorage.getItem('fs_currentUser'),
+      records: localStorage.getItem('fs_financialDataRecords'),
+      selectedCompany: localStorage.getItem('fs_selectedCompanyId'),
+      defaults: localStorage.getItem('fs_projectionDefaults'),
+      assessmentResponses: localStorage.getItem('fs_assessmentResponses'),
+      assessmentNotes: localStorage.getItem('fs_assessmentNotes'),
+      assessmentRecords: localStorage.getItem('fs_assessmentRecords'),
+      companyProfiles: localStorage.getItem('fs_companyProfiles'),
+      priorityRatios: localStorage.getItem('fs_priorityRatios')
+    };
+    
+    // Check user type first to determine if we should load assessment data
+    const savedUser = saved.currentUser ? JSON.parse(saved.currentUser) : null;
+    const isAssessmentUser = savedUser?.userType === 'assessment';
+    
+    if (saved.consultants) setConsultants(JSON.parse(saved.consultants));
+    if (saved.companies) setCompanies(JSON.parse(saved.companies));
+    if (saved.users) setUsers(JSON.parse(saved.users));
+    if (saved.records) setFinancialDataRecords(JSON.parse(saved.records));
+    if (saved.selectedCompany) setSelectedCompanyId(saved.selectedCompany);
+    // Don't load assessment responses from localStorage for assessment users - they'll load from DB
+    if (saved.assessmentResponses && !isAssessmentUser) setAssessmentResponses(JSON.parse(saved.assessmentResponses));
+    if (saved.assessmentNotes && !isAssessmentUser) setAssessmentNotes(JSON.parse(saved.assessmentNotes));
+    if (saved.assessmentRecords) setAssessmentRecords(JSON.parse(saved.assessmentRecords));
+    if (saved.companyProfiles) setCompanyProfiles(JSON.parse(saved.companyProfiles));
+    if (saved.priorityRatios) setPriorityRatios(JSON.parse(saved.priorityRatios));
+    
+    if (saved.defaults) {
+      const d = JSON.parse(saved.defaults);
+      setDefaultBestCaseRevMult(d.bestCaseRev || 1.5);
+      setDefaultBestCaseExpMult(d.bestCaseExp || 0.7);
+      setDefaultWorstCaseRevMult(d.worstCaseRev || 0.5);
+      setDefaultWorstCaseExpMult(d.worstCaseExp || 1.3);
+      setBestCaseRevMultiplier(d.bestCaseRev || 1.5);
+      setBestCaseExpMultiplier(d.bestCaseExp || 0.7);
+      setWorstCaseRevMultiplier(d.worstCaseRev || 0.5);
+      setWorstCaseExpMultiplier(d.worstCaseExp || 1.3);
+    }
+    
+    if (saved.currentUser) {
+      const user = JSON.parse(saved.currentUser);
+      
+      // Don't auto-login assessment users from localStorage - they should login fresh each time
+      if (user.userType === 'assessment') {
+        localStorage.removeItem('fs_currentUser');
+        return;
+      }
+      
+      setCurrentUser(user);
+      setIsLoggedIn(true);
+      
+      // Set appropriate default view based on user type
+      if (user.role === 'siteadmin') {
+        setCurrentView('siteadmin');
+      } else if (user.role === 'consultant') {
+        setCurrentView('admin');
+      } else {
+        setCurrentView('upload');
+      }
+    }
+  }, []);
+
+  useEffect(() => { if (consultants.length > 0) localStorage.setItem('fs_consultants', JSON.stringify(consultants)); }, [consultants]);
+  useEffect(() => { if (companies.length > 0) localStorage.setItem('fs_companies', JSON.stringify(companies)); }, [companies]);
+  useEffect(() => { if (users.length > 0) localStorage.setItem('fs_users', JSON.stringify(users)); }, [users]);
+  useEffect(() => { if (currentUser) localStorage.setItem('fs_currentUser', JSON.stringify(currentUser)); }, [currentUser]);
+  useEffect(() => { if (financialDataRecords.length > 0) localStorage.setItem('fs_financialDataRecords', JSON.stringify(financialDataRecords)); }, [financialDataRecords]);
+  
+  useEffect(() => { if (Object.keys(assessmentResponses).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentResponses', JSON.stringify(assessmentResponses)); }, [assessmentResponses, currentUser]);
+  useEffect(() => { if (Object.keys(assessmentNotes).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentNotes', JSON.stringify(assessmentNotes)); }, [assessmentNotes, currentUser]);
+  useEffect(() => { if (assessmentRecords.length > 0) localStorage.setItem('fs_assessmentRecords', JSON.stringify(assessmentRecords)); }, [assessmentRecords]);
+  useEffect(() => { if (companyProfiles.length > 0) localStorage.setItem('fs_companyProfiles', JSON.stringify(companyProfiles)); }, [companyProfiles]);
+  useEffect(() => { if (priorityRatios.length > 0) localStorage.setItem('fs_priorityRatios', JSON.stringify(priorityRatios)); }, [priorityRatios]);
+
+  useEffect(() => {
+    if (selectedCompanyId) {
+      localStorage.setItem('fs_selectedCompanyId', selectedCompanyId);
+      const record = financialDataRecords.find(r => r.companyId === selectedCompanyId);
+      if (record) {
+        setIsFreshUpload(false);
+        setRawRows(record.rawRows);
+        setMapping(record.mapping);
+        setFile({ name: record.fileName } as File);
+        setColumns(record.rawRows.length > 0 ? Object.keys(record.rawRows[0]) : []);
+      } else {
+        setRawRows([]);
+        setMapping({ date: '' });
+        setFile(null);
+        setColumns([]);
+        setIsFreshUpload(false);
+      }
+    }
+  }, [selectedCompanyId, financialDataRecords]);
+
+  // Handle URL parameters for navigation and messages
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const view = urlParams.get('view');
+    const tab = urlParams.get('tab');
+    const success = urlParams.get('success');
+    const error = urlParams.get('error');
+
+    // Set view if specified
+    if (view === 'admin') {
+      setCurrentView('admin');
+    }
+
+    // Set admin dashboard tab if specified
+    if (tab === 'api-connections' || tab === 'import-financials' || tab === 'company-management' || tab === 'data-review') {
+      setAdminDashboardTab(tab);
+    }
+
+    // Show success message
+    if (success === 'quickbooks_connected') {
+      alert('QuickBooks connected successfully! You can now sync your financial data.');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
+
+    // Show error message
+    if (error === 'quickbooks_connection_failed') {
+      alert('Failed to connect to QuickBooks. Please try again.');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
+  }, []);
+
+  // Load company-specific data from API when company is selected
+  useEffect(() => {
+    const loadCompanyData = async () => {
+      if (!selectedCompanyId || !currentUser) return;
+      
+      try {
+        // ALWAYS clear state at the start to prevent stale data
+        console.log('🧹 Clearing all state before loading new company data');
+        setQbRawData(null);
+        setRawRows([]);
+        setMapping({ date: '' });
+        setFile(null);
+        setColumns([]);
+        
+        // Load users for this company
+        console.log('Loading users for company:', selectedCompanyId);
+        const { users: companyUsers } = await usersApi.getByCompany(selectedCompanyId);
+        console.log('Users loaded from API:', companyUsers);
+        
+        // Normalize role and userType to lowercase
+        const normalizedUsers = companyUsers.map((u: any) => ({
+          ...u,
+          role: u.role.toLowerCase(),
+          userType: u.userType?.toLowerCase()
+        }));
+        console.log('Normalized users:', normalizedUsers);
+        
+        setUsers((prevUsers) => {
+          const otherUsers = prevUsers.filter(u => u.companyId !== selectedCompanyId);
+          const newUsers = [...otherUsers, ...normalizedUsers];
+          console.log('Setting users state:', newUsers);
+          return newUsers;
+        });
+        
+        // Load financial records
+        const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+        const companyName = selectedCompany?.name || 'Unknown';
+        console.log(`📂 LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
+        
+        const { records } = await financialsApi.getByCompany(selectedCompanyId);
+        console.log(`📂 Found ${records.length} financial records for company "${companyName}"`);
+        
+        // If no records found, clear aiMappings as well
+        if (!records || records.length === 0) {
+          console.log(`🧹 No records found - clearing aiMappings too`);
+          setAiMappings([]);
+        } else if (records && records.length > 0) {
+          const latestRecord = records[0];
+          console.log(`📂 Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
+          
+          // Check if this is QuickBooks data and extract raw QB financial statements
+          if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
+              !Array.isArray(latestRecord.rawData) &&
+              (latestRecord.rawData.profitAndLoss || latestRecord.rawData.balanceSheet)) {
+            // QuickBooks data - use monthlyData directly
+            console.log(`🔄 Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
+            console.log(`📄 Record belongs to company ID: ${latestRecord.companyId}`);
+            console.log(`📅 QB Data sync date:`, latestRecord.rawData.syncDate);
+            console.log(`🔑 QB rawData object keys:`, Object.keys(latestRecord.rawData));
+            console.log(`✅ SETTING qbRawData with sync date:`, latestRecord.rawData.syncDate);
+            // Add companyId to the raw data so we can verify it matches
+            setQbRawData({
+              ...latestRecord.rawData,
+              _companyId: selectedCompanyId,
+              _recordId: latestRecord.id
+            });
+            console.log(`⚠️ Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
+            // Force re-render of Financial Statements view
+            setDataRefreshKey(prev => prev + 1);
+            setRawRows([]); // Set empty array since rawRows is not used for QB data
+            setMapping(latestRecord.columnMapping || { date: '' });
+            setFile({ name: latestRecord.fileName } as File);
+            setColumns([]);
+            
+            // Convert monthlyData to the format expected by the app
+            const convertedMonthly = latestRecord.monthlyData.map((m: any) => ({
+              date: new Date(m.monthDate),
+              month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
+              revenue: m.revenue || 0,
+              expense: m.expense || 0,
+              cogsPayroll: m.cogsPayroll || 0,
+              cogsOwnerPay: m.cogsOwnerPay || 0,
+              cogsContractors: m.cogsContractors || 0,
+              cogsMaterials: m.cogsMaterials || 0,
+              cogsCommissions: m.cogsCommissions || 0,
+              cogsOther: m.cogsOther || 0,
+              cogsTotal: m.cogsTotal || 0,
+              cash: m.cash || 0,
+              ar: m.ar || 0,
+              inventory: m.inventory || 0,
+              otherCA: m.otherCA || 0,
+              tca: m.tca || 0,
+              fixedAssets: m.fixedAssets || 0,
+              otherAssets: m.otherAssets || 0,
+              totalAssets: m.totalAssets || 0,
+              ap: m.ap || 0,
+              otherCL: m.otherCL || 0,
+              tcl: m.tcl || 0,
+              ltd: m.ltd || 0,
+              totalLiab: m.totalLiab || 0,
+              totalEquity: m.totalEquity || 0,
+              totalLAndE: m.totalLAndE || 0
+            }));
+            setLoadedMonthlyData(convertedMonthly);
+          } else {
+            // CSV data - set rawRows for processing
+            setQbRawData(null);
+            setRawRows(latestRecord.rawData);
+            setMapping(latestRecord.columnMapping);
+            setFile({ name: latestRecord.fileName } as File);
+            setColumns(Object.keys(latestRecord.rawData[0] || {}));
+            setLoadedMonthlyData([]); // Clear loaded data for CSV
+          }
+        }
+        
+        // Load assessment records
+        console.log(`📊 Loading assessment records for company: ${selectedCompanyId}`);
+        const { records: assessments } = await assessmentsApi.getByCompany(selectedCompanyId);
+        console.log(`📊 Loaded ${assessments?.length || 0} assessment records:`, assessments);
+        setAssessmentRecords(assessments || []);
+        console.log(`✅ Assessment records set in state`);
+        
+        // Load company profile
+        const { profile } = await profilesApi.get(selectedCompanyId);
+        if (profile) {
+          setCompanyProfiles((prev) => {
+            const filtered = prev.filter(p => p.companyId !== selectedCompanyId);
+            return [...filtered, profile];
+          });
+        }
+        
+        // Load saved account mappings
+        try {
+          const mappingsResponse = await fetch(`/api/account-mappings?companyId=${selectedCompanyId}`);
+          if (mappingsResponse.ok) {
+            const { mappings } = await mappingsResponse.json();
+            if (mappings && mappings.length > 0) {
+              console.log('Loaded saved account mappings:', mappings);
+              setAiMappings(mappings);
+              setShowMappingSection(true);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading account mappings:', error);
+        }
+        
+        // Load industry benchmarks
+        const company = companies.find(c => c.id === selectedCompanyId);
+        if (company && company.industrySector) {
+          console.log('Company has industry sector:', company.industrySector);
+          // Get the latest Total Assets to determine asset size category
+          let assetCategory = '1m-5m'; // Default to middle range
+          if (records && records.length > 0) {
+            const latestRecord = records[0];
+            const monthlyData = latestRecord.monthlyData || [];
+            if (monthlyData.length > 0) {
+              const mostRecentMonth = monthlyData[monthlyData.length - 1];
+              const totalAssets = mostRecentMonth.totalAssets || 0;
+              assetCategory = getAssetSizeCategory(totalAssets);
+              console.log('Total Assets:', totalAssets, '-> Asset Category:', assetCategory);
+            }
+          }
+          
+          // Fetch benchmarks for this industry and asset size
+          console.log('Fetching benchmarks for industry:', company.industrySector, 'assetSize:', assetCategory);
+          const benchmarkData = await benchmarksApi.get(String(company.industrySector), assetCategory);
+          setBenchmarks(benchmarkData || []);
+          console.log('✅ Loaded', benchmarkData?.length || 0, 'benchmarks');
+          if (benchmarkData && benchmarkData.length > 0) {
+            console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map(b => b.metricName).join(', '));
+          }
+        } else {
+          console.log('⚠️ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
+        }
+
+        // Load subscription pricing for this company
+        if (company) {
+          setSubscriptionMonthlyPrice(company.subscriptionMonthlyPrice);
+          setSubscriptionQuarterlyPrice(company.subscriptionQuarterlyPrice);
+          setSubscriptionAnnualPrice(company.subscriptionAnnualPrice);
+        }
+
+        // Check QuickBooks connection status
+        await checkQBStatus(selectedCompanyId);
+      } catch (error) {
+        console.error('Error loading company data:', error);
+      }
+    };
+    
+    loadCompanyData();
+  }, [selectedCompanyId, currentUser, qbLastSync]);
+
+
+  // Load companies for consultants
+  useEffect(() => {
+    const loadConsultantCompanies = async () => {
+      if (!currentUser || currentUser.role !== 'consultant' || !currentUser.consultantId) return;
+      
+      try {
+        const { companies: consultantCompanies } = await companiesApi.getAll(currentUser.consultantId);
+        setCompanies(consultantCompanies || []);
+        
+        // Load all users and assessment records for all companies
+        const allUsers: User[] = [];
+        const allAssessments: AssessmentRecord[] = [];
+        for (const company of consultantCompanies || []) {
+          try {
+            // Load users for this company
+            const { users: companyUsers } = await usersApi.getByCompany(company.id);
+            if (companyUsers) {
+              const normalizedUsers = companyUsers.map((u: any) => ({
+                ...u,
+                role: u.role?.toLowerCase() || 'user',
+                userType: u.userType?.toLowerCase() || 'company'
+              }));
+              allUsers.push(...normalizedUsers);
+            }
+            
+            // Load assessment records for this company
+            const { records } = await assessmentsApi.getByCompany(company.id);
+            if (records) {
+              console.log(`📊 Loaded ${records.length} assessment records for company ${company.id} (${company.name}):`, 
+                records.map(r => ({ userEmail: r.user?.email, companyId: r.companyId, answersCount: Object.keys(r.responses || {}).length }))
+              );
+              allAssessments.push(...records);
+            }
+          } catch (error) {
+            console.error(`Error loading data for company ${company.id}:`, error);
+          }
+        }
+        console.log(`✅ Total loaded: ${allUsers.length} users, ${allAssessments.length} assessment records`);
+        console.log(`Assessment users:`, allUsers.filter(u => u.userType === 'assessment').map(u => ({ email: u.email, companyId: u.companyId })));
+        setUsers(allUsers);
+        setAssessmentRecords(allAssessments);
+      } catch (error) {
+        console.error('Error loading consultant companies:', error);
+      }
+    };
+    
+    loadConsultantCompanies();
+  }, [currentUser]);
+
+  // Load consultants for site admin
+  useEffect(() => {
+    const loadConsultants = async () => {
+      if (!currentUser || currentUser.role !== 'siteadmin') return;
+      
+      try {
+        const { consultants: loadedConsultants } = await consultantsApi.getAll();
+        setConsultants(loadedConsultants || []);
+        
+        // Also load all companies and users for display
+        const allCompanies: any[] = [];
+        const allUsers: any[] = [];
+        for (const consultant of loadedConsultants || []) {
+          if (consultant.companies) {
+            allCompanies.push(...consultant.companies);
+          }
+        }
+        setCompanies(allCompanies);
+      } catch (error) {
+        console.error('Error loading consultants:', error);
+      }
+    };
+    
+    loadConsultants();
+  }, [currentUser]);
+
+  // Load financial data when company is selected
+  useEffect(() => {
+    const loadFinancialData = async () => {
+      if (!selectedCompanyId) {
+        setLoadedMonthlyData([]);
+        return;
+      }
+      
+      try {
+        console.log('Loading financial data for company:', selectedCompanyId);
+        const response = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
+        
+        if (!response.ok) {
+          console.log('No financial data found for company');
+          setLoadedMonthlyData([]);
+          return;
+        }
+        
+        const data = await response.json();
+        if (data.records && data.records.length > 0 && data.records[0].monthlyData) {
+          const monthlyData = data.records[0].monthlyData;
+          
+          // Convert API data to the format expected by the app
+          const formattedData = monthlyData.map((m: any) => ({
+            date: new Date(m.monthDate),
+            month: m.month || new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
+            revenue: m.revenue || 0,
+            expense: m.expense || 0,
+            cogsPayroll: m.cogsPayroll || 0,
+            cogsOwnerPay: m.cogsOwnerPay || 0,
+            cogsContractors: m.cogsContractors || 0,
+            cogsMaterials: m.cogsMaterials || 0,
+            cogsCommissions: m.cogsCommissions || 0,
+            cogsOther: m.cogsOther || 0,
+            cogsTotal: m.cogsTotal || 0,
+            opexSalesMarketing: m.salesExpense || m.opexSalesMarketing || 0,
+            rentLease: m.rent || m.rentLease || 0,
+            utilities: m.utilities || 0,
+            equipment: m.infrastructure || m.equipment || 0,
+            travel: m.autoTravel || m.travel || 0,
+            professionalServices: m.professionalFees || m.professionalServices || 0,
+            insurance: m.insurance || 0,
+            opexOther: m.marketing || m.opexOther || 0,
+            opexPayroll: m.payroll || m.opexPayroll || 0,
+            ownersBasePay: m.ownerBasePay || m.ownersBasePay || 0,
+            ownersRetirement: m.ownersRetirement || 0,
+            contractorsDistribution: m.subcontractors || m.contractorsDistribution || 0,
+            interestExpense: m.interestExpense || 0,
+            depreciationExpense: m.depreciationAmortization || m.depreciationExpense || 0,
+            operatingExpenseTotal: m.operatingExpenseTotal || 0,
+            nonOperatingIncome: m.nonOperatingIncome || 0,
+            extraordinaryItems: m.extraordinaryItems || 0,
+            netProfit: m.netProfit || 0,
+            totalAssets: m.totalAssets || 0,
+            totalLiab: m.totalLiab || 0,
+            cash: m.cash || 0,
+            ar: m.ar || 0,
+            inventory: m.inventory || 0,
+            otherCA: m.otherCA || 0,
+            tca: m.tca || 0,
+            fixedAssets: m.fixedAssets || 0,
+            otherAssets: m.otherAssets || 0,
+            ap: m.ap || 0,
+            otherCL: m.otherCL || 0,
+            tcl: m.tcl || 0,
+            ltd: m.ltd || 0,
+            totalEquity: m.totalEquity || 0,
+            totalLAndE: m.totalLAndE || 0
+          }));
+          
+          console.log('✅ Loaded', formattedData.length, 'months of financial data from database');
+          console.log('📊 RAW from database (sample):', {
+            revenue: monthlyData[0]?.revenue,
+            payroll: monthlyData[0]?.payroll,
+            professionalFees: monthlyData[0]?.professionalFees,
+            rent: monthlyData[0]?.rent
+          });
+          console.log('📊 FORMATTED for display (sample):', {
+            revenue: formattedData[0]?.revenue,
+            opexPayroll: formattedData[0]?.opexPayroll,
+            professionalServices: formattedData[0]?.professionalServices,
+            rentLease: formattedData[0]?.rentLease
+          });
+          setLoadedMonthlyData(formattedData);
+        } else {
+          console.log('No monthly data in response');
+          setLoadedMonthlyData([]);
+        }
+      } catch (error) {
+        console.error('Error loading financial data:', error);
+        setLoadedMonthlyData([]);
+      }
+    };
+    
+    loadFinancialData();
+  }, [selectedCompanyId, qbLastSync]);
+
+  useEffect(() => {
+    const saveFinancialData = async () => {
+      if (!file || rawRows.length === 0 || !mapping.date || !selectedCompanyId || !currentUser || !isFreshUpload) return;
+      
+      try {
+        console.log('Saving financial data to database...');
+        // Use normalizeRows to process the data
+        const normalized = normalizeRows(rawRows, mapping);
+        
+        // Process raw rows to get full data with all fields (same as monthly useMemo)
+        const fullMonthlyData = rawRows.map((row, i) => {
+          const monthValue = row[mapping.date] || `Month ${i + 1}`;
+          // Parse date string to create monthDate
+          let monthDate = new Date();
+          if (monthValue && monthValue.includes('/')) {
+            const [month, day, year] = monthValue.split('/');
+            monthDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+          } else if (monthValue && monthValue.includes('-')) {
+            monthDate = new Date(monthValue);
+          }
+          
+          return {
+          month: monthValue,
+          monthDate: monthDate.toISOString(),
+          revenue: parseFloat(row[mapping.revenue!]) || 0,
+          expense: parseFloat(row[mapping.expense!]) || 0,
+          cogsPayroll: parseFloat(row[mapping.cogsPayroll!]) || 0,
+          cogsOwnerPay: parseFloat(row[mapping.cogsOwnerPay!]) || 0,
+          cogsContractors: parseFloat(row[mapping.cogsContractors!]) || 0,
+          cogsMaterials: parseFloat(row[mapping.cogsMaterials!]) || 0,
+          cogsCommissions: parseFloat(row[mapping.cogsCommissions!]) || 0,
+          cogsOther: parseFloat(row[mapping.cogsOther!]) || 0,
+          cogsTotal: parseFloat(row[mapping.cogsTotal!]) || 0,
+          opexSalesMarketing: parseFloat(row[mapping.opexSalesMarketing!]) || 0,
+          rentLease: parseFloat(row[mapping.rentLease!]) || 0,
+          utilities: parseFloat(row[mapping.utilities!]) || 0,
+          equipment: parseFloat(row[mapping.equipment!]) || 0,
+          travel: parseFloat(row[mapping.travel!]) || 0,
+          professionalServices: parseFloat(row[mapping.professionalServices!]) || 0,
+          insurance: parseFloat(row[mapping.insurance!]) || 0,
+          opexOther: parseFloat(row[mapping.opexOther!]) || 0,
+          opexPayroll: parseFloat(row[mapping.opexPayroll!]) || 0,
+          ownersBasePay: parseFloat(row[mapping.ownersBasePay!]) || 0,
+          ownersRetirement: parseFloat(row[mapping.ownersRetirement!]) || 0,
+          contractorsDistribution: parseFloat(row[mapping.contractorsDistribution!]) || 0,
+          interestExpense: parseFloat(row[mapping.interestExpense!]) || 0,
+          depreciationExpense: parseFloat(row[mapping.depreciationExpense!]) || 0,
+          operatingExpenseTotal: parseFloat(row[mapping.operatingExpenseTotal!]) || 0,
+          nonOperatingIncome: parseFloat(row[mapping.nonOperatingIncome!]) || 0,
+          extraordinaryItems: parseFloat(row[mapping.extraordinaryItems!]) || 0,
+          netProfit: parseFloat(row[mapping.netProfit!]) || 0,
+          totalAssets: parseFloat(row[mapping.totalAssets!]) || 0,
+          totalLiab: parseFloat(row[mapping.totalLiab!]) || 0,
+          cash: parseFloat(row[mapping.cash!]) || 0,
+          ar: parseFloat(row[mapping.ar!]) || 0,
+          inventory: parseFloat(row[mapping.inventory!]) || 0,
+          otherCA: parseFloat(row[mapping.otherCA!]) || 0,
+          tca: parseFloat(row[mapping.tca!]) || 0,
+          fixedAssets: parseFloat(row[mapping.fixedAssets!]) || 0,
+          otherAssets: parseFloat(row[mapping.otherAssets!]) || 0,
+          ap: parseFloat(row[mapping.ap!]) || 0,
+          otherCL: parseFloat(row[mapping.otherCL!]) || 0,
+          tcl: parseFloat(row[mapping.tcl!]) || 0,
+          ltd: parseFloat(row[mapping.ltd!]) || 0,
+          totalEquity: parseFloat(row[mapping.totalEquity!]) || 0,
+          totalLAndE: parseFloat(row[mapping.totalLAndE!]) || 0
+          };
+        });
+        
+        console.log('📤 Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
+        console.log('📊 Sample Excel values from row 0:', { 
+          revenue: rawRows[0]?.[mapping.revenue!], 
+          expense: rawRows[0]?.[mapping.expense!],
+          professionalServices: rawRows[0]?.[mapping.professionalServices!]
+        });
+        console.log('📊 First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
+          month: m.month, 
+          revenue: m.revenue, 
+          expense: m.expense,
+          professionalServices: m.professionalServices
+        })));
+        
+        const result = await financialsApi.upload({
+          companyId: selectedCompanyId,
+          uploadedByUserId: currentUser.id,
+          fileName: file.name,
+          rawData: rawRows,
+          columnMapping: mapping,
+          monthlyData: fullMonthlyData
+        });
+        
+        console.log('Financial data saved successfully:', result);
+        setIsFreshUpload(false);
+        
+        // Immediately set loadedMonthlyData so reports show it
+        setLoadedMonthlyData(fullMonthlyData);
+        
+        alert('Financial data saved successfully! You can now view it in the reports.');
+      } catch (error) {
+        console.error('Error saving financial data:', error);
+        const errorMsg = error instanceof ApiError ? error.message : 'Failed to save financial data';
+        setError(errorMsg);
+        alert('Error saving financial data: ' + errorMsg);
+      }
+    };
+    
+    if (isFreshUpload) {
+      saveFinancialData();
+    }
+  }, [mapping, rawRows, file, selectedCompanyId, currentUser, isFreshUpload]);
+
+  // Auto-map columns
+  const autoMapColumns = (columnNames: string[]): Mappings => {
+    const mapping: Mappings = { date: '' };
+    const normalize = (str: string) => str.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+    
+    columnNames.forEach(col => {
+      const n = normalize(col);
+      // Core fields
+      if (!mapping.date && (n.includes('date') || n.includes('month') || n.includes('period'))) mapping.date = col;
+      if (!mapping.revenue && (n.includes('grossrevenue') || n.includes('totalgrossrevenue') || n.includes('revenue') || n.includes('sales'))) mapping.revenue = col;
+      if (!mapping.expense && (n.includes('totalexpense') || (n.includes('expense') && n.includes('total')))) mapping.expense = col;
+      
+      // COGS
+      if (!mapping.cogsPayroll && n.includes('cogs') && n.includes('payroll')) mapping.cogsPayroll = col;
+      if (!mapping.cogsOwnerPay && n.includes('cogs') && n.includes('owner')) mapping.cogsOwnerPay = col;
+      if (!mapping.cogsContractors && n.includes('cogs') && n.includes('contractor')) mapping.cogsContractors = col;
+      if (!mapping.cogsMaterials && n.includes('cogs') && n.includes('material')) mapping.cogsMaterials = col;
+      if (!mapping.cogsCommissions && n.includes('cogs') && (n.includes('comsn') || n.includes('commission'))) mapping.cogsCommissions = col;
+      if (!mapping.cogsOther && n.includes('cogs') && n.includes('other')) mapping.cogsOther = col;
+      if (!mapping.cogsTotal && n.includes('cogs') && n.includes('total')) mapping.cogsTotal = col;
+      
+      // OPEX
+      if (!mapping.opexSalesMarketing && ((n.includes('opex') && (n.includes('sales') || n.includes('marketing'))) || (n === 'salesandmarketing' || n === 'salesmarketing'))) mapping.opexSalesMarketing = col;
+      if (!mapping.rentLease && (n.includes('rent') || n.includes('lease'))) mapping.rentLease = col;
+      if (!mapping.utilities && n.includes('utilit')) mapping.utilities = col;
+      if (!mapping.equipment && n.includes('equipment')) mapping.equipment = col;
+      if (!mapping.travel && n.includes('travel')) mapping.travel = col;
+      if (!mapping.professionalServices && n.includes('professional')) mapping.professionalServices = col;
+      if (!mapping.insurance && n.includes('insurance')) mapping.insurance = col;
+      if (!mapping.opexOther && ((n.includes('opex') && n.includes('other')) || n === 'otheropex')) mapping.opexOther = col;
+      if (!mapping.opexPayroll && ((n.includes('opex') && n.includes('payroll')) || (n === 'payroll' && !n.includes('cogs')))) mapping.opexPayroll = col;
+      
+      // Owners & Other Expenses
+      if (!mapping.ownersBasePay && n.includes('owners') && n.includes('base')) mapping.ownersBasePay = col;
+      if (!mapping.ownersRetirement && n.includes('owners') && n.includes('retirement')) mapping.ownersRetirement = col;
+      if (!mapping.contractorsDistribution && n.includes('contractors') && n.includes('distribution')) mapping.contractorsDistribution = col;
+      if (!mapping.interestExpense && n.includes('interest')) mapping.interestExpense = col;
+      if (!mapping.depreciationExpense && n.includes('depreciation')) mapping.depreciationExpense = col;
+      if (!mapping.operatingExpenseTotal && n.includes('operating') && n.includes('expense') && n.includes('total')) mapping.operatingExpenseTotal = col;
+      if (!mapping.nonOperatingIncome && (n.includes('nonoperating') || n.includes('nonoperatng')) && n.includes('income')) mapping.nonOperatingIncome = col;
+      if (!mapping.extraordinaryItems && (n.includes('extraordinary') || n.includes('extraordinaryitems'))) mapping.extraordinaryItems = col;
+      if (!mapping.netProfit && (n.includes('netprofit') || n.includes('netincome'))) mapping.netProfit = col;
+      
+      // Assets
+      if (!mapping.totalAssets && (n.includes('totalasset') || n === 'totalassets' || n === 'assets')) mapping.totalAssets = col;
+      if (!mapping.cash && n === 'cash') mapping.cash = col;
+      if (!mapping.ar && (n.includes('accountsreceivable') || n.includes('receivable') || n === 'ar')) mapping.ar = col;
+      if (!mapping.inventory && n.includes('inventory')) mapping.inventory = col;
+      if (!mapping.otherCA && (n.includes('othercurrentasset') || n === 'othercurrentassets')) mapping.otherCA = col;
+      if (!mapping.tca && (n.includes('totalcurrentasset') || n === 'totalcurrentassets' || n === 'currentassets')) mapping.tca = col;
+      if (!mapping.fixedAssets && (n.includes('fixedasset') || n === 'fixedassets')) mapping.fixedAssets = col;
+      if (!mapping.otherAssets && (n.includes('otherasset') && !n.includes('current'))) mapping.otherAssets = col;
+      
+      // Liabilities & Equity
+      if (!mapping.totalLiab && (n.includes('totalliab') || n === 'totalliabilities' || n === 'liabilities')) mapping.totalLiab = col;
+      if (!mapping.ap && (n.includes('accountspayable') || n.includes('payable') || n === 'ap')) mapping.ap = col;
+      if (!mapping.otherCL && (n.includes('othercurrentliab') || n === 'othercurrentliabilities')) mapping.otherCL = col;
+      if (!mapping.tcl && (n.includes('totalcurrentliab') || n === 'totalcurrentliabilities' || n === 'currentliabilities')) mapping.tcl = col;
+      if (!mapping.ltd && (n.includes('longtermdebt') || n.includes('ltd') || n === 'longtermdebt')) mapping.ltd = col;
+      if (!mapping.totalEquity && (n.includes('totalequity') || n.includes('equity') || n.includes('networth'))) mapping.totalEquity = col;
+      if (!mapping.totalLAndE && (n.includes('liabequity') || n.includes('liabilitiesequity'))) mapping.totalLAndE = col;
+    });
+    return mapping;
+  };
+
+  // Handlers
+  const handleLogin = async () => {
+    setLoginError('');
+    setIsLoading(true);
+    
+    if (!loginEmail || !loginPassword) {
+      setLoginError('Please enter both email and password');
+      setIsLoading(false);
+      return;
+    }
+    
+    try {
+      const { user } = await authApi.login(loginEmail, loginPassword);
+      
+      // Normalize role and userType to lowercase for frontend compatibility
+      const normalizedUser = {
+        ...user,
+        role: user.role.toLowerCase(),
+        userType: user.userType?.toLowerCase()
+      };
+      
+      setCurrentUser(normalizedUser);
+      setIsLoggedIn(true);
+      
+      // Clear assessment data from localStorage for assessment users
+      if (normalizedUser.userType === 'assessment') {
+        localStorage.removeItem('fs_assessmentResponses');
+        localStorage.removeItem('fs_assessmentNotes');
+        setAssessmentResponses({});
+        setAssessmentNotes({});
+      }
+      
+      // Set appropriate default view based on user type
+      if (normalizedUser.role === 'siteadmin') {
+        setCurrentView('siteadmin');
+      } else if (normalizedUser.role === 'consultant') {
+        setCurrentView('admin');
+      } else if (normalizedUser.userType === 'assessment') {
+        setCurrentView('ma-welcome');
+      } else {
+        setCurrentView('upload');
+      }
+      
+      if (normalizedUser.role !== 'consultant' && normalizedUser.role !== 'siteadmin') {
+        setSelectedCompanyId(user.companyId || '');
+      }
+      
+      // Load user's data after login
+      if (normalizedUser.role === 'consultant' && user.consultantId) {
+        const { companies: loadedCompanies } = await companiesApi.getAll(user.consultantId);
+        setCompanies(loadedCompanies || []);
+      }
+      
+      setLoginEmail('');
+      setLoginPassword('');
+      setLoginError('');
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setLoginError(error.message);
+      } else {
+        setLoginError('Login failed. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegisterConsultant = async () => {
+    setLoginError('');
+    setIsLoading(true);
+    
+    if (!loginName || !loginEmail || !loginPassword) { 
+      setLoginError('Please fill in all fields');
+      setIsLoading(false);
+      return; 
+    }
+    
+    try {
+      const { user } = await authApi.register({
+        name: loginName,
+        email: loginEmail,
+        password: loginPassword,
+        fullName: loginName
+      });
+      
+      // Normalize role and userType to lowercase for frontend compatibility
+      const normalizedUser = {
+        ...user,
+        role: user.role.toLowerCase(),
+        userType: user.userType?.toLowerCase()
+      };
+      
+      setCurrentUser(normalizedUser);
+      setIsLoggedIn(true);
+      setCurrentView('admin');
+      setLoginName('');
+      setLoginEmail('');
+      setLoginPassword('');
+      setIsRegistering(false);
+      setLoginError('');
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 409) {
+          setLoginError('This email is already registered. Please login instead.');
+        } else {
+          setLoginError(error.message);
+        }
+      } else {
+        setLoginError('Registration failed. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsLoggedIn(false);
+    setCurrentView('login');
+    setSelectedCompanyId('');
+    setRawRows([]);
+    setMapping({ date: '' });
+    setFile(null);
+    setColumns([]);
+    localStorage.removeItem('fs_currentUser');
+    localStorage.removeItem('fs_selectedCompanyId');
+  };
+
+  const addCompany = async () => {
+    if (!newCompanyName || !currentUser) {
+      alert('Please enter a company name');
+      return;
+    }
+    
+    if (!currentUser.consultantId) {
+      alert('Error: No consultant ID found. Please log out and log back in.');
+      console.error('Current user:', currentUser);
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      console.log('Creating company:', { name: newCompanyName, consultantId: currentUser.consultantId });
+      const { company } = await companiesApi.create({
+        name: newCompanyName,
+        consultantId: currentUser.consultantId
+      });
+      console.log('Company created:', company);
+      setCompanies([...companies, company]);
+      setNewCompanyName('');
+      
+      // Automatically select the newly created company
+      setSelectedCompanyId(company.id);
+      
+      alert('Company created successfully!');
+    } catch (error) {
+      console.error('Error creating company:', error);
+      alert(error instanceof ApiError ? error.message : 'Failed to create company');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteCompany = async (companyId: string) => {
+    if (!confirm('Delete this company and all its users?')) return;
+    setIsLoading(true);
+    try {
+      await companiesApi.delete(companyId);
+      setCompanies(companies.filter(c => c.id !== companyId));
+      setUsers(users.filter(u => u.companyId !== companyId));
+      setFinancialDataRecords(financialDataRecords.filter(r => r.companyId !== companyId));
+      if (selectedCompanyId === companyId) setSelectedCompanyId('');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to delete company');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // QuickBooks Functions
+  const checkQBStatus = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/quickbooks/status?companyId=${companyId}`);
+      const data = await response.json();
+      
+      if (data.connected) {
+        setQbConnected(true);
+        setQbStatus(data.status);
+        // Only update qbLastSync if the timestamp actually changed (prevent infinite loop)
+        const newSyncTime = data.lastSyncAt ? new Date(data.lastSyncAt).getTime() : null;
+        const currentSyncTime = qbLastSync ? qbLastSync.getTime() : null;
+        if (newSyncTime !== currentSyncTime) {
+          setQbLastSync(data.lastSyncAt ? new Date(data.lastSyncAt) : null);
+        }
+        setQbError(data.errorMessage);
+      } else {
+        setQbConnected(false);
+        setQbStatus('NOT_CONNECTED');
+        if (qbLastSync !== null) {
+          setQbLastSync(null);
+        }
+        setQbError(null);
+      }
+    } catch (error) {
+      console.error('Failed to check QuickBooks status:', error);
+      setQbError('Failed to check connection status');
+    }
+  };
+
+  const connectQuickBooks = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/quickbooks/auth?companyId=${selectedCompanyId}`);
+      const data = await response.json();
+      
+      if (data.authUri) {
+        // Redirect to QuickBooks OAuth page
+        window.location.href = data.authUri;
+      } else {
+        throw new Error('Failed to generate authorization URL');
+      }
+    } catch (error) {
+      console.error('Failed to initiate QuickBooks connection:', error);
+      alert('Failed to connect to QuickBooks. Please try again.');
+    }
+  };
+
+  const syncQuickBooks = async () => {
+    if (!selectedCompanyId || !currentUser) {
+      alert('Please select a company first');
+      return;
+    }
+
+    setQbSyncing(true);
+    setQbError(null);
+
+    try {
+      const response = await fetch('/api/quickbooks/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          companyId: selectedCompanyId,
+          userId: currentUser.id
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Update sync timestamp - this will trigger the useEffect to reload data
+        setQbLastSync(new Date());
+        
+        // Refresh QuickBooks status
+        if (selectedCompanyId) {
+          await checkQBStatus(selectedCompanyId);
+        }
+        
+        alert(`QuickBooks data synced successfully! ${data.recordsImported || 0} months of financial data imported.`);
+      } else {
+        // Include detailed error message from API
+        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
+        throw new Error(errorMsg);
+      }
+    } catch (error: any) {
+      console.error('QuickBooks sync error:', error);
+      const errorMessage = error.message || 'Failed to sync data';
+      setQbError(errorMessage);
+      alert('Failed to sync QuickBooks data:\n\n' + errorMessage);
+    } finally {
+      setQbSyncing(false);
+    }
+  };
+
+  const disconnectQuickBooks = async () => {
+    if (!selectedCompanyId) return;
+
+    if (!confirm('Are you sure you want to disconnect QuickBooks? You can reconnect anytime.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/quickbooks/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setQbConnected(false);
+        setQbStatus('NOT_CONNECTED');
+        setQbLastSync(null);
+        setQbError(null);
+        alert('QuickBooks disconnected successfully');
+      } else {
+        throw new Error(data.error || 'Disconnect failed');
+      }
+    } catch (error: any) {
+      console.error('QuickBooks disconnect error:', error);
+      alert('Failed to disconnect QuickBooks: ' + (error.message || 'Unknown error'));
+    }
+  };
+
+  const getCompanyUsers = (companyId: string, userType?: 'company' | 'assessment') => {
+    if (userType) {
+      return users.filter(u => u.companyId === companyId && u.role === 'user' && u.userType === userType);
+    }
+    return users.filter(u => u.companyId === companyId && u.role === 'user');
+  };
+  const getCurrentCompany = () => companies.find(c => c.id === selectedCompanyId);
+
+  const handleSelectCompany = (companyId: string) => {
+    const company = companies.find(c => c.id === companyId);
+    if (!company) return;
+    
+    // Select the company
+    setSelectedCompanyId(companyId);
+    
+    // Navigate to Consultant Dashboard to show company details
+    setCurrentView('admin');
+    
+    // Automatically expand this company's section
+    setExpandedCompanyInfoId(companyId);
+  };
+
+  const saveCompanyDetails = async () => {
+    if (!companyIndustrySector) { 
+      alert('Please select an industry sector'); 
+      return; 
+    }
+    setIsLoading(true);
+    try {
+      const { company } = await companiesApi.update(editingCompanyId, {
+        addressStreet: companyAddressStreet,
+        addressCity: companyAddressCity,
+        addressState: companyAddressState,
+        addressZip: companyAddressZip,
+        addressCountry: companyAddressCountry,
+        industrySector: companyIndustrySector as number
+      });
+      setCompanies(companies.map(c => c.id === editingCompanyId ? { ...c, ...company } : c));
+      setSelectedCompanyId(editingCompanyId);
+      setShowCompanyDetailsModal(false);
+      
+      // Expand the company that was just saved
+      setExpandedCompanyInfoId(editingCompanyId);
+      
+      setEditingCompanyId('');
+      setCompanyAddressStreet('');
+      setCompanyAddressCity('');
+      setCompanyAddressState('');
+      setCompanyAddressZip('');
+      setCompanyAddressCountry('USA');
+      setCompanyIndustrySector('');
+      
+      // Stay on Consultant Dashboard
+      setCurrentView('admin');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to update company');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const saveSubscriptionPricing = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const { company } = await companiesApi.update(selectedCompanyId, {
+        subscriptionMonthlyPrice: subscriptionMonthlyPrice,
+        subscriptionQuarterlyPrice: subscriptionQuarterlyPrice,
+        subscriptionAnnualPrice: subscriptionAnnualPrice
+      });
+      // Update the companies list with the new pricing
+      setCompanies(companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c));
+      alert('✅ Subscription pricing saved successfully!');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to save subscription pricing');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const addUser = async (companyId: string, userType: 'company' | 'assessment' = 'company') => {
+    // Get the appropriate state variables based on userType
+    const name = userType === 'company' ? newCompanyUserName : newAssessmentUserName;
+    const title = userType === 'company' ? newCompanyUserTitle : newAssessmentUserTitle;
+    const email = userType === 'company' ? newCompanyUserEmail : newAssessmentUserEmail;
+    const phone = userType === 'company' ? newCompanyUserPhone : undefined; // Phone only for company users
+    const password = userType === 'company' ? newCompanyUserPassword : newAssessmentUserPassword;
+    
+    if (!name || !email || !password) { 
+      alert('Please fill all required fields (Name, Email, Password)'); 
+      return; 
+    }
+    
+    setIsLoading(true);
+    try {
+      console.log('Creating user:', { name, title, email, phone, companyId, userType: userType.toUpperCase() });
+      console.log('Current users in state:', users);
+      console.log('Filtered company users:', users.filter(u => u.companyId === companyId && u.userType === 'company'));
+      console.log('Filtered assessment users:', users.filter(u => u.companyId === companyId && u.userType === 'assessment'));
+      
+      const { user } = await usersApi.create({
+        name,
+        title,
+        email,
+        phone,
+        password,
+        companyId: companyId,
+        userType: userType.toUpperCase() as 'COMPANY' | 'ASSESSMENT'
+      });
+      console.log('User created from API:', user);
+      
+      // Normalize role and userType to lowercase
+      const normalizedUser = {
+        ...user,
+        role: user.role.toLowerCase(),
+        userType: user.userType?.toLowerCase()
+      };
+      console.log('Normalized user:', normalizedUser);
+      
+      setUsers([...users, normalizedUser]);
+      console.log('Users after adding:', [...users, normalizedUser]);
+      
+      // Clear the appropriate fields based on userType
+      if (userType === 'company') {
+        setNewCompanyUserName('');
+        setNewCompanyUserTitle('');
+        setNewCompanyUserEmail('');
+        setNewCompanyUserPhone('');
+        setNewCompanyUserPassword('');
+      } else {
+        setNewAssessmentUserName('');
+        setNewAssessmentUserTitle('');
+        setNewAssessmentUserEmail('');
+        setNewAssessmentUserPassword('');
+      }
+      
+      alert(`${userType === 'company' ? 'Company' : 'Assessment'} user created successfully!`);
+    } catch (error) {
+      console.error('Error creating user:', error);
+      if (error instanceof ApiError) {
+        if (error.message.includes('already registered')) {
+          alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+        } else {
+          alert(error.message);
+        }
+      } else {
+        alert('Failed to add user');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    if (!confirm('Delete this user?')) return;
+    setIsLoading(true);
+    try {
+      await usersApi.delete(userId);
+      setUsers(users.filter(u => u.id !== userId));
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to delete user');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Consultant CRUD functions
+  const addConsultant = async () => {
+    if (!newConsultantType || !newConsultantFullName || !newConsultantAddress || !newConsultantEmail || !newConsultantPhone || !newConsultantPassword) {
+      alert('Please fill all consultant fields');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const { consultant } = await consultantsApi.create({
+        fullName: newConsultantFullName,
+        email: newConsultantEmail,
+        password: newConsultantPassword,
+        address: newConsultantAddress,
+        phone: newConsultantPhone,
+        type: newConsultantType
+      });
+      
+      // Add to local state (will be refreshed on next load)
+      const newConsultant: Consultant = {
+        id: consultant.id,
+        type: consultant.type || newConsultantType,
+        fullName: consultant.fullName,
+        address: consultant.address || newConsultantAddress,
+        email: consultant.email,
+        phone: consultant.phone || newConsultantPhone,
+        password: '' // Don't store password in state
+      };
+      setConsultants([...consultants, newConsultant]);
+      
+      // Clear form
+      setNewConsultantType('');
+      setNewConsultantFullName('');
+      setNewConsultantAddress('');
+      setNewConsultantEmail('');
+      setNewConsultantPhone('');
+      setNewConsultantPassword('');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateCompanyPricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number }) => {
+    try {
+      await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual);
+      
+      // Update local state
+      setCompanies(companies.map(c => 
+        c.id === companyId 
+          ? { 
+              ...c, 
+              subscriptionMonthlyPrice: pricing.monthly,
+              subscriptionQuarterlyPrice: pricing.quarterly,
+              subscriptionAnnualPrice: pricing.annual
+            } 
+          : c
+      ));
+      
+      // Clear editing state
+      setEditingPricing((prev) => {
+        const newState = { ...prev };
+        delete newState[companyId];
+        return newState;
+      });
+      
+      alert('Pricing updated successfully');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
+    }
+  };
+
+  const updateConsultantInfo = async (consultantId: string, info: { fullName: string; email: string; address: string; phone: string; type: string }) => {
+    try {
+      const response = await consultantsApi.update(consultantId, info);
+      
+      // Update local state
+      setConsultants(consultants.map(c => 
+        c.id === consultantId 
+          ? { 
+              ...c, 
+              fullName: info.fullName,
+              email: info.email,
+              address: info.address,
+              phone: info.phone,
+              type: info.type
+            } 
+          : c
+      ));
+      
+      // Clear editing state
+      setEditingConsultantInfo((prev) => {
+        const newState = { ...prev };
+        delete newState[consultantId];
+        return newState;
+      });
+      
+      alert('Consultant information updated successfully');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to update consultant information');
+    }
+  };
+
+  const deleteConsultant = async (consultantId: string) => {
+    if (!confirm('Delete this consultant? This will also delete all their companies and users.')) return;
+    setIsLoading(true);
+    try {
+      await consultantsApi.delete(consultantId);
+      
+      // Update local state
+      setConsultants(consultants.filter(c => c.id !== consultantId));
+      const consultantCompanies = companies.filter(c => c.consultantId === consultantId);
+      const companyIds = consultantCompanies.map(c => c.id);
+      setCompanies(companies.filter(c => c.consultantId !== consultantId));
+      setUsers(users.filter(u => !companyIds.includes(u.companyId) && u.id !== consultantId));
+      setFinancialDataRecords(financialDataRecords.filter(r => !companyIds.includes(r.companyId)));
+      setAssessmentRecords(assessmentRecords.filter(r => !companyIds.includes(r.companyId)));
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to delete consultant');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getConsultantCompanies = (consultantId: string) => {
+    return companies.filter(c => c.consultantId === consultantId).sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!selectedCompanyId) { alert('Please select a company first'); return; }
+
+    setFile(f);
+    setError(null);
+    setIsFreshUpload(true);
+    const ab = await f.arrayBuffer();
+    const wb = XLSX.read(ab, { cellDates: false });
+    
+    // Use Sheet1 if available (transposed format), otherwise use first sheet
+    const sheetName = wb.SheetNames.includes('Sheet1') ? 'Sheet1' : wb.SheetNames[0];
+    
+    const ws = wb.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+    if (json.length < 2) { setError('File appears empty or invalid'); return; }
+    
+    // Check if this is a transposed format (field names in column A, dates in row 0)
+    const firstCell = json[0] && json[0][0];
+    const isTransposed = firstCell === null || firstCell === '' || (typeof firstCell === 'number' && firstCell > 40000); // Excel date serial numbers
+    
+    if (isTransposed) {
+      // Transposed format: Row 0 has dates, Column A has field names
+      console.log('Detected transposed format, converting...');
+      const dateRow = json[0] as any[];
+      const dates = dateRow.slice(1).filter(d => d !== null && d !== ''); // Skip first column
+      
+      // Convert Excel serial numbers to dates
+      const parsedDates = dates.map(d => {
+        if (typeof d === 'number') {
+          const excelEpoch = new Date(1899, 11, 30);
+          const date = new Date(excelEpoch.getTime() + d * 24 * 60 * 60 * 1000);
+          return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+        }
+        return d;
+      });
+      
+      // Build normal format: each row is a month
+      const rows: any[] = [];
+      for (let monthIdx = 0; monthIdx < parsedDates.length; monthIdx++) {
+        const monthRow: any = { 'Date': parsedDates[monthIdx] };
+        
+        // For each field (row in original)
+        for (let fieldIdx = 1; fieldIdx < json.length; fieldIdx++) {
+          const fieldRow = json[fieldIdx] as any[];
+          const fieldName = fieldRow[0];
+          const fieldValue = fieldRow[monthIdx + 1]; // +1 because column 0 is field name
+          if (fieldName) {
+            monthRow[fieldName] = fieldValue;
+          }
+        }
+        rows.push(monthRow);
+      }
+      
+      const header = ['Date', ...json.slice(1).map(r => r[0]).filter(n => n)];
+      setRawRows(rows);
+      setColumns(header);
+      setMapping(autoMapColumns(header));
+    } else {
+      // Normal format: Row 0 has headers, each row is a month
+      const header = json[0] as any[];
+      const dataRows = json.slice(1);
+      const rows = dataRows.map(row => {
+        const obj: any = {};
+        header.forEach((h, i) => { obj[h] = (row as any[])[i] == null || (row as any[])[i] === '' ? null : (row as any[])[i]; });
+        return obj;
+      });
+      setRawRows(rows);
+      setColumns(header);
+      setMapping(autoMapColumns(header));
+    }
+  };
+
+  // Calculate monthly data
+  const monthly = useMemo(() => {
+    // If we have loaded monthly data from QuickBooks, use it directly
+    if (loadedMonthlyData && loadedMonthlyData.length > 0) {
+      return loadedMonthlyData;
+    }
+    
+    // Otherwise, process from CSV rawRows
+    if (!rawRows || rawRows.length === 0 || !mapping.date) return [];
+    return rawRows.map((row, i) => ({
+      month: row[mapping.date] || `Month ${i + 1}`,
+      // Income Statement
+      revenue: parseFloat(row[mapping.revenue!]) || 0,
+      expense: parseFloat(row[mapping.expense!]) || 0,
+      cogsPayroll: parseFloat(row[mapping.cogsPayroll!]) || 0,
+      cogsOwnerPay: parseFloat(row[mapping.cogsOwnerPay!]) || 0,
+      cogsContractors: parseFloat(row[mapping.cogsContractors!]) || 0,
+      cogsMaterials: parseFloat(row[mapping.cogsMaterials!]) || 0,
+      cogsCommissions: parseFloat(row[mapping.cogsCommissions!]) || 0,
+      cogsOther: parseFloat(row[mapping.cogsOther!]) || 0,
+      cogsTotal: parseFloat(row[mapping.cogsTotal!]) || 0,
+      opexSalesMarketing: parseFloat(row[mapping.opexSalesMarketing!]) || 0,
+      rentLease: parseFloat(row[mapping.rentLease!]) || 0,
+      utilities: parseFloat(row[mapping.utilities!]) || 0,
+      equipment: parseFloat(row[mapping.equipment!]) || 0,
+      travel: parseFloat(row[mapping.travel!]) || 0,
+      professionalServices: parseFloat(row[mapping.professionalServices!]) || 0,
+      insurance: parseFloat(row[mapping.insurance!]) || 0,
+      opexOther: parseFloat(row[mapping.opexOther!]) || 0,
+      opexPayroll: parseFloat(row[mapping.opexPayroll!]) || 0,
+      ownersBasePay: parseFloat(row[mapping.ownersBasePay!]) || 0,
+      ownersRetirement: parseFloat(row[mapping.ownersRetirement!]) || 0,
+      contractorsDistribution: parseFloat(row[mapping.contractorsDistribution!]) || 0,
+      interestExpense: parseFloat(row[mapping.interestExpense!]) || 0,
+      depreciationExpense: parseFloat(row[mapping.depreciationExpense!]) || 0,
+      operatingExpenseTotal: parseFloat(row[mapping.operatingExpenseTotal!]) || 0,
+      nonOperatingIncome: parseFloat(row[mapping.nonOperatingIncome!]) || 0,
+      extraordinaryItems: parseFloat(row[mapping.extraordinaryItems!]) || 0,
+      netProfit: parseFloat(row[mapping.netProfit!]) || 0,
+      // Balance Sheet - Assets (reusing from above if already defined)
+      totalAssets: parseFloat(row[mapping.totalAssets!]) || 0,
+      totalLiab: parseFloat(row[mapping.totalLiab!]) || 0,
+      cash: parseFloat(row[mapping.cash!]) || 0,
+      ar: parseFloat(row[mapping.ar!]) || 0,
+      inventory: parseFloat(row[mapping.inventory!]) || 0,
+      otherCA: parseFloat(row[mapping.otherCA!]) || 0,
+      tca: parseFloat(row[mapping.tca!]) || 0,
+      fixedAssets: parseFloat(row[mapping.fixedAssets!]) || 0,
+      otherAssets: parseFloat(row[mapping.otherAssets!]) || 0,
+      ap: parseFloat(row[mapping.ap!]) || 0,
+      otherCL: parseFloat(row[mapping.otherCL!]) || 0,
+      tcl: parseFloat(row[mapping.tcl!]) || 0,
+      ltd: parseFloat(row[mapping.ltd!]) || 0,
+      totalEquity: parseFloat(row[mapping.totalEquity!]) || 0,
+      totalLAndE: parseFloat(row[mapping.totalLAndE!]) || 0
+    }));
+  }, [rawRows, mapping, loadedMonthlyData]);
+
+  const ltmRev = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + m.revenue, 0) : 0;
+  const ltmExp = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + m.expense, 0) : 0;
+  
+  const growth_24mo = monthly.length >= 24 ? ((ltmRev - monthly.slice(-24, -12).reduce((sum, m) => sum + m.revenue, 0)) / monthly.slice(-24, -12).reduce((sum, m) => sum + m.revenue, 0)) * 100 : 0;
+  const growth_6mo = monthly.length >= 12 ? ((monthly.slice(-6).reduce((sum, m) => sum + m.revenue, 0) - monthly.slice(-12, -6).reduce((sum, m) => sum + m.revenue, 0)) / monthly.slice(-12, -6).reduce((sum, m) => sum + m.revenue, 0)) * 100 : 0;
+  const expGrowth_24mo = monthly.length >= 24 ? ((ltmExp - monthly.slice(-24, -12).reduce((sum, m) => sum + m.expense, 0)) / monthly.slice(-24, -12).reduce((sum, m) => sum + m.expense, 0)) * 100 : 0;
+  
+  let baseRGS = 10;
+  if (growth_24mo >= 25) baseRGS = 100;
+  else if (growth_24mo >= 15) baseRGS = 80;
+  else if (growth_24mo >= 5) baseRGS = 60;
+  else if (growth_24mo >= 0) baseRGS = 50;
+  else if (growth_24mo >= -5) baseRGS = 40;
+  else if (growth_24mo >= -15) baseRGS = 20;
+  else baseRGS = 10;
+  
+  let adjustedRGS = baseRGS;
+  if (growth_6mo >= 25) adjustedRGS = clamp(adjustedRGS + 50, 10, 100);
+  else if (growth_6mo >= 15) adjustedRGS = clamp(((100 - adjustedRGS) * 0.8) + adjustedRGS, 10, 100);
+  else if (growth_6mo >= 5) adjustedRGS = clamp(((100 - adjustedRGS) * 0.6) + adjustedRGS, 10, 100);
+  else if (growth_6mo >= 0) adjustedRGS = clamp(((100 - adjustedRGS) * 0.4) + adjustedRGS, 10, 100);
+  else if (growth_6mo >= -5) adjustedRGS = clamp(adjustedRGS * 0.9, 10, 100);
+  else if (growth_6mo >= -15) adjustedRGS = clamp(adjustedRGS * 0.7, 10, 100);
+  else if (growth_6mo >= -25) adjustedRGS = clamp(adjustedRGS * 0.5, 10, 100);
+  else adjustedRGS = clamp(adjustedRGS * 0.3, 10, 100);
+  
+  const revExpSpread = growth_24mo - expGrowth_24mo;
+  let expenseAdjustment = 0;
+  if (revExpSpread > 10) expenseAdjustment = 30;
+  else if (revExpSpread >= 0 && revExpSpread <= 10) expenseAdjustment = 10;
+  else if (revExpSpread >= -5 && revExpSpread < 0) expenseAdjustment = -10;
+  else if (revExpSpread < -5) expenseAdjustment = -30;
+  
+  const profitabilityScore = clamp(adjustedRGS + expenseAdjustment, 10, 100);
+  
+  const alr1 = monthly.length > 0 ? monthly[monthly.length - 1].totalAssets / monthly[monthly.length - 1].totalLiab : 0;
+  const alr13 = monthly.length >= 13 ? monthly[monthly.length - 13].totalAssets / monthly[monthly.length - 13].totalLiab : 0;
+  const alrGrowth = alr13 !== 0 ? ((alr1 - alr13) / alr13) * 100 : 0;
+  
+  let adsBase = 10;
+  if (alr1 >= 1.5) adsBase = 100;
+  else if (alr1 >= 1.2) adsBase = 90;
+  else if (alr1 >= 0.8) adsBase = 70;
+  else if (alr1 >= 0.6) adsBase = 50;
+  else if (alr1 >= 0.4) adsBase = 30;
+  else adsBase = 10;
+  
+  let adsAdj = 0;
+  if (alrGrowth >= 50) adsAdj = 20;
+  else if (alrGrowth >= 30) adsAdj = 15;
+  else if (alrGrowth >= 15) adsAdj = 10;
+  else if (alrGrowth >= 5) adsAdj = 5;
+  else if (alrGrowth >= -5) adsAdj = 0;
+  else if (alrGrowth >= -15) adsAdj = -5;
+  else if (alrGrowth >= -30) adsAdj = -10;
+  else if (alrGrowth >= -50) adsAdj = -15;
+  else adsAdj = -20;
+  
+  const assetDevScore = clamp(adsBase + adsAdj, 10, 100);
+  const finalScore = (profitabilityScore + assetDevScore) / 2;
+
+  // Trend data
+  const trendData = useMemo(() => {
+    if (monthly.length < 13) return [];
+    const trends: any[] = [];
+    
+    for (let i = 12; i < monthly.length; i++) {
+      const window = monthly.slice(i - 11, i + 1);
+      const ltmR = window.reduce((s, m) => s + m.revenue, 0);
+      const ltmE = window.reduce((s, m) => s + m.expense, 0);
+      const prev12R = i >= 23 ? monthly.slice(i - 23, i - 11).reduce((s, m) => s + m.revenue, 0) : 0;
+      const prev12E = i >= 23 ? monthly.slice(i - 23, i - 11).reduce((s, m) => s + m.revenue, 0) : 0;
+      const g24 = prev12R > 0 ? ((ltmR - prev12R) / prev12R) * 100 : 0;
+      const gE24 = prev12E > 0 ? ((ltmE - prev12E) / prev12E) * 100 : 0;
+      const recent6R = window.slice(-6).reduce((s, m) => s + m.revenue, 0);
+      const prior6R = window.slice(0, 6).reduce((s, m) => s + m.revenue, 0);
+      const g6 = prior6R > 0 ? ((recent6R - prior6R) / prior6R) * 100 : 0;
+      
+      let bRGS = 10;
+      if (g24 >= 25) bRGS = 100;
+      else if (g24 >= 15) bRGS = 80;
+      else if (g24 >= 5) bRGS = 60;
+      else if (g24 >= 0) bRGS = 50;
+      else if (g24 >= -5) bRGS = 40;
+      else if (g24 >= -15) bRGS = 20;
+      else bRGS = 10;
+      
+      let aRGS = bRGS;
+      if (g6 >= 25) aRGS = clamp(aRGS + 50, 10, 100);
+      else if (g6 >= 15) aRGS = clamp(((100 - aRGS) * 0.8) + aRGS, 10, 100);
+      else if (g6 >= 5) aRGS = clamp(((100 - aRGS) * 0.6) + aRGS, 10, 100);
+      else if (g6 >= 0) aRGS = clamp(((100 - aRGS) * 0.4) + aRGS, 10, 100);
+      else if (g6 >= -5) aRGS = clamp(aRGS * 0.9, 10, 100);
+      else if (g6 >= -15) aRGS = clamp(aRGS * 0.7, 10, 100);
+      else if (g6 >= -25) aRGS = clamp(aRGS * 0.5, 10, 100);
+      else aRGS = clamp(aRGS * 0.3, 10, 100);
+      
+      const spread = g24 - gE24;
+      let eAdj = 0;
+      if (spread > 10) eAdj = 30;
+      else if (spread >= 0 && spread <= 10) eAdj = 10;
+      else if (spread >= -5 && spread < 0) eAdj = -10;
+      else if (spread < -5) eAdj = -30;
+      
+      const pScore = clamp(aRGS + eAdj, 10, 100);
+      
+      const alr1Val = monthly[i].totalAssets / monthly[i].totalLiab;
+      const alr13Val = i >= 12 ? monthly[i - 12].totalAssets / monthly[i - 12].totalLiab : 0;
+      const alrGrowthVal = alr13Val !== 0 ? ((alr1Val - alr13Val) / alr13Val) * 100 : 0;
+      
+      let adsB = 10;
+      if (alr1Val >= 1.5) adsB = 100;
+      else if (alr1Val >= 1.2) adsB = 90;
+      else if (alr1Val >= 0.8) adsB = 70;
+      else if (alr1Val >= 0.6) adsB = 50;
+      else if (alr1Val >= 0.4) adsB = 30;
+      else adsB = 10;
+      
+      let adsA = 0;
+      if (alrGrowthVal >= 50) adsA = 20;
+      else if (alrGrowthVal >= 30) adsA = 15;
+      else if (alrGrowthVal >= 15) adsA = 10;
+      else if (alrGrowthVal >= 5) adsA = 5;
+      else if (alrGrowthVal >= -5) adsA = 0;
+      else if (alrGrowthVal >= -15) adsA = -5;
+      else if (alrGrowthVal >= -30) adsA = -10;
+      else if (alrGrowthVal >= -50) adsA = -15;
+      else adsA = -20;
+      
+      const aScore = clamp(adsB + adsA, 10, 100);
+      const fScore = (pScore + aScore) / 2;
+      
+      const cur = monthly[i];
+      const currentAssets = cur.cash + cur.ar + cur.inventory + cur.otherCA || cur.tca;
+      const currentLiab = cur.ap + cur.otherCL || cur.tcl;
+      const quickAssets = cur.cash + cur.ar;
+      
+      const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
+      const quickRatio = currentLiab > 0 ? quickAssets / currentLiab : 0;
+      
+      const ltmCOGS = window.reduce((s, m) => s + m.cogsTotal, 0);
+      const ltmSales = ltmR;
+      const avgInv = (cur.inventory + (i >= 12 ? monthly[i-12].inventory : cur.inventory)) / 2;
+      const invTurnover = avgInv > 0 ? ltmCOGS / avgInv : 0;
+      
+      const avgAR = (cur.ar + (i >= 12 ? monthly[i-12].ar : cur.ar)) / 2;
+      const arTurnover = avgAR > 0 ? ltmSales / avgAR : 0;
+      
+      const avgAP = (cur.ap + (i >= 12 ? monthly[i-12].ap : cur.ap)) / 2;
+      const apTurnover = avgAP > 0 ? ltmCOGS / avgAP : 0;
+      
+      const daysInv = invTurnover > 0 ? 365 / invTurnover : 0;
+      const daysAR = arTurnover > 0 ? 365 / arTurnover : 0;
+      const daysAP = apTurnover > 0 ? 365 / apTurnover : 0;
+      
+      const workingCap = currentAssets - currentLiab;
+      const salesWC = workingCap !== 0 ? ltmSales / workingCap : 0;
+      
+      const ltmInterest = ltmE * 0.05;
+      const ltmEBIT = ltmR - ltmE;
+      const interestCov = ltmInterest > 0 ? ltmEBIT / ltmInterest : 0;
+      
+      const ltmDebtSvc = cur.ltd * 0.1 + ltmInterest;
+      const debtSvcCov = ltmDebtSvc > 0 ? ltmEBIT / ltmDebtSvc : 0;
+      
+      // Calculate Operating Cash Flow for Cash Flow to Debt ratio
+      const ltmNetIncome = ltmR - ltmE;
+      const ltmDepreciation = ltmE * 0.05; // Estimated depreciation
+      const priorMonth = i >= 12 ? monthly[i - 12] : cur;
+      const priorWorkingCap = (priorMonth.cash + priorMonth.ar + priorMonth.inventory + priorMonth.otherCA) - (priorMonth.ap + priorMonth.otherCL);
+      const changeInWorkingCap = workingCap - priorWorkingCap;
+      const ltmOperatingCF = ltmNetIncome + ltmDepreciation - changeInWorkingCap;
+      
+      // Total Debt = Total Liabilities (more conservative) or Long Term Debt + Current Liabilities
+      const totalDebt = cur.totalLiab;
+      const cfToDebt = totalDebt > 0 ? ltmOperatingCF / totalDebt : 0;
+      
+      const debtToNW = cur.totalEquity > 0 ? cur.totalLiab / cur.totalEquity : 0;
+      const fixedToNW = cur.totalEquity > 0 ? cur.fixedAssets / cur.totalEquity : 0;
+      const leverage = cur.totalEquity > 0 ? cur.totalAssets / cur.totalEquity : 0;
+      
+      const totalAssetTO = cur.totalAssets > 0 ? ltmSales / cur.totalAssets : 0;
+      const roe = cur.totalEquity > 0 ? (ltmR - ltmE) / cur.totalEquity : 0;
+      const roa = cur.totalAssets > 0 ? (ltmR - ltmE) / cur.totalAssets : 0;
+      const ebitdaMargin = ltmR > 0 ? (ltmEBIT + ltmE * 0.05) / ltmR : 0;
+      const ebitMargin = ltmR > 0 ? ltmEBIT / ltmR : 0;
+      
+      trends.push({
+        month: cur.month,
+        rgs: bRGS,
+        rgsAdj: aRGS,
+        expenseAdj: eAdj,
+        profitabilityScore: pScore,
+        alr1: alr1Val,
+        alr13: alr13Val,
+        alrGrowth: alrGrowthVal,
+        adsScore: aScore,
+        financialScore: fScore,
+        currentRatio,
+        quickRatio,
+        invTurnover,
+        arTurnover,
+        apTurnover,
+        daysInv,
+        daysAR,
+        daysAP,
+        salesWC,
+        interestCov,
+        debtSvcCov,
+        cfToDebt,
+        debtToNW,
+        fixedToNW,
+        leverage,
+        totalAssetTO,
+        roe,
+        roa,
+        ebitdaMargin,
+        ebitMargin
+      });
+    }
+    
+    return trends;
+  }, [monthly]);
+
+  // MD&A Analysis
+  const mdaAnalysis = useMemo(() => {
+    if (!trendData || trendData.length === 0) return { strengths: [], weaknesses: [], insights: [] };
+    
+    const last = trendData[trendData.length - 1];
+    const strengths: string[] = [];
+    const weaknesses: string[] = [];
+    const insights: string[] = [];
+    
+    if (finalScore >= 70) strengths.push(`Strong overall financial score of ${finalScore.toFixed(1)}, indicating robust financial health.`);
+    else if (finalScore < 50) weaknesses.push(`Financial score of ${finalScore.toFixed(1)} suggests significant areas for improvement.`);
+    
+    if (profitabilityScore >= 70) strengths.push(`Profitability score of ${profitabilityScore.toFixed(1)} demonstrates solid revenue growth and expense management.`);
+    else if (profitabilityScore < 50) weaknesses.push(`Profitability score of ${profitabilityScore.toFixed(1)} indicates challenges in revenue growth or expense control.`);
+    
+    if (growth_24mo > 10) strengths.push(`24-month revenue growth of ${growth_24mo.toFixed(1)}% shows strong market expansion.`);
+    else if (growth_24mo < 0) weaknesses.push(`Negative 24-month revenue growth of ${growth_24mo.toFixed(1)}% requires immediate strategic attention.`);
+    
+    if (expenseAdjustment > 0) strengths.push(`Expense management is outperforming revenue growth by ${revExpSpread.toFixed(1)}%, adding ${expenseAdjustment} points to profitability.`);
+    else if (expenseAdjustment < 0) weaknesses.push(`Expenses are growing faster than revenue by ${Math.abs(revExpSpread).toFixed(1)}%, reducing profitability by ${Math.abs(expenseAdjustment)} points.`);
+    
+    if (assetDevScore >= 70) strengths.push(`Asset Development Score of ${assetDevScore.toFixed(1)} reflects a healthy asset-to-liability ratio and positive asset growth.`);
+    else if (assetDevScore < 50) weaknesses.push(`Asset Development Score of ${assetDevScore.toFixed(1)} suggests concerning leverage and asset composition.`);
+    
+    if (last.currentRatio >= 1.5) strengths.push(`Current ratio of ${last.currentRatio.toFixed(1)} indicates strong short-term liquidity.`);
+    else if (last.currentRatio < 1.0) weaknesses.push(`Current ratio of ${last.currentRatio.toFixed(1)} may indicate potential liquidity challenges.`);
+    
+    if (last.roe > 0.15) strengths.push(`Return on Equity of ${(last.roe * 100).toFixed(1)}% demonstrates efficient use of shareholder capital.`);
+    else if (last.roe < 0) weaknesses.push(`Negative Return on Equity of ${(last.roe * 100).toFixed(1)}% indicates losses relative to equity.`);
+    
+    // KPI Analysis
+    if (last.quickRatio >= 1.0) strengths.push(`Quick ratio of ${last.quickRatio.toFixed(1)} shows strong ability to meet short-term obligations without relying on inventory.`);
+    else if (last.quickRatio < 0.5) weaknesses.push(`Quick ratio of ${last.quickRatio.toFixed(1)} suggests potential cash flow challenges.`);
+    
+    if (last.debtToNW < 1.0) strengths.push(`Debt-to-Net Worth ratio of ${last.debtToNW.toFixed(1)} indicates conservative leverage and strong equity position.`);
+    else if (last.debtToNW > 2.0) weaknesses.push(`Debt-to-Net Worth ratio of ${last.debtToNW.toFixed(1)} suggests high leverage that may limit financial flexibility.`);
+    
+    if (last.interestCov > 3.0) strengths.push(`Interest coverage ratio of ${last.interestCov.toFixed(1)} demonstrates strong ability to service debt obligations.`);
+    else if (last.interestCov < 1.5) weaknesses.push(`Interest coverage of ${last.interestCov.toFixed(1)} indicates potential difficulty meeting interest payments.`);
+    
+    // Projection Analysis - Calculate inline to avoid circular dependency
+    if (monthly.length >= 24) {
+      // Calculate simple revenue projection
+      const last12Months = monthly.slice(-12);
+      const prior12Months = monthly.slice(-24, -12);
+      const recentRevGrowth = ((last12Months.reduce((s, m) => s + m.revenue, 0) - prior12Months.reduce((s, m) => s + m.revenue, 0)) / prior12Months.reduce((s, m) => s + m.revenue, 0)) * 100;
+      
+      if (recentRevGrowth > 10) insights.push(`Based on 12-month trends, revenue shows ${recentRevGrowth.toFixed(1)}% growth trajectory with strong expansion potential.`);
+      else if (recentRevGrowth < -5) insights.push(`Revenue trends indicate ${Math.abs(recentRevGrowth).toFixed(1)}% decline trajectory - proactive measures recommended.`);
+      
+      // Projected annual revenue
+      const avgMonthlyRev = last12Months.reduce((s, m) => s + m.revenue, 0) / 12;
+      const projectedAnnualRev = avgMonthlyRev * 12;
+      
+      if (recentRevGrowth > 15) insights.push(`Strong growth trajectory projects annual revenue of approximately $${(projectedAnnualRev / 1000).toFixed(0)}K with continued momentum.`);
+      else if (recentRevGrowth < 0) insights.push(`Declining revenue trend requires strategic intervention to stabilize and restore growth.`);
+      
+      // Equity trend analysis
+      const currentEquity = monthly[monthly.length - 1].totalEquity;
+      const priorEquity = monthly[monthly.length - 13] ? monthly[monthly.length - 13].totalEquity : currentEquity;
+      const equityChange = ((currentEquity - priorEquity) / Math.abs(priorEquity)) * 100;
+      
+      if (equityChange > 10) insights.push(`Equity has strengthened by ${equityChange.toFixed(1)}% over the past year, improving financial stability.`);
+      else if (equityChange < -10) weaknesses.push(`Equity has declined by ${Math.abs(equityChange).toFixed(1)}% - monitor profitability and cash management closely.`);
+    }
+    
+    // Trend Analysis Insights
+    if (monthly.length >= 24) {
+      const recentRevTrend = trendData.slice(-6).map(t => t.rgs).reduce((a, b) => a + b, 0) / 6;
+      const priorRevTrend = trendData.slice(-12, -6).map(t => t.rgs).reduce((a, b) => a + b, 0) / 6;
+      
+      if (recentRevTrend > priorRevTrend + 10) strengths.push(`Revenue growth momentum is accelerating in recent months, indicating improving market position.`);
+      else if (recentRevTrend < priorRevTrend - 10) weaknesses.push(`Revenue growth momentum is decelerating - review sales strategies and market positioning.`);
+    }
+    
+    // Working Capital Analysis
+    const currentAssets = monthly[monthly.length - 1].cash + monthly[monthly.length - 1].ar + monthly[monthly.length - 1].inventory + monthly[monthly.length - 1].otherCA;
+    const currentLiab = monthly[monthly.length - 1].ap + monthly[monthly.length - 1].otherCL;
+    const workingCapital = currentAssets - currentLiab;
+    const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : 0;
+    
+    if (workingCapital > 0 && wcRatioMDA >= 1.5) {
+      strengths.push(`Positive working capital of $${(workingCapital / 1000).toFixed(1)}K with strong WC ratio of ${wcRatioMDA.toFixed(1)} supports operational flexibility.`);
+    } else if (workingCapital < 0) {
+      weaknesses.push(`Negative working capital of $${(Math.abs(workingCapital) / 1000).toFixed(1)}K indicates potential short-term funding challenges.`);
+    } else if (wcRatioMDA < 1.0) {
+      weaknesses.push(`Working capital ratio of ${wcRatioMDA.toFixed(1)} is below optimal levels - consider improving liquidity.`);
+    }
+    
+    // Activity Ratios (Days metrics)
+    if (last.daysAR > 0) {
+      if (last.daysAR < 45) strengths.push(`Days' receivables of ${last.daysAR.toFixed(0)} days reflects efficient collection practices.`);
+      else if (last.daysAR > 90) weaknesses.push(`Days' receivables of ${last.daysAR.toFixed(0)} days suggests slow collection - review credit policies and collection procedures.`);
+    }
+    
+    if (last.daysInv > 0) {
+      if (last.daysInv < 60) insights.push(`Inventory turnover of ${last.daysInv.toFixed(0)} days indicates efficient inventory management.`);
+      else if (last.daysInv > 120) weaknesses.push(`Days' inventory of ${last.daysInv.toFixed(0)} days may indicate slow-moving stock - consider inventory optimization.`);
+    }
+    
+    if (last.daysAP > 0) {
+      if (last.daysAP > 45) insights.push(`Days' payables of ${last.daysAP.toFixed(0)} days provides beneficial supplier financing.`);
+      else if (last.daysAP < 20) insights.push(`Days' payables of ${last.daysAP.toFixed(0)} days - consider extending payment terms to improve cash flow.`);
+    }
+    
+    // Cash Conversion Cycle
+    const cashConversionCycle = last.daysInv + last.daysAR - last.daysAP;
+    if (cashConversionCycle < 30) strengths.push(`Cash conversion cycle of ${cashConversionCycle.toFixed(0)} days demonstrates excellent working capital efficiency.`);
+    else if (cashConversionCycle > 90) weaknesses.push(`Cash conversion cycle of ${cashConversionCycle.toFixed(0)} days suggests opportunities to accelerate cash generation.`);
+    
+    // Asset Efficiency
+    if (last.totalAssetTO > 1.5) strengths.push(`Total asset turnover of ${last.totalAssetTO.toFixed(1)} shows effective asset utilization in generating sales.`);
+    else if (last.totalAssetTO < 0.5) weaknesses.push(`Total asset turnover of ${last.totalAssetTO.toFixed(1)} indicates underutilized assets - review asset productivity.`);
+    
+    // Profitability Margins
+    if (last.ebitdaMargin > 0.15) strengths.push(`EBITDA margin of ${(last.ebitdaMargin * 100).toFixed(1)}% demonstrates strong operational profitability.`);
+    else if (last.ebitdaMargin < 0.05) weaknesses.push(`EBITDA margin of ${(last.ebitdaMargin * 100).toFixed(1)}% requires operational cost optimization.`);
+    
+    // Cash Flow Analysis (estimated from financial data)
+    if (monthly.length >= 13) {
+      const currentCash = monthly[monthly.length - 1].cash;
+      const priorYearCash = monthly[monthly.length - 13].cash;
+      const cashChange = currentCash - priorYearCash;
+      
+      if (cashChange > ltmRev * 0.1) strengths.push(`Cash position improved by $${(cashChange / 1000).toFixed(1)}K over the past year, strengthening financial resilience.`);
+      else if (cashChange < -ltmRev * 0.05) weaknesses.push(`Cash declined by $${(Math.abs(cashChange) / 1000).toFixed(1)}K - monitor cash flow and consider working capital improvements.`);
+    }
+    
+    // Benchmark Comparison (if available)
+    if (benchmarks && benchmarks.length > 0) {
+      // Helper function to get benchmark value
+      const getBenchmark = (metricName: string) => {
+        const bm = benchmarks.find(b => b.metricName === metricName);
+        return bm ? bm.fiveYearValue : null;
+      };
+      
+      // Current Ratio Benchmark
+      const currentRatioBM = getBenchmark('Current Ratio');
+      if (currentRatioBM !== null && last.currentRatio) {
+        if (last.currentRatio > currentRatioBM * 1.2) {
+          strengths.push(`Current ratio of ${last.currentRatio.toFixed(1)} is ${((last.currentRatio / currentRatioBM - 1) * 100).toFixed(0)}% above industry average (${currentRatioBM.toFixed(1)}), demonstrating superior liquidity management.`);
+        } else if (last.currentRatio < currentRatioBM * 0.8) {
+          weaknesses.push(`Current ratio of ${last.currentRatio.toFixed(1)} is ${((1 - last.currentRatio / currentRatioBM) * 100).toFixed(0)}% below industry average (${currentRatioBM.toFixed(1)}), indicating potential liquidity concerns relative to peers.`);
+        }
+      }
+      
+      // Quick Ratio Benchmark
+      const quickRatioBM = getBenchmark('Quick Ratio');
+      if (quickRatioBM !== null && last.quickRatio) {
+        if (last.quickRatio > quickRatioBM * 1.2) {
+          strengths.push(`Quick ratio of ${last.quickRatio.toFixed(1)} significantly exceeds industry benchmark (${quickRatioBM.toFixed(1)}), highlighting exceptional short-term financial strength.`);
+        } else if (last.quickRatio < quickRatioBM * 0.8) {
+          weaknesses.push(`Quick ratio of ${last.quickRatio.toFixed(1)} lags industry average (${quickRatioBM.toFixed(1)}) by ${((1 - last.quickRatio / quickRatioBM) * 100).toFixed(0)}%, suggesting need for improved cash management.`);
+        }
+      }
+      
+      // Debt-to-Net Worth Benchmark
+      const debtToNWBM = getBenchmark('Total Debt to Net Worth Ratio');
+      if (debtToNWBM !== null && last.debtToNW) {
+        if (last.debtToNW < debtToNWBM * 0.7) {
+          strengths.push(`Debt-to-Net Worth of ${last.debtToNW.toFixed(1)} is well below industry average (${debtToNWBM.toFixed(1)}), indicating conservative leverage and strong balance sheet.`);
+        } else if (last.debtToNW > debtToNWBM * 1.3) {
+          weaknesses.push(`Debt-to-Net Worth of ${last.debtToNW.toFixed(1)} exceeds industry norm (${debtToNWBM.toFixed(1)}) by ${((last.debtToNW / debtToNWBM - 1) * 100).toFixed(0)}%, suggesting higher financial risk profile.`);
+        }
+      }
+      
+      // Gross Profit Margin Benchmark
+      const grossProfitBM = getBenchmark('Gross Profit Margin %');
+      if (grossProfitBM !== null && last.grossMargin) {
+        if (last.grossMargin > grossProfitBM / 100 * 1.1) {
+          strengths.push(`Gross profit margin of ${(last.grossMargin * 100).toFixed(1)}% outperforms industry average (${grossProfitBM.toFixed(1)}%), demonstrating strong pricing power and cost management.`);
+        } else if (last.grossMargin < grossProfitBM / 100 * 0.9) {
+          weaknesses.push(`Gross margin of ${(last.grossMargin * 100).toFixed(1)}% trails industry benchmark (${grossProfitBM.toFixed(1)}%), indicating potential pricing or cost structure challenges.`);
+        }
+      }
+      
+      // Return on Assets Benchmark
+      const roaBM = getBenchmark('Return on Total Assets %');
+      if (roaBM !== null && last.roa) {
+        if (last.roa > roaBM / 100 * 1.2) {
+          strengths.push(`Return on Assets of ${(last.roa * 100).toFixed(1)}% is ${(((last.roa * 100) / roaBM - 1) * 100).toFixed(0)}% above industry average (${roaBM.toFixed(1)}%), reflecting superior asset productivity.`);
+        } else if (last.roa < roaBM / 100 * 0.8) {
+          weaknesses.push(`ROA of ${(last.roa * 100).toFixed(1)}% is below industry standard (${roaBM.toFixed(1)}%), suggesting opportunities for improved asset utilization.`);
+        }
+      }
+      
+      // Return on Equity Benchmark
+      const roeBM = getBenchmark('Return on Net Worth %');
+      if (roeBM !== null && last.roe) {
+        if (last.roe > roeBM / 100 * 1.2) {
+          strengths.push(`Return on Equity of ${(last.roe * 100).toFixed(1)}% substantially exceeds industry benchmark (${roeBM.toFixed(1)}%), indicating exceptional returns for shareholders.`);
+        } else if (last.roe < roeBM / 100 * 0.8) {
+          weaknesses.push(`ROE of ${(last.roe * 100).toFixed(1)}% underperforms industry average (${roeBM.toFixed(1)}%), suggesting need for profitability improvement.`);
+        }
+      }
+      
+      // Days AR Benchmark
+      const daysARBM = getBenchmark('Days\' Receivables');
+      if (daysARBM !== null && last.daysAR > 0) {
+        if (last.daysAR < daysARBM * 0.8) {
+          strengths.push(`Days' receivables of ${last.daysAR.toFixed(0)} days is ${((1 - last.daysAR / daysARBM) * 100).toFixed(0)}% faster than industry average (${daysARBM.toFixed(0)} days), demonstrating superior collection efficiency.`);
+        } else if (last.daysAR > daysARBM * 1.2) {
+          weaknesses.push(`Collection period of ${last.daysAR.toFixed(0)} days exceeds industry norm (${daysARBM.toFixed(0)} days) by ${((last.daysAR / daysARBM - 1) * 100).toFixed(0)}%, indicating room for accounts receivable optimization.`);
+        }
+      }
+      
+      // Days Inventory Benchmark
+      const daysInvBM = getBenchmark('Days\' Inventory');
+      if (daysInvBM !== null && last.daysInv > 0) {
+        if (last.daysInv < daysInvBM * 0.8) {
+          insights.push(`Inventory turnover (${last.daysInv.toFixed(0)} days) is ${((1 - last.daysInv / daysInvBM) * 100).toFixed(0)}% faster than industry average (${daysInvBM.toFixed(0)} days), indicating lean inventory management.`);
+        } else if (last.daysInv > daysInvBM * 1.2) {
+          weaknesses.push(`Inventory holding period of ${last.daysInv.toFixed(0)} days is ${((last.daysInv / daysInvBM - 1) * 100).toFixed(0)}% longer than industry benchmark (${daysInvBM.toFixed(0)} days), suggesting potential obsolescence risk.`);
+        }
+      }
+      
+      // Days AP Benchmark
+      const daysAPBM = getBenchmark('Days\' Payables');
+      if (daysAPBM !== null && last.daysAP > 0) {
+        if (last.daysAP > daysAPBM * 1.1) {
+          insights.push(`Payment terms of ${last.daysAP.toFixed(0)} days exceed industry average (${daysAPBM.toFixed(0)} days), providing favorable cash flow timing and supplier financing.`);
+        } else if (last.daysAP < daysAPBM * 0.8) {
+          insights.push(`Payment period of ${last.daysAP.toFixed(0)} days is shorter than industry norm (${daysAPBM.toFixed(0)} days) - consider negotiating extended terms to improve cash flow.`);
+        }
+      }
+      
+      // Asset Turnover Benchmark
+      const assetTOBM = getBenchmark('Total Asset Turnover');
+      if (assetTOBM !== null && last.totalAssetTO) {
+        if (last.totalAssetTO > assetTOBM * 1.2) {
+          strengths.push(`Asset turnover of ${last.totalAssetTO.toFixed(1)} exceeds industry average (${assetTOBM.toFixed(1)}) by ${((last.totalAssetTO / assetTOBM - 1) * 100).toFixed(0)}%, demonstrating efficient capital deployment.`);
+        } else if (last.totalAssetTO < assetTOBM * 0.8) {
+          weaknesses.push(`Asset turnover of ${last.totalAssetTO.toFixed(1)} trails industry benchmark (${assetTOBM.toFixed(1)}), indicating potential for enhanced revenue generation from existing assets.`);
+        }
+      }
+      
+      insights.push(`Industry benchmark analysis shows ${strengths.filter(s => s.includes('industry')).length} areas where performance exceeds peer standards.`);
+    }
+    
+    // Add strategic insights based on comprehensive data
+    insights.push(`Monitor the trend in Financial Score over time to identify patterns and early warning signs of performance changes.`);
+    insights.push(`Focus improvement initiatives on components with the lowest scores for maximum impact on overall financial health.`);
+    
+    if (growth_6mo < growth_24mo) {
+      insights.push(`Recent 6-month growth (${growth_6mo.toFixed(1)}%) is slower than 24-month trend (${growth_24mo.toFixed(1)}%), suggesting momentum is decelerating - consider market expansion strategies.`);
+    } else if (growth_6mo > growth_24mo) {
+      insights.push(`Recent 6-month growth (${growth_6mo.toFixed(1)}%) exceeds 24-month trend (${growth_24mo.toFixed(1)}%), indicating accelerating momentum - capitalize on this growth trajectory.`);
+    }
+    
+    // Valuation insights
+    if (last.totalAssets > 0) {
+      const assetMultiple = last.totalAssets > 0 ? ltmRev / last.totalAssets : 0;
+      if (assetMultiple > 1.5) {
+        insights.push(`Revenue-to-Assets ratio of ${assetMultiple.toFixed(1)}x indicates efficient capital utilization and strong operational leverage.`);
+      } else if (assetMultiple < 0.8) {
+        insights.push(`Revenue-to-Assets ratio of ${assetMultiple.toFixed(1)}x suggests opportunities to improve asset productivity through operational optimization.`);
+      }
+    }
+    
+    // Cash flow insights
+    if (monthly.length >= 12) {
+      const recentCashFlow = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue - m.expense), 0);
+      const cashFlowMargin = recentCashFlow / ltmRev;
+      if (cashFlowMargin > 0.15) {
+        strengths.push(`Operating cash flow margin of ${(cashFlowMargin * 100).toFixed(1)}% demonstrates strong cash generation capability and financial sustainability.`);
+      } else if (cashFlowMargin < 0.05) {
+        weaknesses.push(`Operating cash flow margin of ${(cashFlowMargin * 100).toFixed(1)}% indicates tight cash generation - focus on working capital optimization.`);
+      }
+    }
+    
+    return { strengths, weaknesses, insights };
+  }, [trendData, finalScore, profitabilityScore, assetDevScore, growth_24mo, growth_6mo, expenseAdjustment, revExpSpread, ltmRev, ltmExp, monthly, benchmarks]);
+
+  // Projections
+  const projections = useMemo(() => {
+    if (monthly.length < 24) return { mostLikely: [], bestCase: [], worstCase: [] };
+    
+    const last12 = monthly.slice(-12);
+    const prev12 = monthly.slice(-24, -12);
+    const avgRevGrowth = ((last12.reduce((s, m) => s + m.revenue, 0) - prev12.reduce((s, m) => s + m.revenue, 0)) / prev12.reduce((s, m) => s + m.revenue, 0)) / 12;
+    const avgExpGrowth = ((last12.reduce((s, m) => s + m.expense, 0) - prev12.reduce((s, m) => s + m.expense, 0)) / prev12.reduce((s, m) => s + m.expense, 0)) / 12;
+    const avgAssetGrowth = ((last12[last12.length - 1].totalAssets - prev12[prev12.length - 1].totalAssets) / prev12[prev12.length - 1].totalAssets) / 12;
+    const avgLiabGrowth = ((last12[last12.length - 1].totalLiab - prev12[prev12.length - 1].totalLiab) / prev12[prev12.length - 1].totalLiab) / 12;
+    
+    const lastMonth = monthly[monthly.length - 1];
+    const mostLikely: any[] = [];
+    const bestCase: any[] = [];
+    const worstCase: any[] = [];
+    
+    for (let i = 1; i <= 12; i++) {
+      const monthName = `+${i}mo`;
+      
+      const mlRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth, i);
+      const mlExp = lastMonth.expense * Math.pow(1 + avgExpGrowth, i);
+      const mlAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth, i);
+      const mlLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth, i);
+      const mlEquity = mlAssets - mlLiab;
+      
+      mostLikely.push({
+        month: monthName,
+        revenue: mlRev,
+        expense: mlExp,
+        netIncome: mlRev - mlExp,
+        totalAssets: mlAssets,
+        totalLiab: mlLiab,
+        equity: mlEquity
+      });
+      
+      const bcRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth * bestCaseRevMultiplier, i);
+      const bcExp = lastMonth.expense * Math.pow(1 + avgExpGrowth * bestCaseExpMultiplier, i);
+      const bcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 1.2, i);
+      const bcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 0.8, i);
+      const bcEquity = bcAssets - bcLiab;
+      
+      bestCase.push({
+        month: monthName,
+        revenue: bcRev,
+        expense: bcExp,
+        netIncome: bcRev - bcExp,
+        totalAssets: bcAssets,
+        totalLiab: bcLiab,
+        equity: bcEquity
+      });
+      
+      const wcRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth * worstCaseRevMultiplier, i);
+      const wcExp = lastMonth.expense * Math.pow(1 + avgExpGrowth * worstCaseExpMultiplier, i);
+      const wcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 0.8, i);
+      const wcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 1.2, i);
+      const wcEquity = wcAssets - wcLiab;
+      
+      worstCase.push({
+        month: monthName,
+        revenue: wcRev,
+        expense: wcExp,
+        netIncome: wcRev - wcExp,
+        totalAssets: wcAssets,
+        totalLiab: wcLiab,
+        equity: wcEquity
+      });
+    }
+    
+    return { mostLikely, bestCase, worstCase };
+  }, [monthly, bestCaseRevMultiplier, bestCaseExpMultiplier, worstCaseRevMultiplier, worstCaseExpMultiplier]);
+
+  const renderColumnSelector = (label: string, mappingKey: keyof Mappings) => (
+    <div style={{ marginBottom: '15px' }}>
+      <label style={{ display: 'block', fontWeight: '500', marginBottom: '5px', color: '#475569' }}>{label}:</label>
+      <select value={mapping[mappingKey] || ''} onChange={(e) => setMapping({ ...mapping, [mappingKey]: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
+        <option value="">-- Select --</option>
+        {columns.map(col => <option key={col} value={col}>{col}</option>)}
+      </select>
+    </div>
+  );
+
+  const saveProjectionDefaults = () => {
+    const defaults = {
+      bestCaseRev: bestCaseRevMultiplier,
+      bestCaseExp: bestCaseExpMultiplier,
+      worstCaseRev: worstCaseRevMultiplier,
+      worstCaseExp: worstCaseExpMultiplier
+    };
+    localStorage.setItem('fs_projectionDefaults', JSON.stringify(defaults));
+    setDefaultBestCaseRevMult(bestCaseRevMultiplier);
+    setDefaultBestCaseExpMult(bestCaseExpMultiplier);
+    setDefaultWorstCaseRevMult(worstCaseRevMultiplier);
+    setDefaultWorstCaseExpMult(worstCaseExpMultiplier);
+    alert('Defaults saved successfully!');
+    setShowDefaultSettings(false);
+  };
+
+  // LOGIN VIEW
+  if (!isLoggedIn) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '40px 20px' }}>
+        <div style={{ maxWidth: '480px', margin: '0 auto', background: 'white', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: '40px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <div style={{ fontSize: '48px', fontWeight: '700', color: '#667eea', marginBottom: '16px', letterSpacing: '-1px' }}>
+              Venturis<sup style={{ fontSize: '18px', fontWeight: '400' }}>TM</sup>
+            </div>
+            <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Business Evaluation Tool</h1>
+            <p style={{ color: '#64748b', fontSize: '14px' }}>Professional financial analysis for consultants and businesses</p>
+          </div>
+
+          {loginError && (
+            <div style={{ padding: '12px 16px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #fecaca' }}>
+              {loginError}
+            </div>
+          )}
+
+          {showForgotPassword ? (
+            <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Reset Password</h2>
+              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>Enter your email address and we'll send you instructions to reset your password.</p>
+              
+              {resetSuccess && (
+                <div style={{ padding: '12px 16px', background: '#d1fae5', color: '#065f46', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #6ee7b7' }}>
+                  {resetSuccess}
+                </div>
+              )}
+              
+              <input 
+                type="text" 
+                name={`reset_email_${Date.now()}`}
+                placeholder="Email Address" 
+                value={resetEmail} 
+                onChange={(e) => { setResetEmail(e.target.value); setLoginError(''); }} 
+                autoComplete="off"
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              />
+              <button 
+                onClick={async () => {
+                  if (!resetEmail.trim()) {
+                    setLoginError('Please enter your email address');
+                    return;
+                  }
+                  setIsLoading(true);
+                  setLoginError('');
+                  setResetSuccess('');
+                  try {
+                    const response = await fetch('/api/auth/reset-password', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ email: resetEmail.toLowerCase().trim() })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) {
+                      throw new Error(data.error || 'Failed to send reset email');
+                    }
+                    setResetSuccess('Password reset instructions sent! Check your email.');
+                    setResetEmail('');
+                  } catch (error) {
+                    setLoginError(error instanceof Error ? error.message : 'Failed to send reset email');
+                  } finally {
+                    setIsLoading(false);
+                  }
+                }}
+                disabled={isLoading}
+                style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1 }}
+              >
+                {isLoading ? 'Sending...' : 'Send Reset Instructions'}
+              </button>
+              <button 
+                type="button"
+                onClick={() => { setShowForgotPassword(false); setLoginError(''); setResetSuccess(''); setResetEmail(''); }} 
+                disabled={isLoading}
+                style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}
+              >
+                Back to Login
+              </button>
+            </form>
+          ) : isRegistering ? (
+            <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleRegisterConsultant(); }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Register as Consultant</h2>
+              <input 
+                type="text" 
+                name={`fullname_${Date.now()}`}
+                placeholder="Full Name" 
+                value={loginName} 
+                onChange={(e) => setLoginName(e.target.value)} 
+                autoComplete="off" 
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              />
+              <input 
+                type="text" 
+                name={`email_${Date.now()}`}
+                placeholder="Email" 
+                value={loginEmail} 
+                onChange={(e) => setLoginEmail(e.target.value)} 
+                autoComplete="off" 
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              />
+              
+              {/* Password field with toggle */}
+              <div style={{ position: 'relative', marginBottom: '12px' }}>
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  name={`password_${Date.now()}`}
+                  placeholder="Password" 
+                  value={loginPassword} 
+                  onChange={(e) => setLoginPassword(e.target.value)} 
+                  autoComplete="new-password"
+                  style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: '#64748b', padding: '4px' }}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? '👁️' : '👁️‍🗨️'}
+                </button>
+              </div>
+              
+              <button type="submit" style={{ width: '100%', padding: '14px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', marginBottom: '12px' }}>Register</button>
+              <button type="button" onClick={() => { setIsRegistering(false); setLoginError(''); setShowPassword(false); }} style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Back to Login</button>
+            </form>
+          ) : (
+            <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (!isLoading) handleLogin(); }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Sign In</h2>
+              <input 
+                type="text" 
+                name={`email_${Date.now()}`}
+                placeholder="Email" 
+                value={loginEmail} 
+                onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }} 
+                autoComplete="off" 
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              />
+              
+              {/* Password field with toggle */}
+              <div style={{ position: 'relative', marginBottom: '12px' }}>
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  name={`password_${Date.now()}`}
+                  placeholder="Password" 
+                  value={loginPassword} 
+                  onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }} 
+                  autoComplete="new-password"
+                  style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: '#64748b', padding: '4px' }}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? '👁️' : '👁️‍🗨️'}
+                </button>
+              </div>
+              
+              {/* Forgot Password Link */}
+              <div style={{ textAlign: 'right', marginBottom: '12px' }}>
+                <button 
+                  type="button"
+                  onClick={() => { setShowForgotPassword(true); setLoginError(''); setShowPassword(false); }} 
+                  style={{ background: 'none', border: 'none', color: '#667eea', fontSize: '13px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                >
+                  Forgot Password?
+                </button>
+              </div>
+              
+              <button type="submit" disabled={isLoading} style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '16px', opacity: isLoading ? 0.7 : 1 }}>
+                {isLoading ? 'Signing In...' : 'Sign In'}
+              </button>
+              <button type="button" onClick={() => { setIsRegistering(true); setLoginError(''); setShowPassword(false); }} disabled={isLoading} style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px' }}>Register as Consultant</button>
+              <button type="button" onClick={() => window.location.href = '/register-business'} disabled={isLoading} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)' }}>
+                🏢 Register Your Business
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Main Logged-In View with Header
+  const company = getCurrentCompany();
+  const companyName = company ? company.name : '';
+
+  // Custom Print Package Handler
+  const handleGeneratePrintPackage = () => {
+    // Check if any items are selected
+    const hasSelection = Object.values(printPackageSelections).some(val => val);
+    if (!hasSelection) {
+      alert('Please select at least one report to include in the print package.');
+      return;
+    }
+
+    // Build array of print instructions
+    const printQueue = [];
+    
+    if (printPackageSelections.mda) {
+      printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)' });
+    }
+    if (printPackageSelections.financialScore) {
+      printQueue.push({ view: 'fs-score', title: 'Financial Score' });
+    }
+    if (printPackageSelections.priorityRatios) {
+      printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios' });
+    }
+    if (printPackageSelections.workingCapital) {
+      printQueue.push({ view: 'working-capital', title: 'Working Capital' });
+    }
+    if (printPackageSelections.cashFlow4Quarters) {
+      printQueue.push({ view: 'cash-flow', display: 'quarterly', title: 'Cash Flow - Last 4 Quarters' });
+    }
+    if (printPackageSelections.cashFlow3Years) {
+      printQueue.push({ view: 'cash-flow', display: 'annual', title: 'Cash Flow - Last 3 Years' });
+    }
+    if (printPackageSelections.incomeStatement12MonthsQuarterly) {
+      printQueue.push({ 
+        view: 'financial-statements', 
+        type: 'income-statement', 
+        display: 'quarterly',
+        title: 'Income Statement - Last 12 Months (Quarterly)' 
+      });
+    }
+    if (printPackageSelections.incomeStatement3YearsAnnual) {
+      printQueue.push({ 
+        view: 'financial-statements', 
+        type: 'income-statement', 
+        display: 'annual',
+        title: 'Income Statement - Last 3 Years (Annual)' 
+      });
+    }
+    if (printPackageSelections.balanceSheet12MonthsQuarterly) {
+      printQueue.push({ 
+        view: 'financial-statements', 
+        type: 'balance-sheet', 
+        display: 'quarterly',
+        title: 'Balance Sheet - Last 12 Months (Quarterly)' 
+      });
+    }
+    if (printPackageSelections.balanceSheet3YearsAnnual) {
+      printQueue.push({ 
+        view: 'financial-statements', 
+        type: 'balance-sheet', 
+        display: 'annual',
+        title: 'Balance Sheet - Last 3 Years (Annual)' 
+      });
+    }
+    if (printPackageSelections.profile) {
+      printQueue.push({ view: 'profile', title: 'Company Profile' });
+    }
+
+    if (printQueue.length === 0) {
+      alert('Please select at least one report to print.');
+      return;
+    }
+
+    // Show confirmation
+    const reportNames = printQueue.map(p => p.title).join('\n• ');
+    if (!confirm(`You are about to print the following reports in sequence:\n\n• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
+      return;
+    }
+
+    // Print each report in sequence with a delay
+    let currentIndex = 0;
+    const printNext = () => {
+      if (currentIndex >= printQueue.length) {
+        alert('All reports have been sent to print!');
+        return;
+      }
+
+      const report = printQueue[currentIndex];
+      
+      // Set the appropriate view and parameters
+      if (report.view === 'financial-statements') {
+        setStatementType(report.type as any);
+        setStatementDisplay(report.display as any);
+        setCurrentView('financial-statements');
+      } else if (report.view === 'cash-flow') {
+        setCashFlowDisplay(report.display as any);
+        setCurrentView('cash-flow');
+      } else if (report.view === 'kpis' && report.tab) {
+        setKpiDashboardTab(report.tab as any);
+        setCurrentView('kpis');
+      } else {
+        setCurrentView(report.view as any);
+      }
+
+      // Wait for render then print
+      setTimeout(() => {
+        window.print();
+        currentIndex++;
+        // Wait for print dialog to close before next one
+        setTimeout(printNext, 1000);
+      }, 500);
+    };
+
+    printNext();
+  };

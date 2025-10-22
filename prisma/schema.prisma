@@ -351,3 +351,14 @@ model AccountMapping {
   @@unique([companyId, qbAccount])
   @@index([companyId])
 }
+
+// Expense Goals - User-defined target percentages for expense categories
+model ExpenseGoal {
+  id                      String              @id @default(cuid())
+  companyId               String              @unique
+  goals                   Json                // {categoryKey: percentage}
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([companyId])
+}

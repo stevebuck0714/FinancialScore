@@ -1047,7 +1047,7 @@ export default function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print'>('login');
 
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
@@ -1129,7 +1129,8 @@ export default function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping'>('company-management');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'company-management' | 'billing' | 'profile'>('company-management');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -1241,9 +1242,6 @@ export default function FinancialScorePage() {
   const [ebitdaMultiplier, setEbitdaMultiplier] = useState(5.0);
   const [dcfDiscountRate, setDcfDiscountRate] = useState(10.0);
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
-
-  // State - Goals
-  const [expenseGoals, setExpenseGoals] = useState<{[key: string]: number}>({});
 
   // State - Industry Benchmarks
   const [benchmarks, setBenchmarks] = useState<any[]>([]);
@@ -1406,20 +1404,6 @@ export default function FinancialScorePage() {
       }
     }
   }, [selectedCompanyId, financialDataRecords]);
-
-  // Load expense goals when Goals view is accessed
-  useEffect(() => {
-    if (selectedCompanyId && currentView === 'goals') {
-      fetch(`/api/expense-goals?companyId=${selectedCompanyId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.goals) {
-            setExpenseGoals(data.goals);
-          }
-        })
-        .catch(err => console.error('Error loading expense goals:', err));
-    }
-  }, [selectedCompanyId, currentView]);
 
   // Handle URL parameters for navigation and messages
   useEffect(() => {
@@ -3628,6 +3612,9 @@ export default function FinancialScorePage() {
 
     printNext();
   };
+  console.log(' RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
+  
+  return (
 
   console.log('🎨 RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
 
@@ -3667,7 +3654,6 @@ export default function FinancialScorePage() {
               <button onClick={() => setCurrentView('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>KPI Dashboard</button>
               <button onClick={() => setCurrentView('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>Trend Analysis</button>
               <button onClick={() => setCurrentView('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>Projections</button>
-              <button onClick={() => setCurrentView('goals')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'goals' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'goals' ? '3px solid #667eea' : '3px solid transparent' }}>Goals</button>
               <button onClick={() => setCurrentView('working-capital')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'working-capital' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'working-capital' ? '3px solid #667eea' : '3px solid transparent' }}>Working Capital</button>
               <button onClick={() => setCurrentView('valuation')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'valuation' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'valuation' ? '3px solid #667eea' : '3px solid transparent' }}>Valuation</button>
               <button onClick={() => setCurrentView('cash-flow')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'cash-flow' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'cash-flow' ? '3px solid #667eea' : '3px solid transparent' }}>Cash Flow</button>
@@ -5180,32 +5166,71 @@ export default function FinancialScorePage() {
             >
               Data Mapping
             </button>
-            <button
-              onClick={() => setAdminDashboardTab('goals')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'goals' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'goals' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'goals' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Goals
-            </button>
           </div>
           
           {/* Company Management Tab */}
           {adminDashboardTab === 'company-management' && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Company Management</h2>
-            
-            {/* Show selected company or add new company option */}
-            {(() => {
+            {/* Sub-Tab Navigation */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+              <button
+                onClick={() => setCompanyManagementSubTab('company-management')}
+                style={{
+                  padding: '12px 24px',
+                  background: companyManagementSubTab === 'company-management' ? '#667eea' : 'transparent',
+                  color: companyManagementSubTab === 'company-management' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: companyManagementSubTab === 'company-management' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Company Management
+              </button>
+              <button
+                onClick={() => setCompanyManagementSubTab('billing')}
+                style={{
+                  padding: '12px 24px',
+                  background: companyManagementSubTab === 'billing' ? '#667eea' : 'transparent',
+                  color: companyManagementSubTab === 'billing' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: companyManagementSubTab === 'billing' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Billing
+              </button>
+              <button
+                onClick={() => setCompanyManagementSubTab('profile')}
+                style={{
+                  padding: '12px 24px',
+                  background: companyManagementSubTab === 'profile' ? '#667eea' : 'transparent',
+                  color: companyManagementSubTab === 'profile' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: companyManagementSubTab === 'profile' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Profile
+              </button>
+            </div>
+
+            {/* Company Management Sub-Tab Content */}
+            {companyManagementSubTab === 'company-management' && (
+              <>
+                {/* Show selected company or add new company option */}
+                {(() => {
               // For business users, auto-select their company if not already selected
               if (currentUser.consultantType === 'business' && !selectedCompanyId && companies.length > 0) {
                 const businessCompany = companies.find(c => c.consultantId === currentUser.consultantId);
@@ -6085,6 +6110,190 @@ export default function FinancialScorePage() {
                   you can schedule automatic imports or manually trigger data pulls. All connections use OAuth 2.0 for 
                   secure authentication and are encrypted in transit and at rest.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Billing Sub-Tab Content */}
+          {companyManagementSubTab === 'billing' && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Billing & Subscription</h2>
+
+              {/* Current Subscription Status */}
+              <div style={{ marginBottom: '24px', padding: '16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#0c4a6e', margin: 0 }}>Current Subscription</h3>
+                  <span style={{ padding: '4px 12px', background: '#10b981', color: 'white', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
+                    ACTIVE
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Plan</div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Professional</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Billing Cycle</div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Monthly</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Next Billing</div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Dec 15, 2024</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Amount</div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>$99.00/month</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Method */}
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Payment Method</h3>
+                <div style={{ padding: '16px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '40px', height: '32px', background: '#f8fafc', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: '16px' }}>💳</span>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>•••• •••• •••• 4242</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Expires 12/25</div>
+                      </div>
+                    </div>
+                    <button style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                      Update
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Billing History */}
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Billing History</h3>
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 120px', gap: '16px', padding: '16px', background: '#f8fafc', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
+                    <div>Date</div>
+                    <div>Amount</div>
+                    <div>Status</div>
+                    <div>Invoice</div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 120px', gap: '16px', padding: '16px', borderTop: '1px solid #e2e8f0', fontSize: '14px' }}>
+                    <div>Nov 15, 2024</div>
+                    <div style={{ fontWeight: '600', color: '#1e293b' }}>$99.00</div>
+                    <div>
+                      <span style={{ padding: '2px 8px', background: '#10b981', color: 'white', borderRadius: '12px', fontSize: '10px', fontWeight: '600' }}>
+                        PAID
+                      </span>
+                    </div>
+                    <div>
+                      <button style={{ padding: '4px 8px', background: 'transparent', color: '#667eea', border: '1px solid #667eea', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>
+                        PDF
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 120px', gap: '16px', padding: '16px', borderTop: '1px solid #e2e8f0', fontSize: '14px', background: '#f9fafb' }}>
+                    <div>Oct 15, 2024</div>
+                    <div style={{ fontWeight: '600', color: '#1e293b' }}>$99.00</div>
+                    <div>
+                      <span style={{ padding: '2px 8px', background: '#10b981', color: 'white', borderRadius: '12px', fontSize: '10px', fontWeight: '600' }}>
+                        PAID
+                      </span>
+                    </div>
+                    <div>
+                      <button style={{ padding: '4px 8px', background: 'transparent', color: '#667eea', border: '1px solid #667eea', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>
+                        PDF
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Profile Sub-Tab Content */}
+          {companyManagementSubTab === 'profile' && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Company Profile</h2>
+
+              {/* Company Information */}
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Company Information</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      Company Name
+                    </label>
+                    <div style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px' }}>
+                      {companies.find(c => c.id === selectedCompanyId)?.name || 'Not Available'}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      Industry
+                    </label>
+                    <div style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px' }}>
+                      {companyIndustrySector && INDUSTRY_SECTORS.find(i => i.id === companyIndustrySector)?.name || 'Not Set'}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      Employees
+                    </label>
+                    <div style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px' }}>
+                      {companies.find(c => c.id === selectedCompanyId)?.employeeCount || 'Not Set'}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      Founded
+                    </label>
+                    <div style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px' }}>
+                      {companies.find(c => c.id === selectedCompanyId)?.foundedYear || 'Not Set'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Contact Information</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      Email
+                    </label>
+                    <div style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px' }}>
+                      {companies.find(c => c.id === selectedCompanyId)?.email || 'Not Set'}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      Phone
+                    </label>
+                    <div style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px' }}>
+                      {companies.find(c => c.id === selectedCompanyId)?.phone || 'Not Set'}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      Website
+                    </label>
+                    <div style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px' }}>
+                      {companies.find(c => c.id === selectedCompanyId)?.website || 'Not Set'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+                  Edit Profile
+                </button>
+                <button style={{ padding: '12px 24px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+                  Export Data
+                </button>
               </div>
             </div>
           )}
@@ -9259,177 +9468,6 @@ export default function FinancialScorePage() {
             <ProjectionChart title="Total Assets Projection" historicalData={monthly} projectedData={projections} valueKey="totalAssets" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
             <ProjectionChart title="Total Liabilities Projection" historicalData={monthly} projectedData={projections} valueKey="totalLiab" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
             <ProjectionChart title="Equity Projection" historicalData={monthly} projectedData={projections} valueKey="equity" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-          </div>
-        </div>
-      )}
-
-      {/* Goals View */}
-      {currentView === 'goals' && selectedCompanyId && monthly.length >= 6 && (
-        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
-            input[type=number].no-spinner::-webkit-outer-spin-button,
-            input[type=number].no-spinner::-webkit-inner-spin-button {
-              -webkit-appearance: none;
-              margin: 0;
-            }
-            input[type=number].no-spinner {
-              -moz-appearance: textfield;
-            }
-          `}</style>
-          
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Expense Goals</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Expense Category</th>
-                  {(() => {
-                    const last6 = monthly.slice(-6);
-                    return last6.map((m, i) => {
-                      const monthDate = m.date || m.month;
-                      const dateObj = monthDate instanceof Date ? monthDate : new Date(monthDate);
-                      const displayDate = !isNaN(dateObj.getTime()) 
-                        ? dateObj.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-                        : 'N/A';
-                      
-                      return (
-                        <th key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                          {displayDate}
-                          <br />
-                          <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
-                        </th>
-                      );
-                    });
-                  })()}
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                    6-Mo Avg<br />
-                    <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
-                  </th>
-                  <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#667eea' }}>
-                    Goal %<br />
-                    <span style={{ fontSize: '12px', fontWeight: '400' }}>of Revenue</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const last6 = monthly.slice(-6);
-                  const expenseCategories = [
-                    { key: 'opexPayroll', label: 'Payroll' },
-                    { key: 'ownersBasePay', label: 'Owner Base Pay' },
-                    { key: 'contractorsDistribution', label: 'Contractors' },
-                    { key: 'professionalServices', label: 'Professional Services' },
-                    { key: 'insurance', label: 'Insurance' },
-                    { key: 'rentLease', label: 'Rent/Lease' },
-                    { key: 'utilities', label: 'Utilities' },
-                    { key: 'equipment', label: 'Equipment' },
-                    { key: 'travel', label: 'Travel' },
-                    { key: 'opexSalesMarketing', label: 'Sales & Marketing' },
-                    { key: 'opexOther', label: 'Other Operating Expenses' },
-                    { key: 'depreciationExpense', label: 'Depreciation & Amortization' },
-                    { key: 'interestExpense', label: 'Interest Expense' }
-                  ];
-
-                  return expenseCategories.map((category) => {
-                    const last6Percentages = last6.map(m => {
-                      const revenue = m.revenue || 0;
-                      const expenseValue = (m as any)[category.key] || 0;
-                      return revenue > 0 ? (expenseValue / revenue) * 100 : 0;
-                    });
-                    
-                    const avg6mo = last6Percentages.reduce((sum, val) => sum + val, 0) / last6Percentages.length;
-
-                    return (
-                      <tr key={category.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
-                          {category.label}
-                        </td>
-                        {last6Percentages.map((pct, i) => (
-                          <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: '#64748b' }}>
-                            {pct.toFixed(1)}%
-                          </td>
-                        ))}
-                        <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
-                          {avg6mo.toFixed(1)}%
-                        </td>
-                        <td style={{ textAlign: 'center', padding: '12px' }}>
-                          <input
-                            type="number"
-                            className="no-spinner"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            value={expenseGoals[category.key] || ''}
-                            onChange={(e) => setExpenseGoals(prev => ({
-                              ...prev,
-                              [category.key]: parseFloat(e.target.value) || 0
-                            }))}
-                            placeholder={avg6mo.toFixed(1)}
-                            style={{
-                              width: '80px',
-                              padding: '8px 12px',
-                              fontSize: '14px',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '6px',
-                              textAlign: 'center',
-                              color: '#1e293b'
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  });
-                })()}
-              </tbody>
-            </table>
-
-            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
-              <div style={{ flex: 1, padding: '16px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
-                <p style={{ fontSize: '14px', color: '#0c4a6e', margin: 0 }}>
-                  <strong>Tip:</strong> Set goal percentages for each expense category as a percentage of revenue. Leave blank to use the 6-month average as the target.
-                </p>
-              </div>
-              <button
-                onClick={async () => {
-                  if (!selectedCompanyId) return;
-                  try {
-                    const response = await fetch('/api/expense-goals', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        companyId: selectedCompanyId,
-                        goals: expenseGoals
-                      })
-                    });
-                    if (response.ok) {
-                      alert('Goals saved successfully!');
-                    } else {
-                      alert('Failed to save goals');
-                    }
-                  } catch (error) {
-                    console.error('Error saving goals:', error);
-                    alert('Error saving goals');
-                  }
-                }}
-                style={{
-                  padding: '12px 32px',
-                  background: '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                Save Goals
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -18936,3 +18974,5 @@ export default function FinancialScorePage() {
   );
 }
 
+);
+}
