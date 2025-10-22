@@ -1047,7 +1047,7 @@ export default function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print'>('login');
 
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
@@ -1129,7 +1129,7 @@ export default function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'payments' | 'profile'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals'>('company-management');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -1241,6 +1241,9 @@ export default function FinancialScorePage() {
   const [ebitdaMultiplier, setEbitdaMultiplier] = useState(5.0);
   const [dcfDiscountRate, setDcfDiscountRate] = useState(10.0);
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
+
+  // State - Goals
+  const [expenseGoals, setExpenseGoals] = useState<{[key: string]: number}>({});
 
   // State - Industry Benchmarks
   const [benchmarks, setBenchmarks] = useState<any[]>([]);
@@ -3331,7 +3334,7 @@ export default function FinancialScorePage() {
           {showForgotPassword ? (
             <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Reset Password</h2>
-              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>Enter your email address and we'll send you instructions to reset your password.</p>
+              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>Enter your email address and we'll send you instructions to reset your password.</p>
               
               {resetSuccess && (
                 <div style={{ padding: '12px 16px', background: '#d1fae5', color: '#065f46', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #6ee7b7' }}>
@@ -3346,7 +3349,7 @@ export default function FinancialScorePage() {
                 value={resetEmail} 
                 onChange={(e) => { setResetEmail(e.target.value); setLoginError(''); }} 
                 autoComplete="off"
-                style={{ width: '100%', padding: '12px 16px', marginBottom: '24px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
               <button 
                 onClick={async () => {
@@ -3391,7 +3394,7 @@ export default function FinancialScorePage() {
             </form>
           ) : isRegistering ? (
             <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleRegisterConsultant(); }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Register as Consultant</h2>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Register as Consultant</h2>
               <input 
                 type="text" 
                 name={`fullname_${Date.now()}`}
@@ -3412,7 +3415,7 @@ export default function FinancialScorePage() {
               />
               
               {/* Password field with toggle */}
-              <div style={{ position: 'relative', marginBottom: '24px' }}>
+              <div style={{ position: 'relative', marginBottom: '12px' }}>
                 <input 
                   type={showPassword ? "text" : "password"} 
                   name={`password_${Date.now()}`}
@@ -3437,7 +3440,7 @@ export default function FinancialScorePage() {
             </form>
           ) : (
             <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (!isLoading) handleLogin(); }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Sign In</h2>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Sign In</h2>
               <input 
                 type="text" 
                 name={`email_${Date.now()}`}
@@ -3470,7 +3473,7 @@ export default function FinancialScorePage() {
               </div>
               
               {/* Forgot Password Link */}
-              <div style={{ textAlign: 'right', marginBottom: '24px' }}>
+              <div style={{ textAlign: 'right', marginBottom: '12px' }}>
                 <button 
                   type="button"
                   onClick={() => { setShowForgotPassword(true); setLoginError(''); setShowPassword(false); }} 
@@ -3650,6 +3653,7 @@ export default function FinancialScorePage() {
               <button onClick={() => setCurrentView('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>KPI Dashboard</button>
               <button onClick={() => setCurrentView('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>Trend Analysis</button>
               <button onClick={() => setCurrentView('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>Projections</button>
+              <button onClick={() => setCurrentView('goals')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'goals' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'goals' ? '3px solid #667eea' : '3px solid transparent' }}>Goals</button>
               <button onClick={() => setCurrentView('working-capital')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'working-capital' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'working-capital' ? '3px solid #667eea' : '3px solid transparent' }}>Working Capital</button>
               <button onClick={() => setCurrentView('valuation')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'valuation' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'valuation' ? '3px solid #667eea' : '3px solid transparent' }}>Valuation</button>
               <button onClick={() => setCurrentView('cash-flow')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'cash-flow' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'cash-flow' ? '3px solid #667eea' : '3px solid transparent' }}>Cash Flow</button>
@@ -3727,7 +3731,7 @@ export default function FinancialScorePage() {
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {/* Financial Score Section */}
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '12px' }}>
               <h3 
                 onClick={() => setIsFinancialScoreExpanded(!isFinancialScoreExpanded)}
                 style={{ 
@@ -3814,7 +3818,7 @@ export default function FinancialScorePage() {
 
             {/* Management Assessment Section - For Assessment Users and Consultants */}
             {((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '12px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
                 style={{ 
@@ -4014,7 +4018,7 @@ export default function FinancialScorePage() {
 
             {/* Custom Print Section - For Consultants and Company Users only */}
             {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-              <div style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '12px' }}>
                 <h3 
                   onClick={() => setCurrentView('custom-print')}
                   style={{ 
@@ -4039,7 +4043,7 @@ export default function FinancialScorePage() {
 
             {/* Consultant Dashboard Section */}
             {currentUser?.role === 'consultant' && (
-              <div style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '12px' }}>
                 <h3 
                   onClick={() => setCurrentView('admin')}
                   style={{ 
@@ -4176,14 +4180,14 @@ export default function FinancialScorePage() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          <div style={{ padding: '0 24px', marginBottom: '24px' }}>
+          <div style={{ padding: '0 24px', marginBottom: '12px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Navigation</h2>
             <p style={{ fontSize: '12px', color: '#64748b' }}>Management Assessment</p>
           </div>
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {/* Management Assessment Section */}
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '12px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
                 style={{ 
@@ -5059,7 +5063,7 @@ export default function FinancialScorePage() {
           </div>
           
           {/* Tab Navigation */}
-          <div className="dashboard-tabs-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+          <div className="dashboard-tabs-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
             <button
               onClick={() => setAdminDashboardTab('company-management')}
               style={{
@@ -5163,13 +5167,13 @@ export default function FinancialScorePage() {
               Data Mapping
             </button>
             <button
-              onClick={() => setAdminDashboardTab('profile')}
+              onClick={() => setAdminDashboardTab('goals')}
               style={{
                 padding: '12px 24px',
-                background: adminDashboardTab === 'profile' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'profile' ? 'white' : '#64748b',
+                background: adminDashboardTab === 'goals' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'goals' ? 'white' : '#64748b',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'profile' ? '3px solid #667eea' : '3px solid transparent',
+                borderBottom: adminDashboardTab === 'goals' ? '3px solid #667eea' : '3px solid transparent',
                 fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
@@ -5177,13 +5181,13 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Profile
+              Goals
             </button>
           </div>
           
           {/* Company Management Tab */}
           {adminDashboardTab === 'company-management' && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Company Management</h2>
             
             {/* Show selected company or add new company option */}
@@ -5204,7 +5208,7 @@ export default function FinancialScorePage() {
                       <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
                         Select a company from the sidebar or create a new one:
                       </p>
-                      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
                         <input 
                           type="text" 
                           placeholder="Company Name" 
@@ -5494,14 +5498,14 @@ export default function FinancialScorePage() {
             <>
               {/* QuickBooks Data Verification Section */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
+                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>✓ QuickBooks Data Verification</h2>
-                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
                     Imported from QuickBooks • {loadedMonthlyData.length} months of data verified
                   </p>
 
                   {/* Summary Stats */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '12px' }}>
                     <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>MONTHS IMPORTED</div>
                       <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>{loadedMonthlyData.length}</div>
@@ -5599,7 +5603,7 @@ export default function FinancialScorePage() {
                 </div>
               )}
 
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Import Financials</h2>
                 
                 <div style={{ marginBottom: '20px' }}>
@@ -5696,7 +5700,7 @@ export default function FinancialScorePage() {
           )}
           
           {!selectedCompanyId && adminDashboardTab === 'import-financials' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to import financials.</p>
             </div>
@@ -5704,9 +5708,9 @@ export default function FinancialScorePage() {
 
           {/* Accounting API Connections Tab */}
           {adminDashboardTab === 'api-connections' && selectedCompanyId && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Accounting API Connections</h2>
-              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
                 Connect to accounting platforms to automatically import financial data for {companyName || 'your company'}.
               </p>
 
@@ -5808,14 +5812,14 @@ export default function FinancialScorePage() {
 
               {/* QuickBooks Data Verification */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
+                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                   <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>✓ QuickBooks Data Verification</h3>
-                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
                     Synced successfully • {loadedMonthlyData.length} months of data imported
                   </p>
 
                   {/* Summary Stats */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '12px' }}>
                     <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>MONTHS IMPORTED</div>
                       <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>{loadedMonthlyData.length}</div>
@@ -6072,14 +6076,14 @@ export default function FinancialScorePage() {
           )}
 
           {!selectedCompanyId && adminDashboardTab === 'api-connections' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage API connections.</p>
             </div>
           )}
 
           {!selectedCompanyId && adminDashboardTab === 'data-review' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to review financial data.</p>
             </div>
@@ -6372,7 +6376,7 @@ export default function FinancialScorePage() {
           })()}
 
           {!selectedCompanyId && adminDashboardTab === 'payments' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and billing.</p>
             </div>
@@ -6380,7 +6384,7 @@ export default function FinancialScorePage() {
 
           {/* Profile Tab - No Company Selected */}
           {!selectedCompanyId && adminDashboardTab === 'profile' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to view and edit company profile.</p>
             </div>
@@ -6389,14 +6393,14 @@ export default function FinancialScorePage() {
           {/* Data Mapping Tab - Content rendered through Financial Statements conditional below */}
 
           {!selectedCompanyId && adminDashboardTab === 'data-mapping' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to map QuickBooks accounts.</p>
             </div>
           )}
 
           {adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No QuickBooks Data</div>
               <p style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '16px' }}>Please sync QuickBooks data first from the Accounting API Connections tab.</p>
               <button
@@ -6423,7 +6427,7 @@ export default function FinancialScorePage() {
       {showCompanyDetailsModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '700px', width: '100%', maxHeight: '80vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Company Details</h2>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Company Details</h2>
             
             <div style={{ marginBottom: '20px' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Address</h3>
@@ -6519,7 +6523,7 @@ export default function FinancialScorePage() {
               </div>
             </div>
             
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Industry Sector</h3>
               <select 
                 value={companyIndustrySector} 
@@ -6561,7 +6565,7 @@ export default function FinancialScorePage() {
       {!selectedCompanyId && currentView !== 'admin' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
-          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '24px' }}>Please select a company from the Consultant Dashboard to continue.</p>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the Consultant Dashboard to continue.</p>
           {currentUser?.role === 'consultant' && (
             <button onClick={() => setCurrentView('admin')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to Consultant Dashboard</button>
           )}
@@ -6590,7 +6594,7 @@ export default function FinancialScorePage() {
           
           {monthly && monthly.length > 0 && (
             <>
-              <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '24px', color: '#166534' }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '12px', color: '#166534' }}>
                 <strong>✅ Financial data loaded</strong>
                 <p style={{ marginTop: '8px', marginBottom: 0 }}>
                   Total months: {monthly.length} | Displaying: Last {Math.min(36, monthly.length)} months
@@ -6598,7 +6602,7 @@ export default function FinancialScorePage() {
               </div>
 
               {/* Income Statement - Last 36 months */}
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', borderBottom: '3px solid #10b981', paddingBottom: '8px' }}>
                   Income Statement (Last 36 Months)
                 </h2>
@@ -7063,7 +7067,7 @@ export default function FinancialScorePage() {
           </div>
 
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
             <button 
               onClick={() => setTrendAnalysisTab('item-trends')}
               style={{ 
@@ -7100,7 +7104,7 @@ export default function FinancialScorePage() {
 
           {/* Item Trends Tab */}
           {trendAnalysisTab === 'item-trends' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
                   Select Item to Analyze:
@@ -7227,9 +7231,9 @@ export default function FinancialScorePage() {
           {/* Expense Analysis Tab */}
           {trendAnalysisTab === 'expense-analysis' && (
             <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>Expense Items as % of Total Revenue</h2>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Expense Items as % of Total Revenue</h2>
               
-              <div style={{ marginBottom: '24px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+              <div style={{ marginBottom: '12px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                 <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>💡 How to Use This Analysis</h3>
                 <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#15803d', lineHeight: '1.6' }}>
                   <li>Each chart shows an expense category as a <strong>percentage of total revenue</strong> over time</li>
@@ -7538,7 +7542,7 @@ export default function FinancialScorePage() {
               </p>
               
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '32px', marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Approximate Interpretation of Venturis Financial Scores:</h2>
+                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Approximate Interpretation of Venturis Financial Scores:</h2>
                 
                 <div style={{ display: 'grid', gap: '20px' }}>
                   <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
@@ -7727,8 +7731,8 @@ export default function FinancialScorePage() {
           </div>
           
           {monthly.length >= 24 && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>Financial Score Analysis</h2>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Financial Score Analysis</h2>
               
               <div className="fs-score-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px', maxWidth: '900px' }}>
                 <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', padding: '20px', color: 'white', boxShadow: '0 4px 12px rgba(102,126,234,0.3)' }}>
@@ -7832,7 +7836,7 @@ export default function FinancialScorePage() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>{showFormulaPopup}</h2>
               <button
                 onClick={() => setShowFormulaPopup(null)}
@@ -7984,11 +7988,11 @@ export default function FinancialScorePage() {
           
           {/* Benchmark Status Indicator */}
           {benchmarks.length > 0 ? (
-            <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '24px', fontSize: '13px', color: '#065f46' }}>
+            <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#065f46' }}>
               ✓ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
             </div>
           ) : (
-            <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '24px', fontSize: '13px', color: '#991b1b' }}>
+            <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
               ⚠ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
             </div>
           )}
@@ -8089,7 +8093,7 @@ export default function FinancialScorePage() {
           {/* Priority Ratios Tab */}
           {kpiDashboardTab === 'priority-ratios' && (
             <div>
-              <div className="no-print" style={{ marginBottom: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div className="no-print" style={{ marginBottom: '12px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Customize Your Priority Ratios</h3>
                 <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
                   Select up to 6 ratios to track as your priority KPIs. These selections will be saved and persist across sessions.
@@ -8191,7 +8195,7 @@ export default function FinancialScorePage() {
                   </div>
                   <div className="priority-ratios-print-content">
                     <div className="print-header" style={{ display: 'none' }}>
-                      <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px', marginTop: '0', textAlign: 'center' }}>
+                      <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', marginTop: '0', textAlign: 'center' }}>
                         Priority Ratios {companyName && `- ${companyName}`}
                       </h1>
                     </div>
@@ -8319,7 +8323,7 @@ export default function FinancialScorePage() {
           `}</style>
           
           {/* Tab Navigation */}
-          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
             <button
               onClick={() => setMdaTab('executive-summary')}
               style={{
@@ -8375,8 +8379,8 @@ export default function FinancialScorePage() {
 
           {/* Executive Summary Tab */}
           {mdaTab === 'executive-summary' && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>Executive Summary</h2>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>Executive Summary</h2>
             
             {/* Overview Metrics */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px', padding: '20px', background: '#f8fafc', borderRadius: '8px' }}>
@@ -8422,7 +8426,7 @@ export default function FinancialScorePage() {
               </div>
             </div>
             
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#10b981', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '20px' }}>✓</span> Key Strengths & Competitive Advantages
               </h3>
@@ -8439,7 +8443,7 @@ export default function FinancialScorePage() {
               </div>
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ef4444', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '20px' }}>⚠</span> Areas Requiring Management Attention
               </h3>
@@ -8522,7 +8526,7 @@ export default function FinancialScorePage() {
           {/* Critical Review Items Tab */}
           {mdaTab === 'key-metrics' && monthly.length >= 12 && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '24px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
+            <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
               ⚠️ Critical Review Items
             </h2>
             
@@ -9195,7 +9199,7 @@ export default function FinancialScorePage() {
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
           
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>Scenario Assumptions</h2>
               <button onClick={() => setShowDefaultSettings(!showDefaultSettings)} style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
@@ -9241,6 +9245,119 @@ export default function FinancialScorePage() {
             <ProjectionChart title="Total Assets Projection" historicalData={monthly} projectedData={projections} valueKey="totalAssets" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
             <ProjectionChart title="Total Liabilities Projection" historicalData={monthly} projectedData={projections} valueKey="totalLiab" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
             <ProjectionChart title="Equity Projection" historicalData={monthly} projectedData={projections} valueKey="equity" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
+          </div>
+        </div>
+      )}
+
+      {/* Goals View */}
+      {currentView === 'goals' && selectedCompanyId && monthly.length >= 6 && (
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Expense Goals</h1>
+            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+          </div>
+
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Expense Category</th>
+                  {(() => {
+                    const last6 = monthly.slice(-6);
+                    return last6.map((m, i) => (
+                      <th key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
+                        {new Date(m.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
+                        <br />
+                        <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
+                      </th>
+                    ));
+                  })()}
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
+                    6-Mo Avg<br />
+                    <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
+                  </th>
+                  <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#667eea' }}>
+                    Goal %<br />
+                    <span style={{ fontSize: '12px', fontWeight: '400' }}>of Revenue</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const last6 = monthly.slice(-6);
+                  const expenseCategories = [
+                    { key: 'opexPayroll', label: 'Payroll' },
+                    { key: 'ownersBasePay', label: 'Owner Base Pay' },
+                    { key: 'contractorsDistribution', label: 'Contractors' },
+                    { key: 'professionalServices', label: 'Professional Services' },
+                    { key: 'insurance', label: 'Insurance' },
+                    { key: 'rentLease', label: 'Rent/Lease' },
+                    { key: 'utilities', label: 'Utilities' },
+                    { key: 'equipment', label: 'Equipment' },
+                    { key: 'travel', label: 'Travel' },
+                    { key: 'opexSalesMarketing', label: 'Sales & Marketing' },
+                    { key: 'opexOther', label: 'Other Operating Expenses' },
+                    { key: 'depreciationExpense', label: 'Depreciation & Amortization' },
+                    { key: 'interestExpense', label: 'Interest Expense' }
+                  ];
+
+                  return expenseCategories.map((category) => {
+                    const last6Percentages = last6.map(m => {
+                      const revenue = m.revenue || 0;
+                      const expenseValue = (m as any)[category.key] || 0;
+                      return revenue > 0 ? (expenseValue / revenue) * 100 : 0;
+                    });
+                    
+                    const avg6mo = last6Percentages.reduce((sum, val) => sum + val, 0) / last6Percentages.length;
+
+                    return (
+                      <tr key={category.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
+                          {category.label}
+                        </td>
+                        {last6Percentages.map((pct, i) => (
+                          <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: '#64748b' }}>
+                            {pct.toFixed(1)}%
+                          </td>
+                        ))}
+                        <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                          {avg6mo.toFixed(1)}%
+                        </td>
+                        <td style={{ textAlign: 'center', padding: '12px' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={expenseGoals[category.key] || ''}
+                            onChange={(e) => setExpenseGoals(prev => ({
+                              ...prev,
+                              [category.key]: parseFloat(e.target.value) || 0
+                            }))}
+                            placeholder={avg6mo.toFixed(1)}
+                            style={{
+                              width: '80px',
+                              padding: '8px 12px',
+                              fontSize: '14px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '6px',
+                              textAlign: 'center',
+                              color: '#1e293b'
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+
+            <div style={{ marginTop: '24px', padding: '16px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+              <p style={{ fontSize: '14px', color: '#0c4a6e', margin: 0 }}>
+                <strong>Tip:</strong> Set goal percentages for each expense category as a percentage of revenue. Leave blank to use the 6-month average as the target.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -9510,7 +9627,7 @@ export default function FinancialScorePage() {
                 </div>
                 
                 {/* Working Capital Trend Chart */}
-                <div className="page-break-after" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div className="page-break-after" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend</h2>
                   <LineChart 
                     title="" 
@@ -9550,14 +9667,14 @@ export default function FinancialScorePage() {
                 </div>
                 
                 {/* Second Page Header */}
-                <div className="wc-page-2-header" style={{ display: 'none', marginTop: '32px', marginBottom: '24px', textAlign: 'center' }}>
+                <div className="wc-page-2-header" style={{ display: 'none', marginTop: '32px', marginBottom: '12px', textAlign: 'center' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
                     Working Capital Analysis - {companyName}
                   </h2>
                 </div>
                 
                 {/* Components Breakdown */}
-                <div className="wc-components-breakdown" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '24px' }}>
+                <div className="wc-components-breakdown" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '12px' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Current Assets</h2>
                     <div style={{ display: 'grid', gap: '12px' }}>
@@ -9753,7 +9870,7 @@ export default function FinancialScorePage() {
                 </div>
                 
                 {/* SDE Method */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
                     Seller's Discretionary Earnings (SDE) Method
                   </h2>
@@ -9804,7 +9921,7 @@ export default function FinancialScorePage() {
                 </div>
                 
                 {/* EBITDA Method */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
                     EBITDA Multiple Method
                   </h2>
@@ -10337,8 +10454,8 @@ export default function FinancialScorePage() {
                 </div>
 
                 {/* Cash Flow Statement Table */}
-                <div className="cf-table-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Statement of Cash Flows</h2>
+                <div className="cf-table-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Statement of Cash Flows</h2>
                   
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
@@ -10477,8 +10594,8 @@ export default function FinancialScorePage() {
                 </div>
 
                 {/* Cash Flow Metrics */}
-                <div className="cf-metrics-section" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Cash Flow Metrics</h2>
+                <div className="cf-metrics-section" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Cash Flow Metrics</h2>
                   
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
@@ -10524,7 +10641,7 @@ export default function FinancialScorePage() {
 
                 {/* Key Insights */}
                 <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Cash Flow Insights</h2>
+                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Cash Flow Insights</h2>
                   
                   <div style={{ display: 'grid', gap: '16px' }}>
                     {totalOperatingCF > 0 ? (
@@ -10710,7 +10827,7 @@ export default function FinancialScorePage() {
             </p>
 
             {/* Lines of Business Section */}
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '12px' }}>
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
                   Lines of Business
@@ -10751,7 +10868,7 @@ export default function FinancialScorePage() {
             {/* AI-Assisted Mapping Section */}
             <div style={{ marginBottom: '32px' }}>
               <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <div>
                     <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
                       AI-Assisted Account Mapping
@@ -11860,12 +11977,12 @@ export default function FinancialScorePage() {
               <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Statements</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
               QuickBooks Data • Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
             </p>
 
             {/* Tab Navigation */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
               <button
                 onClick={() => setFinancialStatementsTab('aggregated')}
                 style={{
@@ -12057,7 +12174,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Revenue Section */}
-                      <div style={{ marginBottom: '24px' }}>
+                      <div style={{ marginBottom: '12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -12065,7 +12182,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* COGS Section */}
-                      <div style={{ marginBottom: '24px' }}>
+                      <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
                         {cogsPayroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -12110,7 +12227,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Gross Profit */}
-                      <div style={{ marginBottom: '24px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                      <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -12121,7 +12238,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Operating Expenses */}
-                      <div style={{ marginBottom: '24px' }}>
+                      <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
                         {opexPayroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -12208,7 +12325,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Operating Income */}
-                      <div style={{ marginBottom: '24px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
+                      <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
                           <span style={{ fontWeight: '700', color: '#166534' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -12220,7 +12337,7 @@ export default function FinancialScorePage() {
 
                       {/* Other Income/Expense */}
                       {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                        <div style={{ marginBottom: '24px' }}>
+                        <div style={{ marginBottom: '12px' }}>
                           <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
                           {nonOperatingIncome > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -12327,7 +12444,7 @@ export default function FinancialScorePage() {
                     </div>
 
                     {/* Revenue Section */}
-                    <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '12px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                         <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
                         <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -12336,7 +12453,7 @@ export default function FinancialScorePage() {
                     </div>
 
                     {/* COGS Section */}
-                    <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Cost of Goods Sold</div>
                       {cogsPayroll > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
@@ -12388,7 +12505,7 @@ export default function FinancialScorePage() {
                     </div>
 
                     {/* Gross Profit */}
-                    <div style={{ marginBottom: '24px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                    <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
                         <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
                         <span style={{ fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -12397,7 +12514,7 @@ export default function FinancialScorePage() {
                     </div>
 
                     {/* Operating Expenses */}
-                    <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Operating Expenses</div>
                       {opexPayroll > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
@@ -12498,7 +12615,7 @@ export default function FinancialScorePage() {
                     </div>
 
                     {/* Operating Income */}
-                    <div style={{ marginBottom: '24px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
+                    <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
                         <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
                         <span style={{ fontWeight: '700', color: '#166534', textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -12508,7 +12625,7 @@ export default function FinancialScorePage() {
 
                     {/* Other Income/Expense */}
                     {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                      <div style={{ marginBottom: '24px' }}>
+                      <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Other Income/(Expense)</div>
                         {nonOperatingIncome > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
@@ -12686,7 +12803,7 @@ export default function FinancialScorePage() {
                     </div>
 
                     {/* EQUITY */}
-                    <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #10b981' }}>EQUITY</div>
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', background: '#d1fae5' }}>
@@ -12878,7 +12995,7 @@ export default function FinancialScorePage() {
                   );
                   return (
                     <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                      <div style={{ marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
+                      <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Income Statement</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
@@ -12990,7 +13107,7 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* Revenue Section */}
-                        <div style={{ marginBottom: '24px' }}>
+                        <div style={{ marginBottom: '12px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
                             <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
                             <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -12998,7 +13115,7 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* COGS Section */}
-                        <div style={{ marginBottom: '24px' }}>
+                        <div style={{ marginBottom: '12px' }}>
                           <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
                           {cogsPayroll > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -13043,7 +13160,7 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* Gross Profit */}
-                        <div style={{ marginBottom: '24px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
                             <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -13054,7 +13171,7 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* Operating Expenses */}
-                        <div style={{ marginBottom: '24px' }}>
+                        <div style={{ marginBottom: '12px' }}>
                           <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
                           {opexPayroll > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -13141,7 +13258,7 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* Operating Income */}
-                        <div style={{ marginBottom: '24px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <span style={{ fontWeight: '700', color: '#1e40af' }}>Operating Income</span>
                             <span style={{ fontWeight: '700', color: '#1e40af' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -13152,7 +13269,7 @@ export default function FinancialScorePage() {
                         </div>
 
                         {/* Other Income/Expense */}
-                        <div style={{ marginBottom: '24px' }}>
+                        <div style={{ marginBottom: '12px' }}>
                           <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
                           {interestExpense > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -13243,7 +13360,7 @@ export default function FinancialScorePage() {
                     );
                     return (
                       <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                        <div style={{ marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
+                        <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                           <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Common Size Income Statement</h2>
                           <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                         </div>
@@ -14647,14 +14764,14 @@ export default function FinancialScorePage() {
             {/* Line of Business Reporting Tab */}
             {financialStatementsTab === 'line-of-business' && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <div style={{ marginBottom: '24px' }}>
+                <div style={{ marginBottom: '12px' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Line of Business Reporting</h2>
-                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
                     View financial performance by line of business. Select a specific business line or view all lines side by side.
                   </p>
                   
                   {/* Line of Business Selector */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '12px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                         Line of Business
@@ -14806,12 +14923,12 @@ export default function FinancialScorePage() {
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Statements</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
-          <p className="no-print" style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+          <p className="no-print" style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
             Based on imported financial data
           </p>
 
           {/* Tab Navigation */}
-          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
             <button
               onClick={() => setFinancialStatementsTab('aggregated')}
               style={{
@@ -15026,7 +15143,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Revenue Section */}
-                  <div style={{ marginBottom: '24px' }}>
+                  <div style={{ marginBottom: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -15034,7 +15151,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* COGS Section */}
-                  <div style={{ marginBottom: '24px' }}>
+                  <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
                     {cogsPayroll > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -15079,7 +15196,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Gross Profit */}
-                  <div style={{ marginBottom: '24px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                  <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
                       <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -15090,7 +15207,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Operating Expenses */}
-                  <div style={{ marginBottom: '24px' }}>
+                  <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
                     {opexPayroll > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -15177,7 +15294,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Operating Income */}
-                  <div style={{ marginBottom: '24px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
+                  <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
                       <span style={{ fontWeight: '700', color: '#166534' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -15189,7 +15306,7 @@ export default function FinancialScorePage() {
 
                   {/* Other Income/Expense */}
                   {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                    <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
                       {nonOperatingIncome > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -15297,7 +15414,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Revenue Section */}
-                  <div style={{ marginBottom: '24px' }}>
+                  <div style={{ marginBottom: '12px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
                       <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -15306,7 +15423,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* COGS Section */}
-                  <div style={{ marginBottom: '24px' }}>
+                  <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Cost of Goods Sold</div>
                     {cogsPayroll > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
@@ -15358,7 +15475,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Gross Profit */}
-                  <div style={{ marginBottom: '24px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                  <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
                       <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
                       <span style={{ fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -15367,7 +15484,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Operating Expenses */}
-                  <div style={{ marginBottom: '24px' }}>
+                  <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Operating Expenses</div>
                     {opexPayroll > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
@@ -15468,7 +15585,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Operating Income */}
-                  <div style={{ marginBottom: '24px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
+                  <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
                       <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
                       <span style={{ fontWeight: '700', color: '#166534', textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -15478,7 +15595,7 @@ export default function FinancialScorePage() {
 
                   {/* Other Income/Expense */}
                   {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                    <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Other Income/(Expense)</div>
                       {nonOperatingIncome > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
@@ -15656,7 +15773,7 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* EQUITY */}
-                  <div style={{ marginBottom: '24px' }}>
+                  <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #10b981' }}>EQUITY</div>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', background: '#d1fae5' }}>
@@ -16185,7 +16302,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Revenue Section */}
-                      <div style={{ marginBottom: '24px' }}>
+                      <div style={{ marginBottom: '12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -16193,7 +16310,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* COGS Section */}
-                      <div style={{ marginBottom: '24px' }}>
+                      <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
                         {cogsPayroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -16238,7 +16355,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Gross Profit */}
-                      <div style={{ marginBottom: '24px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                      <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -16249,7 +16366,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Operating Expenses */}
-                      <div style={{ marginBottom: '24px' }}>
+                      <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
                         {opexPayroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -16336,7 +16453,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Operating Income */}
-                      <div style={{ marginBottom: '24px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                      <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>Operating Income</span>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -16347,7 +16464,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Other Income/Expense */}
-                      <div style={{ marginBottom: '24px' }}>
+                      <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
                         {interestExpense > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
@@ -16438,7 +16555,7 @@ export default function FinancialScorePage() {
                   );
                   return (
                     <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                      <div style={{ marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
+                      <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Common Size Income Statement</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
@@ -16839,7 +16956,7 @@ export default function FinancialScorePage() {
                   );
                   return (
                     <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                      <div style={{ marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
+                      <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Balance Sheet</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
@@ -17157,9 +17274,9 @@ export default function FinancialScorePage() {
           {/* Line of Business Reporting Tab */}
           {financialStatementsTab === 'line-of-business' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '12px' }}>
                 <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Line of Business Reporting</h2>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
                   Line of Business reporting is currently only available for QuickBooks data with class tracking enabled.
                 </p>
               </div>
@@ -17258,7 +17375,7 @@ export default function FinancialScorePage() {
             }
           `}</style>
           
-          <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
               <div style={{ marginBottom: '8px' }}>
                 <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Company Profile</h1>
@@ -17345,14 +17462,14 @@ export default function FinancialScorePage() {
             return (
               <>
                 {/* Section 1: Business Profile */}
-                <div id="first-profile-section" className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div id="first-profile-section" className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div className="print-page-header">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
                       <div style={{ fontSize: '13px', color: '#64748b' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                     </div>
                   </div>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
                     Business Profile
                   </h2>
                   
@@ -17465,14 +17582,14 @@ export default function FinancialScorePage() {
                 </div>
 
                 {/* Section 2: Financial Statement Overview */}
-                <div className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div className="print-page-header">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
                       <div style={{ fontSize: '13px', color: '#64748b' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                     </div>
                   </div>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
                     Financial Statement Overview
                   </h2>
                   
@@ -17594,20 +17711,20 @@ export default function FinancialScorePage() {
                 </div>
 
                 {/* Section 3: Financial Ratios Overview */}
-                <div className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div className="print-page-header">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
                       <div style={{ fontSize: '13px', color: '#64748b' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                     </div>
                   </div>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
                     Financial Ratios Overview
                   </h2>
                   
                   {/* Liquidity Ratios */}
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Liquidity Ratios</h3>
-                  <div style={{ overflowX: 'auto', marginBottom: '24px' }}>
+                  <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
@@ -17642,7 +17759,7 @@ export default function FinancialScorePage() {
                   
                   {/* Activity Ratios */}
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Activity Ratios</h3>
-                  <div style={{ overflowX: 'auto', marginBottom: '24px' }}>
+                  <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
@@ -17685,7 +17802,7 @@ export default function FinancialScorePage() {
                   
                   {/* Coverage Ratios */}
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Coverage Ratios</h3>
-                  <div style={{ overflowX: 'auto', marginBottom: '24px' }}>
+                  <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
@@ -17720,7 +17837,7 @@ export default function FinancialScorePage() {
                   
                   {/* Leverage Ratios */}
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Leverage Ratios</h3>
-                  <div style={{ overflowX: 'auto', marginBottom: '24px' }}>
+                  <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
@@ -17798,14 +17915,14 @@ export default function FinancialScorePage() {
                 </div>
 
                 {/* Section 4: Company Disclosures */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div className="print-page-header">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
                       <div style={{ fontSize: '13px', color: '#64748b' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                     </div>
                   </div>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
                     Company Disclosures
                   </h2>
                   
@@ -17969,7 +18086,7 @@ export default function FinancialScorePage() {
           </div>
           
           {currentUser?.role === 'consultant' && (
-            <div style={{ background: '#fffbeb', border: '2px solid #fbbf24', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+            <div style={{ background: '#fffbeb', border: '2px solid #fbbf24', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>⚠ Consultant View Only</h3>
               <p style={{ fontSize: '14px', color: '#78350f', margin: 0 }}>
                 As a consultant, you can view this questionnaire but cannot fill it out. Only company users can complete assessments. 
@@ -17978,8 +18095,8 @@ export default function FinancialScorePage() {
             </div>
           )}
           
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', opacity: currentUser?.role === 'consultant' ? 0.6 : 1, pointerEvents: currentUser?.role === 'consultant' ? 'none' : 'auto' }}>
-            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', opacity: currentUser?.role === 'consultant' ? 0.6 : 1, pointerEvents: currentUser?.role === 'consultant' ? 'none' : 'auto' }}>
+            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#0c4a6e', marginBottom: '8px' }}>Rating Scale</h3>
               <div style={{ fontSize: '13px', color: '#0c4a6e', lineHeight: '1.6' }}>
                 <strong>1:</strong> No evidence to support practices or any knowledge of subject<br />
@@ -18162,10 +18279,10 @@ export default function FinancialScorePage() {
             </>
           ) : (
             // Show individual results for users
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Score by Category</h2>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Score by Category</h2>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '12px' }}>
                 {assessmentData.map((category) => {
                   const categoryQuestions = category.questions.map(q => q.id);
                   const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
@@ -18202,7 +18319,7 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             {companyName && <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', textAlign: 'center', marginBottom: '12px' }}>{companyName}</div>}
-            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '24px', textAlign: 'center' }}>Management Assessment Questionnaire</h1>
+            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', textAlign: 'center' }}>Management Assessment Questionnaire</h1>
             
             <div style={{ fontSize: '16px', color: '#475569', lineHeight: '1.8', maxWidth: '900px', margin: '0 auto 32px', textAlign: 'left' }}>
               <p style={{ marginBottom: '16px' }}>
@@ -18245,8 +18362,8 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Scores Summary - All Participants</h1>
           
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Average Scores Across All Participants</h2>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Average Scores Across All Participants</h2>
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
               {assessmentData.map((category) => {
@@ -18278,7 +18395,7 @@ export default function FinancialScorePage() {
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Scoring Guide</h1>
           
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Rating Scale Descriptions</h2>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Rating Scale Descriptions</h2>
             
             <div style={{ display: 'grid', gap: '16px' }}>
               <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
@@ -18314,7 +18431,7 @@ export default function FinancialScorePage() {
           {(currentUser?.role === 'consultant' ? assessmentRecords.filter(r => r.companyId === selectedCompanyId).length === 0 : Object.keys(assessmentResponses).length === 0) ? (
             <div style={{ background: 'white', borderRadius: '12px', padding: '40px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#64748b', marginBottom: '16px' }}>No Assessment Data</h2>
-              <p style={{ fontSize: '16px', color: '#94a3b8', marginBottom: '24px' }}>
+              <p style={{ fontSize: '16px', color: '#94a3b8', marginBottom: '12px' }}>
                 {currentUser?.role === 'consultant' ? 'No users have completed assessments for this company yet.' : 'Please complete the questionnaire first to view charts.'}
               </p>
               {currentUser?.role !== 'consultant' && (
@@ -18328,8 +18445,8 @@ export default function FinancialScorePage() {
             </div>
           ) : (
             <>
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>
+              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                   {currentUser?.role === 'consultant' ? 'Average Category Scores - All Participants' : 'Category Scores - Bar Chart'}
                 </h2>
                 
@@ -18372,7 +18489,7 @@ export default function FinancialScorePage() {
           </div>
 
           <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px' }}>Category Scores - Radar Chart</h2>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Category Scores - Radar Chart</h2>
             
             <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
               <svg width="500" height="500" viewBox="0 0 500 500">
@@ -18746,3 +18863,4 @@ export default function FinancialScorePage() {
     </div>
   );
 }
+
