@@ -7215,6 +7215,25 @@ export default function FinancialScorePage() {
                     color="#667eea"
                     showTable={true}
                     labelFormat="quarterly"
+                    goalLineData={(() => {
+                      // Check if selected item is an expense category with a goal
+                      const expenseCategories = [
+                        'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
+                        'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 'insurance', 
+                        'rentLease', 'utilities', 'equipment', 'travel', 'opexSalesMarketing', 'opexOther', 
+                        'depreciationExpense', 'interestExpense'
+                      ];
+                      
+                      if (expenseCategories.includes(selectedTrendItem) && expenseGoals[selectedTrendItem]) {
+                        // Calculate goal as: Goal % × Revenue for each month
+                        return monthly.map(m => {
+                          const revenue = m.revenue || 0;
+                          const goalPct = expenseGoals[selectedTrendItem] / 100;
+                          return revenue * goalPct;
+                        });
+                      }
+                      return undefined;
+                    })()}
                   />
                 </div>
                 
