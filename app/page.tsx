@@ -803,6 +803,18 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
                   </td>
                 ))}
               </tr>
+              {goalLineData && goalLineData.length === validData.length && (
+                <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f0fdf4' }}>
+                  <td style={{ padding: '6px 8px', fontWeight: '700', color: '#10b981', position: 'sticky', left: 0, background: '#f0fdf4', zIndex: 1 }}>
+                    Goal
+                  </td>
+                  {validData.map((d, i) => (
+                    <td key={`goal-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '700', color: '#10b981' }}>
+                      {formatter ? formatter(goalLineData[i]) : goalLineData[i].toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </td>
+                  ))}
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
