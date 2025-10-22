@@ -7282,6 +7282,29 @@ export default function FinancialScorePage() {
                         })() : 'N/A'}
                       </div>
                     </div>
+
+                    {/* Goal % for Expense Items */}
+                    {(() => {
+                      const expenseCategories = [
+                        'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
+                        'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 'insurance', 
+                        'rentLease', 'utilities', 'equipment', 'travel', 'opexSalesMarketing', 'opexOther', 
+                        'depreciationExpense', 'interestExpense'
+                      ];
+                      
+                      if (expenseCategories.includes(selectedTrendItem) && expenseGoals[selectedTrendItem]) {
+                        return (
+                          <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
+                            <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
+                            <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
+                              {expenseGoals[selectedTrendItem].toFixed(1)}%
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </div>
               </div>
