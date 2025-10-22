@@ -7306,6 +7306,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#f59e0b"
                     compact
+                    goalLineData={expenseGoals.cogsTotal ? monthly.map(() => expenseGoals.cogsTotal) : undefined}
                   />
                 )}
 
@@ -7319,6 +7320,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fb923c"
                     compact
+                    goalLineData={expenseGoals.cogsPayroll ? monthly.map(() => expenseGoals.cogsPayroll) : undefined}
                   />
                 )}
 
@@ -7331,6 +7333,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fdba74"
                     compact
+                    goalLineData={expenseGoals.cogsOwnerPay ? monthly.map(() => expenseGoals.cogsOwnerPay) : undefined}
                   />
                 )}
 
@@ -7343,6 +7346,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fed7aa"
                     compact
+                    goalLineData={expenseGoals.cogsContractors ? monthly.map(() => expenseGoals.cogsContractors) : undefined}
                   />
                 )}
                 
@@ -7355,6 +7359,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fde047"
                     compact
+                    goalLineData={expenseGoals.cogsMaterials ? monthly.map(() => expenseGoals.cogsMaterials) : undefined}
                   />
                 )}
                 
@@ -7367,6 +7372,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#bef264"
                     compact
+                    goalLineData={expenseGoals.cogsCommissions ? monthly.map(() => expenseGoals.cogsCommissions) : undefined}
                   />
                 )}
                 
@@ -7379,6 +7385,7 @@ export default function FinancialScorePage() {
                     }))}
                     color="#86efac"
                     compact
+                    goalLineData={expenseGoals.cogsOther ? monthly.map(() => expenseGoals.cogsOther) : undefined}
                   />
                 )}
                 
@@ -9359,6 +9366,13 @@ export default function FinancialScorePage() {
                 {(() => {
                   const last6 = monthly.slice(-6);
                   const expenseCategories = [
+                    { key: 'cogsTotal', label: 'COGS Total' },
+                    { key: 'cogsPayroll', label: 'COGS Payroll' },
+                    { key: 'cogsOwnerPay', label: 'COGS Owner Pay' },
+                    { key: 'cogsContractors', label: 'COGS Contractors' },
+                    { key: 'cogsMaterials', label: 'COGS Materials' },
+                    { key: 'cogsCommissions', label: 'COGS Commissions' },
+                    { key: 'cogsOther', label: 'COGS Other' },
                     { key: 'opexPayroll', label: 'Payroll' },
                     { key: 'ownersBasePay', label: 'Owner Base Pay' },
                     { key: 'contractorsDistribution', label: 'Contractors' },
