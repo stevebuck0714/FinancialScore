@@ -5274,13 +5274,13 @@ export default function FinancialScorePage() {
               Data Mapping
             </button>
             <button
-              onClick={() => setAdminDashboardTab('goals')}
+              onClick={() => setAdminDashboardTab('profile')}
               style={{
                 padding: '12px 24px',
-                background: adminDashboardTab === 'goals' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'goals' ? 'white' : '#64748b',
+                background: adminDashboardTab === 'profile' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'profile' ? 'white' : '#64748b',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'goals' ? '3px solid #667eea' : '3px solid transparent',
+                borderBottom: adminDashboardTab === 'profile' ? '3px solid #667eea' : '3px solid transparent',
                 fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
@@ -5288,7 +5288,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Goals
+              Profile
             </button>
           </div>
           
