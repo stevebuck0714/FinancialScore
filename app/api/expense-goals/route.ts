@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import prisma from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,22 +13,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upsert: Create or update expense goals
-    const expenseGoal = await prisma.expenseGoal.upsert({
-      where: { companyId },
-      update: {
-        goals,
-        updatedAt: new Date()
-      },
-      create: {
-        companyId,
-        goals
-      }
-    });
+    // Use raw SQL to bypass Prisma schema validation issues
+    const goalsJson = JSON.stringify(goals);
+    const now = new Date().toISOString();
+    
+    // Check if record exists
+    const existing = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM ExpenseGoal WHERE companyId = ${companyId}
+    `;
+    
+    if (existing.length > 0) {
+      // Update existing
+      await prisma.$executeRaw`
+        UPDATE ExpenseGoal 
+        SET goals = ${goalsJson}, updatedAt = ${now}
+        WHERE companyId = ${companyId}
+      `;
+    } else {
+      // Create new
+      const id = `eg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      await prisma.$executeRaw`
+        INSERT INTO ExpenseGoal (id, companyId, goals, createdAt, updatedAt)
+        VALUES (${id}, ${companyId}, ${goalsJson}, ${now}, ${now})
+      `;
+    }
 
     return NextResponse.json({ 
-      success: true, 
-      expenseGoal 
+      success: true,
+      message: 'Goals saved successfully'
     });
   } catch (error) {
     console.error('Error saving expense goals:', error);
@@ -51,13 +63,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const expenseGoal = await prisma.expenseGoal.findUnique({
-      where: { companyId }
-    });
+    // Use raw SQL to bypass Prisma schema validation issues
+    const result = await prisma.$queryRaw<Array<{ goals: string }>>`
+      SELECT goals FROM ExpenseGoal WHERE companyId = ${companyId}
+    `;
+
+    const goals = result.length > 0 ? JSON.parse(result[0].goals) : {};
 
     return NextResponse.json({ 
       success: true, 
-      goals: expenseGoal?.goals || {} 
+      goals 
     });
   } catch (error) {
     console.error('Error fetching expense goals:', error);

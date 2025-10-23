@@ -9636,7 +9636,7 @@ export default function FinancialScorePage() {
                         {avg6mo.toFixed(1)}%
                       </td>
                       <td style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#667eea' }}>
-                        {totalGoalPct > 0 ? `${totalGoalPct.toFixed(1)}%` : '—'}
+                        {totalGoalPct.toFixed(1)}%
                       </td>
                     </tr>
                   );
