@@ -7282,6 +7282,24 @@ export default function FinancialScorePage() {
                     showTable={true}
                     labelFormat="quarterly"
                     goalLineData={(() => {
+                      // Check if selected item is "expense" (Total Expenses)
+                      if (selectedTrendItem === 'expense') {
+                        // Sum all operating expense goals (not COGS)
+                        const opexCategories = [
+                          'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
+                          'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
+                          'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                        ];
+                        const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                        
+                        if (totalGoalPct > 0) {
+                          return monthly.map(m => {
+                            const revenue = m.revenue || 0;
+                            return revenue * (totalGoalPct / 100);
+                          });
+                        }
+                      }
+                      
                       // Check if selected item is an expense category with a goal
                       const expenseCategories = [
                         'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
@@ -7351,6 +7369,31 @@ export default function FinancialScorePage() {
 
                     {/* Goal % for Expense Items */}
                     {(() => {
+                      // Check if "expense" (Total Expenses) is selected
+                      if (selectedTrendItem === 'expense') {
+                        const opexCategories = [
+                          'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
+                          'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
+                          'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                        ];
+                        const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                        
+                        if (totalGoalPct > 0) {
+                          return (
+                            <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
+                              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
+                              <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
+                              <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
+                                {totalGoalPct.toFixed(1)}%
+                              </div>
+                              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', textAlign: 'center' }}>
+                                (Sum of Operating Expenses)
+                              </div>
+                            </div>
+                          );
+                        }
+                      }
+                      
                       const expenseCategories = [
                         'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
                         'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 'insurance', 
@@ -7402,6 +7445,16 @@ export default function FinancialScorePage() {
                   }))}
                   color="#ef4444"
                   compact
+                  goalLineData={(() => {
+                    // Sum all operating expense goals (not COGS)
+                    const opexCategories = [
+                      'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
+                      'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
+                      'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                    ];
+                    const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                    return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
+                  })()}
                 />
 
                 {/* COGS Total */}
@@ -9547,6 +9600,46 @@ export default function FinancialScorePage() {
                       </tr>
                     );
                   });
+                })()}
+                
+                {/* Total Operating Expenses Summary Row */}
+                {(() => {
+                  const last6 = monthly.slice(-6);
+                  const opexCategories = [
+                    'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
+                    'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
+                    'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                  ];
+                  
+                  // Calculate totals for each month
+                  const last6Totals = last6.map(m => {
+                    const revenue = m.revenue || 0;
+                    if (revenue === 0) return 0;
+                    const totalExpense = opexCategories.reduce((sum, key) => sum + ((m as any)[key] || 0), 0);
+                    return (totalExpense / revenue) * 100;
+                  });
+                  
+                  const avg6mo = last6Totals.reduce((sum, val) => sum + val, 0) / last6Totals.length;
+                  const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                  
+                  return (
+                    <tr style={{ borderTop: '3px solid #667eea', background: '#f0f9ff' }}>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#667eea', fontWeight: '700' }}>
+                        TOTAL OPERATING EXPENSES
+                      </td>
+                      {last6Totals.map((pct, i) => (
+                        <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#667eea' }}>
+                          {pct.toFixed(1)}%
+                        </td>
+                      ))}
+                      <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#667eea' }}>
+                        {avg6mo.toFixed(1)}%
+                      </td>
+                      <td style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#667eea' }}>
+                        {totalGoalPct > 0 ? `${totalGoalPct.toFixed(1)}%` : '—'}
+                      </td>
+                    </tr>
+                  );
                 })()}
               </tbody>
             </table>
