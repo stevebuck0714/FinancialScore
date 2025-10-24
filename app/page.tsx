@@ -4074,8 +4074,8 @@ export default function FinancialScorePage() {
             <div style={{ marginBottom: '12px' }}>
               <h3 
                 onClick={() => {
-                  // URL will be provided later
-                  console.log('Digital Presence Analysis clicked - URL to be added');
+                  // Navigate to https://www.digi-presence.com
+                  window.open('https://www.digi-presence.com', '_blank');
                 }}
                 style={{ 
                   fontSize: '14px', 
@@ -4385,8 +4385,8 @@ export default function FinancialScorePage() {
             <div style={{ marginBottom: '12px' }}>
               <h3 
                 onClick={() => {
-                  // URL will be provided later
-                  console.log('Digital Presence Analysis clicked - URL to be added');
+                  // Navigate to https://www.digi-presence.com
+                  window.open('https://www.digi-presence.com', '_blank');
                 }}
                 style={{ 
                   fontSize: '14px', 
