@@ -1085,7 +1085,11 @@ export default function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard'>('login');
+  
+  // State - Dashboard Customization
+  const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
+  const [showDashboardCustomizer, setShowDashboardCustomizer] = useState(false);
 
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
@@ -1459,6 +1463,34 @@ export default function FinancialScorePage() {
         .catch(err => console.error('Error loading expense goals:', err));
     }
   }, [selectedCompanyId, currentView]);
+
+  // Load dashboard widgets from localStorage when company changes
+  useEffect(() => {
+    if (selectedCompanyId) {
+      const storageKey = `dashboardWidgets_${selectedCompanyId}`;
+      const savedWidgets = localStorage.getItem(storageKey);
+      if (savedWidgets) {
+        try {
+          const widgets = JSON.parse(savedWidgets);
+          setSelectedDashboardWidgets(widgets);
+        } catch (err) {
+          console.error('Error loading dashboard widgets:', err);
+          setSelectedDashboardWidgets([]);
+        }
+      } else {
+        // No saved widgets for this company, start fresh
+        setSelectedDashboardWidgets([]);
+      }
+    }
+  }, [selectedCompanyId]);
+
+  // Save dashboard widgets to localStorage whenever they change
+  useEffect(() => {
+    if (selectedCompanyId && selectedDashboardWidgets) {
+      const storageKey = `dashboardWidgets_${selectedCompanyId}`;
+      localStorage.setItem(storageKey, JSON.stringify(selectedDashboardWidgets));
+    }
+  }, [selectedCompanyId, selectedDashboardWidgets]);
 
   // Handle URL parameters for navigation and messages
   useEffect(() => {
@@ -3702,8 +3734,9 @@ export default function FinancialScorePage() {
               Venturis<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
             </div>
             <nav style={{ display: 'flex', gap: '24px' }}>
+              <button onClick={() => setCurrentView('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'dashboard' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #667eea' : '3px solid transparent' }}>Dashboard</button>
               <button onClick={() => setCurrentView('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'mda' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #667eea' : '3px solid transparent' }}>MD&A</button>
-              <button onClick={() => setCurrentView('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>KPI Dashboard</button>
+              <button onClick={() => setCurrentView('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>Ratios</button>
               <button onClick={() => setCurrentView('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>Trend Analysis</button>
               <button onClick={() => setCurrentView('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>Projections</button>
               <button onClick={() => setCurrentView('goals')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'goals' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'goals' ? '3px solid #667eea' : '3px solid transparent' }}>Goals</button>
@@ -3784,7 +3817,7 @@ export default function FinancialScorePage() {
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {/* Financial Score Section */}
-            <div style={{ marginBottom: '12px' }}>
+            <div style={{ marginBottom: '3px' }}>
               <h3 
                 onClick={() => setIsFinancialScoreExpanded(!isFinancialScoreExpanded)}
                 style={{ 
@@ -3801,7 +3834,10 @@ export default function FinancialScorePage() {
                   alignItems: 'center',
                   transition: 'color 0.2s'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
                 <span>Financial Score</span>
@@ -3871,7 +3907,7 @@ export default function FinancialScorePage() {
 
             {/* Management Assessment Section - For Assessment Users and Consultants */}
             {((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '12px' }}>
+            <div style={{ marginBottom: '3px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
                 style={{ 
@@ -3888,7 +3924,10 @@ export default function FinancialScorePage() {
                   alignItems: 'center',
                   transition: 'color 0.2s'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
                 <span>Management Assessment</span>
@@ -4069,9 +4108,9 @@ export default function FinancialScorePage() {
             </div>
             )}
 
-            {/* Digital Presence Analysis Section */}
+            {/* Digital Presence Analysis  Section */}
             {((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '12px' }}>
+            <div style={{ marginBottom: '3px' }}>
               <h3 
                 onClick={() => {
                   // Navigate to https://www.digi-presence.com
@@ -4087,19 +4126,22 @@ export default function FinancialScorePage() {
                   marginBottom: '8px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
-                  borderLeft: '4px solid transparent'
+                  borderLeft: '4px solid #f59e0b'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
-                Digital Presence Analysis
+                Digital Presence Analysis 
               </h3>
             </div>
             )}
 
             {/* Custom Print Section - For Consultants and Company Users only */}
             {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-              <div style={{ marginBottom: '12px' }}>
+              <div style={{ marginBottom: '3px' }}>
                 <h3 
                   onClick={() => setCurrentView('custom-print')}
                   style={{ 
@@ -4114,7 +4156,10 @@ export default function FinancialScorePage() {
                     transition: 'color 0.2s',
                     borderLeft: currentView === 'custom-print' ? '4px solid #667eea' : '4px solid transparent'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#667eea';
+                    e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                  }}
                   onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#667eea' : '#1e293b'}
                 >
                   Custom Print
@@ -4139,7 +4184,10 @@ export default function FinancialScorePage() {
                     transition: 'color 0.2s',
                     borderLeft: currentView === 'admin' ? '4px solid #667eea' : '4px solid transparent'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#667eea';
+                    e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                  }}
                   onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'admin' ? '#667eea' : '#1e293b'}
                 >
                   {currentUser.consultantType === 'business' ? 'Business Dashboard' : 'Consultant Dashboard'}
@@ -4285,7 +4333,10 @@ export default function FinancialScorePage() {
                   alignItems: 'center',
                   transition: 'color 0.2s'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
                 <span>Management Assessment</span>
@@ -4381,7 +4432,7 @@ export default function FinancialScorePage() {
               )}
             </div>
 
-            {/* Digital Presence Analysis Section */}
+            {/* Digital Presence Analysis  Section */}
             <div style={{ marginBottom: '12px' }}>
               <h3 
                 onClick={() => {
@@ -4398,12 +4449,15 @@ export default function FinancialScorePage() {
                   marginBottom: '8px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
-                  borderLeft: '4px solid transparent'
+                  borderLeft: '4px solid #f59e0b'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
-                Digital Presence Analysis
+                Digital Presence Analysis 
               </h3>
             </div>
           </nav>
@@ -8139,6 +8193,684 @@ export default function FinancialScorePage() {
         </div>
       )}
 
+      {/* Custom Dashboard View */}
+      {currentView === 'dashboard' && selectedCompanyId && trendData.length > 0 && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>My Dashboard</h1>
+            <button
+              onClick={() => setShowDashboardCustomizer(!showDashboardCustomizer)}
+              style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                transition: 'all 0.3s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
+            </button>
+          </div>
+
+          {/* Dashboard Customizer */}
+          {showDashboardCustomizer && (
+            <div style={{ 
+              background: 'white', 
+              borderRadius: '16px', 
+              padding: '32px', 
+              marginBottom: '32px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+              border: '2px solid #667eea'
+            }}>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+                🎨 Build Your Custom Dashboard
+              </h2>
+              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+                Select the metrics and charts you want to see. Click on any item to add or remove it from your dashboard.
+              </p>
+
+              {/* Widget Categories */}
+              <div style={{ display: 'grid', gap: '24px' }}>
+                
+              {/* Ratios Section */}
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  📊 Financial Ratios
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                  {/* Liquidity Ratios */}
+                  <div>
+                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
+                      Liquidity Ratios
+                    </label>
+                    <select
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value && !selectedDashboardWidgets.includes(value)) {
+                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
+                        }
+                        e.target.value = '';
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        border: '2px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white',
+                        cursor: 'pointer',
+                        color: '#1e293b'
+                      }}
+                    >
+                      <option value="">Select a ratio...</option>
+                      <option value="Current Ratio">Current Ratio</option>
+                      <option value="Quick Ratio">Quick Ratio</option>
+                    </select>
+                  </div>
+
+                  {/* Activity Ratios */}
+                  <div>
+                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
+                      Activity Ratios
+                    </label>
+                    <select
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value && !selectedDashboardWidgets.includes(value)) {
+                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
+                        }
+                        e.target.value = '';
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        border: '2px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white',
+                        cursor: 'pointer',
+                        color: '#1e293b'
+                      }}
+                    >
+                      <option value="">Select a ratio...</option>
+                      <option value="Days Receivables">Days' Receivables</option>
+                      <option value="Days Inventory">Days' Inventory</option>
+                      <option value="Days Payables">Days' Payables</option>
+                      <option value="Inventory Turnover">Inventory Turnover</option>
+                      <option value="Receivables Turnover">Receivables Turnover</option>
+                      <option value="Payables Turnover">Payables Turnover</option>
+                      <option value="Sales/Working Capital">Sales/Working Capital</option>
+                    </select>
+                  </div>
+
+                  {/* Coverage Ratios */}
+                  <div>
+                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
+                      Coverage Ratios
+                    </label>
+                    <select
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value && !selectedDashboardWidgets.includes(value)) {
+                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
+                        }
+                        e.target.value = '';
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        border: '2px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white',
+                        cursor: 'pointer',
+                        color: '#1e293b'
+                      }}
+                    >
+                      <option value="">Select a ratio...</option>
+                      <option value="Interest Coverage">Interest Coverage</option>
+                      <option value="Debt Service Coverage">Debt Service Coverage</option>
+                      <option value="Cash Flow to Debt">Cash Flow to Debt</option>
+                    </select>
+                  </div>
+
+                  {/* Leverage Ratios */}
+                  <div>
+                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
+                      Leverage Ratios
+                    </label>
+                    <select
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value && !selectedDashboardWidgets.includes(value)) {
+                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
+                        }
+                        e.target.value = '';
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        border: '2px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white',
+                        cursor: 'pointer',
+                        color: '#1e293b'
+                      }}
+                    >
+                      <option value="">Select a ratio...</option>
+                      <option value="Debt/Net Worth">Debt/Net Worth</option>
+                      <option value="Fixed Assets/Net Worth">Fixed Assets/Net Worth</option>
+                      <option value="Leverage Ratio">Leverage Ratio</option>
+                    </select>
+                  </div>
+
+                  {/* Operating Ratios */}
+                  <div>
+                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
+                      Operating Ratios
+                    </label>
+                    <select
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value && !selectedDashboardWidgets.includes(value)) {
+                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
+                        }
+                        e.target.value = '';
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        border: '2px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white',
+                        cursor: 'pointer',
+                        color: '#1e293b'
+                      }}
+                    >
+                      <option value="">Select a ratio...</option>
+                      <option value="ROA">Return on Assets (ROA)</option>
+                      <option value="ROE">Return on Equity (ROE)</option>
+                      <option value="Total Asset Turnover">Total Asset Turnover</option>
+                      <option value="EBITDA Margin">EBITDA Margin</option>
+                      <option value="EBIT Margin">EBIT Margin</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Display selected ratios */}
+                {selectedDashboardWidgets.filter(w => 
+                  ['Current Ratio', 'Quick Ratio', 'Days Receivables', 'Days Inventory', 'Days Payables', 'Inventory Turnover', 'Receivables Turnover', 'Payables Turnover', 'Sales/Working Capital', 'Interest Coverage', 'Debt Service Coverage', 'Cash Flow to Debt', 'Debt/Net Worth', 'Fixed Assets/Net Worth', 'Leverage Ratio', 'ROA', 'ROE', 'Total Asset Turnover', 'EBITDA Margin', 'EBIT Margin'].includes(w)
+                ).length > 0 && (
+                  <div style={{ marginTop: '16px' }}>
+                    <p style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Selected Ratios:</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {selectedDashboardWidgets.filter(w => 
+                        ['Current Ratio', 'Quick Ratio', 'Days Receivables', 'Days Inventory', 'Days Payables', 'Inventory Turnover', 'Receivables Turnover', 'Payables Turnover', 'Sales/Working Capital', 'Interest Coverage', 'Debt Service Coverage', 'Cash Flow to Debt', 'Debt/Net Worth', 'Fixed Assets/Net Worth', 'Leverage Ratio', 'ROA', 'ROE', 'Total Asset Turnover', 'EBITDA Margin', 'EBIT Margin'].includes(w)
+                      ).map(widget => (
+                        <div
+                          key={widget}
+                          style={{
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            color: 'white',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          <span>{widget}</span>
+                          <button
+                            onClick={() => setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget))}
+                            style={{
+                              background: 'rgba(255,255,255,0.2)',
+                              border: 'none',
+                              color: 'white',
+                              cursor: 'pointer',
+                              borderRadius: '50%',
+                              width: '18px',
+                              height: '18px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '12px',
+                              padding: 0
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+                {/* Trend Analysis Section */}
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    📈 Trend Analysis
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+                    {['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'].map(widget => (
+                      <div
+                        key={widget}
+                        onClick={() => {
+                          if (selectedDashboardWidgets.includes(widget)) {
+                            setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget));
+                          } else {
+                            setSelectedDashboardWidgets([...selectedDashboardWidgets, widget]);
+                          }
+                        }}
+                        style={{
+                          background: selectedDashboardWidgets.includes(widget) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc',
+                          color: selectedDashboardWidgets.includes(widget) ? 'white' : '#1e293b',
+                          padding: '16px',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          border: selectedDashboardWidgets.includes(widget) ? '2px solid #667eea' : '2px solid #e2e8f0',
+                          transition: 'all 0.3s',
+                          fontWeight: '600',
+                          fontSize: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <span>{widget}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Working Capital Metrics */}
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    💰 Working Capital Metrics
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+                    {['Days Receivables', 'Days Inventory', 'Days Payables', 'Cash Conversion Cycle'].map(widget => (
+                      <div
+                        key={widget}
+                        onClick={() => {
+                          if (selectedDashboardWidgets.includes(widget)) {
+                            setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget));
+                          } else {
+                            setSelectedDashboardWidgets([...selectedDashboardWidgets, widget]);
+                          }
+                        }}
+                        style={{
+                          background: selectedDashboardWidgets.includes(widget) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc',
+                          color: selectedDashboardWidgets.includes(widget) ? 'white' : '#1e293b',
+                          padding: '16px',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          border: selectedDashboardWidgets.includes(widget) ? '2px solid #667eea' : '2px solid #e2e8f0',
+                          transition: 'all 0.3s',
+                          fontWeight: '600',
+                          fontSize: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <span>{widget}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Cash Flow Metrics */}
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    💵 Cash Flow
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+                    {['Operating Cash Flow', 'Free Cash Flow', 'Cash Position'].map(widget => (
+                      <div
+                        key={widget}
+                        onClick={() => {
+                          if (selectedDashboardWidgets.includes(widget)) {
+                            setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget));
+                          } else {
+                            setSelectedDashboardWidgets([...selectedDashboardWidgets, widget]);
+                          }
+                        }}
+                        style={{
+                          background: selectedDashboardWidgets.includes(widget) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc',
+                          color: selectedDashboardWidgets.includes(widget) ? 'white' : '#1e293b',
+                          padding: '16px',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          border: selectedDashboardWidgets.includes(widget) ? '2px solid #667eea' : '2px solid #e2e8f0',
+                          transition: 'all 0.3s',
+                          fontWeight: '600',
+                          fontSize: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <span>{widget}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Valuation Metrics */}
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    💎 Valuation Metrics
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+                    {['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'].map(widget => (
+                      <div
+                        key={widget}
+                        onClick={() => {
+                          if (selectedDashboardWidgets.includes(widget)) {
+                            setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget));
+                          } else {
+                            setSelectedDashboardWidgets([...selectedDashboardWidgets, widget]);
+                          }
+                        }}
+                        style={{
+                          background: selectedDashboardWidgets.includes(widget) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc',
+                          color: selectedDashboardWidgets.includes(widget) ? 'white' : '#1e293b',
+                          padding: '16px',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          border: selectedDashboardWidgets.includes(widget) ? '2px solid #667eea' : '2px solid #e2e8f0',
+                          transition: 'all 0.3s',
+                          fontWeight: '600',
+                          fontSize: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <span>{widget}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '24px', textAlign: 'center' }}>
+                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
+                  {selectedDashboardWidgets.length === 0 ? 'No widgets selected. Click items above to add them.' : `${selectedDashboardWidgets.length} widget${selectedDashboardWidgets.length === 1 ? '' : 's'} selected`}
+                </p>
+                {selectedDashboardWidgets.length > 0 && (
+                  <button
+                    onClick={() => setSelectedDashboardWidgets([])}
+                    style={{
+                      background: 'white',
+                      color: '#ef4444',
+                      border: '2px solid #ef4444',
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s'
+                    }}
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Display Selected Widgets */}
+          {selectedDashboardWidgets.length === 0 && !showDashboardCustomizer ? (
+            <div style={{
+              background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+              borderRadius: '16px',
+              padding: '80px 32px',
+              textAlign: 'center',
+              border: '2px dashed #cbd5e1'
+            }}>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>📊</div>
+              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
+                Your Dashboard is Empty
+              </h3>
+              <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '24px', maxWidth: '500px', margin: '0 auto 24px' }}>
+                Click the "Customize Dashboard" button above to select metrics and charts you'd like to track.
+              </p>
+              <button
+                onClick={() => setShowDashboardCustomizer(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '14px 32px',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+                }}
+              >
+                Get Started
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+              {selectedDashboardWidgets.map(widget => {
+                // Render appropriate chart based on widget name
+                if (widget === 'Current Ratio') {
+                  return <LineChart key={widget} title="Current Ratio" data={trendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Quick Ratio') {
+                  return <LineChart key={widget} title="Quick Ratio" data={trendData} valueKey="quickRatio" color="#14b8a6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Quick Ratio')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Debt/Net Worth') {
+                  return <LineChart key={widget} title="Debt/Net Worth" data={trendData} valueKey="debtToNW" color="#ec4899" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt/Net Worth')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'ROA') {
+                  return <LineChart key={widget} title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'ROE') {
+                  return <LineChart key={widget} title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Interest Coverage') {
+                  return <LineChart key={widget} title="Interest Coverage" data={trendData} valueKey="interestCov" color="#8b5cf6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Interest Coverage')} formatter={(v) => v.toFixed(1)} />;
+                }
+                // Additional Activity Ratios
+                if (widget === 'Inventory Turnover') {
+                  return <LineChart key={widget} title="Inventory Turnover" data={trendData} valueKey="invTurnover" color="#f59e0b" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Inventory Turnover')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Receivables Turnover') {
+                  return <LineChart key={widget} title="Receivables Turnover" data={trendData} valueKey="arTurnover" color="#f97316" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Receivables Turnover')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Payables Turnover') {
+                  return <LineChart key={widget} title="Payables Turnover" data={trendData} valueKey="apTurnover" color="#ef4444" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Payables Turnover')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Sales/Working Capital') {
+                  return <LineChart key={widget} title="Sales/Working Capital" data={trendData} valueKey="salesWC" color="#06b6d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Sales/Working Capital')} formatter={(v) => v.toFixed(1)} />;
+                }
+                // Additional Coverage Ratios
+                if (widget === 'Debt Service Coverage') {
+                  return <LineChart key={widget} title="Debt Service Coverage" data={trendData} valueKey="debtSvcCov" color="#a78bfa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt Service Coverage')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Cash Flow to Debt') {
+                  return <LineChart key={widget} title="Cash Flow to Debt" data={trendData} valueKey="cfToDebt" color="#c4b5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Cash Flow to Debt')} formatter={(v) => v.toFixed(1)} />;
+                }
+                // Additional Leverage Ratios
+                if (widget === 'Fixed Assets/Net Worth') {
+                  return <LineChart key={widget} title="Fixed Assets/Net Worth" data={trendData} valueKey="fixedToNW" color="#f472b6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Fixed Assets/Net Worth')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Leverage Ratio') {
+                  return <LineChart key={widget} title="Leverage Ratio" data={trendData} valueKey="leverage" color="#f9a8d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Leverage Ratio')} formatter={(v) => v.toFixed(1)} />;
+                }
+                // Additional Operating Ratios
+                if (widget === 'Total Asset Turnover') {
+                  return <LineChart key={widget} title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'EBITDA Margin') {
+                  return <LineChart key={widget} title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBITDA/Revenue')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'EBIT Margin') {
+                  return <LineChart key={widget} title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBIT/Revenue')} formatter={(v) => v.toFixed(1)} />;
+                }
+                if (widget === 'Revenue Trend') {
+                  return <LineChart key={widget} title="Revenue Trend" data={monthly} valueKey="revenue" color="#667eea" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                }
+                if (widget === 'Expense Trend') {
+                  return <LineChart key={widget} title="Expense Trend" data={monthly} valueKey="expense" color="#ef4444" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                }
+                if (widget === 'Net Profit Trend') {
+                  return <LineChart key={widget} title="Net Profit Trend" data={monthly} valueKey="netProfit" color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                }
+                if (widget === 'Gross Margin Trend') {
+                  const grossMarginData = monthly.map(d => ({
+                    month: d.month,
+                    value: d.revenue > 0 ? ((d.revenue - d.cogsTotal) / d.revenue * 100) : 0
+                  }));
+                  return <LineChart key={widget} title="Gross Margin %" data={grossMarginData} color="#8b5cf6" compact formatter={(v) => v.toFixed(1) + '%'} />;
+                }
+                if (widget === 'Days Receivables') {
+                  return <LineChart key={widget} title="Days' Receivables" data={trendData} valueKey="daysAR" color="#fb923c" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Receivables')} formatter={(v) => v.toFixed(0)} />;
+                }
+                if (widget === 'Days Inventory') {
+                  return <LineChart key={widget} title="Days' Inventory" data={trendData} valueKey="daysInv" color="#fbbf24" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Inventory')} formatter={(v) => v.toFixed(0)} />;
+                }
+                if (widget === 'Days Payables') {
+                  return <LineChart key={widget} title="Days' Payables" data={trendData} valueKey="daysAP" color="#f87171" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Payables')} formatter={(v) => v.toFixed(0)} />;
+                }
+                if (widget === 'Cash Conversion Cycle') {
+                  const cccData = trendData.map(d => ({
+                    month: d.month,
+                    value: (d.daysAR || 0) + (d.daysInv || 0) - (d.daysAP || 0)
+                  }));
+                  return <LineChart key={widget} title="Cash Conversion Cycle (Days)" data={cccData} color="#667eea" compact />;
+                }
+                if (widget === 'Operating Cash Flow') {
+                  return <LineChart key={widget} title="Operating Cash Flow" data={monthly} valueKey="netProfit" color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                }
+                if (widget === 'Free Cash Flow') {
+                  const fcfData = monthly.map(d => ({
+                    month: d.month,
+                    value: d.netProfit - (d.fixedAssets > 0 ? d.fixedAssets * 0.1 : 0) // Simplified FCF
+                  }));
+                  return <LineChart key={widget} title="Free Cash Flow" data={fcfData} color="#06b6d4" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                }
+                if (widget === 'Cash Position') {
+                  return <LineChart key={widget} title="Cash Position" data={monthly} valueKey="cash" color="#f59e0b" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                }
+                // Check if this is one of the valuation widgets - render them together in one container
+                if (widget === 'SDE Valuation' || widget === 'EBITDA Valuation' || widget === 'DCF Valuation') {
+                  // Only render the container once when we encounter the first valuation widget
+                  const valuationWidgets = ['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'];
+                  const isFirstValuationWidget = valuationWidgets.indexOf(widget) === valuationWidgets.findIndex(w => selectedDashboardWidgets.includes(w));
+                  
+                  if (!isFirstValuationWidget) {
+                    return null; // Skip rendering for subsequent valuation widgets
+                  }
+                  
+                  // Calculate all valuations
+                  const last12 = monthly.slice(-12);
+                  const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
+                  const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
+                  const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
+                  const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+                  const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+                  const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
+                  const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
+                  const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                  const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
+                  const sdeValuation = ttmSDE * sdeMultiplier;
+                  const ebitdaValuation = ttmEBITDA * ebitdaMultiplier;
+                  
+                  // DCF calculation
+                  const currentMonth = monthly[monthly.length - 1];
+                  const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
+                  const currentWC = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
+                  const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
+                  const changeInWC = currentWC - priorWC;
+                  const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
+                  const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
+                  const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
+                  const growthRate = growth_24mo / 100;
+                  const discountRate = dcfDiscountRate / 100;
+                  const terminalGrowthRate = dcfTerminalGrowth / 100;
+                  let dcfValue = 0;
+                  for (let year = 1; year <= 5; year++) {
+                    const projectedFCF = ttmFreeCashFlow * Math.pow(1 + growthRate, year);
+                    dcfValue += projectedFCF / Math.pow(1 + discountRate, year);
+                  }
+                  const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
+                  dcfValue += terminalValue / Math.pow(1 + discountRate, 5);
+                  
+                  // Render container with all selected valuation widgets
+                  return (
+                    <div key="valuation-container" style={{ 
+                      background: 'white', 
+                      borderRadius: '12px', 
+                      padding: '20px', 
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                      gridColumn: '1 / -1' // Span full width
+                    }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${selectedDashboardWidgets.filter(w => valuationWidgets.includes(w)).length}, 1fr)`, gap: '16px' }}>
+                        {selectedDashboardWidgets.includes('SDE Valuation') && (
+                          <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #10b981' }}>
+                            <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>SDE Valuation</h3>
+                            <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
+                              ${Math.round(sdeValuation).toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748b' }}>
+                              TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
+                            </div>
+                          </div>
+                        )}
+                        {selectedDashboardWidgets.includes('EBITDA Valuation') && (
+                          <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #667eea' }}>
+                            <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>EBITDA Valuation</h3>
+                            <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
+                              ${Math.round(ebitdaValuation).toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748b' }}>
+                              TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
+                            </div>
+                          </div>
+                        )}
+                        {selectedDashboardWidgets.includes('DCF Valuation') && (
+                          <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #f59e0b' }}>
+                            <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>DCF Valuation</h3>
+                            <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b', marginBottom: '8px' }}>
+                              ${Math.round(dcfValue).toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>
+                              5-year @ {dcfDiscountRate.toFixed(1)}% discount, {dcfTerminalGrowth.toFixed(1)}% terminal
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* KPI Dashboard View */}
       {currentView === 'kpis' && selectedCompanyId && trendData.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
@@ -8204,7 +8936,7 @@ export default function FinancialScorePage() {
             }
           `}</style>
           <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>KPI Dashboard</h1>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Ratios</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
           
@@ -10564,7 +11296,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Last 36 Months
+              Last 12 Months
             </button>
             <button
               onClick={() => setCashFlowDisplay('quarterly')}
@@ -10604,7 +11336,7 @@ export default function FinancialScorePage() {
 
           {(() => {
             // Calculate cash flow data based on view
-            const dataMonths = cashFlowDisplay === 'quarterly' ? 12 : Math.min(36, monthly.length);
+            const dataMonths = cashFlowDisplay === 'quarterly' ? 12 : (cashFlowDisplay === 'annual' ? 36 : 12);
             const dataSet = monthly.slice(-dataMonths);
             
             const cashFlowData = dataSet.map((curr, idx) => {
@@ -10746,7 +11478,7 @@ export default function FinancialScorePage() {
             return (
               <>
                 {/* Summary Cards */}
-                <div className="cf-summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
+                <div className="cf-summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '32px' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Operating Cash Flow (12mo)</div>
                     <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
@@ -10815,7 +11547,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Net Income</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              ${cf.netIncome.toLocaleString()}
+                              ${Math.round(cf.netIncome).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10823,7 +11555,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>+ Depreciation</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              ${cf.depreciation.toLocaleString()}
+                              ${Math.round(cf.depreciation).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10831,7 +11563,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>+ Change in Working Capital</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInWorkingCapital >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              ${cf.changeInWorkingCapital.toLocaleString()}
+                              ${Math.round(cf.changeInWorkingCapital).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10839,7 +11571,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#065f46' }}>Operating Cash Flow</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#065f46', textAlign: 'right' }}>
-                              ${cf.operatingCashFlow.toLocaleString()}
+                              ${Math.round(cf.operatingCashFlow).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10854,7 +11586,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Capital Expenditures</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>
-                              (${cf.capitalExpenditures.toLocaleString()})
+                              (${Math.round(cf.capitalExpenditures).toLocaleString()})
                             </td>
                           ))}
                         </tr>
@@ -10862,7 +11594,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#991b1b' }}>Investing Cash Flow</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#991b1b', textAlign: 'right' }}>
-                              ${cf.investingCashFlow.toLocaleString()}
+                              ${Math.round(cf.investingCashFlow).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10877,7 +11609,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Long-Term Debt</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInDebt >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              ${cf.changeInDebt.toLocaleString()}
+                              ${Math.round(cf.changeInDebt).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10885,7 +11617,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Equity</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInEquity >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              ${cf.changeInEquity.toLocaleString()}
+                              ${Math.round(cf.changeInEquity).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10893,7 +11625,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#1e40af' }}>Financing Cash Flow</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>
-                              ${cf.financingCashFlow.toLocaleString()}
+                              ${Math.round(cf.financingCashFlow).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10903,7 +11635,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>Net Change in Cash</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: cf.netCashChange >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              ${cf.netCashChange.toLocaleString()}
+                              ${Math.round(cf.netCashChange).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10911,7 +11643,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#92400e' }}>Free Cash Flow</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: cf.freeCashFlow >= 0 ? '#065f46' : '#991b1b', textAlign: 'right' }}>
-                              ${cf.freeCashFlow.toLocaleString()}
+                              ${Math.round(cf.freeCashFlow).toLocaleString()}
                             </td>
                           ))}
                         </tr>
@@ -10919,7 +11651,7 @@ export default function FinancialScorePage() {
                           <td style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Ending Cash Balance</td>
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>
-                              ${cf.endingCash.toLocaleString()}
+                              ${Math.round(cf.endingCash).toLocaleString()}
                             </td>
                           ))}
                         </tr>
