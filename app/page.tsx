@@ -8692,7 +8692,7 @@ export default function FinancialScorePage() {
                     💰 Working Capital Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-                    {['Days Receivables', 'Days Inventory', 'Days Payables', 'Cash Conversion Cycle'].map(widget => (
+                    {['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle'].map(widget => (
                       <div
                         key={widget}
                         onClick={() => {
@@ -8862,7 +8862,92 @@ export default function FinancialScorePage() {
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-              {selectedDashboardWidgets.map(widget => {
+              {/* Working Capital Boxes - Render all together in one row */}
+              {(() => {
+                const wcWidgets = selectedDashboardWidgets.filter(w => ['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle'].includes(w));
+                if (wcWidgets.length > 0) {
+                  // Calculate working capital data
+                  const wcData = monthly.map(m => ({
+                    month: m.month,
+                    currentAssets: m.cash + m.ar + m.inventory + m.otherCA,
+                    currentLiabilities: m.ap + m.otherCL,
+                    workingCapital: (m.cash + m.ar + m.inventory + m.otherCA) - (m.ap + m.otherCL),
+                    revenue: m.revenue
+                  }));
+                  
+                  const current = wcData[wcData.length - 1];
+                  const prior = wcData.length >= 13 ? wcData[wcData.length - 13] : wcData[0];
+                  const currentWC = current.workingCapital;
+                  const wcRatio = current.currentLiabilities !== 0 ? current.currentAssets / current.currentLiabilities : 0;
+                  const wcChange = currentWC - prior.workingCapital;
+                  const wcChangePercent = prior.workingCapital !== 0 ? (wcChange / Math.abs(prior.workingCapital)) * 100 : 0;
+                  
+                  const last12Months = monthly.slice(-12);
+                  const annualRevenue = last12Months.reduce((sum, m) => sum + m.revenue, 0);
+                  const dailyRevenue = annualRevenue / 365;
+                  const daysWC = dailyRevenue !== 0 ? currentWC / dailyRevenue : 0;
+                  
+                  const daysAR = current.revenue !== 0 ? (current.currentAssets * 0.4 / (current.revenue * 12)) * 365 : 0;
+                  const daysAP = current.revenue !== 0 ? (current.currentLiabilities * 0.6 / (current.revenue * 12 * 0.7)) * 365 : 0;
+                  const daysInventory = current.revenue !== 0 ? (current.currentAssets * 0.2 / (current.revenue * 12 * 0.7)) * 365 : 0;
+                  const cashConversionCycle = daysAR + daysInventory - daysAP;
+                  
+                  return (
+                    <div key="wc-metrics" style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', justifyContent: 'flex-start' }}>
+                      {wcWidgets.includes('Current Working Capital') && (
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
+                          <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Current Working Capital</h3>
+                          <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
+                            ${(currentWC / 1000).toFixed(0)}K
+                          </div>
+                          <div style={{ fontSize: '11px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
+                            {wcChange >= 0 ? '↑' : '↓'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
+                          </div>
+                        </div>
+                      )}
+                      
+                      {wcWidgets.includes('Working Capital Ratio') && (
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
+                          <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Working Capital Ratio</h3>
+                          <div style={{ fontSize: '24px', fontWeight: '700', color: wcRatio >= 1.5 ? '#10b981' : wcRatio >= 1.0 ? '#f59e0b' : '#ef4444', marginBottom: '4px' }}>
+                            {wcRatio.toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>
+                            {wcRatio >= 1.5 ? 'Strong' : wcRatio >= 1.0 ? 'Adequate' : 'Needs Attention'}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {wcWidgets.includes('Days Working Capital') && (
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
+                          <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Days Working Capital</h3>
+                          <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
+                            {daysWC.toFixed(0)}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>
+                            Days of revenue covered
+                          </div>
+                        </div>
+                      )}
+                      
+                      {wcWidgets.includes('Cash Conversion Cycle') && (
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
+                          <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Cash Conversion Cycle</h3>
+                          <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
+                            {cashConversionCycle.toFixed(0)}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>
+                            Days (estimated)
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              
+              {selectedDashboardWidgets.filter(w => !['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle'].includes(w)).map(widget => {
                 // Render appropriate chart based on widget name
                 if (widget === 'Current Ratio') {
                   return <LineChart key={widget} title="Current Ratio" data={trendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} />;
@@ -8943,13 +9028,6 @@ export default function FinancialScorePage() {
                 }
                 if (widget === 'Days Payables') {
                   return <LineChart key={widget} title="Days' Payables" data={trendData} valueKey="daysAP" color="#f87171" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Payables')} formatter={(v) => v.toFixed(0)} />;
-                }
-                if (widget === 'Cash Conversion Cycle') {
-                  const cccData = trendData.map(d => ({
-                    month: d.month,
-                    value: (d.daysAR || 0) + (d.daysInv || 0) - (d.daysAP || 0)
-                  }));
-                  return <LineChart key={widget} title="Cash Conversion Cycle (Days)" data={cccData} color="#667eea" compact />;
                 }
                 if (widget === 'Operating Cash Flow') {
                   return <LineChart key={widget} title="Operating Cash Flow" data={monthly} valueKey="netProfit" color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
