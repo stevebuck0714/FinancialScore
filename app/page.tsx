@@ -1344,6 +1344,7 @@ export default function FinancialScorePage() {
   
   // State - Trend Analysis
   const [selectedTrendItem, setSelectedTrendItem] = useState<string>('revenue');
+  const [selectedTrendItems, setSelectedTrendItems] = useState<string[]>(['revenue']);
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
   
   // State - Valuation
@@ -1521,14 +1522,33 @@ export default function FinancialScorePage() {
   // Load expense goals when Goals or Trend Analysis view is accessed
   useEffect(() => {
     if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis')) {
+      console.log('📊 Loading expense goals for company:', selectedCompanyId);
+      // Reset to empty first, so fields are blank while loading
+      setExpenseGoals({});
+      
       fetch(`/api/expense-goals?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
+          console.log('📊 Expense goals loaded:', data);
           if (data.success && data.goals) {
-            setExpenseGoals(data.goals);
+            // Filter out any zero or invalid values so fields stay blank
+            const filteredGoals: {[key: string]: number} = {};
+            Object.entries(data.goals).forEach(([key, value]) => {
+              if (typeof value === 'number' && value > 0) {
+                filteredGoals[key] = value;
+              }
+            });
+            setExpenseGoals(filteredGoals);
+          } else {
+            // Keep empty if no goals found for this company
+            setExpenseGoals({});
           }
         })
-        .catch(err => console.error('Error loading expense goals:', err));
+        .catch(err => {
+          console.error('❌ Error loading expense goals:', err);
+          // Keep empty on error
+          setExpenseGoals({});
+        });
     }
   }, [selectedCompanyId, currentView]);
 
@@ -1540,7 +1560,15 @@ export default function FinancialScorePage() {
       if (savedWidgets) {
         try {
           const widgets = JSON.parse(savedWidgets);
-          setSelectedDashboardWidgets(widgets);
+          // Filter out obsolete widget names that are no longer available
+          const obsoleteWidgets = ['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'];
+          const cleanedWidgets = widgets.filter((w: string) => !obsoleteWidgets.includes(w));
+          setSelectedDashboardWidgets(cleanedWidgets);
+          
+          // Update localStorage if we removed any obsolete widgets
+          if (cleanedWidgets.length !== widgets.length) {
+            localStorage.setItem(storageKey, JSON.stringify(cleanedWidgets));
+          }
         } catch (err) {
           console.error('Error loading dashboard widgets:', err);
           setSelectedDashboardWidgets([]);
@@ -6338,8 +6366,8 @@ export default function FinancialScorePage() {
                     onClick={() => setSelectedSubscriptionPlan('monthly')}
                     style={{ 
                       border: selectedSubscriptionPlan === 'monthly' ? '3px solid #667eea' : '2px solid #e2e8f0', 
-                      borderRadius: '8px', 
-                      padding: '14px', 
+                    borderRadius: '8px', 
+                    padding: '14px', 
                       background: selectedSubscriptionPlan === 'monthly' ? '#f0f9ff' : '#fafafa',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
@@ -6362,8 +6390,8 @@ export default function FinancialScorePage() {
                     onClick={() => setSelectedSubscriptionPlan('quarterly')}
                     style={{ 
                       border: selectedSubscriptionPlan === 'quarterly' ? '3px solid #667eea' : '2px solid #e2e8f0', 
-                      borderRadius: '8px', 
-                      padding: '14px', 
+                    borderRadius: '8px', 
+                    padding: '14px', 
                       background: selectedSubscriptionPlan === 'quarterly' ? '#f0f9ff' : '#fafafa',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
@@ -6386,8 +6414,8 @@ export default function FinancialScorePage() {
                     onClick={() => setSelectedSubscriptionPlan('annual')}
                     style={{ 
                       border: selectedSubscriptionPlan === 'annual' ? '3px solid #667eea' : '2px solid #10b981', 
-                      borderRadius: '8px', 
-                      padding: '14px', 
+                    borderRadius: '8px', 
+                    padding: '14px', 
                       background: selectedSubscriptionPlan === 'annual' ? '#f0f9ff' : '#f0fdf4',
                       position: 'relative',
                       cursor: 'pointer',
@@ -6418,24 +6446,24 @@ export default function FinancialScorePage() {
                 </h3>
                 
                 {selectedSubscriptionPlan ? (
-                  <div>
+                    <div>
                     {/* Cart Item */}
                     <div style={{ background: 'white', borderRadius: '6px', padding: '12px', marginBottom: '12px', border: '1px solid #e2e8f0' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <div>
+                    <div>
                           <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', textTransform: 'capitalize' }}>
                             {selectedSubscriptionPlan} Subscription Plan
-                          </div>
+                    </div>
                           <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
                             Billed {selectedSubscriptionPlan === 'monthly' ? 'monthly' : selectedSubscriptionPlan === 'quarterly' ? 'every 3 months' : 'annually'}
-                          </div>
-                        </div>
+                  </div>
+                    </div>
                         <div style={{ fontSize: '18px', fontWeight: '700', color: '#667eea' }}>
                           ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
                              selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
                              annualPrice.toFixed(2)}
-                        </div>
-                      </div>
+                    </div>
+                    </div>
                       <button
                         onClick={() => setSelectedSubscriptionPlan(null)}
                         style={{
@@ -6453,7 +6481,7 @@ export default function FinancialScorePage() {
                       >
                         🗑️ Remove
                       </button>
-                    </div>
+                  </div>
 
                     {/* Cart Total */}
                     <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '12px' }}>
@@ -6463,13 +6491,13 @@ export default function FinancialScorePage() {
                           ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
                              selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
                              annualPrice.toFixed(2)}
-                        </div>
-                      </div>
+                    </div>
+                    </div>
                       <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'right', marginBottom: '12px' }}>
                         {selectedSubscriptionPlan === 'monthly' && 'Per month'}
                         {selectedSubscriptionPlan === 'quarterly' && 'Per quarter'}
                         {selectedSubscriptionPlan === 'annual' && 'Per year'}
-                      </div>
+                    </div>
                       
                       {/* Checkout Button */}
                       <button
@@ -6499,7 +6527,7 @@ export default function FinancialScorePage() {
                     <div style={{ fontSize: '40px', marginBottom: '8px' }}>🛒</div>
                     <div style={{ fontSize: '13px' }}>Your cart is empty</div>
                     <div style={{ fontSize: '11px', marginTop: '4px' }}>Select a subscription plan above to add it to your cart</div>
-                  </div>
+                </div>
                 )}
               </div>
 
@@ -7390,12 +7418,18 @@ export default function FinancialScorePage() {
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
-                  Select Item to Analyze:
+                  Add Items to Analyze (max 10):
                 </label>
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
                 <select 
                   value={selectedTrendItem} 
-                  onChange={(e) => setSelectedTrendItem(e.target.value)}
-                  style={{ width: '100%', maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
+                    onChange={(e) => {
+                      setSelectedTrendItem(e.target.value);
+                      if (e.target.value && !selectedTrendItems.includes(e.target.value) && selectedTrendItems.length < 10) {
+                        setSelectedTrendItems([...selectedTrendItems, e.target.value]);
+                      }
+                    }}
+                    style={{ flex: 1, maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
                 >
                   <optgroup label="Income Statement">
                     <option value="revenue">Total Revenue</option>
@@ -7447,19 +7481,91 @@ export default function FinancialScorePage() {
                     <option value="totalEquity">Total Equity</option>
                   </optgroup>
                 </select>
+                  <button
+                    onClick={() => {
+                      if (selectedTrendItem && !selectedTrendItems.includes(selectedTrendItem) && selectedTrendItems.length < 10) {
+                        setSelectedTrendItems([...selectedTrendItems, selectedTrendItem]);
+                      } else if (selectedTrendItems.length >= 10) {
+                        alert('Maximum of 10 items can be selected');
+                      }
+                    }}
+                    style={{
+                      padding: '12px 24px',
+                      background: selectedTrendItems.length >= 10 ? '#cbd5e1' : '#667eea',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: selectedTrendItems.length >= 10 ? 'not-allowed' : 'pointer'
+                    }}
+                    disabled={selectedTrendItems.length >= 10}
+                  >
+                    Add Item
+                  </button>
               </div>
 
-              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                {/* Selected Items Display */}
+                {selectedTrendItems.length > 0 && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                      Selected Items ({selectedTrendItems.length}/10):
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {selectedTrendItems.map((item, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: '#f0f9ff',
+                            border: '1px solid #667eea',
+                            borderRadius: '6px',
+                            padding: '6px 12px',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            color: '#1e293b'
+                          }}
+                        >
+                          <span>{item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1')}</span>
+                          <button
+                            onClick={() => {
+                              setSelectedTrendItems(selectedTrendItems.filter((_, i) => i !== index));
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              fontSize: '16px',
+                              padding: '0',
+                              lineHeight: '1'
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Render graphs for all selected items */}
+              <div style={{ display: 'grid', gap: '24px' }}>
+                {selectedTrendItems.map((item, index) => (
+                  <div key={index} style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <LineChart 
-                    title={`${selectedTrendItem.charAt(0).toUpperCase() + selectedTrendItem.slice(1).replace(/([A-Z])/g, ' $1')} Trend`}
-                    data={monthly.map(m => ({ month: m.month, value: m[selectedTrendItem as keyof typeof m] as number }))}
+                        title={`${item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1')} Trend`}
+                        data={monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
                     color="#667eea"
                     showTable={true}
                     labelFormat="semi-annual"
                     goalLineData={(() => {
                       // Check if selected item is "expense" (Total Expenses)
-                      if (selectedTrendItem === 'expense') {
+                          if (item === 'expense') {
                         // Sum all operating expense goals (not COGS)
                         const opexCategories = [
                           'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
@@ -7484,11 +7590,11 @@ export default function FinancialScorePage() {
                         'depreciationExpense', 'interestExpense'
                       ];
                       
-                      if (expenseCategories.includes(selectedTrendItem) && expenseGoals[selectedTrendItem]) {
+                      if (expenseCategories.includes(item) && expenseGoals[item]) {
                         // Calculate goal as: Goal % × Revenue for each month
                         return monthly.map(m => {
                           const revenue = m.revenue || 0;
-                          const goalPct = expenseGoals[selectedTrendItem] / 100;
+                              const goalPct = expenseGoals[item] / 100;
                           return revenue * goalPct;
                         });
                       }
@@ -7506,16 +7612,16 @@ export default function FinancialScorePage() {
                       <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Last Year</div>
                       <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 24 ? 
                         (() => {
-                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                              const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                              const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
                           return growthRate >= 0 ? '#10b981' : '#ef4444';
                         })()
                         : '#64748b'
                       }}>
                         {monthly.length >= 24 ? (() => {
-                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                              const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                              const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
                           return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
                         })() : 'N/A'}
@@ -7527,16 +7633,16 @@ export default function FinancialScorePage() {
                       <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Previous Year</div>
                       <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 36 ? 
                         (() => {
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                              const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                              const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
                           return growthRate >= 0 ? '#10b981' : '#ef4444';
                         })()
                         : '#64748b'
                       }}>
                         {monthly.length >= 36 ? (() => {
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
-                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[selectedTrendItem as keyof typeof m] as number || 0), 0);
+                              const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                              const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
                           return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
                         })() : 'N/A'}
@@ -7546,7 +7652,7 @@ export default function FinancialScorePage() {
                     {/* Goal % for Expense Items */}
                     {(() => {
                       // Check if "expense" (Total Expenses) is selected
-                      if (selectedTrendItem === 'expense') {
+                          if (item === 'expense') {
                         const opexCategories = [
                           'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
                           'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
@@ -7577,13 +7683,13 @@ export default function FinancialScorePage() {
                         'depreciationExpense', 'interestExpense'
                       ];
                       
-                      if (expenseCategories.includes(selectedTrendItem) && expenseGoals[selectedTrendItem]) {
+                          if (expenseCategories.includes(item) && expenseGoals[item]) {
                         return (
                           <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
                             <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
                             <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
                             <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
-                              {expenseGoals[selectedTrendItem].toFixed(1)}%
+                                  {expenseGoals[item].toFixed(1)}%
                             </div>
                           </div>
                         );
@@ -7592,6 +7698,8 @@ export default function FinancialScorePage() {
                     })()}
                   </div>
                 </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -8424,7 +8532,7 @@ export default function FinancialScorePage() {
                 🎨 Build Your Custom Dashboard
               </h2>
               <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
-                Select the metrics and charts you want to see. Click on any item to add or remove it from your dashboard.
+                Select the metrics and charts you want to see. Click on any item to add or remove it from your dashboard. Items will appear in the order selected.
               </p>
 
               {/* Widget Categories */}
@@ -8653,37 +8761,182 @@ export default function FinancialScorePage() {
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     📈 Trend Analysis
                   </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-                    {['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'].map(widget => (
-                      <div
-                        key={widget}
-                        onClick={() => {
-                          if (selectedDashboardWidgets.includes(widget)) {
-                            setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget));
-                          } else {
-                            setSelectedDashboardWidgets([...selectedDashboardWidgets, widget]);
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                    {/* Item Trends Dropdown */}
+                    <div>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
+                        Item Trends
+                      </label>
+                      <select
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value && !selectedDashboardWidgets.includes(value)) {
+                            setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
                           }
+                          e.target.value = '';
                         }}
                         style={{
-                          background: selectedDashboardWidgets.includes(widget) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc',
-                          color: selectedDashboardWidgets.includes(widget) ? 'white' : '#1e293b',
-                          padding: '16px',
-                          borderRadius: '12px',
-                          cursor: 'pointer',
-                          border: selectedDashboardWidgets.includes(widget) ? '2px solid #667eea' : '2px solid #e2e8f0',
-                          transition: 'all 0.3s',
-                          fontWeight: '600',
+                          width: '100%',
+                          padding: '10px 12px',
+                          border: '2px solid #e2e8f0',
+                          borderRadius: '8px',
                           fontSize: '14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between'
+                          background: 'white',
+                          cursor: 'pointer',
+                          color: '#1e293b'
                         }}
                       >
-                        <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                        <option value="">Select an item...</option>
+                        <optgroup label="Income Statement">
+                          <option value="revenue">Total Revenue</option>
+                          <option value="expense">Total Expenses</option>
+                          <option value="cogsTotal">COGS Total</option>
+                          <option value="cogsPayroll">COGS Payroll</option>
+                          <option value="cogsOwnerPay">COGS Owner Pay</option>
+                          <option value="cogsContractors">COGS Contractors</option>
+                          <option value="cogsMaterials">COGS Materials</option>
+                          <option value="cogsCommissions">COGS Commissions</option>
+                          <option value="cogsOther">COGS Other</option>
+                          <option value="opexSalesMarketing">Sales & Marketing</option>
+                          <option value="rentLease">Rent/Lease</option>
+                          <option value="utilities">Utilities</option>
+                          <option value="equipment">Equipment</option>
+                          <option value="travel">Travel</option>
+                          <option value="professionalServices">Professional Services</option>
+                          <option value="insurance">Insurance</option>
+                          <option value="opexOther">OPEX Other</option>
+                          <option value="opexPayroll">OPEX Payroll</option>
+                          <option value="ownersBasePay">Owners Base Pay</option>
+                          <option value="ownersRetirement">Owners Retirement</option>
+                          <option value="contractorsDistribution">Contractors/Distribution</option>
+                          <option value="interestExpense">Interest Expense</option>
+                          <option value="depreciationExpense">Depreciation Expense</option>
+                          <option value="operatingExpenseTotal">Operating Expense Total</option>
+                          <option value="nonOperatingIncome">Non-Operating Income</option>
+                          <option value="extraordinaryItems">Extraordinary Items</option>
+                          <option value="netProfit">Net Profit</option>
+                        </optgroup>
+                        <optgroup label="Balance Sheet - Assets">
+                          <option value="totalAssets">Total Assets</option>
+                          <option value="cash">Cash</option>
+                          <option value="ar">Accounts Receivable</option>
+                          <option value="inventory">Inventory</option>
+                          <option value="otherCA">Other Current Assets</option>
+                          <option value="tca">Total Current Assets</option>
+                          <option value="fixedAssets">Fixed Assets</option>
+                          <option value="otherAssets">Other Assets</option>
+                        </optgroup>
+                        <optgroup label="Balance Sheet - Liabilities">
+                          <option value="totalLiab">Total Liabilities</option>
+                          <option value="ap">Accounts Payable</option>
+                          <option value="otherCL">Other Current Liabilities</option>
+                          <option value="tcl">Total Current Liabilities</option>
+                          <option value="ltd">Long Term Debt</option>
+                        </optgroup>
+                        <optgroup label="Balance Sheet - Equity">
+                          <option value="totalEquity">Total Equity</option>
+                        </optgroup>
+                      </select>
+                    </div>
+
+                    {/* Expense Analysis Dropdown */}
+                    <div>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
+                        Expense Analysis (% of Revenue)
+                      </label>
+                      <select
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value && !selectedDashboardWidgets.includes(value)) {
+                            setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
+                          }
+                          e.target.value = '';
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          border: '2px solid #e2e8f0',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          background: 'white',
+                          cursor: 'pointer',
+                          color: '#1e293b'
+                        }}
+                      >
+                        <option value="">Select an expense...</option>
+                        <option value="Expense % - Total Expenses">Total Expenses</option>
+                        <option value="Expense % - COGS Total">COGS Total</option>
+                        <option value="Expense % - OPEX Payroll">OPEX Payroll</option>
+                        <option value="Expense % - Owners Base Pay">Owners Base Pay</option>
+                        <option value="Expense % - Contractors">Contractors/Distribution</option>
+                        <option value="Expense % - Professional Services">Professional Services</option>
+                        <option value="Expense % - Insurance">Insurance</option>
+                        <option value="Expense % - Rent/Lease">Rent/Lease</option>
+                        <option value="Expense % - Utilities">Utilities</option>
+                        <option value="Expense % - Equipment">Equipment</option>
+                        <option value="Expense % - Travel">Travel</option>
+                        <option value="Expense % - Sales & Marketing">Sales & Marketing</option>
+                        <option value="Expense % - Other">Other Expenses</option>
+                        <option value="Expense % - Depreciation">Depreciation</option>
+                        <option value="Expense % - Interest">Interest</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Display selected trend analysis items */}
+                  {selectedDashboardWidgets.filter(w => 
+                    ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
+                     'opexSalesMarketing', 'rentLease', 'utilities', 'equipment', 'travel', 'professionalServices', 'insurance', 'opexOther', 
+                     'opexPayroll', 'ownersBasePay', 'ownersRetirement', 'contractorsDistribution', 'interestExpense', 'depreciationExpense', 
+                     'operatingExpenseTotal', 'nonOperatingIncome', 'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 
+                     'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'].includes(w) ||
+                     w.startsWith('Expense % - ')
+                  ).length > 0 && (
+                    <div style={{ marginTop: '16px' }}>
+                      <p style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Selected Trend Items:</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {selectedDashboardWidgets.filter(w => 
+                          ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
+                           'opexSalesMarketing', 'rentLease', 'utilities', 'equipment', 'travel', 'professionalServices', 'insurance', 'opexOther', 
+                           'opexPayroll', 'ownersBasePay', 'ownersRetirement', 'contractorsDistribution', 'interestExpense', 'depreciationExpense', 
+                           'operatingExpenseTotal', 'nonOperatingIncome', 'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 
+                           'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'].includes(w) ||
+                           w.startsWith('Expense % - ')
+                        ).map(widget => (
+                          <div
+                            key={widget}
+                            style={{
+                              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                              color: 'white',
+                              padding: '8px 12px',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                              gap: '8px'
+                            }}
+                          >
+                            <span>{widget.startsWith('Expense % - ') ? widget : (widget.charAt(0).toUpperCase() + widget.slice(1).replace(/([A-Z])/g, ' $1'))}</span>
+                            <button
+                              onClick={() => setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget))}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'white',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                padding: '0',
+                                lineHeight: '1'
+                              }}
+                            >
+                              ×
+                            </button>
                       </div>
                     ))}
                   </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Working Capital Metrics */}
@@ -9004,22 +9257,77 @@ export default function FinancialScorePage() {
                 if (widget === 'EBIT Margin') {
                   return <LineChart key={widget} title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBIT/Revenue')} formatter={(v) => v.toFixed(1)} />;
                 }
-                if (widget === 'Revenue Trend') {
-                  return <LineChart key={widget} title="Revenue Trend" data={monthly} valueKey="revenue" color="#667eea" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                // Note: Revenue Trend, Expense Trend, Net Profit Trend, and Gross Margin Trend widgets
+                // have been replaced with the Trend Analysis dropdown selections
+                
+                // Handle Item Trends from dropdown (specific financial metrics)
+                const itemTrendFields = ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 
+                  'cogsMaterials', 'cogsCommissions', 'cogsOther', 'opexSalesMarketing', 'rentLease', 'utilities', 'equipment', 
+                  'travel', 'professionalServices', 'insurance', 'opexOther', 'opexPayroll', 'ownersBasePay', 'ownersRetirement', 
+                  'contractorsDistribution', 'interestExpense', 'depreciationExpense', 'operatingExpenseTotal', 'nonOperatingIncome', 
+                  'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 
+                  'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'];
+                
+                if (itemTrendFields.includes(widget)) {
+                  const title = widget.charAt(0).toUpperCase() + widget.slice(1).replace(/([A-Z])/g, ' $1');
+                  const isCurrency = !['totalEquity', 'totalLiab', 'totalAssets'].includes(widget) || widget.includes('revenue') || widget.includes('expense') || widget.includes('profit');
+                  return (
+                    <LineChart 
+                      key={widget} 
+                      title={title} 
+                      data={monthly.map(m => ({ month: m.month, value: m[widget as keyof typeof m] as number || 0 }))} 
+                      color="#667eea" 
+                      compact 
+                      formatter={(v) => isCurrency ? '$' + (v / 1000).toFixed(0) + 'k' : v.toFixed(0)} 
+                    />
+                  );
                 }
-                if (widget === 'Expense Trend') {
-                  return <LineChart key={widget} title="Expense Trend" data={monthly} valueKey="expense" color="#ef4444" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                
+                // Handle Expense Analysis (% of Revenue) from dropdown
+                if (widget.startsWith('Expense % - ')) {
+                  const expenseName = widget.replace('Expense % - ', '');
+                  const expenseFieldMap: {[key: string]: string} = {
+                    'Total Expenses': 'expense',
+                    'COGS Total': 'cogsTotal',
+                    'OPEX Payroll': 'opexPayroll',
+                    'Owners Base Pay': 'ownersBasePay',
+                    'Contractors': 'contractorsDistribution',
+                    'Professional Services': 'professionalServices',
+                    'Insurance': 'insurance',
+                    'Rent/Lease': 'rentLease',
+                    'Utilities': 'utilities',
+                    'Equipment': 'equipment',
+                    'Travel': 'travel',
+                    'Sales & Marketing': 'opexSalesMarketing',
+                    'Other': 'opexOther',
+                    'Depreciation': 'depreciationExpense',
+                    'Interest': 'interestExpense'
+                  };
+                  
+                  const fieldKey = expenseFieldMap[expenseName];
+                  if (fieldKey) {
+                    const expensePercentData = monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m[fieldKey as keyof typeof m] as number || 0) / m.revenue * 100) : 0
+                    }));
+                    
+                    // Get goal line data if available
+                    const goalLineData = expenseGoals[fieldKey] ? monthly.map(() => expenseGoals[fieldKey]) : undefined;
+                    
+                    return (
+                      <LineChart 
+                        key={widget} 
+                        title={`${expenseName} (% of Revenue)`}
+                        data={expensePercentData} 
+                        color="#ef4444" 
+                        compact 
+                        formatter={(v) => v.toFixed(1) + '%'}
+                        goalLineData={goalLineData}
+                      />
+                    );
+                  }
                 }
-                if (widget === 'Net Profit Trend') {
-                  return <LineChart key={widget} title="Net Profit Trend" data={monthly} valueKey="netProfit" color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
-                }
-                if (widget === 'Gross Margin Trend') {
-                  const grossMarginData = monthly.map(d => ({
-                    month: d.month,
-                    value: d.revenue > 0 ? ((d.revenue - d.cogsTotal) / d.revenue * 100) : 0
-                  }));
-                  return <LineChart key={widget} title="Gross Margin %" data={grossMarginData} color="#8b5cf6" compact formatter={(v) => v.toFixed(1) + '%'} />;
-                }
+                
                 if (widget === 'Days Receivables') {
                   return <LineChart key={widget} title="Days' Receivables" data={trendData} valueKey="daysAR" color="#fb923c" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Receivables')} formatter={(v) => v.toFixed(0)} />;
                 }
@@ -10582,10 +10890,25 @@ export default function FinancialScorePage() {
                             max="100"
                             step="0.1"
                             value={expenseGoals[category.key] || ''}
-                            onChange={(e) => setExpenseGoals(prev => ({
-                              ...prev,
-                              [category.key]: parseFloat(e.target.value) || 0
-                            }))}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setExpenseGoals(prev => {
+                                const newGoals = { ...prev };
+                                if (value === '' || value === null || value === undefined) {
+                                  // Remove the key if empty
+                                  delete newGoals[category.key];
+                                } else {
+                                  // Only set if it's a valid number
+                                  const numValue = parseFloat(value);
+                                  if (!isNaN(numValue) && numValue > 0) {
+                                    newGoals[category.key] = numValue;
+                                  } else {
+                                    delete newGoals[category.key];
+                                  }
+                                }
+                                return newGoals;
+                              });
+                            }}
                             placeholder={avg6mo.toFixed(1)}
                             style={{
                               width: '80px',
@@ -10654,6 +10977,16 @@ export default function FinancialScorePage() {
               <button
                 onClick={async () => {
                   if (!selectedCompanyId) return;
+                  
+                  // Filter out zero/invalid values before saving
+                  const goalsToSave: {[key: string]: number} = {};
+                  Object.entries(expenseGoals).forEach(([key, value]) => {
+                    if (typeof value === 'number' && value > 0) {
+                      goalsToSave[key] = value;
+                    }
+                  });
+                  
+                  console.log('💾 Saving expense goals for company:', selectedCompanyId, goalsToSave);
                   setGoalsSaveStatus('saving');
                   try {
                     const response = await fetch('/api/expense-goals', {
@@ -10661,18 +10994,21 @@ export default function FinancialScorePage() {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         companyId: selectedCompanyId,
-                        goals: expenseGoals
+                        goals: goalsToSave
                       })
                     });
+                    const result = await response.json();
+                    console.log('💾 Save response:', result);
                     if (response.ok) {
                       setGoalsSaveStatus('saved');
                       setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                     } else {
+                      console.error('❌ Failed to save goals:', result);
                       setGoalsSaveStatus('error');
                       setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                     }
                   } catch (error) {
-                    console.error('Error saving goals:', error);
+                    console.error('❌ Error saving goals:', error);
                     setGoalsSaveStatus('error');
                     setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                   }
