@@ -155,7 +155,8 @@ export async function PATCH(request: NextRequest) {
       name,
       subscriptionMonthlyPrice,
       subscriptionQuarterlyPrice,
-      subscriptionAnnualPrice
+      subscriptionAnnualPrice,
+      selectedSubscriptionPlan
     } = await request.json();
 
     if (!id) {
@@ -177,7 +178,8 @@ export async function PATCH(request: NextRequest) {
         ...(industrySector !== undefined && { industrySector }),
         ...(subscriptionMonthlyPrice !== undefined && { subscriptionMonthlyPrice }),
         ...(subscriptionQuarterlyPrice !== undefined && { subscriptionQuarterlyPrice }),
-        ...(subscriptionAnnualPrice !== undefined && { subscriptionAnnualPrice })
+        ...(subscriptionAnnualPrice !== undefined && { subscriptionAnnualPrice }),
+        ...(selectedSubscriptionPlan !== undefined && { selectedSubscriptionPlan })
       }
     });
 

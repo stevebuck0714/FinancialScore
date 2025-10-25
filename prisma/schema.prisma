@@ -59,6 +59,7 @@ model Company {
   subscriptionMonthlyPrice Float?
   subscriptionQuarterlyPrice Float?
   subscriptionAnnualPrice Float?
+  selectedSubscriptionPlan String?                // 'monthly', 'quarterly', or 'annual'
   users                   User[]
   financialRecords        FinancialRecord[]
   assessmentRecords       AssessmentRecord[]

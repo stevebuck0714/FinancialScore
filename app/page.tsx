@@ -1103,6 +1103,10 @@ export default function FinancialScorePage() {
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
+  
+  // State - Subscription Selection
+  const [selectedSubscriptionPlan, setSelectedSubscriptionPlan] = useState<string | null>(null);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [newUserPassword, setNewUserPassword] = useState('');
   // Separate state for Company Users
   const [newCompanyUserName, setNewCompanyUserName] = useState('');
@@ -1235,7 +1239,7 @@ export default function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'profile'>('company-management');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -5321,7 +5325,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Billing
+              Payments
             </button>
             <button
               onClick={() => setAdminDashboardTab('import-financials')}
@@ -6325,18 +6329,27 @@ export default function FinancialScorePage() {
             <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Billing & Subscription</h2>
 
-              {/* Subscription Plans - Read Only */}
+              {/* Subscription Plans - Select One */}
               <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>Subscription Plans</h3>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>Select Subscription Plan</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                   {/* Monthly Plan */}
-                  <div style={{ 
-                    border: '2px solid #e2e8f0', 
-                    borderRadius: '8px', 
-                    padding: '14px', 
-                    background: '#fafafa'
-                  }}>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Monthly</div>
+                  <div 
+                    onClick={() => setSelectedSubscriptionPlan('monthly')}
+                    style={{ 
+                      border: selectedSubscriptionPlan === 'monthly' ? '3px solid #667eea' : '2px solid #e2e8f0', 
+                      borderRadius: '8px', 
+                      padding: '14px', 
+                      background: selectedSubscriptionPlan === 'monthly' ? '#f0f9ff' : '#fafafa',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      boxShadow: selectedSubscriptionPlan === 'monthly' ? '0 4px 12px rgba(102, 126, 234, 0.2)' : 'none'
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      {selectedSubscriptionPlan === 'monthly' && <span style={{ color: '#667eea', marginRight: '4px' }}>✓</span>}
+                      Monthly
+                    </div>
                     <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>
                       ${monthlyPrice.toFixed(2)}
                       <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>/mo</span>
@@ -6345,13 +6358,22 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Quarterly Plan */}
-                  <div style={{ 
-                    border: '2px solid #e2e8f0', 
-                    borderRadius: '8px', 
-                    padding: '14px', 
-                    background: '#fafafa'
-                  }}>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Quarterly</div>
+                  <div 
+                    onClick={() => setSelectedSubscriptionPlan('quarterly')}
+                    style={{ 
+                      border: selectedSubscriptionPlan === 'quarterly' ? '3px solid #667eea' : '2px solid #e2e8f0', 
+                      borderRadius: '8px', 
+                      padding: '14px', 
+                      background: selectedSubscriptionPlan === 'quarterly' ? '#f0f9ff' : '#fafafa',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      boxShadow: selectedSubscriptionPlan === 'quarterly' ? '0 4px 12px rgba(102, 126, 234, 0.2)' : 'none'
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      {selectedSubscriptionPlan === 'quarterly' && <span style={{ color: '#667eea', marginRight: '4px' }}>✓</span>}
+                      Quarterly
+                    </div>
                     <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>
                       ${quarterlyPrice.toFixed(2)}
                       <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>/qtr</span>
@@ -6360,17 +6382,26 @@ export default function FinancialScorePage() {
                   </div>
 
                   {/* Annual Plan */}
-                  <div style={{ 
-                    border: '2px solid #10b981', 
-                    borderRadius: '8px', 
-                    padding: '14px', 
-                    background: '#f0fdf4',
-                    position: 'relative'
-                  }}>
+                  <div 
+                    onClick={() => setSelectedSubscriptionPlan('annual')}
+                    style={{ 
+                      border: selectedSubscriptionPlan === 'annual' ? '3px solid #667eea' : '2px solid #10b981', 
+                      borderRadius: '8px', 
+                      padding: '14px', 
+                      background: selectedSubscriptionPlan === 'annual' ? '#f0f9ff' : '#f0fdf4',
+                      position: 'relative',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      boxShadow: selectedSubscriptionPlan === 'annual' ? '0 4px 12px rgba(102, 126, 234, 0.2)' : 'none'
+                    }}
+                  >
                     <div style={{ position: 'absolute', top: '6px', right: '6px', background: '#10b981', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: '600' }}>
                       BEST VALUE
                     </div>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Annual</div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      {selectedSubscriptionPlan === 'annual' && <span style={{ color: '#667eea', marginRight: '4px' }}>✓</span>}
+                      Annual
+                    </div>
                     <div style={{ fontSize: '24px', fontWeight: '700', color: '#059669' }}>
                       ${annualPrice.toFixed(2)}
                       <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>/yr</span>
@@ -6380,171 +6411,96 @@ export default function FinancialScorePage() {
                 </div>
               </div>
 
-              {/* Payment Information */}
-              <div style={{ marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>Payment Information</h3>
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  {/* Cardholder & Card Number - 2 columns */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        Cardholder Name *
-                      </label>
-                      <input 
-                        type="text"
-                        placeholder="John Doe"
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
+              {/* Shopping Cart */}
+              <div style={{ marginBottom: '16px', background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🛒 Shopping Cart
+                </h3>
+                
+                {selectedSubscriptionPlan ? (
+                  <div>
+                    {/* Cart Item */}
+                    <div style={{ background: 'white', borderRadius: '6px', padding: '12px', marginBottom: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', textTransform: 'capitalize' }}>
+                            {selectedSubscriptionPlan} Subscription Plan
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                            Billed {selectedSubscriptionPlan === 'monthly' ? 'monthly' : selectedSubscriptionPlan === 'quarterly' ? 'every 3 months' : 'annually'}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: '700', color: '#667eea' }}>
+                          ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
+                             selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
+                             annualPrice.toFixed(2)}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSelectedSubscriptionPlan(null)}
+                        style={{
+                          padding: '4px 8px',
+                          background: 'transparent',
+                          color: '#ef4444',
+                          border: 'none',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        🗑️ Remove
+                      </button>
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        Card Number *
-                      </label>
-                      <input 
-                        type="text"
-                        placeholder="1234 5678 9012 3456"
-                        maxLength={19}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                    </div>
-                  </div>
 
-                  {/* Exp Month, Exp Year, CVV - 4 columns with fixed widths */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 80px 1fr', gap: '10px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        Exp Month *
-                      </label>
-                      <select style={{ width: '100%', padding: '8px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}>
-                        <option value="">MM</option>
-                        {Array.from({length: 12}, (_, i) => i + 1).map(month => (
-                          <option key={month} value={month.toString().padStart(2, '0')}>
-                            {month.toString().padStart(2, '0')}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        Exp Year *
-                      </label>
-                      <select style={{ width: '100%', padding: '8px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}>
-                        <option value="">YYYY</option>
-                        {Array.from({length: 10}, (_, i) => new Date().getFullYear() + i).map(year => (
-                          <option key={year} value={year}>
-                            {year}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        CVV *
-                      </label>
-                      <input 
-                        type="text"
-                        placeholder="123"
-                        maxLength={4}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                    </div>
-                    <div></div>
-                  </div>
-
-                  {/* Address, City, State, ZIP - Single row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '420px 200px 100px 120px', gap: '10px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        Billing Address *
-                      </label>
-                      <input 
-                        type="text"
-                        placeholder="123 Main St"
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        City *
-                      </label>
-                      <input 
-                        type="text"
-                        placeholder="San Francisco"
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        State *
-                      </label>
-                      <select style={{ width: '100%', padding: '8px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}>
-                        <option value="">State</option>
-                        <option value="AL">AL</option>
-                        <option value="AK">AK</option>
-                        <option value="AZ">AZ</option>
-                        <option value="AR">AR</option>
-                        <option value="CA">CA</option>
-                        <option value="CO">CO</option>
-                        <option value="CT">CT</option>
-                        <option value="DE">DE</option>
-                        <option value="FL">FL</option>
-                        <option value="GA">GA</option>
-                        <option value="HI">HI</option>
-                        <option value="ID">ID</option>
-                        <option value="IL">IL</option>
-                        <option value="IN">IN</option>
-                        <option value="IA">IA</option>
-                        <option value="KS">KS</option>
-                        <option value="KY">KY</option>
-                        <option value="LA">LA</option>
-                        <option value="ME">ME</option>
-                        <option value="MD">MD</option>
-                        <option value="MA">MA</option>
-                        <option value="MI">MI</option>
-                        <option value="MN">MN</option>
-                        <option value="MS">MS</option>
-                        <option value="MO">MO</option>
-                        <option value="MT">MT</option>
-                        <option value="NE">NE</option>
-                        <option value="NV">NV</option>
-                        <option value="NH">NH</option>
-                        <option value="NJ">NJ</option>
-                        <option value="NM">NM</option>
-                        <option value="NY">NY</option>
-                        <option value="NC">NC</option>
-                        <option value="ND">ND</option>
-                        <option value="OH">OH</option>
-                        <option value="OK">OK</option>
-                        <option value="OR">OR</option>
-                        <option value="PA">PA</option>
-                        <option value="RI">RI</option>
-                        <option value="SC">SC</option>
-                        <option value="SD">SD</option>
-                        <option value="TN">TN</option>
-                        <option value="TX">TX</option>
-                        <option value="UT">UT</option>
-                        <option value="VT">VT</option>
-                        <option value="VA">VA</option>
-                        <option value="WA">WA</option>
-                        <option value="WV">WV</option>
-                        <option value="WI">WI</option>
-                        <option value="WY">WY</option>
-                        <option value="DC">DC</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        ZIP *
-                      </label>
-                      <input 
-                        type="text"
-                        placeholder="94102"
-                        maxLength={10}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
+                    {/* Cart Total */}
+                    <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Total</div>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
+                          ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
+                             selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
+                             annualPrice.toFixed(2)}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'right', marginBottom: '12px' }}>
+                        {selectedSubscriptionPlan === 'monthly' && 'Per month'}
+                        {selectedSubscriptionPlan === 'quarterly' && 'Per quarter'}
+                        {selectedSubscriptionPlan === 'annual' && 'Per year'}
+                      </div>
+                      
+                      {/* Checkout Button */}
+                      <button
+                        onClick={() => setShowCheckoutModal(true)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 24px',
+                          background: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '15px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 6px rgba(16, 185, 129, 0.3)',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
+                        onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
+                      >
+                        🛒 Proceed to Checkout
+                      </button>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '40px', marginBottom: '8px' }}>🛒</div>
+                    <div style={{ fontSize: '13px' }}>Your cart is empty</div>
+                    <div style={{ fontSize: '11px', marginTop: '4px' }}>Select a subscription plan above to add it to your cart</div>
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons */}
@@ -6606,6 +6562,108 @@ export default function FinancialScorePage() {
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and billing.</p>
             </div>
           )}
+
+          {/* Checkout Modal */}
+          {showCheckoutModal && selectedSubscriptionPlan && (() => {
+            const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+            const planPrice = selectedSubscriptionPlan === 'monthly' ? selectedCompany?.subscriptionMonthlyPrice || 195 :
+                             selectedSubscriptionPlan === 'quarterly' ? selectedCompany?.subscriptionQuarterlyPrice || 500 :
+                             selectedCompany?.subscriptionAnnualPrice || 1750;
+            const planPeriod = selectedSubscriptionPlan === 'monthly' ? '/month' :
+                              selectedSubscriptionPlan === 'quarterly' ? '/quarter' : '/year';
+
+            return (
+              <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '600px', width: '90%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Complete Your Purchase</h2>
+                    <button
+                      onClick={() => setShowCheckoutModal(false)}
+                      style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  {/* Selected Plan Summary */}
+                  <div style={{ background: '#f0f9ff', border: '2px solid #667eea', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Selected Plan</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', textTransform: 'capitalize' }}>{selectedSubscriptionPlan} Plan</div>
+                        <div style={{ fontSize: '13px', color: '#64748b' }}>Billed {selectedSubscriptionPlan}</div>
+                      </div>
+                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>
+                        ${planPrice.toFixed(2)}
+                        <span style={{ fontSize: '14px', fontWeight: '500', color: '#64748b' }}>{planPeriod}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Payment Form - Placeholder for USAePay integration */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>Payment Information</h3>
+                    <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '20px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                      <div style={{ fontSize: '48px', marginBottom: '12px' }}>💳</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>USAePay Payment Integration</div>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
+                        Payment form will be integrated here once your URL is finalized
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                    <button
+                      onClick={() => setShowCheckoutModal(false)}
+                      style={{
+                        padding: '12px 24px',
+                        background: 'white',
+                        color: '#64748b',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        alert('🎉 Subscription activated! (USAePay integration will process payment here)');
+                        setShowCheckoutModal(false);
+                        setSelectedSubscriptionPlan(null);
+                      }}
+                      style={{
+                        padding: '12px 32px',
+                        background: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 6px rgba(16, 185, 129, 0.3)'
+                      }}
+                    >
+                      💳 Complete Payment
+                    </button>
+                  </div>
+
+                  {/* Security Notice */}
+                  <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '16px' }}>🔒</span>
+                      <span style={{ fontSize: '13px', fontWeight: '500', color: '#059669' }}>
+                        Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Profile Tab - No Company Selected */}
           {!selectedCompanyId && adminDashboardTab === 'profile' && (
