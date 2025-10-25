@@ -710,8 +710,18 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
           const format = labelFormat || 'semi-annual';
           
           if (format === 'quarterly') {
-            // Convert month to quarterly label (e.g., "2023-03" -> "Q1 '23", "2023-06" -> "Q2 '23")
+            // Convert month to quarterly label
             const getQuarterLabel = (monthStr: string) => {
+              // Try to parse as Date first (e.g., "10/31/2022")
+              let date = new Date(monthStr);
+              if (!isNaN(date.getTime())) {
+                const year = date.getFullYear();
+                const month = date.getMonth() + 1; // 0-indexed
+                const quarter = Math.ceil(month / 3);
+                return `Q${quarter} '${year.toString().slice(-2)}`;
+              }
+              
+              // Try YYYY-MM format (e.g., "2023-03")
               const parts = monthStr.split('-');
               if (parts.length >= 2) {
                 const year = parts[0];
@@ -780,39 +790,93 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
       </div>
       
       {showTable && (
-        <div style={{ marginTop: '16px', overflowX: 'auto' }}>
-          <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse' }}>
+        <div style={{ marginTop: '16px', overflowX: 'auto', maxWidth: '580px' }}>
+          <table style={{ width: 'max-content', fontSize: '10px', borderCollapse: 'collapse' }}>
             <tbody>
               <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
                 <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 1, minWidth: '60px' }}>
-                  Month
+                  Quarter
                 </td>
-                {validData.map((d, i) => (
-                  <td key={`month-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '600', color: '#64748b', minWidth: '70px' }}>
-                    {d.month}
-                  </td>
-                ))}
+                {validData.map((d, i) => {
+                  // Only show quarterly data (every 3rd month)
+                  let date = new Date(d.month);
+                  if (!isNaN(date.getTime())) {
+                    const year = date.getFullYear().toString().slice(-2);
+                    const month = date.getMonth() + 1;
+                    if (month % 3 !== 0) return null;
+                    const quarter = Math.ceil(month / 3);
+                    return (
+                      <td key={`month-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '600', color: '#64748b', minWidth: '70px' }}>
+                        Q{quarter} {year}
+                      </td>
+                    );
+                  }
+                  // Fallback for YYYY-MM format
+                  const parts = d.month.split('-');
+                  if (parts.length >= 2) {
+                    const year = parts[0].slice(-2);
+                    const month = parseInt(parts[1]);
+                    if (month % 3 !== 0) return null;
+                    const quarter = Math.ceil(month / 3);
+                    return (
+                      <td key={`month-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '600', color: '#64748b', minWidth: '70px' }}>
+                        Q{quarter} {year}
+                      </td>
+                    );
+                  }
+                  return null;
+                })}
               </tr>
               <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                 <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 1 }}>
                   Value
                 </td>
-                {validData.map((d, i) => (
-                  <td key={`val-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '700', color: color }}>
-                    {formatter ? formatter(d.value!) : d.value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                  </td>
-                ))}
+                {validData.map((d, i) => {
+                  // Only show quarterly data (every 3rd month)
+                  let date = new Date(d.month);
+                  if (!isNaN(date.getTime())) {
+                    const month = date.getMonth() + 1;
+                    if (month % 3 !== 0) return null;
+                  } else {
+                    // Fallback for YYYY-MM format
+                    const parts = d.month.split('-');
+                    if (parts.length >= 2) {
+                      const month = parseInt(parts[1]);
+                      if (month % 3 !== 0) return null;
+                    }
+                  }
+                  return (
+                    <td key={`val-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '700', color: color }}>
+                      {formatter ? formatter(d.value!) : d.value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </td>
+                  );
+                })}
               </tr>
               {goalLineData && goalLineData.length === validData.length && (
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f0fdf4' }}>
                   <td style={{ padding: '6px 8px', fontWeight: '700', color: '#10b981', position: 'sticky', left: 0, background: '#f0fdf4', zIndex: 1 }}>
                     Goal
                   </td>
-                  {validData.map((d, i) => (
-                    <td key={`goal-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '700', color: '#10b981' }}>
-                      {formatter ? formatter(goalLineData[i]) : goalLineData[i].toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                    </td>
-                  ))}
+                  {validData.map((d, i) => {
+                    // Only show quarterly data (every 3rd month)
+                    let date = new Date(d.month);
+                    if (!isNaN(date.getTime())) {
+                      const month = date.getMonth() + 1;
+                      if (month % 3 !== 0) return null;
+                    } else {
+                      // Fallback for YYYY-MM format
+                      const parts = d.month.split('-');
+                      if (parts.length >= 2) {
+                        const month = parseInt(parts[1]);
+                        if (month % 3 !== 0) return null;
+                      }
+                    }
+                    return (
+                      <td key={`goal-${i}`} style={{ padding: '6px', textAlign: 'center', fontWeight: '700', color: '#10b981' }}>
+                        {formatter ? formatter(goalLineData[i]) : goalLineData[i].toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      </td>
+                    );
+                  })}
                 </tr>
               )}
             </tbody>
@@ -7334,7 +7398,7 @@ export default function FinancialScorePage() {
                     data={monthly.map(m => ({ month: m.month, value: m[selectedTrendItem as keyof typeof m] as number }))}
                     color="#667eea"
                     showTable={true}
-                    labelFormat="quarterly"
+                    labelFormat="semi-annual"
                     goalLineData={(() => {
                       // Check if selected item is "expense" (Total Expenses)
                       if (selectedTrendItem === 'expense') {
@@ -7499,6 +7563,9 @@ export default function FinancialScorePage() {
                   }))}
                   color="#ef4444"
                   compact
+                  showTable={true}
+                  labelFormat="semi-annual"
+                  formatter={(val: number) => `${val.toFixed(1)}%`}
                   goalLineData={(() => {
                     // Sum all operating expense goals (not COGS)
                     const opexCategories = [
@@ -7521,6 +7588,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#f59e0b"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsTotal ? monthly.map(() => expenseGoals.cogsTotal) : undefined}
                   />
                 )}
@@ -7535,6 +7605,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fb923c"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsPayroll ? monthly.map(() => expenseGoals.cogsPayroll) : undefined}
                   />
                 )}
@@ -7548,6 +7621,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fdba74"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsOwnerPay ? monthly.map(() => expenseGoals.cogsOwnerPay) : undefined}
                   />
                 )}
@@ -7561,6 +7637,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fed7aa"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsContractors ? monthly.map(() => expenseGoals.cogsContractors) : undefined}
                   />
                 )}
@@ -7574,6 +7653,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fde047"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsMaterials ? monthly.map(() => expenseGoals.cogsMaterials) : undefined}
                   />
                 )}
@@ -7587,6 +7669,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#bef264"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsCommissions ? monthly.map(() => expenseGoals.cogsCommissions) : undefined}
                   />
                 )}
@@ -7600,6 +7685,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#86efac"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsOther ? monthly.map(() => expenseGoals.cogsOther) : undefined}
                   />
                 )}
@@ -7613,6 +7701,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#3b82f6"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                   />
                 )}
                 
@@ -7625,6 +7716,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#60a5fa"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.opexPayroll ? monthly.map(() => expenseGoals.opexPayroll) : undefined}
                   />
                 )}
@@ -7638,6 +7732,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#93c5fd"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.opexSalesMarketing ? monthly.map(() => expenseGoals.opexSalesMarketing) : undefined}
                   />
                 )}
@@ -7651,6 +7748,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#8b5cf6"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.rentLease ? monthly.map(() => expenseGoals.rentLease) : undefined}
                   />
                 )}
@@ -7664,6 +7764,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#a78bfa"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.utilities ? monthly.map(() => expenseGoals.utilities) : undefined}
                   />
                 )}
@@ -7677,6 +7780,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#c4b5fd"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.equipment ? monthly.map(() => expenseGoals.equipment) : undefined}
                   />
                 )}
@@ -7690,6 +7796,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#ec4899"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.travel ? monthly.map(() => expenseGoals.travel) : undefined}
                   />
                 )}
@@ -7703,6 +7812,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#f472b6"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.professionalServices ? monthly.map(() => expenseGoals.professionalServices) : undefined}
                   />
                 )}
@@ -7716,6 +7828,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#f9a8d4"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.insurance ? monthly.map(() => expenseGoals.insurance) : undefined}
                   />
                 )}
@@ -7729,6 +7844,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#14b8a6"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.ownersBasePay ? monthly.map(() => expenseGoals.ownersBasePay) : undefined}
                   />
                 )}
@@ -7742,6 +7860,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#2dd4bf"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                   />
                 )}
                 
@@ -7754,6 +7875,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#5eead4"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.contractorsDistribution ? monthly.map(() => expenseGoals.contractorsDistribution) : undefined}
                   />
                 )}
@@ -7767,6 +7891,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fb7185"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.interestExpense ? monthly.map(() => expenseGoals.interestExpense) : undefined}
                   />
                 )}
@@ -7780,6 +7907,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fca5a5"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.depreciationExpense ? monthly.map(() => expenseGoals.depreciationExpense) : undefined}
                   />
                 )}
@@ -7793,6 +7923,9 @@ export default function FinancialScorePage() {
                     }))}
                     color="#fecaca"
                     compact
+                    showTable={true}
+                    labelFormat="semi-annual"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.opexOther ? monthly.map(() => expenseGoals.opexOther) : undefined}
                   />
                 )}
