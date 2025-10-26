@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, ChangeEvent } from 'react';
+import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lucide-react';
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
@@ -1159,11 +1159,60 @@ export default function FinancialScorePage() {
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
   const [showDashboardCustomizer, setShowDashboardCustomizer] = useState(false);
 
+  // Check if payment is required for the current company
+  const isPaymentRequired = useCallback(() => {
+    if (!selectedCompanyId || !currentUser) return false;
+    
+    const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+    if (!selectedCompany) return false;
+    
+    // Only if ALL prices are EXPLICITLY set to $0, no payment required (testing mode)
+    // null/undefined means use defaults, which requires payment
+    const allPricesExplicitlyZero = 
+      selectedCompany.subscriptionMonthlyPrice === 0 &&
+      selectedCompany.subscriptionQuarterlyPrice === 0 &&
+      selectedCompany.subscriptionAnnualPrice === 0;
+    
+    if (allPricesExplicitlyZero) return false;
+    
+    // If no plan is selected, payment is required
+    return !selectedCompany.selectedSubscriptionPlan;
+  }, [selectedCompanyId, currentUser, companies]);
+
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
     if (currentUser?.userType !== 'assessment') return true;
     const allowedViews = ['ma-welcome', 'ma-questionnaire', 'ma-your-results', 'ma-scores-summary', 'ma-scoring-guide', 'ma-charts'];
     return allowedViews.includes(view);
+  };
+
+  // Handle navigation with payment gate
+  const handleNavigation = (view: string) => {
+    if (isPaymentRequired()) {
+      alert('⚠️ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
+      setAdminDashboardTab('payments');
+      setCurrentView('admin');
+      return;
+    }
+    setCurrentView(view as any);
+  };
+
+  // Handle admin dashboard tab navigation with payment gate
+  const handleAdminTabNavigation = (tab: 'company-management' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'profile') => {
+    // Always allow payments tab
+    if (tab === 'payments') {
+      setAdminDashboardTab(tab);
+      return;
+    }
+    
+    // Block other tabs if payment is required
+    if (isPaymentRequired()) {
+      alert('⚠️ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
+      setAdminDashboardTab('payments');
+      return;
+    }
+    
+    setAdminDashboardTab(tab);
   };
 
   // Redirect assessment users if they try to access unauthorized views - but not during login
@@ -1418,6 +1467,31 @@ export default function FinancialScorePage() {
     balanceSheet3YearsAnnual: false,
     profile: false
   });
+
+  // Redirect to payments tab if payment is required
+  useEffect(() => {
+    if (isPaymentRequired() && currentView !== 'admin' && currentView !== 'siteadmin') {
+      setAdminDashboardTab('payments');
+      setCurrentView('admin');
+    }
+  }, [isPaymentRequired, currentView]);
+
+  // Reload companies data when accessing payments tab to get fresh pricing
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const consultantId = currentUser?.consultantId;
+    if (adminDashboardTab === 'payments' && consultantId && selectedCompanyId) {
+      const refreshCompanyData = async () => {
+        try {
+          const fetchedCompanies = await companiesApi.list(consultantId);
+          setCompanies(fetchedCompanies);
+        } catch (error) {
+          console.error('Error refreshing company data:', error);
+        }
+      };
+      refreshCompanyData();
+    }
+  }, [adminDashboardTab, selectedCompanyId]);
 
   // Load from localStorage (DEPRECATED - will be removed)
   useEffect(() => {
@@ -2543,10 +2617,24 @@ export default function FinancialScorePage() {
         subscriptionQuarterlyPrice: subscriptionQuarterlyPrice,
         subscriptionAnnualPrice: subscriptionAnnualPrice
       });
+      
+      console.log('💰 Subscription pricing saved:', company);
+      
       // Update the companies list with the new pricing
       setCompanies(companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c));
+      
+      // Reload companies list to ensure fresh data
+      if (currentUser?.role === 'siteadmin') {
+        const allCompanies = await companiesApi.getAll();
+        setCompanies(allCompanies);
+      } else if (currentUser?.role === 'consultant' && currentUser?.id) {
+        const consultantCompanies = await companiesApi.getByConsultant(currentUser.id);
+        setCompanies(consultantCompanies);
+      }
+      
       alert('✅ Subscription pricing saved successfully!');
     } catch (error) {
+      console.error('❌ Error saving subscription pricing:', error);
       alert(error instanceof ApiError ? error.message : 'Failed to save subscription pricing');
     } finally {
       setIsLoading(false);
@@ -2693,7 +2781,8 @@ export default function FinancialScorePage() {
               ...c, 
               subscriptionMonthlyPrice: pricing.monthly,
               subscriptionQuarterlyPrice: pricing.quarterly,
-              subscriptionAnnualPrice: pricing.annual
+              subscriptionAnnualPrice: pricing.annual,
+              selectedSubscriptionPlan: null // Reset selected plan when pricing changes
             } 
           : c
       ));
@@ -2705,7 +2794,7 @@ export default function FinancialScorePage() {
         return newState;
       });
       
-      alert('Pricing updated successfully');
+      alert('✅ Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
     }
@@ -3830,16 +3919,16 @@ export default function FinancialScorePage() {
               Venturis<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
             </div>
             <nav style={{ display: 'flex', gap: '24px' }}>
-              <button onClick={() => setCurrentView('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'dashboard' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #667eea' : '3px solid transparent' }}>Dashboard</button>
-              <button onClick={() => setCurrentView('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'mda' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #667eea' : '3px solid transparent' }}>MD&A</button>
-              <button onClick={() => setCurrentView('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>Ratios</button>
-              <button onClick={() => setCurrentView('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>Trend Analysis</button>
-              <button onClick={() => setCurrentView('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>Projections</button>
-              <button onClick={() => setCurrentView('goals')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'goals' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'goals' ? '3px solid #667eea' : '3px solid transparent' }}>Goals</button>
-              <button onClick={() => setCurrentView('working-capital')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'working-capital' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'working-capital' ? '3px solid #667eea' : '3px solid transparent' }}>Working Capital</button>
-              <button onClick={() => setCurrentView('valuation')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'valuation' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'valuation' ? '3px solid #667eea' : '3px solid transparent' }}>Valuation</button>
-              <button onClick={() => setCurrentView('cash-flow')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'cash-flow' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'cash-flow' ? '3px solid #667eea' : '3px solid transparent' }}>Cash Flow</button>
-              <button onClick={() => setCurrentView('financial-statements')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'financial-statements' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'financial-statements' ? '3px solid #667eea' : '3px solid transparent' }}>Financial Statements</button>
+              <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'dashboard' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #667eea' : '3px solid transparent' }}>Dashboard</button>
+              <button onClick={() => handleNavigation('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'mda' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #667eea' : '3px solid transparent' }}>MD&A</button>
+              <button onClick={() => handleNavigation('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>Ratios</button>
+              <button onClick={() => handleNavigation('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>Trend Analysis</button>
+              <button onClick={() => handleNavigation('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>Projections</button>
+              <button onClick={() => handleNavigation('goals')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'goals' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'goals' ? '3px solid #667eea' : '3px solid transparent' }}>Goals</button>
+              <button onClick={() => handleNavigation('working-capital')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'working-capital' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'working-capital' ? '3px solid #667eea' : '3px solid transparent' }}>Working Capital</button>
+              <button onClick={() => handleNavigation('valuation')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'valuation' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'valuation' ? '3px solid #667eea' : '3px solid transparent' }}>Valuation</button>
+              <button onClick={() => handleNavigation('cash-flow')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'cash-flow' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'cash-flow' ? '3px solid #667eea' : '3px solid transparent' }}>Cash Flow</button>
+              <button onClick={() => handleNavigation('financial-statements')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'financial-statements' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'financial-statements' ? '3px solid #667eea' : '3px solid transparent' }}>Financial Statements</button>
             </nav>
           </div>
         </header>
@@ -5322,7 +5411,7 @@ export default function FinancialScorePage() {
           {/* Tab Navigation */}
           <div className="dashboard-tabs-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
             <button
-              onClick={() => setAdminDashboardTab('company-management')}
+              onClick={() => handleAdminTabNavigation('company-management')}
               style={{
                 padding: '12px 24px',
                 background: adminDashboardTab === 'company-management' ? '#667eea' : 'transparent',
@@ -5339,7 +5428,7 @@ export default function FinancialScorePage() {
               Company Management
             </button>
             <button
-              onClick={() => setAdminDashboardTab('payments')}
+              onClick={() => handleAdminTabNavigation('payments')}
               style={{
                 padding: '12px 24px',
                 background: adminDashboardTab === 'payments' ? '#667eea' : 'transparent',
@@ -5356,7 +5445,7 @@ export default function FinancialScorePage() {
               Payments
             </button>
             <button
-              onClick={() => setAdminDashboardTab('import-financials')}
+              onClick={() => handleAdminTabNavigation('import-financials')}
               style={{
                 padding: '12px 24px',
                 background: adminDashboardTab === 'import-financials' ? '#667eea' : 'transparent',
@@ -5373,7 +5462,7 @@ export default function FinancialScorePage() {
               Import Financials
             </button>
             <button
-              onClick={() => setAdminDashboardTab('api-connections')}
+              onClick={() => handleAdminTabNavigation('api-connections')}
               style={{
                 padding: '12px 24px',
                 background: adminDashboardTab === 'api-connections' ? '#667eea' : 'transparent',
@@ -5390,7 +5479,7 @@ export default function FinancialScorePage() {
               Accounting API Connections
             </button>
             <button
-              onClick={() => setAdminDashboardTab('data-review')}
+              onClick={() => handleAdminTabNavigation('data-review')}
               style={{
                 padding: '12px 24px',
                 background: adminDashboardTab === 'data-review' ? '#667eea' : 'transparent',
@@ -5407,7 +5496,7 @@ export default function FinancialScorePage() {
               Data Review
             </button>
             <button
-              onClick={() => setAdminDashboardTab('data-mapping')}
+              onClick={() => handleAdminTabNavigation('data-mapping')}
               style={{
                 padding: '12px 24px',
                 background: adminDashboardTab === 'data-mapping' ? '#667eea' : 'transparent',
@@ -5424,7 +5513,7 @@ export default function FinancialScorePage() {
               Data Mapping
             </button>
             <button
-              onClick={() => setAdminDashboardTab('profile')}
+              onClick={() => handleAdminTabNavigation('profile')}
               style={{
                 padding: '12px 24px',
                 background: adminDashboardTab === 'profile' ? '#667eea' : 'transparent',
@@ -6349,9 +6438,9 @@ export default function FinancialScorePage() {
           {/* Payments/Billing Tab */}
           {adminDashboardTab === 'payments' && selectedCompanyId && (() => {
             const selectedCompany = companies.find(c => c.id === selectedCompanyId);
-            const monthlyPrice = selectedCompany?.subscriptionMonthlyPrice || 195;
-            const quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice || 500;
-            const annualPrice = selectedCompany?.subscriptionAnnualPrice || 1750;
+            const monthlyPrice = selectedCompany?.subscriptionMonthlyPrice ?? 195;
+            const quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice ?? 500;
+            const annualPrice = selectedCompany?.subscriptionAnnualPrice ?? 1750;
             
             return (
             <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
