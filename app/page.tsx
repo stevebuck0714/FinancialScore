@@ -7959,6 +7959,16 @@ export default function FinancialScorePage() {
                     showTable={true}
                     labelFormat="semi-annual"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={(() => {
+                      // Sum all operating expense goals (not COGS)
+                      const opexCategories = [
+                        'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
+                        'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
+                        'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                      ];
+                      const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                      return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
+                    })()}
                   />
                 )}
                 
@@ -10998,7 +11008,7 @@ export default function FinancialScorePage() {
                                 return newGoals;
                               });
                             }}
-                            placeholder={avg6mo.toFixed(1)}
+                            placeholder=""
                             style={{
                               width: '80px',
                               padding: '8px 12px',
