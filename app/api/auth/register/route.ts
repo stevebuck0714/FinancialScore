@@ -4,7 +4,10 @@ import { hashPassword } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, email, password, fullName, address, phone, type } = await request.json();
+    const { 
+      name, email, password, fullName, address, phone, type,
+      companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite
+    } = await request.json();
 
     if (!name || !email || !password) {
       return NextResponse.json(
@@ -35,7 +38,8 @@ export async function POST(request: NextRequest) {
           email,
           name,
           passwordHash,
-          role: 'CONSULTANT'
+          role: 'CONSULTANT',
+          phone: phone || undefined
         }
       });
 
@@ -43,9 +47,16 @@ export async function POST(request: NextRequest) {
         data: {
           userId: user.id,
           fullName: fullName || name,
-          address: address || '',
-          phone: phone || '',
-          type: type || ''
+          address: address || undefined,
+          phone: phone || undefined,
+          type: type || undefined,
+          companyName: companyName || undefined,
+          companyAddress1: companyAddress1 || undefined,
+          companyAddress2: companyAddress2 || undefined,
+          companyCity: companyCity || undefined,
+          companyState: companyState || undefined,
+          companyZip: companyZip || undefined,
+          companyWebsite: companyWebsite || undefined
         }
       });
 

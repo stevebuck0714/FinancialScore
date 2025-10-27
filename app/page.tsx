@@ -7,6 +7,61 @@ import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
 import { assessmentData } from '../data/assessmentData';
 import { authApi, companiesApi, usersApi, consultantsApi, financialsApi, assessmentsApi, profilesApi, benchmarksApi, ApiError } from '@/lib/api-client';
 
+// US States for dropdown
+const US_STATES = [
+  { code: '', name: 'Select State' },
+  { code: 'AL', name: 'Alabama' },
+  { code: 'AK', name: 'Alaska' },
+  { code: 'AZ', name: 'Arizona' },
+  { code: 'AR', name: 'Arkansas' },
+  { code: 'CA', name: 'California' },
+  { code: 'CO', name: 'Colorado' },
+  { code: 'CT', name: 'Connecticut' },
+  { code: 'DE', name: 'Delaware' },
+  { code: 'FL', name: 'Florida' },
+  { code: 'GA', name: 'Georgia' },
+  { code: 'HI', name: 'Hawaii' },
+  { code: 'ID', name: 'Idaho' },
+  { code: 'IL', name: 'Illinois' },
+  { code: 'IN', name: 'Indiana' },
+  { code: 'IA', name: 'Iowa' },
+  { code: 'KS', name: 'Kansas' },
+  { code: 'KY', name: 'Kentucky' },
+  { code: 'LA', name: 'Louisiana' },
+  { code: 'ME', name: 'Maine' },
+  { code: 'MD', name: 'Maryland' },
+  { code: 'MA', name: 'Massachusetts' },
+  { code: 'MI', name: 'Michigan' },
+  { code: 'MN', name: 'Minnesota' },
+  { code: 'MS', name: 'Mississippi' },
+  { code: 'MO', name: 'Missouri' },
+  { code: 'MT', name: 'Montana' },
+  { code: 'NE', name: 'Nebraska' },
+  { code: 'NV', name: 'Nevada' },
+  { code: 'NH', name: 'New Hampshire' },
+  { code: 'NJ', name: 'New Jersey' },
+  { code: 'NM', name: 'New Mexico' },
+  { code: 'NY', name: 'New York' },
+  { code: 'NC', name: 'North Carolina' },
+  { code: 'ND', name: 'North Dakota' },
+  { code: 'OH', name: 'Ohio' },
+  { code: 'OK', name: 'Oklahoma' },
+  { code: 'OR', name: 'Oregon' },
+  { code: 'PA', name: 'Pennsylvania' },
+  { code: 'RI', name: 'Rhode Island' },
+  { code: 'SC', name: 'South Carolina' },
+  { code: 'SD', name: 'South Dakota' },
+  { code: 'TN', name: 'Tennessee' },
+  { code: 'TX', name: 'Texas' },
+  { code: 'UT', name: 'Utah' },
+  { code: 'VT', name: 'Vermont' },
+  { code: 'VA', name: 'Virginia' },
+  { code: 'WA', name: 'Washington' },
+  { code: 'WV', name: 'West Virginia' },
+  { code: 'WI', name: 'Wisconsin' },
+  { code: 'WY', name: 'Wyoming' }
+];
+
 // Types
 type Mappings = {
   date: string;
@@ -207,6 +262,13 @@ interface Consultant {
   email: string;
   phone: string;
   password: string;
+  companyName?: string;
+  companyAddress1?: string;
+  companyAddress2?: string;
+  companyCity?: string;
+  companyState?: string;
+  companyZip?: string;
+  companyWebsite?: string;
 }
 
 interface User {
@@ -1078,6 +1140,14 @@ export default function FinancialScorePage() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginName, setLoginName] = useState('');
+  const [loginPhone, setLoginPhone] = useState('');
+  const [loginCompanyName, setLoginCompanyName] = useState('');
+  const [loginCompanyAddress1, setLoginCompanyAddress1] = useState('');
+  const [loginCompanyAddress2, setLoginCompanyAddress2] = useState('');
+  const [loginCompanyCity, setLoginCompanyCity] = useState('');
+  const [loginCompanyState, setLoginCompanyState] = useState('');
+  const [loginCompanyZip, setLoginCompanyZip] = useState('');
+  const [loginCompanyWebsite, setLoginCompanyWebsite] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -1944,7 +2014,13 @@ export default function FinancialScorePage() {
       
       try {
         const { consultants: loadedConsultants } = await consultantsApi.getAll();
-        setConsultants(loadedConsultants || []);
+        // Map the user data to consultant level for easier access in the UI
+        const mappedConsultants = (loadedConsultants || []).map((c: any) => ({
+          ...c,
+          email: c.user?.email || c.email || '',
+          password: '' // Don't expose passwords
+        }));
+        setConsultants(mappedConsultants);
         
         // Also load all companies and users for display
         const allCompanies: any[] = [];
@@ -2307,8 +2383,10 @@ export default function FinancialScorePage() {
     setLoginError('');
     setIsLoading(true);
     
-    if (!loginName || !loginEmail || !loginPassword) { 
-      setLoginError('Please fill in all fields');
+    // Validate required fields
+    if (!loginName || !loginEmail || !loginPassword || !loginPhone || !loginCompanyName || 
+        !loginCompanyAddress1 || !loginCompanyCity || !loginCompanyState || !loginCompanyZip) { 
+      setLoginError('Please fill in all required fields');
       setIsLoading(false);
       return; 
     }
@@ -2318,7 +2396,15 @@ export default function FinancialScorePage() {
         name: loginName,
         email: loginEmail,
         password: loginPassword,
-        fullName: loginName
+        fullName: loginName,
+        phone: loginPhone,
+        companyName: loginCompanyName,
+        companyAddress1: loginCompanyAddress1,
+        companyAddress2: loginCompanyAddress2 || undefined,
+        companyCity: loginCompanyCity,
+        companyState: loginCompanyState,
+        companyZip: loginCompanyZip,
+        companyWebsite: loginCompanyWebsite || undefined
       });
       
       // Normalize role and userType to lowercase for frontend compatibility
@@ -2331,9 +2417,19 @@ export default function FinancialScorePage() {
       setCurrentUser(normalizedUser);
       setIsLoggedIn(true);
       setCurrentView('admin');
+      
+      // Clear all form fields
       setLoginName('');
       setLoginEmail('');
       setLoginPassword('');
+      setLoginPhone('');
+      setLoginCompanyName('');
+      setLoginCompanyAddress1('');
+      setLoginCompanyAddress2('');
+      setLoginCompanyCity('');
+      setLoginCompanyState('');
+      setLoginCompanyZip('');
+      setLoginCompanyWebsite('');
       setIsRegistering(false);
       setLoginError('');
     } catch (error) {
@@ -3668,18 +3764,108 @@ export default function FinancialScorePage() {
               <input 
                 type="text" 
                 name={`fullname_${Date.now()}`}
-                placeholder="Full Name" 
+                placeholder="Full Name *" 
                 value={loginName} 
                 onChange={(e) => setLoginName(e.target.value)} 
                 autoComplete="off" 
+                required
                 style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
               <input 
                 type="text" 
                 name={`email_${Date.now()}`}
-                placeholder="Email" 
+                placeholder="Email *" 
                 value={loginEmail} 
                 onChange={(e) => setLoginEmail(e.target.value)} 
+                autoComplete="off" 
+                required
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              />
+              <input 
+                type="tel" 
+                name={`phone_${Date.now()}`}
+                placeholder="Phone Number *" 
+                value={loginPhone} 
+                onChange={(e) => setLoginPhone(e.target.value)} 
+                autoComplete="off" 
+                required
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              />
+              <input 
+                type="text" 
+                name={`company_name_${Date.now()}`}
+                placeholder="Company Name *" 
+                value={loginCompanyName} 
+                onChange={(e) => setLoginCompanyName(e.target.value)} 
+                autoComplete="off" 
+                required
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              />
+              
+              {/* Company Address Fields */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Company Address</label>
+                <input 
+                  type="text" 
+                  name={`company_address1_${Date.now()}`}
+                  placeholder="Address Line 1 *" 
+                  value={loginCompanyAddress1} 
+                  onChange={(e) => setLoginCompanyAddress1(e.target.value)} 
+                  autoComplete="off" 
+                  required
+                  style={{ width: '100%', padding: '12px 16px', marginBottom: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                />
+                <input 
+                  type="text" 
+                  name={`company_address2_${Date.now()}`}
+                  placeholder="Address Line 2 (Optional)" 
+                  value={loginCompanyAddress2} 
+                  onChange={(e) => setLoginCompanyAddress2(e.target.value)} 
+                  autoComplete="off" 
+                  style={{ width: '100%', padding: '12px 16px', marginBottom: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  <input 
+                    type="text" 
+                    name={`company_city_${Date.now()}`}
+                    placeholder="City *" 
+                    value={loginCompanyCity} 
+                    onChange={(e) => setLoginCompanyCity(e.target.value)} 
+                    autoComplete="off" 
+                    required
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                  />
+                  <select 
+                    name={`company_state_${Date.now()}`}
+                    value={loginCompanyState} 
+                    onChange={(e) => setLoginCompanyState(e.target.value)} 
+                    required
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', backgroundColor: 'white' }}
+                  >
+                    {US_STATES.map(state => (
+                      <option key={state.code} value={state.code}>{state.name}</option>
+                    ))}
+                  </select>
+                  <input 
+                    type="text" 
+                    name={`company_zip_${Date.now()}`}
+                    placeholder="ZIP Code *" 
+                    value={loginCompanyZip} 
+                    onChange={(e) => setLoginCompanyZip(e.target.value)} 
+                    autoComplete="off" 
+                    required
+                    maxLength={10}
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                  />
+                </div>
+              </div>
+              
+              <input 
+                type="url" 
+                name={`company_website_${Date.now()}`}
+                placeholder="Company Website (Optional)" 
+                value={loginCompanyWebsite} 
+                onChange={(e) => setLoginCompanyWebsite(e.target.value)} 
                 autoComplete="off" 
                 style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
@@ -3689,10 +3875,11 @@ export default function FinancialScorePage() {
                 <input 
                   type={showPassword ? "text" : "password"} 
                   name={`password_${Date.now()}`}
-                  placeholder="Password" 
+                  placeholder="Password *" 
                   value={loginPassword} 
                   onChange={(e) => setLoginPassword(e.target.value)} 
                   autoComplete="new-password"
+                  required
                   style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                 />
                 <button
@@ -3705,8 +3892,10 @@ export default function FinancialScorePage() {
                 </button>
               </div>
               
-              <button type="submit" style={{ width: '100%', padding: '14px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', marginBottom: '12px' }}>Register</button>
-              <button type="button" onClick={() => { setIsRegistering(false); setLoginError(''); setShowPassword(false); }} style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Back to Login</button>
+              <button type="submit" disabled={isLoading} style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1 }}>
+                {isLoading ? 'Registering...' : 'Register'}
+              </button>
+              <button type="button" onClick={() => { setIsRegistering(false); setLoginError(''); setShowPassword(false); }} disabled={isLoading} style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}>Back to Login</button>
             </form>
           ) : (
             <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (!isLoading) handleLogin(); }}>
@@ -4833,7 +5022,11 @@ export default function FinancialScorePage() {
                               {expanded ? 'Collapse' : 'Expand'}
                             </button>
                             <button
-                              onClick={() => deleteConsultant(consultant.id)}
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete ${consultant.fullName}? This action cannot be undone.`)) {
+                                  deleteConsultant(consultant.id);
+                                }
+                              }}
                               style={{ padding: '6px 12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                             >
                               Delete
@@ -4858,7 +5051,14 @@ export default function FinancialScorePage() {
                                           email: consultant.email,
                                           address: consultant.address || '',
                                           phone: consultant.phone || '',
-                                          type: consultant.type || ''
+                                          type: consultant.type || '',
+                                          companyName: consultant.companyName || '',
+                                          companyAddress1: consultant.companyAddress1 || '',
+                                          companyAddress2: consultant.companyAddress2 || '',
+                                          companyCity: consultant.companyCity || '',
+                                          companyState: consultant.companyState || '',
+                                          companyZip: consultant.companyZip || '',
+                                          companyWebsite: consultant.companyWebsite || ''
                                         }
                                       });
                                     }}
@@ -4885,30 +5085,6 @@ export default function FinancialScorePage() {
                                       />
                                     </div>
                                     <div>
-                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Type</label>
-                                      <input
-                                        type="text"
-                                        value={editingConsultantInfo[consultant.id].type}
-                                        onChange={(e) => setEditingConsultantInfo({
-                                          ...editingConsultantInfo,
-                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], type: e.target.value }
-                                        })}
-                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Email</label>
-                                      <input
-                                        type="email"
-                                        value={editingConsultantInfo[consultant.id].email}
-                                        onChange={(e) => setEditingConsultantInfo({
-                                          ...editingConsultantInfo,
-                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], email: e.target.value }
-                                        })}
-                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                      />
-                                    </div>
-                                    <div>
                                       <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Phone</label>
                                       <input
                                         type="text"
@@ -4922,18 +5098,100 @@ export default function FinancialScorePage() {
                                     </div>
                                   </div>
                                   <div>
-                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Address</label>
+                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Email</label>
                                     <input
-                                      type="text"
-                                      value={editingConsultantInfo[consultant.id].address}
+                                      type="email"
+                                      value={editingConsultantInfo[consultant.id].email}
                                       onChange={(e) => setEditingConsultantInfo({
                                         ...editingConsultantInfo,
-                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], address: e.target.value }
+                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], email: e.target.value }
                                       })}
                                       style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                     />
                                   </div>
-                                  <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                                  <div>
+                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Company Name</label>
+                                    <input
+                                      type="text"
+                                      value={editingConsultantInfo[consultant.id].companyName || ''}
+                                      onChange={(e) => setEditingConsultantInfo({
+                                        ...editingConsultantInfo,
+                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], companyName: e.target.value }
+                                      })}
+                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                  <div style={{ marginTop: '6px' }}>
+                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Company Address</label>
+                                    <input
+                                      type="text"
+                                      placeholder="Address Line 1"
+                                      value={editingConsultantInfo[consultant.id].companyAddress1 || ''}
+                                      onChange={(e) => setEditingConsultantInfo({
+                                        ...editingConsultantInfo,
+                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], companyAddress1: e.target.value }
+                                      })}
+                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px', marginBottom: '4px' }}
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Address Line 2 (Optional)"
+                                      value={editingConsultantInfo[consultant.id].companyAddress2 || ''}
+                                      onChange={(e) => setEditingConsultantInfo({
+                                        ...editingConsultantInfo,
+                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], companyAddress2: e.target.value }
+                                      })}
+                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px', marginBottom: '4px' }}
+                                    />
+                                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '4px' }}>
+                                      <input
+                                        type="text"
+                                        placeholder="City"
+                                        value={editingConsultantInfo[consultant.id].companyCity || ''}
+                                        onChange={(e) => setEditingConsultantInfo({
+                                          ...editingConsultantInfo,
+                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], companyCity: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                      />
+                                      <select
+                                        value={editingConsultantInfo[consultant.id].companyState || ''}
+                                        onChange={(e) => setEditingConsultantInfo({
+                                          ...editingConsultantInfo,
+                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], companyState: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px', backgroundColor: 'white' }}
+                                      >
+                                        {US_STATES.map(state => (
+                                          <option key={state.code} value={state.code}>{state.code || 'State'}</option>
+                                        ))}
+                                      </select>
+                                      <input
+                                        type="text"
+                                        placeholder="ZIP"
+                                        value={editingConsultantInfo[consultant.id].companyZip || ''}
+                                        onChange={(e) => setEditingConsultantInfo({
+                                          ...editingConsultantInfo,
+                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], companyZip: e.target.value }
+                                        })}
+                                        maxLength={10}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div style={{ marginTop: '6px' }}>
+                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Company Website</label>
+                                    <input
+                                      type="url"
+                                      value={editingConsultantInfo[consultant.id].companyWebsite || ''}
+                                      onChange={(e) => setEditingConsultantInfo({
+                                        ...editingConsultantInfo,
+                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], companyWebsite: e.target.value }
+                                      })}
+                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                    />
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                                     <button
                                       onClick={() => {
                                         updateConsultantInfo(consultant.id, editingConsultantInfo[consultant.id]);
@@ -4958,10 +5216,37 @@ export default function FinancialScorePage() {
                                 </div>
                               ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '11px', color: '#64748b' }}>
-                                  <div><span style={{ fontWeight: '600' }}>Type:</span> {consultant.type}</div>
                                   <div><span style={{ fontWeight: '600' }}>Email:</span> {consultant.email}</div>
-                                  <div><span style={{ fontWeight: '600' }}>Address:</span> {consultant.address}</div>
-                                  <div><span style={{ fontWeight: '600' }}>Phone:</span> {consultant.phone}</div>
+                                  <div><span style={{ fontWeight: '600' }}>Phone:</span> {consultant.phone || 'N/A'}</div>
+                                  <div style={{ gridColumn: '1 / -1' }}><span style={{ fontWeight: '600' }}>Company Name:</span> {consultant.companyName || 'N/A'}</div>
+                                  <div style={{ gridColumn: '1 / -1' }}>
+                                    <span style={{ fontWeight: '600' }}>Company Address:</span> {
+                                      consultant.companyAddress1 ? (
+                                        <>
+                                          {consultant.companyAddress1}
+                                          {consultant.companyAddress2 && `, ${consultant.companyAddress2}`}
+                                          {consultant.companyCity && `, ${consultant.companyCity}`}
+                                          {consultant.companyState && `, ${consultant.companyState}`}
+                                          {consultant.companyZip && ` ${consultant.companyZip}`}
+                                        </>
+                                      ) : 'N/A'
+                                    }
+                                  </div>
+                                  <div style={{ gridColumn: '1 / -1' }}>
+                                    <span style={{ fontWeight: '600' }}>Company Website:</span> {consultant.companyWebsite ? (
+                                      <a 
+                                        href={consultant.companyWebsite.startsWith('http://') || consultant.companyWebsite.startsWith('https://') 
+                                          ? consultant.companyWebsite 
+                                          : `https://${consultant.companyWebsite}`
+                                        } 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        style={{ color: '#667eea', textDecoration: 'underline', marginLeft: '4px' }}
+                                      >
+                                        {consultant.companyWebsite}
+                                      </a>
+                                    ) : 'N/A'}
+                                  </div>
                                 </div>
                               )}
                             </div>

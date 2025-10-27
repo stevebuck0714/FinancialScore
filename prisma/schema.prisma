@@ -31,16 +31,23 @@ enum BusinessStatus {
 // Models
 
 model Consultant {
-  id            String    @id @default(cuid())
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type          String?
-  fullName      String
-  address       String?
-  phone         String?
-  companies     Company[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type             String?
+  fullName         String
+  address          String?
+  phone            String?
+  companyName      String?
+  companyAddress1  String?
+  companyAddress2  String?
+  companyCity      String?
+  companyState     String?
+  companyZip       String?
+  companyWebsite   String?
+  companies        Company[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([userId])
 }

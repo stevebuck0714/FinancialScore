@@ -126,7 +126,10 @@ export async function POST(request: NextRequest) {
 // PUT update consultant
 export async function PUT(request: NextRequest) {
   try {
-    const { id, fullName, email, address, phone, type } = await request.json();
+    const { 
+      id, fullName, email, address, phone, type,
+      companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite
+    } = await request.json();
 
     if (!id) {
       return NextResponse.json(
@@ -164,10 +167,11 @@ export async function PUT(request: NextRequest) {
 
     // Update consultant and user in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Update user email and name if provided
+      // Update user email, name, and phone if provided
       const updateData: any = {};
       if (email) updateData.email = email;
       if (fullName) updateData.name = fullName;
+      if (phone !== undefined) updateData.phone = phone;
 
       if (Object.keys(updateData).length > 0) {
         await tx.user.update({
@@ -182,6 +186,13 @@ export async function PUT(request: NextRequest) {
       if (address !== undefined) consultantUpdateData.address = address;
       if (phone !== undefined) consultantUpdateData.phone = phone;
       if (type !== undefined) consultantUpdateData.type = type;
+      if (companyName !== undefined) consultantUpdateData.companyName = companyName;
+      if (companyAddress1 !== undefined) consultantUpdateData.companyAddress1 = companyAddress1;
+      if (companyAddress2 !== undefined) consultantUpdateData.companyAddress2 = companyAddress2;
+      if (companyCity !== undefined) consultantUpdateData.companyCity = companyCity;
+      if (companyState !== undefined) consultantUpdateData.companyState = companyState;
+      if (companyZip !== undefined) consultantUpdateData.companyZip = companyZip;
+      if (companyWebsite !== undefined) consultantUpdateData.companyWebsite = companyWebsite;
 
       const updatedConsultant = await tx.consultant.update({
         where: { id },

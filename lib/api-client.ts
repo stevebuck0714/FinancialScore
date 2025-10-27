@@ -50,6 +50,13 @@ export const authApi = {
     address?: string;
     phone?: string;
     type?: string;
+    companyName?: string;
+    companyAddress1?: string;
+    companyAddress2?: string;
+    companyCity?: string;
+    companyState?: string;
+    companyZip?: string;
+    companyWebsite?: string;
   }) {
     return fetchApi('/api/auth/register', {
       method: 'POST',
@@ -169,6 +176,13 @@ export const consultantsApi = {
     address?: string;
     phone?: string;
     type?: string;
+    companyName?: string;
+    companyAddress1?: string;
+    companyAddress2?: string;
+    companyCity?: string;
+    companyState?: string;
+    companyZip?: string;
+    companyWebsite?: string;
   }) {
     return fetchApi('/api/consultants', {
       method: 'PUT',
