@@ -14,8 +14,8 @@ export default function Navigation() {
       icon: Home
     },
     {
-      name: 'Billing',
-      href: '/billing',
+      name: 'Payments',
+      href: '/payments',
       icon: CreditCard
     },
     {
@@ -40,10 +40,10 @@ export default function Navigation() {
               const isActive = pathname === item.href;
               
               return (
-                <Link
+                <a
                   key={item.name}
                   href={item.href}
-                  className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors ${
+                  className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors cursor-pointer ${
                     isActive
                       ? 'border-blue-500 text-gray-900'
                       : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
@@ -51,7 +51,7 @@ export default function Navigation() {
                 >
                   <Icon className="w-4 h-4 mr-2" />
                   {item.name}
-                </Link>
+                </a>
               );
             })}
           </div>

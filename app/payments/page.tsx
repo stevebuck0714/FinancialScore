@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Check, ShoppingCart, CreditCard, Loader2 } from 'lucide-react';
+import { Check, ShoppingCart, CreditCard, Loader2, CheckCircle } from 'lucide-react';
 import Navigation from '../components/Navigation';
+import PaymentForm from '../components/PaymentForm';
 
 type SubscriptionPlan = {
   id: string;
@@ -22,7 +23,7 @@ type CartItem = {
   billingPeriod: string;
 };
 
-export default function BillingPage() {
+export default function PaymentsPage() {
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
@@ -31,11 +32,12 @@ export default function BillingPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
 
   // Load current company and subscription info
   useEffect(() => {
     loadCompanyInfo();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadCompanyInfo = async () => {
     setIsLoading(true);
@@ -162,51 +164,37 @@ export default function BillingPage() {
       return;
     }
 
-    setIsSaving(true);
+    // Show payment form
+    setShowPaymentForm(true);
     setMessage(null);
+  };
 
-    try {
-      const selectedItem = cartItems[0];
+  const handlePaymentSuccess = (result: any) => {
+    setMessage({ 
+      type: 'success', 
+      text: `Payment successful! Transaction ID: ${result.transactionId}. Your subscription has been activated.` 
+    });
+    
+    setCurrentPlan(cartItems[0].billingPeriod);
+    setCartItems([]);
+    setSelectedPlan(null);
+    setShowPaymentForm(false);
 
-      // Update company with selected subscription plan (not the price - that's already set by admin)
-      const response = await fetch('/api/companies', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          id: companyId,
-          selectedSubscriptionPlan: selectedItem.billingPeriod
-        })
-      });
+    // Refresh company info after 2 seconds
+    setTimeout(() => {
+      loadCompanyInfo();
+    }, 2000);
+  };
 
-      if (!response.ok) {
-        throw new Error('Failed to update subscription');
-      }
+  const handlePaymentError = (error: string) => {
+    setMessage({ 
+      type: 'error', 
+      text: error 
+    });
+  };
 
-      setMessage({ 
-        type: 'success', 
-        text: `Successfully subscribed to ${selectedItem.planName}! Total charged: $${selectedItem.price.toFixed(2)}` 
-      });
-      
-      setCurrentPlan(selectedItem.billingPeriod);
-      setCartItems([]);
-      setSelectedPlan(null);
-
-      // Refresh company info after 2 seconds
-      setTimeout(() => {
-        loadCompanyInfo();
-      }, 2000);
-
-    } catch (error) {
-      console.error('Error updating subscription:', error);
-      setMessage({ 
-        type: 'error', 
-        text: 'Failed to update subscription. Please try again.' 
-      });
-    } finally {
-      setIsSaving(false);
-    }
+  const handleCancelPayment = () => {
+    setShowPaymentForm(false);
   };
 
   const cartTotal = cartItems.reduce((sum, item) => sum + item.price, 0);
@@ -347,66 +335,77 @@ export default function BillingPage() {
           ))}
         </div>
 
-        {/* Shopping Cart */}
+        {/* Shopping Cart / Payment Form */}
         {cartItems.length > 0 && (
           <div className="bg-white rounded-xl shadow-lg p-8 max-w-2xl mx-auto">
-            <div className="flex items-center mb-6">
-              <ShoppingCart className="w-6 h-6 text-blue-600 mr-2" />
-              <h2 className="text-2xl font-bold text-gray-900">Shopping Cart</h2>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              {cartItems.map((item, index) => (
-                <div key={index} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{item.planName}</h3>
-                    <p className="text-sm text-gray-600 capitalize">Billed {item.billingPeriod}</p>
-                  </div>
-                  <div className="flex items-center">
-                    <span className="text-xl font-bold text-gray-900 mr-4">
-                      ${item.price.toFixed(2)}
-                    </span>
-                    <button
-                      onClick={removeFromCart}
-                      className="text-red-600 hover:text-red-800 font-medium"
-                    >
-                      Remove
-                    </button>
-                  </div>
+            {!showPaymentForm ? (
+              <>
+                <div className="flex items-center mb-6">
+                  <ShoppingCart className="w-6 h-6 text-blue-600 mr-2" />
+                  <h2 className="text-2xl font-bold text-gray-900">Shopping Cart</h2>
                 </div>
-              ))}
-            </div>
 
-            <div className="border-t pt-6">
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-xl font-semibold text-gray-900">Total:</span>
-                <span className="text-3xl font-bold text-gray-900">
-                  ${cartTotal.toFixed(2)}
-                </span>
-              </div>
+                <div className="space-y-4 mb-6">
+                  {cartItems.map((item, index) => (
+                    <div key={index} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{item.planName}</h3>
+                        <p className="text-sm text-gray-600 capitalize">Billed {item.billingPeriod}</p>
+                      </div>
+                      <div className="flex items-center">
+                        <span className="text-xl font-bold text-gray-900 mr-4">
+                          ${item.price.toFixed(2)}
+                        </span>
+                        <button
+                          onClick={removeFromCart}
+                          className="text-red-600 hover:text-red-800 font-medium"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-              <button
-                onClick={handleCheckout}
-                disabled={isSaving}
-                className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors flex items-center justify-center disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
+                <div className="border-t pt-6">
+                  <div className="flex justify-between items-center mb-6">
+                    <span className="text-xl font-semibold text-gray-900">Total:</span>
+                    <span className="text-3xl font-bold text-gray-900">
+                      ${cartTotal.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={handleCheckout}
+                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+                  >
                     <CreditCard className="w-5 h-5 mr-2" />
                     Proceed to Checkout
-                  </>
-                )}
-              </button>
+                  </button>
 
-              <p className="text-sm text-gray-500 text-center mt-4">
-                Your subscription will be activated immediately after checkout
-              </p>
-            </div>
+                  <p className="text-sm text-gray-500 text-center mt-4">
+                    Your subscription will be activated immediately after payment
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center mb-6">
+                  <CreditCard className="w-6 h-6 text-blue-600 mr-2" />
+                  <h2 className="text-2xl font-bold text-gray-900">Complete Payment</h2>
+                </div>
+
+                <PaymentForm
+                  amount={cartTotal}
+                  companyId={companyId}
+                  subscriptionPlan={cartItems[0].planName}
+                  billingPeriod={cartItems[0].billingPeriod}
+                  onSuccess={handlePaymentSuccess}
+                  onError={handlePaymentError}
+                  onCancel={handleCancelPayment}
+                />
+              </>
+            )}
           </div>
         )}
 

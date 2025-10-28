@@ -60,3 +60,4 @@ export default function InactivityLogout() {
   return null; // This component doesn't render anything
 }
 
+

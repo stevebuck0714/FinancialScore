@@ -6733,7 +6733,10 @@ export default function FinancialScorePage() {
 
               {/* Subscription Plans - Select One */}
               <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>Select Subscription Plan</h3>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>
+                  Step 1: Select Subscription Plan
+                  {!selectedSubscriptionPlan && <span style={{ fontSize: '12px', color: '#ef4444', marginLeft: '8px', fontWeight: '500' }}>← Click a plan below</span>}
+                </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                   {/* Monthly Plan */}
                   <div 
@@ -6814,9 +6817,9 @@ export default function FinancialScorePage() {
               </div>
 
               {/* Shopping Cart */}
-              <div style={{ marginBottom: '16px', background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '16px', background: selectedSubscriptionPlan ? '#f0fdf4' : '#f8fafc', borderRadius: '8px', padding: '16px', border: selectedSubscriptionPlan ? '2px solid #10b981' : '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  🛒 Shopping Cart
+                  {selectedSubscriptionPlan ? '✓' : '🛒'} Step 2: Review & Checkout
                 </h3>
                 
                 {selectedSubscriptionPlan ? (
@@ -6905,55 +6908,6 @@ export default function FinancialScorePage() {
                 )}
               </div>
 
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-                <button
-                  onClick={() => {
-                    if (confirm('Are you sure you want to cancel your subscription?')) {
-                      alert('Subscription cancelled.');
-                    }
-                  }}
-                  style={{
-                    padding: '8px 16px',
-                    background: 'white',
-                    color: '#ef4444',
-                    border: '1px solid #ef4444',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel Subscription
-                </button>
-                <button
-                  onClick={() => {
-                    alert('Processing payment... This will integrate with USAePay API');
-                  }}
-                  style={{
-                    padding: '8px 20px',
-                    background: '#667eea',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Start Subscription
-                </button>
-              </div>
-
-              {/* Security Notice */}
-              <div style={{ marginTop: '16px', padding: '10px 12px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '14px' }}>🔒</span>
-                  <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
-                    Secure payment processing via USAePay. Card data is encrypted and never stored on our servers.
-                  </span>
-                </div>
-              </div>
             </div>
             );
           })()}
@@ -7002,63 +6956,192 @@ export default function FinancialScorePage() {
                     </div>
                   </div>
 
-                  {/* Payment Form - Placeholder for USAePay integration */}
+                  {/* USAePay Payment Form */}
                   <div style={{ marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>Payment Information</h3>
-                    <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '20px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                      <div style={{ fontSize: '48px', marginBottom: '12px' }}>💳</div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>USAePay Payment Integration</div>
-                      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-                        Payment form will be integrated here once your URL is finalized
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>💳 Payment Information</h3>
+                    
+                    {/* Simple Payment Form - Inline Styled */}
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      alert('🎉 Payment processing functionality coming soon!\n\nNext steps:\n1. Configure USAePay API credentials in .env.local\n2. Restart the dev server\n3. Payment will be processed through USAePay API');
+                      setShowCheckoutModal(false);
+                      setSelectedSubscriptionPlan(null);
+                    }}>
+                      {/* Card Information Section */}
+                      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          💳 Card Details
+                        </h4>
+                        
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Card Number</label>
+                          <input
+                            type="text"
+                            placeholder="1234 5678 9012 3456"
+                            maxLength={19}
+                            required
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
+                          />
+                        </div>
+                        
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Cardholder Name</label>
+                          <input
+                            type="text"
+                            placeholder="John Doe"
+                            required
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
+                          />
+                        </div>
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Exp Month</label>
+                            <select required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
+                              <option value="">MM</option>
+                              {Array.from({length: 12}, (_, i) => i + 1).map(m => (
+                                <option key={m} value={m.toString().padStart(2, '0')}>{m.toString().padStart(2, '0')}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Exp Year</label>
+                            <select required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
+                              <option value="">YYYY</option>
+                              {Array.from({length: 15}, (_, i) => new Date().getFullYear() + i).map(y => (
+                                <option key={y} value={y}>{y}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>CVV</label>
+                            <input
+                              type="text"
+                              placeholder="123"
+                              maxLength={4}
+                              required
+                              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
-                    <button
-                      onClick={() => setShowCheckoutModal(false)}
-                      style={{
-                        padding: '12px 24px',
-                        background: 'white',
-                        color: '#64748b',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        alert('🎉 Subscription activated! (USAePay integration will process payment here)');
-                        setShowCheckoutModal(false);
-                        setSelectedSubscriptionPlan(null);
-                      }}
-                      style={{
-                        padding: '12px 32px',
-                        background: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 6px rgba(16, 185, 129, 0.3)'
-                      }}
-                    >
-                      💳 Complete Payment
-                    </button>
-                  </div>
-
-                  {/* Security Notice */}
-                  <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      
+                      {/* Billing Address Section */}
+                      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📍 Billing Address</h4>
+                        
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
+                          <input
+                            type="text"
+                            placeholder="123 Main St"
+                            required
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
+                          />
+                        </div>
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>City</label>
+                            <input
+                              type="text"
+                              placeholder="City"
+                              required
+                              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>State</label>
+                            <input
+                              type="text"
+                              placeholder="CA"
+                              maxLength={2}
+                              required
+                              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
+                            />
+                          </div>
+                        </div>
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>ZIP Code</label>
+                            <input
+                              type="text"
+                              placeholder="12345"
+                              maxLength={10}
+                              required
+                              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Country</label>
+                            <select required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
+                              <option value="US">United States</option>
+                              <option value="CA">Canada</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Payment Summary */}
+                      <div style={{ background: '#eff6ff', border: '2px solid #3b82f6', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Total Amount:</span>
+                          <span style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>${planPrice.toFixed(2)}</span>
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', marginBottom: 0 }}>
+                          {selectedSubscriptionPlan} plan - Billed {planPeriod}
+                        </p>
+                      </div>
+                      
+                      {/* Action Buttons */}
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowCheckoutModal(false)}
+                          style={{
+                            flex: 1,
+                            padding: '12px 24px',
+                            background: 'white',
+                            color: '#64748b',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          style={{
+                            flex: 1.5,
+                            padding: '12px 32px',
+                            background: '#10b981',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 6px rgba(16, 185, 129, 0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          💳 Complete Payment - ${planPrice.toFixed(2)}
+                        </button>
+                      </div>
+                    </form>
+                    
+                    {/* Security Notice */}
+                    <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ fontSize: '16px' }}>🔒</span>
-                      <span style={{ fontSize: '13px', fontWeight: '500', color: '#059669' }}>
-                        Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
+                      <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
+                        Secured by USAePay - Your payment information is encrypted
                       </span>
                     </div>
                   </div>
