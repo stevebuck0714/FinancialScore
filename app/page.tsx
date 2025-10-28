@@ -6733,10 +6733,7 @@ export default function FinancialScorePage() {
 
               {/* Subscription Plans - Select One */}
               <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>
-                  Step 1: Select Subscription Plan
-                  {!selectedSubscriptionPlan && <span style={{ fontSize: '12px', color: '#ef4444', marginLeft: '8px', fontWeight: '500' }}>← Click a plan below</span>}
-                </h3>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>Select Subscription Plan</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                   {/* Monthly Plan */}
                   <div 
@@ -6817,9 +6814,9 @@ export default function FinancialScorePage() {
               </div>
 
               {/* Shopping Cart */}
-              <div style={{ marginBottom: '16px', background: selectedSubscriptionPlan ? '#f0fdf4' : '#f8fafc', borderRadius: '8px', padding: '16px', border: selectedSubscriptionPlan ? '2px solid #10b981' : '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '16px', background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {selectedSubscriptionPlan ? '✓' : '🛒'} Step 2: Review & Checkout
+                  🛒 Shopping Cart
                 </h3>
                 
                 {selectedSubscriptionPlan ? (
@@ -6907,7 +6904,6 @@ export default function FinancialScorePage() {
                 </div>
                 )}
               </div>
-
             </div>
             );
           })()}
@@ -7142,6 +7138,16 @@ export default function FinancialScorePage() {
                       <span style={{ fontSize: '16px' }}>🔒</span>
                       <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
                         Secured by USAePay - Your payment information is encrypted
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Security Notice */}
+                  <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '16px' }}>🔒</span>
+                      <span style={{ fontSize: '13px', fontWeight: '500', color: '#059669' }}>
+                        Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                       </span>
                     </div>
                   </div>
