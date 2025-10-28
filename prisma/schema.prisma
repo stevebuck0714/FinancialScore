@@ -370,3 +370,24 @@ model ExpenseGoal {
 
   @@index([companyId])
 }
+
+// System Settings - Store default pricing and other system-wide configuration
+model SystemSettings {
+  id                              String    @id @default(cuid())
+  key                             String    @unique // e.g., "default_pricing"
+  
+  // Business Default Pricing
+  businessMonthlyPrice            Float?    @default(195)
+  businessQuarterlyPrice          Float?    @default(500)
+  businessAnnualPrice             Float?    @default(1750)
+  
+  // Consultant Default Pricing
+  consultantMonthlyPrice          Float?    @default(195)
+  consultantQuarterlyPrice        Float?    @default(500)
+  consultantAnnualPrice           Float?    @default(1750)
+  
+  updatedAt                       DateTime  @updatedAt
+  createdAt                       DateTime  @default(now())
+
+  @@index([key])
+}

@@ -31,6 +31,23 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await hashPassword(password);
 
+    // Get default pricing from settings
+    let defaultPricing = await prisma.systemSettings.findUnique({
+      where: { key: 'default_pricing' }
+    });
+
+    // If no settings exist, use fallback defaults
+    if (!defaultPricing) {
+      defaultPricing = {
+        businessMonthlyPrice: 195,
+        businessQuarterlyPrice: 500,
+        businessAnnualPrice: 1750,
+        consultantMonthlyPrice: 195,
+        consultantQuarterlyPrice: 500,
+        consultantAnnualPrice: 1750
+      } as any;
+    }
+
     // Create user, consultant, and company (for business users) in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
@@ -66,7 +83,11 @@ export async function POST(request: NextRequest) {
         company = await tx.company.create({
           data: {
             name: name, // Use the business name as company name
-            consultantId: consultant.id
+            consultantId: consultant.id,
+            subscriptionMonthlyPrice: defaultPricing.businessMonthlyPrice ?? 195,
+            subscriptionQuarterlyPrice: defaultPricing.businessQuarterlyPrice ?? 500,
+            subscriptionAnnualPrice: defaultPricing.businessAnnualPrice ?? 1750
+            // DO NOT set selectedSubscriptionPlan - they must pay first
           }
         });
       }

@@ -121,23 +121,19 @@ export default function RegisterBusinessWelcome() {
           <div style={{ 
             display: 'flex', 
             alignItems: 'center', 
-            justifyContent: 'center',
-            marginBottom: '20px'
+            justifyContent: 'center'
           }}>
             <Image 
-              src="/venturis-logo.jpg" 
-              alt="Venturis Logo" 
-              width={60} 
-              height={60}
-              style={{ borderRadius: '8px', marginRight: '15px' }}
+              src="/corelytics-logo.jpg" 
+              alt="Corelytics Logo" 
+              width={200} 
+              height={50}
+              style={{ marginRight: '15px' }}
             />
             <h1 style={{ fontSize: '32px', fontWeight: '700', margin: 0 }}>
-              Welcome to Venturis
+              Welcome to Corelytics
             </h1>
           </div>
-          <p style={{ fontSize: '18px', opacity: 0.95, margin: 0 }}>
-            Financial Health Score Calculator for Your Business
-          </p>
         </div>
 
         {/* Content */}
@@ -161,6 +157,168 @@ export default function RegisterBusinessWelcome() {
             }}>
               Get comprehensive financial insights and health scores for your business
             </p>
+          </div>
+
+          {/* Registration Form */}
+          <div style={{
+            background: '#f0fdf4',
+            border: '2px solid #86efac',
+            borderRadius: '12px',
+            padding: '32px',
+            marginBottom: '32px'
+          }}>
+            <form onSubmit={handleSubmit}>
+              {error && (
+                <div style={{
+                  background: '#fee2e2',
+                  border: '1px solid #fca5a5',
+                  color: '#991b1b',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  marginBottom: '20px',
+                  fontSize: '14px'
+                }}>
+                  {error}
+                </div>
+              )}
+
+              {/* Name Field */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#1e293b',
+                  marginBottom: '8px'
+                }}>
+                  Business Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  placeholder="Enter your business name"
+                  disabled={isNavigating}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* Email Field */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#1e293b',
+                  marginBottom: '8px'
+                }}>
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  placeholder="Enter your email"
+                  disabled={isNavigating}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* Password Field */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#1e293b',
+                  marginBottom: '8px'
+                }}>
+                  Password *
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    placeholder="Create a password (min. 6 characters)"
+                    disabled={isNavigating}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      paddingRight: '45px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '18px'
+                    }}
+                  >
+                    {showPassword ? '👁️' : '👁️‍🗨️'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button 
+                type="submit"
+                disabled={isNavigating}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: isNavigating ? '#94a3b8' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: isNavigating ? 'not-allowed' : 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isNavigating) {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+                }}
+              >
+                {isNavigating ? 'Creating Account...' : 'Create Account & Access Dashboard'}
+              </button>
+            </form>
           </div>
 
           {/* Features Grid */}
@@ -383,16 +541,6 @@ export default function RegisterBusinessWelcome() {
             padding: '32px',
             marginBottom: '32px'
           }}>
-            <h3 style={{ 
-              fontSize: '20px', 
-              fontWeight: '600', 
-              color: '#15803d',
-              marginBottom: '24px',
-              textAlign: 'center'
-            }}>
-              Create Your Account
-            </h3>
-            
             <form onSubmit={handleSubmit}>
               {error && (
                 <div style={{

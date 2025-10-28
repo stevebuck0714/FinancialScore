@@ -1244,16 +1244,7 @@ export default function FinancialScorePage() {
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
     
-    // Only if ALL prices are EXPLICITLY set to $0, no payment required (testing mode)
-    // null/undefined means use defaults, which requires payment
-    const allPricesExplicitlyZero = 
-      selectedCompany.subscriptionMonthlyPrice === 0 &&
-      selectedCompany.subscriptionQuarterlyPrice === 0 &&
-      selectedCompany.subscriptionAnnualPrice === 0;
-    
-    if (allPricesExplicitlyZero) return false;
-    
-    // If no plan is selected, payment is required
+    // Simple check: if no subscription plan selected, payment is required
     return !selectedCompany.selectedSubscriptionPlan;
   }, [selectedCompanyId, currentUser, companies]);
 
@@ -1320,14 +1311,27 @@ export default function FinancialScorePage() {
             if (user.consultantId) {
               companiesApi.getAll(user.consultantId).then(({ companies: loadedCompanies }) => {
                 setCompanies(loadedCompanies || []);
-                // If user just registered and has a company, select it automatically
+                
+                let needsPayment = false;
+                
                 if (user.companyId && loadedCompanies && loadedCompanies.length > 0) {
+                  // Business user - check their company's payment
                   const newCompany = loadedCompanies.find((c: any) => c.id === user.companyId);
                   if (newCompany) {
                     setSelectedCompanyId(newCompany.id);
                     setExpandedCompanyInfoId(newCompany.id);
+                    needsPayment = !newCompany.selectedSubscriptionPlan;
                   }
+                } else if (loadedCompanies && loadedCompanies.length > 0) {
+                  // Consultant with companies
+                  const firstCompany = loadedCompanies[0];
+                  setSelectedCompanyId(firstCompany.id);
+                  setExpandedCompanyInfoId(firstCompany.id);
+                  needsPayment = !firstCompany.selectedSubscriptionPlan;
                 }
+                
+                // Direct to payments if not paid, otherwise company management
+                setAdminDashboardTab(needsPayment ? 'payments' : 'company-management');
               });
             }
           } else if (normalizedUser.role === 'siteadmin') {
@@ -1546,13 +1550,6 @@ export default function FinancialScorePage() {
     profile: false
   });
 
-  // Redirect to payments tab if payment is required
-  useEffect(() => {
-    if (isPaymentRequired() && currentView !== 'admin' && currentView !== 'siteadmin') {
-      setAdminDashboardTab('payments');
-      setCurrentView('admin');
-    }
-  }, [isPaymentRequired, currentView]);
 
   // Reload companies data when accessing payments tab to get fresh pricing
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1739,6 +1736,25 @@ export default function FinancialScorePage() {
       localStorage.setItem(storageKey, JSON.stringify(selectedDashboardWidgets));
     }
   }, [selectedCompanyId, selectedDashboardWidgets]);
+
+  // Load default pricing when Default Pricing tab is opened
+  useEffect(() => {
+    if (siteAdminTab === 'default-pricing') {
+      fetch('/api/settings')
+        .then(res => res.json())
+        .then(data => {
+          if (data.settings) {
+            setDefaultBusinessMonthlyPrice(data.settings.businessMonthlyPrice ?? 195);
+            setDefaultBusinessQuarterlyPrice(data.settings.businessQuarterlyPrice ?? 500);
+            setDefaultBusinessAnnualPrice(data.settings.businessAnnualPrice ?? 1750);
+            setDefaultConsultantMonthlyPrice(data.settings.consultantMonthlyPrice ?? 195);
+            setDefaultConsultantQuarterlyPrice(data.settings.consultantQuarterlyPrice ?? 500);
+            setDefaultConsultantAnnualPrice(data.settings.consultantAnnualPrice ?? 1750);
+          }
+        })
+        .catch(err => console.error('Error loading default pricing:', err));
+    }
+  }, [siteAdminTab]);
 
   // Handle URL parameters for navigation and messages
   useEffect(() => {
@@ -2371,6 +2387,29 @@ export default function FinancialScorePage() {
       if (normalizedUser.role === 'consultant' && user.consultantId) {
         const { companies: loadedCompanies } = await companiesApi.getAll(user.consultantId);
         setCompanies(loadedCompanies || []);
+        
+        // Check payment for business users (have companyId) OR consultants with companies
+        let needsPayment = false;
+        
+        if (user.companyId && loadedCompanies && loadedCompanies.length > 0) {
+          // Business user - check their company's payment
+          const userCompany = loadedCompanies.find((c: any) => c.id === user.companyId);
+          if (userCompany) {
+            setSelectedCompanyId(userCompany.id);
+            setExpandedCompanyInfoId(userCompany.id);
+            needsPayment = !userCompany.selectedSubscriptionPlan;
+          }
+        } else if (loadedCompanies && loadedCompanies.length > 0) {
+          // Consultant with companies - check if any company has unpaid status
+          // For now, if they have companies, select the first one
+          const firstCompany = loadedCompanies[0];
+          setSelectedCompanyId(firstCompany.id);
+          setExpandedCompanyInfoId(firstCompany.id);
+          needsPayment = !firstCompany.selectedSubscriptionPlan;
+        }
+        
+        // Direct to payments if not paid, otherwise company management
+        setAdminDashboardTab(needsPayment ? 'payments' : 'company-management');
       }
       
       setLoginEmail('');
@@ -5744,8 +5783,30 @@ export default function FinancialScorePage() {
                     </div>
 
                     <button
-                      onClick={() => {
-                        alert(`Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              businessMonthlyPrice: defaultBusinessMonthlyPrice,
+                              businessQuarterlyPrice: defaultBusinessQuarterlyPrice,
+                              businessAnnualPrice: defaultBusinessAnnualPrice,
+                              consultantMonthlyPrice: defaultConsultantMonthlyPrice,
+                              consultantQuarterlyPrice: defaultConsultantQuarterlyPrice,
+                              consultantAnnualPrice: defaultConsultantAnnualPrice
+                            })
+                          });
+                          
+                          if (response.ok) {
+                            alert(`✅ Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
+                          } else {
+                            alert('❌ Failed to save pricing. Please try again.');
+                          }
+                        } catch (error) {
+                          console.error('Error saving pricing:', error);
+                          alert('❌ Error saving pricing. Please try again.');
+                        }
                       }}
                       style={{
                         padding: '12px 24px',
@@ -5817,8 +5878,30 @@ export default function FinancialScorePage() {
                     </div>
 
                     <button
-                      onClick={() => {
-                        alert(`Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              businessMonthlyPrice: defaultBusinessMonthlyPrice,
+                              businessQuarterlyPrice: defaultBusinessQuarterlyPrice,
+                              businessAnnualPrice: defaultBusinessAnnualPrice,
+                              consultantMonthlyPrice: defaultConsultantMonthlyPrice,
+                              consultantQuarterlyPrice: defaultConsultantQuarterlyPrice,
+                              consultantAnnualPrice: defaultConsultantAnnualPrice
+                            })
+                          });
+                          
+                          if (response.ok) {
+                            alert(`✅ Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
+                          } else {
+                            alert('❌ Failed to save pricing. Please try again.');
+                          }
+                        } catch (error) {
+                          console.error('Error saving pricing:', error);
+                          alert('❌ Error saving pricing. Please try again.');
+                        }
                       }}
                       style={{
                         padding: '12px 24px',
@@ -5844,8 +5927,7 @@ export default function FinancialScorePage() {
                       <li style={{ marginBottom: '6px' }}>Business defaults apply when creating companies in the <strong>Businesses</strong> tab</li>
                       <li style={{ marginBottom: '6px' }}>Consultant defaults apply when creating companies in the <strong>Consultants</strong> tab</li>
                       <li style={{ marginBottom: '6px' }}>You can override pricing for any individual company at any time</li>
-                      <li style={{ marginBottom: '6px' }}>Existing company pricing will not be affected by changes to defaults</li>
-                      <li>Leave blank or set to 0 to use system defaults ($195/$500/$1750)</li>
+                      <li>Existing company pricing will not be affected by changes to defaults</li>
                     </ul>
                   </div>
                 </div>
