@@ -1203,6 +1203,14 @@ export default function FinancialScorePage() {
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
   const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false);
   
+  // State - Default Pricing
+  const [defaultBusinessMonthlyPrice, setDefaultBusinessMonthlyPrice] = useState(195);
+  const [defaultBusinessQuarterlyPrice, setDefaultBusinessQuarterlyPrice] = useState(500);
+  const [defaultBusinessAnnualPrice, setDefaultBusinessAnnualPrice] = useState(1750);
+  const [defaultConsultantMonthlyPrice, setDefaultConsultantMonthlyPrice] = useState(195);
+  const [defaultConsultantQuarterlyPrice, setDefaultConsultantQuarterlyPrice] = useState(500);
+  const [defaultConsultantAnnualPrice, setDefaultConsultantAnnualPrice] = useState(1750);
+  
   // State - Projections
   const [defaultBestCaseRevMult, setDefaultBestCaseRevMult] = useState(1.5);
   const [defaultBestCaseExpMult, setDefaultBestCaseExpMult] = useState(0.7);
@@ -4884,6 +4892,23 @@ export default function FinancialScorePage() {
                 >
                   Businesses
                 </button>
+                <button
+                  onClick={() => setSiteAdminTab('default-pricing')}
+                  style={{
+                    padding: '8px 16px',
+                    background: siteAdminTab === 'default-pricing' ? '#667eea' : 'transparent',
+                    color: siteAdminTab === 'default-pricing' ? 'white' : '#64748b',
+                    border: 'none',
+                    borderBottom: siteAdminTab === 'default-pricing' ? '3px solid #667eea' : '3px solid transparent',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    borderRadius: '6px 6px 0 0',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Default Pricing
+                </button>
               </div>
 
               {/* Consultants Tab */}
@@ -5654,6 +5679,175 @@ export default function FinancialScorePage() {
                       })}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Default Pricing Tab */}
+              {siteAdminTab === 'default-pricing' && (
+                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Default Subscription Pricing</h2>
+                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
+                    Set default pricing for new businesses and consultants. You can still customize pricing for individual companies.
+                  </p>
+
+                  {/* Business Default Pricing */}
+                  <div style={{ background: '#eff6ff', border: '2px solid #3b82f6', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e40af', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      🏢 Default Business Pricing
+                    </h3>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Monthly Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultBusinessMonthlyPrice}
+                          onChange={(e) => setDefaultBusinessMonthlyPrice(parseFloat(e.target.value) || 0)}
+                          placeholder="195.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Billed monthly</div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Quarterly Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultBusinessQuarterlyPrice}
+                          onChange={(e) => setDefaultBusinessQuarterlyPrice(parseFloat(e.target.value) || 0)}
+                          placeholder="500.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Billed every 3 months</div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Annual Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultBusinessAnnualPrice}
+                          onChange={(e) => setDefaultBusinessAnnualPrice(parseFloat(e.target.value) || 0)}
+                          placeholder="1750.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        alert(`Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
+                      }}
+                      style={{
+                        padding: '12px 24px',
+                        background: '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 4px rgba(59, 130, 246, 0.3)'
+                      }}
+                    >
+                      💾 Save Business Defaults
+                    </button>
+                  </div>
+
+                  {/* Consultant Default Pricing */}
+                  <div style={{ background: '#f0fdf4', border: '2px solid #10b981', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      👥 Default Consultant Pricing
+                    </h3>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Monthly Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultConsultantMonthlyPrice}
+                          onChange={(e) => setDefaultConsultantMonthlyPrice(parseFloat(e.target.value) || 0)}
+                          placeholder="195.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Billed monthly</div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Quarterly Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultConsultantQuarterlyPrice}
+                          onChange={(e) => setDefaultConsultantQuarterlyPrice(parseFloat(e.target.value) || 0)}
+                          placeholder="500.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Billed every 3 months</div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Annual Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultConsultantAnnualPrice}
+                          onChange={(e) => setDefaultConsultantAnnualPrice(parseFloat(e.target.value) || 0)}
+                          placeholder="1750.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        alert(`Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
+                      }}
+                      style={{
+                        padding: '12px 24px',
+                        background: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)'
+                      }}
+                    >
+                      💾 Save Consultant Defaults
+                    </button>
+                  </div>
+
+                  <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '12px', padding: '16px' }}>
+                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      💡 How It Works
+                    </h4>
+                    <ul style={{ fontSize: '13px', color: '#78350f', marginLeft: '20px', marginBottom: '0' }}>
+                      <li style={{ marginBottom: '6px' }}>Business defaults apply when creating companies in the <strong>Businesses</strong> tab</li>
+                      <li style={{ marginBottom: '6px' }}>Consultant defaults apply when creating companies in the <strong>Consultants</strong> tab</li>
+                      <li style={{ marginBottom: '6px' }}>You can override pricing for any individual company at any time</li>
+                      <li style={{ marginBottom: '6px' }}>Existing company pricing will not be affected by changes to defaults</li>
+                      <li>Leave blank or set to 0 to use system defaults ($195/$500/$1750)</li>
+                    </ul>
+                  </div>
                 </div>
               )}
             </div>
