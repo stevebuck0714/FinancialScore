@@ -1382,7 +1382,7 @@ export default function FinancialScorePage() {
     }
   };
   const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'profile'>('company-management');
-  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses'>('consultants');
+  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'default-pricing'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
   const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
@@ -1569,7 +1569,7 @@ export default function FinancialScorePage() {
     if (adminDashboardTab === 'payments' && consultantId && selectedCompanyId) {
       const refreshCompanyData = async () => {
         try {
-          const fetchedCompanies = await companiesApi.list(consultantId);
+          const fetchedCompanies = await companiesApi.getAll(consultantId);
           setCompanies(fetchedCompanies);
         } catch (error) {
           console.error('Error refreshing company data:', error);
@@ -1969,7 +1969,7 @@ export default function FinancialScorePage() {
           setBenchmarks(benchmarkData || []);
           console.log('✅ Loaded', benchmarkData?.length || 0, 'benchmarks');
           if (benchmarkData && benchmarkData.length > 0) {
-            console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map(b => b.metricName).join(', '));
+            console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map((b: any) => b.metricName).join(', '));
           }
         } else {
           console.log('⚠️ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
@@ -2022,7 +2022,7 @@ export default function FinancialScorePage() {
             const { records } = await assessmentsApi.getByCompany(company.id);
             if (records) {
               console.log(`📊 Loaded ${records.length} assessment records for company ${company.id} (${company.name}):`, 
-                records.map(r => ({ userEmail: r.user?.email, companyId: r.companyId, answersCount: Object.keys(r.responses || {}).length }))
+                records.map((r: any) => ({ userEmail: r.user?.email, companyId: r.companyId, answersCount: Object.keys(r.responses || {}).length }))
               );
               allAssessments.push(...records);
             }
@@ -2766,11 +2766,7 @@ export default function FinancialScorePage() {
     }
     setIsLoading(true);
     try {
-      const { company } = await companiesApi.update(selectedCompanyId, {
-        subscriptionMonthlyPrice: subscriptionMonthlyPrice,
-        subscriptionQuarterlyPrice: subscriptionQuarterlyPrice,
-        subscriptionAnnualPrice: subscriptionAnnualPrice
-      });
+      const { company } = await companiesApi.updatePricing(selectedCompanyId, subscriptionMonthlyPrice || 0, subscriptionQuarterlyPrice || 0, subscriptionAnnualPrice || 0);
       
       console.log('💰 Subscription pricing saved:', company);
       
@@ -2778,12 +2774,9 @@ export default function FinancialScorePage() {
       setCompanies(companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c));
       
       // Reload companies list to ensure fresh data
-      if (currentUser?.role === 'siteadmin') {
-        const allCompanies = await companiesApi.getAll();
+      if (currentUser?.consultantId) {
+        const allCompanies = await companiesApi.getAll(currentUser.consultantId);
         setCompanies(allCompanies);
-      } else if (currentUser?.role === 'consultant' && currentUser?.id) {
-        const consultantCompanies = await companiesApi.getByConsultant(currentUser.id);
-        setCompanies(consultantCompanies);
       }
       
       alert('✅ Subscription pricing saved successfully!');
@@ -3029,7 +3022,7 @@ export default function FinancialScorePage() {
     if (json.length < 2) { setError('File appears empty or invalid'); return; }
     
     // Check if this is a transposed format (field names in column A, dates in row 0)
-    const firstCell = json[0] && json[0][0];
+    const firstCell = json[0] && (json[0] as any)[0];
     const isTransposed = firstCell === null || firstCell === '' || (typeof firstCell === 'number' && firstCell > 40000); // Excel date serial numbers
     
     if (isTransposed) {
@@ -3065,7 +3058,7 @@ export default function FinancialScorePage() {
         rows.push(monthRow);
       }
       
-      const header = ['Date', ...json.slice(1).map(r => r[0]).filter(n => n)];
+      const header = ['Date', ...json.slice(1).map((r: any) => r[0]).filter(n => n)];
       setRawRows(rows);
       setColumns(header);
       setMapping(autoMapColumns(header));
@@ -4338,7 +4331,7 @@ export default function FinancialScorePage() {
             </div>
 
             {/* Management Assessment Section - For Assessment Users and Consultants */}
-            {((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+            {((currentUser?.role === 'user' && (currentUser?.userType as any) === 'assessment') || currentUser?.role === 'consultant') && (
             <div style={{ marginBottom: '3px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
