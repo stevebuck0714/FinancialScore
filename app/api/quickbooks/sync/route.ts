@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        oauthClient.setToken(newToken);
+        (oauthClient as any).token = newToken;
       } catch (refreshError) {
         console.error('Token refresh failed:', refreshError);
         await prisma.accountingConnection.update({
