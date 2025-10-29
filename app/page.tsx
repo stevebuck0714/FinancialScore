@@ -1838,7 +1838,7 @@ export default function FinancialScorePage() {
         });
         
         // Load financial records
-        const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+        const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const companyName = selectedCompany?.name || 'Unknown';
         console.log(`📂 LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
         
@@ -1950,7 +1950,7 @@ export default function FinancialScorePage() {
         }
         
         // Load industry benchmarks
-        const company = companies.find(c => c.id === selectedCompanyId);
+        const company = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         if (company && company.industrySector) {
           console.log('Company has industry sector:', company.industrySector);
           // Get the latest Total Assets to determine asset size category
@@ -4626,7 +4626,7 @@ export default function FinancialScorePage() {
                 </h3>
                 
                 {/* Selected Company Name Display for Business Users */}
-                {currentUser.consultantType === 'business' && selectedCompanyId && companies.find(c => c.id === selectedCompanyId) && (
+                {currentUser.consultantType === 'business' && selectedCompanyId && Array.isArray(companies) && companies.find(c => c.id === selectedCompanyId) && (
                   <div style={{ 
                     paddingLeft: '28px', 
                     marginBottom: '12px',
@@ -4642,7 +4642,7 @@ export default function FinancialScorePage() {
                       borderRadius: '8px',
                       border: '2px solid #bfdbfe'
                     }}>
-                      {companies.find(c => c.id === selectedCompanyId)?.name}
+                      {Array.isArray(companies) && companies.find(c => c.id === selectedCompanyId)?.name}
                     </div>
                   </div>
                 )}
@@ -5541,7 +5541,7 @@ export default function FinancialScorePage() {
                   ) : (
                     <div style={{ display: 'grid', gap: '12px' }}>
                       {consultants.filter(c => c.type === 'business').map((business) => {
-                        const businessCompany = companies.find(comp => comp.consultantId === business.id);
+                        const businessCompany = Array.isArray(companies) ? companies.find(comp => comp.consultantId === business.id) : undefined;
                         const isExpanded = expandedBusinessIds.has(business.id);
                         const editing = editingPricing[business.id];
                         
@@ -6111,7 +6111,7 @@ export default function FinancialScorePage() {
             {/* Show selected company or add new company option */}
             {(() => {
               // For business users, auto-select their company if not already selected
-              if (currentUser.consultantType === 'business' && !selectedCompanyId && companies.length > 0) {
+              if (currentUser.consultantType === 'business' && !selectedCompanyId && Array.isArray(companies) && companies.length > 0) {
                 const businessCompany = companies.find(c => c.consultantId === currentUser.consultantId);
                 if (businessCompany) {
                   setTimeout(() => setSelectedCompanyId(businessCompany.id), 0);
@@ -7204,7 +7204,7 @@ export default function FinancialScorePage() {
 
           {/* Checkout Modal */}
           {showCheckoutModal && selectedSubscriptionPlan && (() => {
-            const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+            const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
             const planPrice = selectedSubscriptionPlan === 'monthly' ? (selectedCompany?.subscriptionMonthlyPrice ?? 0) :
                              selectedSubscriptionPlan === 'quarterly' ? (selectedCompany?.subscriptionQuarterlyPrice ?? 0) :
                              (selectedCompany?.subscriptionAnnualPrice ?? 0);
@@ -13142,7 +13142,7 @@ export default function FinancialScorePage() {
           </div>;
         }
         
-        const currentCompany = companies.find(c => c.id === selectedCompanyId);
+        const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
         console.log(`🔄 ========================================`);
         console.log(`🔄 DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
@@ -14276,7 +14276,7 @@ export default function FinancialScorePage() {
                                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                                 const link = document.createElement('a');
                                 const url = URL.createObjectURL(blob);
-                                const companyName = companies.find(c => c.id === selectedCompanyId)?.name || 'Company';
+                                const companyName = (Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined)?.name || 'Company';
                                 const fileName = `${companyName.replace(/[^a-zA-Z0-9]/g, '_')}_Financial_Data_${new Date().toISOString().substring(0, 10)}.csv`;
                                 
                                 link.setAttribute('href', url);
@@ -14327,7 +14327,7 @@ export default function FinancialScorePage() {
           </div>;
         }
         
-        const currentCompany = companies.find(c => c.id === selectedCompanyId);
+        const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
         console.log(`📊 ========================================`);
         console.log(`📊 FINANCIAL STATEMENTS RENDERING (Refresh Key: ${dataRefreshKey})`);
