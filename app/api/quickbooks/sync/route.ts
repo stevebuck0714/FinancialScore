@@ -122,8 +122,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'QuickBooks Realm ID not found' }, { status: 400 });
     }
 
-    const baseUrl = oauthClient.environment === 'sandbox' 
-      ? 'https://sandbox-quickbooks.api.intuit.com' 
+    const baseUrl = (process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox') === 'sandbox'
+      ? 'https://sandbox-quickbooks.api.intuit.com'
       : 'https://quickbooks.api.intuit.com';
     const companyUrl = `${baseUrl}/v3/company/${realmId}`;
 
