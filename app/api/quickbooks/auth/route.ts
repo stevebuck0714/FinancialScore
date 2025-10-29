@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     // Generate authorization URI
     const authUri = oauthClient.authorizeUri({
-      scope: [OAuthClient.scopes.Accounting],
+      scope: ['com.intuit.quickbooks.accounting'],
       state: companyId, // Pass company ID as state parameter
     });
 
