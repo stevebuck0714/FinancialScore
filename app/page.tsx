@@ -3742,7 +3742,7 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '480px', margin: '0 auto', background: 'white', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: '40px' }}>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
             <div style={{ fontSize: '48px', fontWeight: '700', color: '#667eea', marginBottom: '16px', letterSpacing: '-1px' }}>
-              Venturis<sup style={{ fontSize: '18px', fontWeight: '400' }}>TM</sup>
+              Corelytics<sup style={{ fontSize: '18px', fontWeight: '400' }}>TM</sup>
             </div>
             <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Business Evaluation Tool</h1>
             <p style={{ color: '#64748b', fontSize: '14px' }}>Professional financial analysis for consultants and businesses</p>
@@ -4143,7 +4143,7 @@ export default function FinancialScorePage() {
               style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', cursor: 'pointer', letterSpacing: '-0.5px' }} 
               onClick={() => setCurrentView('siteadmin')}
             >
-              Venturis<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
+              Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
             </div>
             <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>Site Administration</h2>
           </div>
@@ -4162,7 +4162,7 @@ export default function FinancialScorePage() {
               style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', cursor: 'pointer', letterSpacing: '-0.5px' }} 
               onClick={() => currentUser?.role === 'consultant' ? setCurrentView('admin') : setCurrentView('fs-score')}
             >
-              Venturis<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
+              Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
             </div>
             <nav style={{ display: 'flex', gap: '24px' }}>
               <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'dashboard' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #667eea' : '3px solid transparent' }}>Dashboard</button>
@@ -4184,7 +4184,7 @@ export default function FinancialScorePage() {
         {currentUser?.userType === 'assessment' && (
         <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
           <div style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', letterSpacing: '-0.5px' }}>
-            Venturis<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup> - Management Assessment
+            Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup> - Management Assessment
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <span style={{ fontSize: '14px', color: '#64748b' }}>{currentUser?.name}</span>
@@ -8864,11 +8864,11 @@ export default function FinancialScorePage() {
       {currentView === 'fs-intro' && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '32px', textAlign: 'center' }}>Introduction to the Venturis Financial Score</h1>
+            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '32px', textAlign: 'center' }}>Introduction to the Corelytics Financial Score</h1>
             
             <div style={{ fontSize: '16px', color: '#475569', lineHeight: '1.8', maxWidth: '900px', margin: '0 auto' }}>
               <p style={{ marginBottom: '20px' }}>
-                We would like to introduce to you the emerging standard score for small and medium businesses. It is called the <strong>Venturis Financial Score (VFS)</strong>. On a scale of 1 to 100, 100 indicates a company that is firing on all cylinders and building value at a steady clip; a score of zero indicates no operations. The scores in between have a lot to say about the general health of any company being measured.
+                We would like to introduce to you the emerging standard score for small and medium businesses. It is called the <strong>Corelytics Financial Score (CFS)</strong>. On a scale of 1 to 100, 100 indicates a company that is firing on all cylinders and building value at a steady clip; a score of zero indicates no operations. The scores in between have a lot to say about the general health of any company being measured.
               </p>
               
               <p style={{ marginBottom: '32px' }}>
@@ -8876,7 +8876,7 @@ export default function FinancialScorePage() {
               </p>
               
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '32px', marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Approximate Interpretation of Venturis Financial Scores:</h2>
+                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Approximate Interpretation of Corelytics Financial Scores:</h2>
                 
                 <div style={{ display: 'grid', gap: '20px' }}>
                   <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
@@ -9070,7 +9070,7 @@ export default function FinancialScorePage() {
               
               <div className="fs-score-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px', maxWidth: '900px' }}>
                 <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', padding: '20px', color: 'white', boxShadow: '0 4px 12px rgba(102,126,234,0.3)' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Venturis Financial Score</div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Corelytics Financial Score</div>
                   <div style={{ fontSize: '42px', fontWeight: '700' }}>{finalScore.toFixed(2)}</div>
                 </div>
                 <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '20px', border: '2px solid #86efac' }}>
