@@ -196,6 +196,7 @@ interface Company {
   subscriptionMonthlyPrice?: number;
   subscriptionQuarterlyPrice?: number;
   subscriptionAnnualPrice?: number;
+  selectedSubscriptionPlan?: string | null;
 }
 
 interface CompanyProfile {
