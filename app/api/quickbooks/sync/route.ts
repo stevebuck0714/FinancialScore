@@ -68,13 +68,13 @@ export async function POST(request: NextRequest) {
       redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
     });
 
-    // Set the token
-    oauthClient.setToken({
+    // Set the token directly on the client object
+    (oauthClient as any).token = {
       access_token: accessToken,
       refresh_token: refreshToken,
       token_type: 'bearer',
       expires_in: 3600,
-    });
+    };
 
     // Check if token needs refresh
     const now = new Date();
