@@ -84,9 +84,9 @@ export async function POST(request: NextRequest) {
           data: {
             name: name, // Use the business name as company name
             consultantId: consultant.id,
-            subscriptionMonthlyPrice: defaultPricing.businessMonthlyPrice ?? 195,
-            subscriptionQuarterlyPrice: defaultPricing.businessQuarterlyPrice ?? 500,
-            subscriptionAnnualPrice: defaultPricing.businessAnnualPrice ?? 1750
+            subscriptionMonthlyPrice: defaultPricing?.businessMonthlyPrice ?? 0,
+            subscriptionQuarterlyPrice: defaultPricing?.businessQuarterlyPrice ?? 0,
+            subscriptionAnnualPrice: defaultPricing?.businessAnnualPrice ?? 0
             // DO NOT set selectedSubscriptionPlan - they must pay first
           }
         });
