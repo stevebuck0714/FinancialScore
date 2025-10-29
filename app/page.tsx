@@ -1244,6 +1244,16 @@ export default function FinancialScorePage() {
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
     
+    // If all subscription prices are $0, no payment is required (free access)
+    const allPricesZero = 
+      (selectedCompany.subscriptionMonthlyPrice === 0 || selectedCompany.subscriptionMonthlyPrice === null) &&
+      (selectedCompany.subscriptionQuarterlyPrice === 0 || selectedCompany.subscriptionQuarterlyPrice === null) &&
+      (selectedCompany.subscriptionAnnualPrice === 0 || selectedCompany.subscriptionAnnualPrice === null);
+    
+    if (allPricesZero) {
+      return false; // Free access - no payment required
+    }
+    
     // Simple check: if no subscription plan selected, payment is required
     return !selectedCompany.selectedSubscriptionPlan;
   }, [selectedCompanyId, currentUser, companies]);
@@ -5457,18 +5467,18 @@ export default function FinancialScorePage() {
                                             ) : (
                                               <div>
                                                 <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
-                                                  <div><strong>Monthly:</strong> ${company.subscriptionMonthlyPrice?.toFixed(2) || '195.00'}</div>
-                                                  <div><strong>Quarterly:</strong> ${company.subscriptionQuarterlyPrice?.toFixed(2) || '500.00'}</div>
-                                                  <div><strong>Annual:</strong> ${company.subscriptionAnnualPrice?.toFixed(2) || '1750.00'}</div>
+                                                  <div><strong>Monthly:</strong> ${company.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
+                                                  <div><strong>Quarterly:</strong> ${company.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
+                                                  <div><strong>Annual:</strong> ${company.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
                                                 </div>
                                                 <button
                                                   onClick={() => {
                                                     setEditingPricing({
                                                       ...editingPricing,
                                                       [company.id]: {
-                                                        monthly: company.subscriptionMonthlyPrice || 195,
-                                                        quarterly: company.subscriptionQuarterlyPrice || 500,
-                                                        annual: company.subscriptionAnnualPrice || 1750
+                                                        monthly: company.subscriptionMonthlyPrice ?? 0,
+                                                        quarterly: company.subscriptionQuarterlyPrice ?? 0,
+                                                        annual: company.subscriptionAnnualPrice ?? 0
                                                       }
                                                     });
                                                   }}
@@ -5689,18 +5699,18 @@ export default function FinancialScorePage() {
                                   ) : (
                                     <div>
                                       <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
-                                        <div><strong>Monthly:</strong> ${businessCompany?.subscriptionMonthlyPrice?.toFixed(2) || '195.00'}</div>
-                                        <div><strong>Quarterly:</strong> ${businessCompany?.subscriptionQuarterlyPrice?.toFixed(2) || '500.00'}</div>
-                                        <div><strong>Annual:</strong> ${businessCompany?.subscriptionAnnualPrice?.toFixed(2) || '1750.00'}</div>
+                                        <div><strong>Monthly:</strong> ${businessCompany?.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
+                                        <div><strong>Quarterly:</strong> ${businessCompany?.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
+                                        <div><strong>Annual:</strong> ${businessCompany?.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
                                       </div>
                                       <button
                                         onClick={() => {
                                           setEditingPricing({
                                             ...editingPricing,
                                             [business.id]: {
-                                              monthly: businessCompany?.subscriptionMonthlyPrice || 195,
-                                              quarterly: businessCompany?.subscriptionQuarterlyPrice || 500,
-                                              annual: businessCompany?.subscriptionAnnualPrice || 1750
+                                              monthly: businessCompany?.subscriptionMonthlyPrice ?? 0,
+                                              quarterly: businessCompany?.subscriptionQuarterlyPrice ?? 0,
+                                              annual: businessCompany?.subscriptionAnnualPrice ?? 0
                                             }
                                           });
                                         }}
@@ -7194,9 +7204,9 @@ export default function FinancialScorePage() {
           {/* Checkout Modal */}
           {showCheckoutModal && selectedSubscriptionPlan && (() => {
             const selectedCompany = companies.find(c => c.id === selectedCompanyId);
-            const planPrice = selectedSubscriptionPlan === 'monthly' ? selectedCompany?.subscriptionMonthlyPrice || 195 :
-                             selectedSubscriptionPlan === 'quarterly' ? selectedCompany?.subscriptionQuarterlyPrice || 500 :
-                             selectedCompany?.subscriptionAnnualPrice || 1750;
+            const planPrice = selectedSubscriptionPlan === 'monthly' ? (selectedCompany?.subscriptionMonthlyPrice ?? 0) :
+                             selectedSubscriptionPlan === 'quarterly' ? (selectedCompany?.subscriptionQuarterlyPrice ?? 0) :
+                             (selectedCompany?.subscriptionAnnualPrice ?? 0);
             const planPeriod = selectedSubscriptionPlan === 'monthly' ? '/month' :
                               selectedSubscriptionPlan === 'quarterly' ? '/quarter' : '/year';
 

@@ -377,14 +377,14 @@ model SystemSettings {
   key                             String    @unique // e.g., "default_pricing"
   
   // Business Default Pricing
-  businessMonthlyPrice            Float?    @default(195)
-  businessQuarterlyPrice          Float?    @default(500)
-  businessAnnualPrice             Float?    @default(1750)
+  businessMonthlyPrice            Float?    @default(0)
+  businessQuarterlyPrice          Float?    @default(0)
+  businessAnnualPrice             Float?    @default(0)
   
   // Consultant Default Pricing
-  consultantMonthlyPrice          Float?    @default(195)
-  consultantQuarterlyPrice        Float?    @default(500)
-  consultantAnnualPrice           Float?    @default(1750)
+  consultantMonthlyPrice          Float?    @default(0)
+  consultantQuarterlyPrice        Float?    @default(0)
+  consultantAnnualPrice           Float?    @default(0)
   
   updatedAt                       DateTime  @updatedAt
   createdAt                       DateTime  @default(now())
