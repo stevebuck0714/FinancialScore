@@ -1242,7 +1242,7 @@ export default function FinancialScorePage() {
   const isPaymentRequired = useCallback(() => {
     if (!selectedCompanyId || !currentUser) return false;
     
-    const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+    const selectedCompany = companies?.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
     
     // If all subscription prices are $0, no payment is required (free access)
@@ -2704,10 +2704,10 @@ export default function FinancialScorePage() {
     }
     return users.filter(u => u.companyId === companyId && u.role === 'user');
   };
-  const getCurrentCompany = () => companies.find(c => c.id === selectedCompanyId);
+  const getCurrentCompany = () => companies?.find(c => c.id === selectedCompanyId);
 
   const handleSelectCompany = (companyId: string) => {
-    const company = companies.find(c => c.id === companyId);
+    const company = companies?.find(c => c.id === companyId);
     if (!company) return;
     
     // Select the company
