@@ -305,7 +305,7 @@ export async function POST(request: NextRequest) {
         status: 'success',
         recordsImported,
         errorCount,
-        errorDetails: errors.length > 0 ? { errors } : null,
+        errorDetails: errors.length > 0 ? { errors } : undefined,
         duration: Date.now() - syncStartTime,
       },
     });
