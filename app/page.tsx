@@ -1242,7 +1242,7 @@ export default function FinancialScorePage() {
   const isPaymentRequired = useCallback(() => {
     if (!selectedCompanyId || !currentUser) return false;
     
-    const selectedCompany = companies?.find(c => c.id === selectedCompanyId);
+    const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
     if (!selectedCompany) return false;
     
     // If all subscription prices are $0, no payment is required (free access)
@@ -1601,7 +1601,10 @@ export default function FinancialScorePage() {
     const isAssessmentUser = savedUser?.userType === 'assessment';
     
     if (saved.consultants) setConsultants(JSON.parse(saved.consultants));
-    if (saved.companies) setCompanies(JSON.parse(saved.companies));
+    if (saved.companies) {
+      const parsed = JSON.parse(saved.companies);
+      setCompanies(Array.isArray(parsed) ? parsed : []);
+    }
     if (saved.users) setUsers(JSON.parse(saved.users));
     if (saved.records) setFinancialDataRecords(JSON.parse(saved.records));
     if (saved.selectedCompany) setSelectedCompanyId(saved.selectedCompany);
@@ -1998,6 +2001,9 @@ export default function FinancialScorePage() {
     const loadConsultantCompanies = async () => {
       if (!currentUser || currentUser.role !== 'consultant' || !currentUser.consultantId) return;
       
+      // Only load if companies haven't been loaded yet (prevents double-loading on login)
+      if (companies.length > 0) return;
+      
       try {
         const { companies: consultantCompanies } = await companiesApi.getAll(currentUser.consultantId);
         setCompanies(consultantCompanies || []);
@@ -2040,7 +2046,7 @@ export default function FinancialScorePage() {
     };
     
     loadConsultantCompanies();
-  }, [currentUser]);
+  }, [currentUser, companies.length]);
 
   // Load consultants for site admin
   useEffect(() => {
@@ -2538,7 +2544,7 @@ export default function FinancialScorePage() {
         consultantId: currentUser.consultantId
       });
       console.log('Company created:', company);
-      setCompanies([...companies, company]);
+      setCompanies(Array.isArray(companies) ? [...companies, company] : [company]);
       setNewCompanyName('');
       
       // Automatically select the newly created company
@@ -2558,7 +2564,7 @@ export default function FinancialScorePage() {
     setIsLoading(true);
     try {
       await companiesApi.delete(companyId);
-      setCompanies(companies.filter(c => c.id !== companyId));
+      setCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyId) : []);
       setUsers(users.filter(u => u.companyId !== companyId));
       setFinancialDataRecords(financialDataRecords.filter(r => r.companyId !== companyId));
       if (selectedCompanyId === companyId) setSelectedCompanyId('');
@@ -2704,10 +2710,10 @@ export default function FinancialScorePage() {
     }
     return users.filter(u => u.companyId === companyId && u.role === 'user');
   };
-  const getCurrentCompany = () => companies?.find(c => c.id === selectedCompanyId);
+  const getCurrentCompany = () => Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
 
   const handleSelectCompany = (companyId: string) => {
-    const company = companies?.find(c => c.id === companyId);
+    const company = Array.isArray(companies) ? companies.find(c => c.id === companyId) : undefined;
     if (!company) return;
     
     // Select the company
@@ -2735,7 +2741,7 @@ export default function FinancialScorePage() {
         addressCountry: companyAddressCountry,
         industrySector: companyIndustrySector as number
       });
-      setCompanies(companies.map(c => c.id === editingCompanyId ? { ...c, ...company } : c));
+      setCompanies(Array.isArray(companies) ? companies.map(c => c.id === editingCompanyId ? { ...c, ...company } : c) : [company]);
       setSelectedCompanyId(editingCompanyId);
       setShowCompanyDetailsModal(false);
       
@@ -2771,7 +2777,7 @@ export default function FinancialScorePage() {
       console.log('💰 Subscription pricing saved:', company);
       
       // Update the companies list with the new pricing
-      setCompanies(companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c));
+      setCompanies(Array.isArray(companies) ? companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c) : [company]);
       
       // Reload companies list to ensure fresh data
       if (currentUser?.consultantId) {
@@ -2922,7 +2928,7 @@ export default function FinancialScorePage() {
       await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual);
       
       // Update local state
-      setCompanies(companies.map(c => 
+      setCompanies(Array.isArray(companies) ? companies.map(c => 
         c.id === companyId 
           ? { 
               ...c, 
@@ -2932,7 +2938,7 @@ export default function FinancialScorePage() {
               selectedSubscriptionPlan: null // Reset selected plan when pricing changes
             } 
           : c
-      ));
+      ) : []);
       
       // Clear editing state
       setEditingPricing((prev) => {
@@ -2986,9 +2992,9 @@ export default function FinancialScorePage() {
       
       // Update local state
       setConsultants(consultants.filter(c => c.id !== consultantId));
-      const consultantCompanies = companies.filter(c => c.consultantId === consultantId);
+      const consultantCompanies = Array.isArray(companies) ? companies.filter(c => c.consultantId === consultantId) : [];
       const companyIds = consultantCompanies.map(c => c.id);
-      setCompanies(companies.filter(c => c.consultantId !== consultantId));
+      setCompanies(Array.isArray(companies) ? companies.filter(c => c.consultantId !== consultantId) : []);
       setUsers(users.filter(u => !companyIds.includes(u.companyId) && u.id !== consultantId));
       setFinancialDataRecords(financialDataRecords.filter(r => !companyIds.includes(r.companyId)));
       setAssessmentRecords(assessmentRecords.filter(r => !companyIds.includes(r.companyId)));
@@ -3000,6 +3006,7 @@ export default function FinancialScorePage() {
   };
 
   const getConsultantCompanies = (consultantId: string) => {
+    if (!Array.isArray(companies)) return [];
     return companies.filter(c => c.consultantId === consultantId).sort((a, b) => a.name.localeCompare(b.name));
   };
 
@@ -4644,12 +4651,12 @@ export default function FinancialScorePage() {
                 {currentUser.consultantType !== 'business' && (
                   <div style={{ paddingLeft: '28px' }}>
                     {/* List of Companies */}
-                    {companies.filter(c => c.consultantId === currentUser.consultantId).length > 0 ? (
+                    {Array.isArray(companies) && companies.filter(c => c.consultantId === currentUser.consultantId).length > 0 ? (
                       <div>
                         <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', padding: '4px 0' }}>
                           My Companies
                         </div>
-                        {companies.filter(c => c.consultantId === currentUser.consultantId).map(comp => (
+                        {Array.isArray(companies) && companies.filter(c => c.consultantId === currentUser.consultantId).map(comp => (
                           <div
                             key={comp.id}
                             onClick={() => handleSelectCompany(comp.id)}
@@ -6159,7 +6166,7 @@ export default function FinancialScorePage() {
               ) : (
               <>
                 {/* Only show the selected company - always expanded */}
-                {companies.filter(c => c.id === selectedCompanyId).map(comp => (
+                {Array.isArray(companies) && companies.filter(c => c.id === selectedCompanyId).map(comp => (
                 <div key={comp.id} style={{ background: '#f8fafc', borderRadius: '8px', padding: '24px', border: '2px solid #667eea' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <div>
@@ -7002,10 +7009,10 @@ export default function FinancialScorePage() {
 
           {/* Payments/Billing Tab */}
           {adminDashboardTab === 'payments' && selectedCompanyId && (() => {
-            const selectedCompany = companies.find(c => c.id === selectedCompanyId);
-            const monthlyPrice = selectedCompany?.subscriptionMonthlyPrice ?? 195;
-            const quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice ?? 500;
-            const annualPrice = selectedCompany?.subscriptionAnnualPrice ?? 1750;
+            const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+            const monthlyPrice = selectedCompany?.subscriptionMonthlyPrice ?? 0;
+            const quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice ?? 0;
+            const annualPrice = selectedCompany?.subscriptionAnnualPrice ?? 0;
             
             return (
             <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
