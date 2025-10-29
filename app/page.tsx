@@ -444,11 +444,11 @@ function normalizeRows(raw: any[], mapping: Mappings): NormalRow[] {
   for (const r of raw) {
     const d = parseDateLike(r[mapping.date]);
     if (!d) continue;
-    function N(col?: string) {
+    const N = (col?: string) => {
       const v = col ? r[col] : null;
       const n = Number(v);
       return Number.isFinite(n) ? n : 0;
-    }
+    };
     const row: NormalRow = {
       date: d,
       month: monthKey(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))),
