@@ -3799,7 +3799,17 @@ export default function FinancialScorePage() {
                     if (!response.ok) {
                       throw new Error(data.error || 'Failed to send reset email');
                     }
-                    setResetSuccess('Password reset instructions sent! Check your email.');
+                    
+                    // In development, show the reset link
+                    if (data.dev_info?.resetLink) {
+                      setResetSuccess(`Password reset link: `);
+                      // Open link in a new tab after a short delay
+                      setTimeout(() => {
+                        window.open(data.dev_info.resetLink, '_blank');
+                      }, 500);
+                    } else {
+                      setResetSuccess('Password reset instructions sent! Check your email.');
+                    }
                     setResetEmail('');
                   } catch (error) {
                     setLoginError(error instanceof Error ? error.message : 'Failed to send reset email');

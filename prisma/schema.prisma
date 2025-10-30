@@ -94,11 +94,14 @@ model User {
   consultant          Consultant?
   financialRecords    FinancialRecord[]
   assessmentRecords   AssessmentRecord[]
+  passwordResetToken  String?             @unique
+  passwordResetExpires DateTime?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
   @@index([email])
   @@index([companyId])
+  @@index([passwordResetToken])
 }
 
 model FinancialRecord {
