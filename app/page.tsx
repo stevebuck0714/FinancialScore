@@ -2191,15 +2191,20 @@ export default function FinancialScorePage() {
           const monthValue = row[mapping.date] || `Month ${i + 1}`;
           // Parse date string to create monthDate
           let monthDate = new Date();
-          if (monthValue && monthValue.includes('/')) {
+          const monthValueStr = String(monthValue);
+          if (monthValue && typeof monthValue === 'string' && monthValue.includes('/')) {
             const [month, day, year] = monthValue.split('/');
             monthDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-          } else if (monthValue && monthValue.includes('-')) {
+          } else if (monthValue && typeof monthValue === 'string' && monthValue.includes('-')) {
             monthDate = new Date(monthValue);
+          } else if (typeof monthValue === 'number') {
+            // Handle Excel serial date numbers
+            const excelEpoch = new Date(1899, 11, 30);
+            monthDate = new Date(excelEpoch.getTime() + monthValue * 24 * 60 * 60 * 1000);
           }
           
           return {
-          month: monthValue,
+          month: monthValueStr,
           monthDate: monthDate.toISOString(),
           revenue: parseFloat(row[mapping.revenue!]) || 0,
           expense: parseFloat(row[mapping.expense!]) || 0,
@@ -6031,7 +6036,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Import Financials
+              Excel Import
             </button>
             <button
               onClick={() => handleAdminTabNavigation('api-connections')}
@@ -6522,7 +6527,7 @@ export default function FinancialScorePage() {
               )}
 
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Import Financials</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Excel Import</h2>
                 
                 <div style={{ marginBottom: '20px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
@@ -6620,7 +6625,7 @@ export default function FinancialScorePage() {
           {!selectedCompanyId && adminDashboardTab === 'import-financials' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to import financials.</p>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to import Excel files.</p>
             </div>
           )}
 
@@ -7648,7 +7653,7 @@ export default function FinancialScorePage() {
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '20px', color: '#991b1b' }}>
               <strong>No financial data found.</strong>
               <p style={{ marginTop: '8px', marginBottom: 0 }}>
-                Please upload financial data in the Import Financials tab or sync from QuickBooks in the Accounting API Connections tab.
+                Please upload financial data in the Excel Import tab or sync from QuickBooks in the Accounting API Connections tab.
               </p>
             </div>
           )}
