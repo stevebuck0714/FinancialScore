@@ -21,7 +21,7 @@ export async function sendPasswordResetEmail({
     const { data, error } = await resend.emails.send({
       from: DEFAULT_FROM,
       to: [to],
-      subject: 'Reset Your Password - Financial Score',
+      subject: 'Reset Your Password - Corelytics',
       html: getPasswordResetEmailHTML(userName, resetLink),
     });
 
@@ -58,7 +58,7 @@ function getPasswordResetEmailHTML(userName: string, resetLink: string): string 
           <tr>
             <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; text-align: center; border-radius: 8px 8px 0 0;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
-                Financial Score
+                Corelytics
               </h1>
             </td>
           </tr>
@@ -71,11 +71,11 @@ function getPasswordResetEmailHTML(userName: string, resetLink: string): string 
               </h2>
               
               <p style="margin: 0 0 20px 0; color: #475569; font-size: 16px; line-height: 1.6;">
-                Hi ${userName},
+                Hello,
               </p>
               
               <p style="margin: 0 0 20px 0; color: #475569; font-size: 16px; line-height: 1.6;">
-                We received a request to reset your password for your Financial Score account. Click the button below to create a new password:
+                We received a request to reset your password for your Corelytics account. Click the button below to create a new password:
               </p>
               
               <!-- Button -->
@@ -115,7 +115,7 @@ function getPasswordResetEmailHTML(userName: string, resetLink: string): string 
           <tr>
             <td style="padding: 30px 40px; background-color: #f8fafc; border-radius: 0 0 8px 8px; text-align: center; border-top: 1px solid #e2e8f0;">
               <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.6;">
-                © ${new Date().getFullYear()} Financial Score. All rights reserved.
+                © ${new Date().getFullYear()} Corelytics. All rights reserved.
               </p>
               <p style="margin: 10px 0 0 0; color: #94a3b8; font-size: 12px; line-height: 1.6;">
                 This is an automated email. Please do not reply.
