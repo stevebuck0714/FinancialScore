@@ -1,19 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { processPayment, PaymentDetails } from '@/lib/usaepay';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     // Parse request body
     const body = await request.json();
     const {
@@ -51,28 +41,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify the company belongs to the user or user is admin
+    // Verify the company exists
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      include: {
-        users: true,
-      },
     });
 
     if (!company) {
       return NextResponse.json(
         { success: false, error: 'Company not found' },
         { status: 404 }
-      );
-    }
-
-    const userBelongsToCompany = company.users.some(u => u.id === session.user.id);
-    const isAdmin = session.user.role === 'SITEADMIN';
-
-    if (!userBelongsToCompany && !isAdmin) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized to process payment for this company' },
-        { status: 403 }
       );
     }
 
@@ -148,14 +125,6 @@ export async function POST(request: NextRequest) {
 // GET endpoint to check payment configuration status
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     // Check if USAePay is configured
     const isConfigured = !!(process.env.USAEPAY_API_KEY && process.env.USAEPAY_PIN);
     const isSandbox = process.env.USAEPAY_SANDBOX === 'true';
