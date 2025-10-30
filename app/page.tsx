@@ -7258,12 +7258,49 @@ export default function FinancialScorePage() {
                   <div style={{ marginBottom: '20px' }}>
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>💳 Payment Information</h3>
                     
-                    {/* Simple Payment Form - Inline Styled */}
-                    <form onSubmit={(e) => {
+                    {/* Payment Form */}
+                    <form onSubmit={async (e) => {
                       e.preventDefault();
-                      alert('🎉 Payment processing functionality coming soon!\n\nNext steps:\n1. Configure USAePay API credentials in .env.local\n2. Restart the dev server\n3. Payment will be processed through USAePay API');
-                      setShowCheckoutModal(false);
-                      setSelectedSubscriptionPlan(null);
+                      const formData = new FormData(e.currentTarget);
+                      
+                      try {
+                        const response = await fetch('/api/payments', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            amount: planPrice,
+                            companyId: selectedCompanyId,
+                            subscriptionPlan: `${selectedSubscriptionPlan} Plan`,
+                            billingPeriod: selectedSubscriptionPlan || '',
+                            cardNumber: formData.get('cardNumber'),
+                            cardholderName: formData.get('cardholderName'),
+                            expirationMonth: formData.get('expMonth'),
+                            expirationYear: formData.get('expYear'),
+                            cvv: formData.get('cvv'),
+                            billingAddress: {
+                              street: formData.get('street') as string,
+                              city: formData.get('city') as string,
+                              state: formData.get('state') as string,
+                              zip: formData.get('zip') as string,
+                            },
+                          }),
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                          alert(`✅ Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
+                          setShowCheckoutModal(false);
+                          setSelectedSubscriptionPlan(null);
+                          // Refresh companies to show updated subscription
+                          loadAllCompanies();
+                        } else {
+                          alert(`❌ Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
+                        }
+                      } catch (error) {
+                        console.error('Payment error:', error);
+                        alert('❌ An error occurred while processing your payment. Please try again.');
+                      }
                     }}>
                       {/* Card Information Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
@@ -7275,6 +7312,7 @@ export default function FinancialScorePage() {
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Card Number</label>
                           <input
                             type="text"
+                            name="cardNumber"
                             placeholder="1234 5678 9012 3456"
                             maxLength={19}
                             required
@@ -7286,6 +7324,7 @@ export default function FinancialScorePage() {
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Cardholder Name</label>
                           <input
                             type="text"
+                            name="cardholderName"
                             placeholder="John Doe"
                             required
                             style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
@@ -7295,7 +7334,7 @@ export default function FinancialScorePage() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                           <div>
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Exp Month</label>
-                            <select required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
+                            <select name="expMonth" required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
                               <option value="">MM</option>
                               {Array.from({length: 12}, (_, i) => i + 1).map(m => (
                                 <option key={m} value={m.toString().padStart(2, '0')}>{m.toString().padStart(2, '0')}</option>
@@ -7304,7 +7343,7 @@ export default function FinancialScorePage() {
                           </div>
                           <div>
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Exp Year</label>
-                            <select required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
+                            <select name="expYear" required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
                               <option value="">YYYY</option>
                               {Array.from({length: 15}, (_, i) => new Date().getFullYear() + i).map(y => (
                                 <option key={y} value={y}>{y}</option>
@@ -7315,6 +7354,7 @@ export default function FinancialScorePage() {
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>CVV</label>
                             <input
                               type="text"
+                              name="cvv"
                               placeholder="123"
                               maxLength={4}
                               required
@@ -7332,6 +7372,7 @@ export default function FinancialScorePage() {
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
                           <input
                             type="text"
+                            name="street"
                             placeholder="123 Main St"
                             required
                             style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
@@ -7343,6 +7384,7 @@ export default function FinancialScorePage() {
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>City</label>
                             <input
                               type="text"
+                              name="city"
                               placeholder="City"
                               required
                               style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
@@ -7352,6 +7394,7 @@ export default function FinancialScorePage() {
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>State</label>
                             <input
                               type="text"
+                              name="state"
                               placeholder="CA"
                               maxLength={2}
                               required
@@ -7365,6 +7408,7 @@ export default function FinancialScorePage() {
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>ZIP Code</label>
                             <input
                               type="text"
+                              name="zip"
                               placeholder="12345"
                               maxLength={10}
                               required
