@@ -57,25 +57,19 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     // Format expiration date (MMYY format)
     const expiration = `${paymentDetails.expirationMonth.padStart(2, '0')}${paymentDetails.expirationYear.slice(-2)}`;
 
-    // Build the transaction request
+    // Build the transaction request (matching USAePay API format)
     const transactionData = {
       command: 'cc:sale',
       amount: paymentDetails.amount.toFixed(2),
       creditcard: {
+        cardholder: paymentDetails.cardholderName,
         number: paymentDetails.cardNumber.replace(/\s/g, ''),
         expiration: expiration,
         cvc: paymentDetails.cvv,
-        cardholder: paymentDetails.cardholderName,
+        avs_street: paymentDetails.billingAddress.street,
+        avs_zip: paymentDetails.billingAddress.zip,
       },
-      billing_address: {
-        street: paymentDetails.billingAddress.street,
-        city: paymentDetails.billingAddress.city,
-        state: paymentDetails.billingAddress.state,
-        postalcode: paymentDetails.billingAddress.zip,
-      },
-      order_id: paymentDetails.invoice || `INV-${Date.now()}`,
-      description: paymentDetails.description || 'Subscription Payment',
-      customer_id: paymentDetails.customerId,
+      invoice: paymentDetails.invoice || `INV-${Date.now()}`,
     };
 
     // Make API request to USAePay
@@ -94,6 +88,7 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     const response = await fetch(`${USAEPAY_API_URL}/transactions`, {
       method: 'POST',
       headers: {
+        'User-Agent': 'uelib v6.8',
         'Content-Type': 'application/json',
         'Authorization': `Basic ${base64Auth}`,
       },
