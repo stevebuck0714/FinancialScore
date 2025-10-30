@@ -79,16 +79,34 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     };
 
     // Make API request to USAePay
+    // Note: USAePay uses the Source Key and PIN as username:password for Basic Auth
+    const authString = `${USAEPAY_API_KEY}:${USAEPAY_PIN}`;
+    const base64Auth = Buffer.from(authString).toString('base64');
+    
+    console.log('USAePay Request:', {
+      url: `${USAEPAY_API_URL}/transactions`,
+      sandbox: USAEPAY_SANDBOX,
+      hasApiKey: !!USAEPAY_API_KEY,
+      hasPin: !!USAEPAY_PIN,
+      authKeyLength: USAEPAY_API_KEY.length,
+    });
+    
     const response = await fetch(`${USAEPAY_API_URL}/transactions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${Buffer.from(`${USAEPAY_API_KEY}:${USAEPAY_PIN}`).toString('base64')}`,
+        'Authorization': `Basic ${base64Auth}`,
       },
       body: JSON.stringify(transactionData),
     });
 
     const result = await response.json();
+    
+    console.log('USAePay Response:', {
+      status: response.status,
+      ok: response.ok,
+      result: result,
+    });
 
     // Check if transaction was successful
     if (response.ok && result.status === 'Approved') {
