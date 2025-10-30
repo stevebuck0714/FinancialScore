@@ -1,16 +1,12 @@
 import crypto from 'crypto';
 
 // USAePay API Configuration
-const USAEPAY_API_KEY = process.env.USAEPAY_API_KEY || '';
-const USAEPAY_PIN = process.env.USAEPAY_PIN || '';
-const USAEPAY_SOURCE_KEY = process.env.USAEPAY_SOURCE_KEY || '';
-const USAEPAY_SANDBOX = process.env.USAEPAY_SANDBOX === 'true';
+USAEPAY_API_KEY=6mV1H530X70u80X46Jv688SCsIQS1Dw1Gfq5ZFR0ca
+USAEPAY_PIN=0714
+USAEPAY_SANDBOX=false
 
 // USAePay API Endpoints
 // The API key is part of the URL path
-const USAEPAY_API_URL = USAEPAY_SANDBOX 
-  ? `https://sandbox.usaepay.com/api/${USAEPAY_API_KEY}`
-  : `https://secure.usaepay.com/api/${USAEPAY_API_KEY}`;
 
 export interface PaymentDetails {
   amount: number;
