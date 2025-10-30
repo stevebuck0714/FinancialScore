@@ -7,9 +7,10 @@ const USAEPAY_SOURCE_KEY = process.env.USAEPAY_SOURCE_KEY || '';
 const USAEPAY_SANDBOX = process.env.USAEPAY_SANDBOX === 'true';
 
 // USAePay API Endpoints
+// The API key is part of the URL path
 const USAEPAY_API_URL = USAEPAY_SANDBOX 
-  ? 'https://sandbox.usaepay.com/api/v2'
-  : 'https://usaepay.com/api/v2';
+  ? `https://sandbox.usaepay.com/api/${USAEPAY_API_KEY}`
+  : `https://secure.usaepay.com/api/${USAEPAY_API_KEY}`;
 
 export interface PaymentDetails {
   amount: number;
@@ -73,16 +74,14 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     };
 
     // Make API request to USAePay
-    // Note: USAePay uses the Source Key and PIN as username:password for Basic Auth
-    const authString = `${USAEPAY_API_KEY}:${USAEPAY_PIN}`;
-    const base64Auth = Buffer.from(authString).toString('base64');
+    // The API key is in the URL path, PIN is in Authorization header
+    const base64Pin = Buffer.from(`:${USAEPAY_PIN}`).toString('base64');
     
     console.log('USAePay Request:', {
       url: `${USAEPAY_API_URL}/transactions`,
       sandbox: USAEPAY_SANDBOX,
       hasApiKey: !!USAEPAY_API_KEY,
       hasPin: !!USAEPAY_PIN,
-      authKeyLength: USAEPAY_API_KEY.length,
     });
     
     const response = await fetch(`${USAEPAY_API_URL}/transactions`, {
@@ -90,7 +89,7 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
       headers: {
         'User-Agent': 'uelib v6.8',
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${base64Auth}`,
+        'Authorization': `Basic ${base64Pin}`,
       },
       body: JSON.stringify(transactionData),
     });
