@@ -74,8 +74,13 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     };
 
     // Make API request to USAePay
-    // The API key is in the URL path, PIN is in Authorization header
-    const base64Pin = Buffer.from(`:${USAEPAY_PIN}`).toString('base64');
+    // USAePay REST API requires seed-based hashing authentication
+    const seed = Math.random().toString(36).substring(2, 15);
+    const prehash = `${USAEPAY_API_KEY}${seed}${USAEPAY_PIN || ''}`;
+    const hash = crypto.createHash('sha256').update(prehash).digest('hex');
+    const apiHash = `s2/${seed}/${hash}`;
+    const authString = `${USAEPAY_API_KEY}:${apiHash}`;
+    const base64Auth = Buffer.from(authString).toString('base64');
     
     console.log('USAePay Request:', {
       url: `${USAEPAY_API_URL}/transactions`,
@@ -89,7 +94,7 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
       headers: {
         'User-Agent': 'uelib v6.8',
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${base64Pin}`,
+        'Authorization': `Basic ${base64Auth}`,
       },
       body: JSON.stringify(transactionData),
     });
