@@ -7313,6 +7313,7 @@ export default function FinancialScorePage() {
                           <input
                             type="text"
                             name="cardNumber"
+                            autoComplete="cc-number"
                             placeholder="1234 5678 9012 3456"
                             maxLength={19}
                             required
@@ -7325,6 +7326,7 @@ export default function FinancialScorePage() {
                           <input
                             type="text"
                             name="cardholderName"
+                            autoComplete="cc-name"
                             placeholder="John Doe"
                             required
                             style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
@@ -7334,7 +7336,7 @@ export default function FinancialScorePage() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                           <div>
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Exp Month</label>
-                            <select name="expMonth" required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
+                            <select name="expMonth" autoComplete="cc-exp-month" required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
                               <option value="">MM</option>
                               {Array.from({length: 12}, (_, i) => i + 1).map(m => (
                                 <option key={m} value={m.toString().padStart(2, '0')}>{m.toString().padStart(2, '0')}</option>
@@ -7343,7 +7345,7 @@ export default function FinancialScorePage() {
                           </div>
                           <div>
                             <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Exp Year</label>
-                            <select name="expYear" required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
+                            <select name="expYear" autoComplete="cc-exp-year" required style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'white', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}>
                               <option value="">YYYY</option>
                               {Array.from({length: 15}, (_, i) => new Date().getFullYear() + i).map(y => (
                                 <option key={y} value={y}>{y}</option>
@@ -7355,6 +7357,7 @@ export default function FinancialScorePage() {
                             <input
                               type="text"
                               name="cvv"
+                              autoComplete="cc-csc"
                               placeholder="123"
                               maxLength={4}
                               required
@@ -7373,6 +7376,7 @@ export default function FinancialScorePage() {
                           <input
                             type="text"
                             name="street"
+                            autoComplete="billing street-address"
                             placeholder="123 Main St"
                             required
                             style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
@@ -7385,6 +7389,7 @@ export default function FinancialScorePage() {
                             <input
                               type="text"
                               name="city"
+                              autoComplete="billing address-level2"
                               placeholder="City"
                               required
                               style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none' }}
@@ -7395,6 +7400,7 @@ export default function FinancialScorePage() {
                             <input
                               type="text"
                               name="state"
+                              autoComplete="billing address-level1"
                               placeholder="CA"
                               maxLength={2}
                               required
@@ -7409,6 +7415,7 @@ export default function FinancialScorePage() {
                             <input
                               type="text"
                               name="zip"
+                              autoComplete="billing postal-code"
                               placeholder="12345"
                               maxLength={10}
                               required

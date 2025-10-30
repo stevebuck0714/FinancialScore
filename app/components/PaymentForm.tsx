@@ -201,6 +201,7 @@ export default function PaymentForm({
               value={formData.cardNumber}
               onChange={(e) => handleInputChange('cardNumber', e.target.value)}
               placeholder="1234 5678 9012 3456"
+              autoComplete="cc-number"
               className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                 errors.cardNumber ? 'border-red-500' : 'border-gray-300'
               }`}
@@ -221,6 +222,7 @@ export default function PaymentForm({
               value={formData.cardholderName}
               onChange={(e) => handleInputChange('cardholderName', e.target.value)}
               placeholder="John Doe"
+              autoComplete="cc-name"
               className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                 errors.cardholderName ? 'border-red-500' : 'border-gray-300'
               }`}
@@ -243,6 +245,7 @@ export default function PaymentForm({
                 onChange={(e) => handleInputChange('expirationMonth', e.target.value)}
                 placeholder="MM"
                 maxLength={2}
+                autoComplete="cc-exp-month"
                 className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors.expirationMonth ? 'border-red-500' : 'border-gray-300'
                 }`}
@@ -262,6 +265,7 @@ export default function PaymentForm({
                 onChange={(e) => handleInputChange('expirationYear', e.target.value)}
                 placeholder="YYYY"
                 maxLength={4}
+                autoComplete="cc-exp-year"
                 className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors.expirationYear ? 'border-red-500' : 'border-gray-300'
                 }`}
@@ -281,6 +285,7 @@ export default function PaymentForm({
                 onChange={(e) => handleInputChange('cvv', e.target.value)}
                 placeholder="123"
                 maxLength={4}
+                autoComplete="cc-csc"
                 className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors.cvv ? 'border-red-500' : 'border-gray-300'
                 }`}
@@ -311,6 +316,7 @@ export default function PaymentForm({
               value={formData.billingStreet}
               onChange={(e) => handleInputChange('billingStreet', e.target.value)}
               placeholder="123 Main St"
+              autoComplete="billing street-address"
               className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                 errors.billingStreet ? 'border-red-500' : 'border-gray-300'
               }`}
@@ -332,6 +338,7 @@ export default function PaymentForm({
                 value={formData.billingCity}
                 onChange={(e) => handleInputChange('billingCity', e.target.value)}
                 placeholder="City"
+                autoComplete="billing address-level2"
                 className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors.billingCity ? 'border-red-500' : 'border-gray-300'
                 }`}
@@ -351,6 +358,7 @@ export default function PaymentForm({
                 onChange={(e) => handleInputChange('billingState', e.target.value)}
                 placeholder="State"
                 maxLength={2}
+                autoComplete="billing address-level1"
                 className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors.billingState ? 'border-red-500' : 'border-gray-300'
                 }`}
@@ -372,6 +380,7 @@ export default function PaymentForm({
               onChange={(e) => handleInputChange('billingZip', e.target.value)}
               placeholder="12345"
               maxLength={10}
+              autoComplete="billing postal-code"
               className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                 errors.billingZip ? 'border-red-500' : 'border-gray-300'
               }`}
