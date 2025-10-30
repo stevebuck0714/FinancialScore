@@ -9,7 +9,7 @@ const USAEPAY_SANDBOX = process.env.USAEPAY_SANDBOX === 'true';
 // USAePay API Endpoints
 const USAEPAY_API_URL = USAEPAY_SANDBOX 
   ? 'https://sandbox.usaepay.com/api/v2'
-  : 'https://secure.usaepay.com/api/v2';
+  : 'https://usaepay.com/api/v2';
 
 export interface PaymentDetails {
   amount: number;
