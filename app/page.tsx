@@ -6,6 +6,7 @@ import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lu
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
 import { assessmentData } from '../data/assessmentData';
 import { authApi, companiesApi, usersApi, consultantsApi, financialsApi, assessmentsApi, profilesApi, benchmarksApi, ApiError } from '@/lib/api-client';
+import InactivityLogout from './components/InactivityLogout';
 
 // US States for dropdown
 const US_STATES = [
@@ -4151,6 +4152,7 @@ export default function FinancialScorePage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
+      <InactivityLogout />
       {/* Header - Different for Site Admin */}
       {currentUser?.role === 'siteadmin' ? (
         <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
