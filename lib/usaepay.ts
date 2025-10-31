@@ -7,10 +7,9 @@ const USAEPAY_SOURCE_KEY = process.env.USAEPAY_SOURCE_KEY || '';
 const USAEPAY_SANDBOX = process.env.USAEPAY_SANDBOX === 'true';
 
 // USAePay API Endpoints
-// The API key is part of the URL path
 const USAEPAY_API_URL = USAEPAY_SANDBOX 
-  ? `https://sandbox.usaepay.com/api/${USAEPAY_API_KEY}`
-  : `https://secure.usaepay.com/api/${USAEPAY_API_KEY}`;
+  ? `https://sandbox.usaepay.com/api/v2`
+  : `https://usaepay.com/api/v2`;
 
 export interface PaymentDetails {
   amount: number;
