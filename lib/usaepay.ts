@@ -46,7 +46,7 @@ export interface PaymentResponse {
 export async function processPayment(paymentDetails: PaymentDetails): Promise<PaymentResponse> {
   try {
     // Validate environment variables
-    if (!USAEPAY_API_KEY || !USAEPAY_PIN) {
+    if (!USAEPAY_SOURCE_KEY || !USAEPAY_PIN) {
       console.error('USAePay credentials not configured');
       return {
         success: false,
@@ -73,21 +73,21 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     };
 
     // Make API request to USAePay
-    // USAePay REST API requires seed-based hashing authentication
+    // USAePay v2 REST API uses source key authentication with seed-based hashing
     const seed = Math.random().toString(36).substring(2, 15);
-    const prehash = `${USAEPAY_API_KEY}${seed}${USAEPAY_PIN || ''}`;
+    const prehash = `${USAEPAY_SOURCE_KEY}${seed}${USAEPAY_PIN || ''}`;
     const hash = crypto.createHash('sha256').update(prehash).digest('hex');
     const apiHash = `s2/${seed}/${hash}`;
-    const authString = `${USAEPAY_API_KEY}:${apiHash}`;
+    const authString = `${USAEPAY_SOURCE_KEY}:${apiHash}`;
     const base64Auth = Buffer.from(authString).toString('base64');
     
     console.log('USAePay Request:', {
       url: `${USAEPAY_API_URL}/transactions`,
       sandbox: USAEPAY_SANDBOX,
-      hasApiKey: !!USAEPAY_API_KEY,
+      hasSourceKey: !!USAEPAY_SOURCE_KEY,
       hasPin: !!USAEPAY_PIN,
       transactionData: transactionData,
-      authMethod: 'Basic (seed-based hash)',
+      authMethod: 'Basic (source key + seed-based hash)',
     });
     
     const response = await fetch(`${USAEPAY_API_URL}/transactions`, {
@@ -250,7 +250,7 @@ export function validateExpirationDate(month: string, year: string): boolean {
  * Check if USAePay is configured
  */
 export function isUsaepayConfigured(): boolean {
-  return !!(USAEPAY_API_KEY && USAEPAY_PIN);
+  return !!(USAEPAY_SOURCE_KEY && USAEPAY_PIN);
 }
 
 /**
