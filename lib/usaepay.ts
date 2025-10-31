@@ -99,9 +99,29 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
       body: JSON.stringify(transactionData),
     });
 
-    const result = await response.json();
+    // Get response text first to handle empty responses
+    const responseText = await response.text();
+    console.log('USAePay Raw Response:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      body: responseText,
+    });
+
+    // Try to parse JSON
+    let result;
+    try {
+      result = responseText ? JSON.parse(responseText) : {};
+    } catch (parseError) {
+      console.error('Failed to parse USAePay response:', parseError);
+      return {
+        success: false,
+        error: 'Invalid response from payment processor',
+        message: `Status: ${response.status} - ${response.statusText}`,
+      };
+    }
     
-    console.log('USAePay Response:', {
+    console.log('USAePay Parsed Response:', {
       status: response.status,
       ok: response.ok,
       result: result,
