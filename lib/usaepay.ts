@@ -87,6 +87,8 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
       sandbox: USAEPAY_SANDBOX,
       hasApiKey: !!USAEPAY_API_KEY,
       hasPin: !!USAEPAY_PIN,
+      transactionData: transactionData,
+      authMethod: 'Basic (seed-based hash)',
     });
     
     const response = await fetch(`${USAEPAY_API_URL}/transactions`, {
@@ -137,6 +139,13 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
         amount: paymentDetails.amount,
         cardType: result.cardtype,
         last4: result.cc_number ? result.cc_number.slice(-4) : undefined,
+      };
+    } else if (response.ok && (!result || Object.keys(result).length === 0)) {
+      // Empty response - likely gateway configuration issue
+      return {
+        success: false,
+        error: 'Gateway configuration error',
+        message: 'The payment gateway returned an empty response. Please verify your USAePay account is configured with a payment processor (First Data/Fiserv) and the API key is active.',
       };
     } else {
       // Transaction failed
