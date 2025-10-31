@@ -4264,7 +4264,7 @@ export default function FinancialScorePage() {
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {/* Financial Score Section */}
-            <div style={{ marginBottom: '3px' }}>
+            <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => setIsFinancialScoreExpanded(!isFinancialScoreExpanded)}
                 style={{ 
@@ -4273,8 +4273,8 @@ export default function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '8px 24px',
-                  marginBottom: '8px',
+                  padding: '4px 24px',
+                  marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -4297,7 +4297,7 @@ export default function FinancialScorePage() {
                     style={{
                       fontSize: '14px',
                       color: currentView === 'fs-intro' ? '#667eea' : '#475569',
-                      padding: '8px 12px',
+                      padding: '4px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
@@ -4354,7 +4354,7 @@ export default function FinancialScorePage() {
 
             {/* Management Assessment Section - For Assessment Users and Consultants */}
             {((currentUser?.role === 'user' && (currentUser?.userType as any) === 'assessment') || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '3px' }}>
+            <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
                 style={{ 
@@ -4363,8 +4363,8 @@ export default function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '8px 24px',
-                  marginBottom: '8px',
+                  padding: '4px 24px',
+                  marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -4557,7 +4557,7 @@ export default function FinancialScorePage() {
 
             {/* Digital Presence Analysis  Section */}
             {((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '3px' }}>
+            <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => {
                   // Navigate to https://www.digi-presence.com
@@ -4569,8 +4569,8 @@ export default function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '8px 24px',
-                  marginBottom: '8px',
+                  padding: '4px 24px',
+                  marginBottom: '1px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
                   borderLeft: '4px solid #f59e0b'
@@ -4588,7 +4588,7 @@ export default function FinancialScorePage() {
 
             {/* Custom Print Section - For Consultants and Company Users only */}
             {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-              <div style={{ marginBottom: '3px' }}>
+              <div style={{ marginBottom: '1px' }}>
                 <h3 
                   onClick={() => setCurrentView('custom-print')}
                   style={{ 
@@ -4678,10 +4678,10 @@ export default function FinancialScorePage() {
                             style={{
                               fontSize: '14px',
                               color: selectedCompanyId === comp.id ? '#667eea' : '#475569',
-                              padding: '8px 12px',
+                              padding: '4px 12px',
                               cursor: 'pointer',
                               borderRadius: '6px',
-                              marginBottom: '4px',
+                              marginBottom: '1px',
                               background: selectedCompanyId === comp.id ? '#ede9fe' : 'transparent',
                               fontWeight: selectedCompanyId === comp.id ? '600' : '400',
                               transition: 'all 0.2s'
@@ -4742,6 +4742,34 @@ export default function FinancialScorePage() {
                 )}
               </div>
             )}
+
+            {/* Contact Support Section */}
+            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+              <a
+                href="mailto:steve@stevebuck.us"
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#667eea',
+                  textDecoration: 'none',
+                  padding: '12px 24px',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  margin: '0 12px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#ede9fe';
+                  e.currentTarget.style.color = '#4338ca';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#667eea';
+                }}
+              >
+                📧 Contact Support
+              </a>
+            </div>
           </nav>
         </aside>
         )}
@@ -4763,7 +4791,7 @@ export default function FinancialScorePage() {
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {/* Management Assessment Section */}
-            <div style={{ marginBottom: '12px' }}>
+            <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
                 style={{ 
@@ -4772,8 +4800,8 @@ export default function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '8px 24px',
-                  marginBottom: '8px',
+                  padding: '4px 24px',
+                  marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -4880,7 +4908,7 @@ export default function FinancialScorePage() {
             </div>
 
             {/* Digital Presence Analysis  Section */}
-            <div style={{ marginBottom: '12px' }}>
+            <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => {
                   // Navigate to https://www.digi-presence.com
@@ -4892,8 +4920,8 @@ export default function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '8px 24px',
-                  marginBottom: '8px',
+                  padding: '4px 24px',
+                  marginBottom: '1px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
                   borderLeft: '4px solid #f59e0b'
@@ -4906,6 +4934,34 @@ export default function FinancialScorePage() {
               >
                 Digital Presence Analysis 
               </h3>
+            </div>
+
+            {/* Contact Support Section */}
+            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+              <a
+                href="mailto:steve@stevebuck.us"
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#667eea',
+                  textDecoration: 'none',
+                  padding: '12px 24px',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  margin: '0 12px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#ede9fe';
+                  e.currentTarget.style.color = '#4338ca';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#667eea';
+                }}
+              >
+                📧 Contact Support
+              </a>
             </div>
           </nav>
         </aside>
@@ -6539,6 +6595,12 @@ export default function FinancialScorePage() {
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Excel Import</h2>
                 
+                <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
+                  <p style={{ fontSize: '14px', color: '#0c4a6e', lineHeight: '1.6', margin: 0 }}>
+                    To use spreadsheet uploads <a href="mailto:steve@stevebuck.us" style={{ color: '#0284c7', fontWeight: '600', textDecoration: 'none' }}>Email Us</a> for a spreadsheet format. For best results include 36 months of historical data.
+                  </p>
+                </div>
+
                 <div style={{ marginBottom: '20px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
                   <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
