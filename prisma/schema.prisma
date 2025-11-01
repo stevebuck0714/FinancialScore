@@ -1,5 +1,5 @@
 // Prisma Schema for Venturis Business Evaluation Tool
-// MySQL Database
+// PostgreSQL Database
 
 generator client {
   provider = "prisma-client-js"

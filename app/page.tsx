@@ -280,6 +280,8 @@ interface User {
   password: string;
   companyId: string;
   consultantId?: string;
+  consultantType?: string;
+  consultantCompanyName?: string;
   role: 'consultant' | 'user' | 'siteadmin';
   userType?: 'company' | 'assessment'; // company = management team, assessment = fills questionnaire
 }
@@ -1553,6 +1555,7 @@ export default function FinancialScorePage() {
     financialScore: false,
     priorityRatios: false,
     workingCapital: false,
+    dashboard: false,
     cashFlow4Quarters: false,
     cashFlow3Years: false,
     incomeStatement12MonthsQuarterly: false,
@@ -4058,6 +4061,9 @@ export default function FinancialScorePage() {
     if (printPackageSelections.workingCapital) {
       printQueue.push({ view: 'working-capital', title: 'Working Capital' });
     }
+    if (printPackageSelections.dashboard) {
+      printQueue.push({ view: 'dashboard', title: 'Dashboard' });
+    }
     if (printPackageSelections.cashFlow4Quarters) {
       printQueue.push({ view: 'cash-flow', display: 'quarterly', title: 'Cash Flow - Last 4 Quarters' });
     }
@@ -4639,7 +4645,7 @@ export default function FinancialScorePage() {
                   }}
                   onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'admin' ? '#667eea' : '#1e293b'}
                 >
-                  {currentUser.consultantType === 'business' ? 'Business Dashboard' : 'Consultant Dashboard'}
+                  {currentUser.consultantType === 'business' ? 'Business Dashboard' : (currentUser.consultantCompanyName || 'Consultant Dashboard')}
                 </h3>
                 
                 {/* Selected Company Name Display for Business Users */}
@@ -6024,7 +6030,7 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              {currentUser.consultantType === 'business' ? 'Business Dashboard' : 'Consultant Dashboard'}
+              {currentUser.consultantType === 'business' ? 'Business Dashboard' : (currentUser.consultantCompanyName || 'Consultant Dashboard')}
             </h1>
             {siteAdminViewingAs && (
               <button
@@ -7756,9 +7762,9 @@ export default function FinancialScorePage() {
       {!selectedCompanyId && currentView !== 'admin' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
-          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the Consultant Dashboard to continue.</p>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the {currentUser?.consultantCompanyName || 'Consultant Dashboard'} to continue.</p>
           {currentUser?.role === 'consultant' && (
-            <button onClick={() => setCurrentView('admin')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to Consultant Dashboard</button>
+            <button onClick={() => setCurrentView('admin')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to {currentUser?.consultantCompanyName || 'Consultant Dashboard'}</button>
           )}
         </div>
       )}
@@ -9384,28 +9390,158 @@ export default function FinancialScorePage() {
 
       {/* Custom Dashboard View */}
       {currentView === 'dashboard' && selectedCompanyId && trendData.length > 0 && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+        <div className="dashboard-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+          <style>{`
+            @media print {
+              @page {
+                size: landscape;
+                margin: 0.2in 0.4in 0.3in 0.4in;
+              }
+              
+              /* Hide navigation and UI elements */
+              .no-print,
+              header,
+              nav,
+              aside,
+              [role="navigation"],
+              button {
+                display: none !important;
+              }
+              
+              /* Remove background colors and shadows */
+              * {
+                box-shadow: none !important;
+                background: white !important;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                margin-top: 0 !important;
+                margin-bottom: 0 !important;
+              }
+              
+              /* Remove all padding from body and containers */
+              body {
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              
+              body > div {
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              
+              body > div > div {
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              
+              /* Dashboard container */
+              .dashboard-container {
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              
+              /* Dashboard title */
+              h1 {
+                font-size: 18px !important;
+                margin: 0 !important;
+                padding: 0 0 6px 0 !important;
+                page-break-after: avoid;
+              }
+              
+              /* Optimize grid for printing */
+              .dashboard-grid {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 8px !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              
+              /* Prevent page breaks inside charts and remove all spacing */
+              .dashboard-grid > div {
+                page-break-inside: avoid;
+                margin: 0 !important;
+                padding: 8px !important;
+              }
+              
+              /* Compact chart styling */
+              .recharts-wrapper {
+                max-height: 200px !important;
+              }
+              
+              .recharts-surface {
+                max-height: 180px !important;
+              }
+              
+              /* Working Capital and Valuation containers */
+              .dashboard-grid > div[style*="gridColumn"] {
+                grid-column: 1 / -1 !important;
+                page-break-before: auto;
+                page-break-after: auto;
+                padding: 8px !important;
+                margin: 0 !important;
+              }
+              
+              /* Reduce chart title size */
+              .dashboard-grid h3 {
+                font-size: 11px !important;
+                margin: 0 0 2px 0 !important;
+                padding: 0 !important;
+              }
+              
+              /* Reduce chart text size */
+              .recharts-text {
+                font-size: 9px !important;
+              }
+            }
+          `}</style>
+          
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>My Dashboard</h1>
-            <button
-              onClick={() => setShowDashboardCustomizer(!showDashboardCustomizer)}
-              style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: 'white',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
-                transition: 'all 0.3s'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-              onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-            >
-              {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
-            </button>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+              Dashboard: {companyName || 'My Dashboard'}
+            </h1>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                className="no-print"
+                onClick={() => window.print()}
+                style={{
+                  background: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                  transition: 'all 0.3s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                🖨️ Print Dashboard
+              </button>
+              <button
+                className="no-print"
+                onClick={() => setShowDashboardCustomizer(!showDashboardCustomizer)}
+                style={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                  transition: 'all 0.3s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
+              </button>
+            </div>
           </div>
 
           {/* Dashboard Customizer */}
@@ -10004,11 +10140,29 @@ export default function FinancialScorePage() {
               </button>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-              {/* Working Capital Boxes - Render all together in one row */}
+            <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+              {/* Render widgets in user-selected order */}
               {(() => {
-                const wcWidgets = selectedDashboardWidgets.filter(w => ['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle'].includes(w));
-                if (wcWidgets.length > 0) {
+                const renderedWCWidgets = new Set();
+                const renderedValuationWidgets = new Set();
+                const wcWidgetsList = ['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle'];
+                const valuationWidgetsList = ['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'];
+                
+          const renderedWidgets = selectedDashboardWidgets.map((widget, index) => {
+                  
+                  // Check if this is a Working Capital widget
+                  if (wcWidgetsList.includes(widget)) {
+                    // If we've already rendered WC widgets, skip
+                    if (renderedWCWidgets.size > 0) {
+                      return null;
+                    }
+                    
+                    // Mark all WC widgets as rendered
+                    wcWidgetsList.forEach(w => renderedWCWidgets.add(w));
+                    
+                    // Get all selected WC widgets
+                    const wcWidgets = selectedDashboardWidgets.filter(w => wcWidgetsList.includes(w));
+                    
                   // Calculate working capital data
                   const wcData = monthly.map(m => ({
                     month: m.month,
@@ -10087,10 +10241,106 @@ export default function FinancialScorePage() {
                     </div>
                   );
                 }
+                  
+                  // Check if this is a Valuation widget
+                  if (valuationWidgetsList.includes(widget)) {
+                    // If we've already rendered valuation widgets, skip
+                    if (renderedValuationWidgets.size > 0) {
                 return null;
-              })()}
-              
-              {selectedDashboardWidgets.filter(w => !['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle'].includes(w)).map(widget => {
+                    }
+                    
+                    // Mark all valuation widgets as rendered
+                    valuationWidgetsList.forEach(w => renderedValuationWidgets.add(w));
+                    
+                    // Get all selected valuation widgets
+                    const selectedValuationWidgets = selectedDashboardWidgets.filter(w => valuationWidgetsList.includes(w));
+                    
+                    // Calculate all valuations
+                    const last12 = monthly.slice(-12);
+                    const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
+                    const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
+                    const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
+                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+                    const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+                    const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
+                    const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
+                    const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                    const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
+                    const sdeValuation = ttmSDE * sdeMultiplier;
+                    const ebitdaValuation = ttmEBITDA * ebitdaMultiplier;
+                    
+                    // DCF calculation
+                    const currentMonth = monthly[monthly.length - 1];
+                    const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
+                    const currentWC_val = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
+                    const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
+                    const changeInWC = currentWC_val - priorWC;
+                    const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
+                    const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
+                    const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
+                    const growthRate = growth_24mo / 100;
+                    const discountRate = dcfDiscountRate / 100;
+                    const terminalGrowthRate = dcfTerminalGrowth / 100;
+                    let dcfValue = 0;
+                    for (let year = 1; year <= 5; year++) {
+                      const projectedFCF = ttmFreeCashFlow * Math.pow(1 + growthRate, year);
+                      dcfValue += projectedFCF / Math.pow(1 + discountRate, year);
+                    }
+                    const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
+                    dcfValue += terminalValue / Math.pow(1 + discountRate, 5);
+                    
+                    // Render container with all selected valuation widgets
+                    return (
+                      <div key="valuation-container" style={{ 
+                        background: 'white', 
+                        borderRadius: '12px', 
+                        padding: '20px', 
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                        gridColumn: '1 / -1'
+                      }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${selectedValuationWidgets.length}, 1fr)`, gap: '16px' }}>
+                          {selectedValuationWidgets.includes('SDE Valuation') && (
+                            <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #10b981' }}>
+                              <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>SDE Valuation</h3>
+                              <div style={{ fontSize: '32px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
+                                ${(sdeValuation / 1000000).toFixed(2)}M
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier.toFixed(1)}x
+                              </div>
+                            </div>
+                          )}
+                          
+                          {selectedValuationWidgets.includes('EBITDA Valuation') && (
+                            <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #06b6d4' }}>
+                              <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>EBITDA Valuation</h3>
+                              <div style={{ fontSize: '32px', fontWeight: '700', color: '#06b6d4', marginBottom: '8px' }}>
+                                ${(ebitdaValuation / 1000000).toFixed(2)}M
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier.toFixed(1)}x
+                              </div>
+                            </div>
+                          )}
+                          
+                          {selectedValuationWidgets.includes('DCF Valuation') && (
+                            <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #8b5cf6' }}>
+                              <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>DCF Valuation</h3>
+                              <div style={{ fontSize: '32px', fontWeight: '700', color: '#8b5cf6', marginBottom: '8px' }}>
+                                ${(dcfValue / 1000000).toFixed(2)}M
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                5-year projection at {dcfDiscountRate}% discount
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  // Render all other widgets normally
+                  return (() => {
                 // Render appropriate chart based on widget name
                 if (widget === 'Current Ratio') {
                   return <LineChart key={widget} title="Current Ratio" data={trendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} />;
@@ -10240,99 +10490,13 @@ export default function FinancialScorePage() {
                 if (widget === 'Cash Position') {
                   return <LineChart key={widget} title="Cash Position" data={monthly} valueKey="cash" color="#f59e0b" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
                 }
-                // Check if this is one of the valuation widgets - render them together in one container
-                if (widget === 'SDE Valuation' || widget === 'EBITDA Valuation' || widget === 'DCF Valuation') {
-                  // Only render the container once when we encounter the first valuation widget
-                  const valuationWidgets = ['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'];
-                  const isFirstValuationWidget = valuationWidgets.indexOf(widget) === valuationWidgets.findIndex(w => selectedDashboardWidgets.includes(w));
-                  
-                  if (!isFirstValuationWidget) {
-                    return null; // Skip rendering for subsequent valuation widgets
-                  }
-                  
-                  // Calculate all valuations
-                  const last12 = monthly.slice(-12);
-                  const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                  const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
-                  const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
-                  const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
-                  const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                  const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
-                  const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
-                  const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
-                  const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
-                  const sdeValuation = ttmSDE * sdeMultiplier;
-                  const ebitdaValuation = ttmEBITDA * ebitdaMultiplier;
-                  
-                  // DCF calculation
-                  const currentMonth = monthly[monthly.length - 1];
-                  const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
-                  const currentWC = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
-                  const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
-                  const changeInWC = currentWC - priorWC;
-                  const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
-                  const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
-                  const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
-                  const growthRate = growth_24mo / 100;
-                  const discountRate = dcfDiscountRate / 100;
-                  const terminalGrowthRate = dcfTerminalGrowth / 100;
-                  let dcfValue = 0;
-                  for (let year = 1; year <= 5; year++) {
-                    const projectedFCF = ttmFreeCashFlow * Math.pow(1 + growthRate, year);
-                    dcfValue += projectedFCF / Math.pow(1 + discountRate, year);
-                  }
-                  const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
-                  dcfValue += terminalValue / Math.pow(1 + discountRate, 5);
-                  
-                  // Render container with all selected valuation widgets
-                  return (
-                    <div key="valuation-container" style={{ 
-                      background: 'white', 
-                      borderRadius: '12px', 
-                      padding: '20px', 
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                      gridColumn: '1 / -1' // Span full width
-                    }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${selectedDashboardWidgets.filter(w => valuationWidgets.includes(w)).length}, 1fr)`, gap: '16px' }}>
-                        {selectedDashboardWidgets.includes('SDE Valuation') && (
-                          <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #10b981' }}>
-                            <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>SDE Valuation</h3>
-                            <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
-                              ${Math.round(sdeValuation).toLocaleString()}
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#64748b' }}>
-                              TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
-                            </div>
-                          </div>
-                        )}
-                        {selectedDashboardWidgets.includes('EBITDA Valuation') && (
-                          <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #667eea' }}>
-                            <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>EBITDA Valuation</h3>
-                            <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
-                              ${Math.round(ebitdaValuation).toLocaleString()}
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#64748b' }}>
-                              TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
-                            </div>
-                          </div>
-                        )}
-                        {selectedDashboardWidgets.includes('DCF Valuation') && (
-                          <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #f59e0b' }}>
-                            <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>DCF Valuation</h3>
-                            <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b', marginBottom: '8px' }}>
-                              ${Math.round(dcfValue).toLocaleString()}
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#64748b' }}>
-                              5-year @ {dcfDiscountRate.toFixed(1)}% discount, {dcfTerminalGrowth.toFixed(1)}% terminal
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
+                
                 return null;
-              })}
+                  })();
+                });
+                
+                return renderedWidgets;
+              })()}
             </div>
           )}
         </div>
@@ -21244,6 +21408,22 @@ export default function FinancialScorePage() {
                 </label>
               </div>
 
+              {/* Dashboard */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={printPackageSelections.dashboard}
+                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, dashboard: e.target.checked})}
+                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Dashboard</div>
+                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Custom dashboard with selected metrics and charts</div>
+                  </div>
+                </label>
+              </div>
+
               {/* Cash Flow Tabs */}
               <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <div style={{ marginBottom: '12px' }}>
@@ -21375,6 +21555,7 @@ export default function FinancialScorePage() {
                     financialScore: false,
                     priorityRatios: false,
                     workingCapital: false,
+                    dashboard: false,
                     cashFlow4Quarters: false,
                     cashFlow3Years: false,
                     incomeStatement12MonthsQuarterly: false,
