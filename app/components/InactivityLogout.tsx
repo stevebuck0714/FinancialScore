@@ -1,26 +1,30 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { signOut, useSession } from 'next-auth/react';
 
 const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes in milliseconds
 const THROTTLE_INTERVAL = 30 * 1000; // Only reset timer once per 30 seconds
 
-export default function InactivityLogout() {
-  const { data: session, status } = useSession();
+interface InactivityLogoutProps {
+  isLoggedIn: boolean;
+  userEmail?: string;
+  onLogout: () => void;
+}
+
+export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: InactivityLogoutProps) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
   useEffect(() => {
-    console.log('[InactivityLogout] Session status:', status, 'User:', session?.user?.email);
+    console.log('[InactivityLogout] Auth status:', isLoggedIn ? 'logged in' : 'logged out', 'User:', userEmail);
     
-    // Only run if user is authenticated
-    if (status !== 'authenticated' || !session?.user) {
-      console.log('[InactivityLogout] Not authenticated, skipping timer setup');
+    // Only run if user is logged in
+    if (!isLoggedIn) {
+      console.log('[InactivityLogout] Not logged in, skipping timer setup');
       return;
     }
 
-    console.log('[InactivityLogout] Setting up inactivity timer for user:', session.user.email);
+    console.log('[InactivityLogout] Setting up inactivity timer for user:', userEmail);
 
     const resetTimer = () => {
       const now = Date.now();
@@ -41,8 +45,8 @@ export default function InactivityLogout() {
 
       // Set new timeout
       timeoutRef.current = setTimeout(() => {
-        console.warn('[InactivityLogout] ⏰ 15 minutes of inactivity detected. Logging out user:', session.user.email);
-        signOut({ callbackUrl: '/', redirect: true });
+        console.warn('[InactivityLogout] ⏰ 15 minutes of inactivity detected. Logging out user:', userEmail);
+        onLogout();
       }, INACTIVITY_TIMEOUT);
     };
 
@@ -74,7 +78,7 @@ export default function InactivityLogout() {
         window.removeEventListener(event, resetTimer);
       });
     };
-  }, [session, status]);
+  }, [isLoggedIn, userEmail, onLogout]);
 
   return null; // This component doesn't render anything
 }

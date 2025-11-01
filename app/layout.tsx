@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Providers } from './providers'
-import InactivityLogout from './components/InactivityLogout'
 
 export const metadata: Metadata = {
   title: 'Corelytics - Financial Score Calculator',
@@ -17,7 +16,6 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Providers>
-          <InactivityLogout />
           {children}
         </Providers>
       </body>

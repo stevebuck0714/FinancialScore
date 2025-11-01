@@ -4158,7 +4158,11 @@ export default function FinancialScorePage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
-      <InactivityLogout />
+      <InactivityLogout 
+        isLoggedIn={isLoggedIn}
+        userEmail={currentUser?.email}
+        onLogout={handleLogout}
+      />
       {/* Header - Different for Site Admin */}
       {currentUser?.role === 'siteadmin' ? (
         <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
