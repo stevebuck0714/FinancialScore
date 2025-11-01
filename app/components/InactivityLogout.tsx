@@ -4,10 +4,12 @@ import { useEffect, useRef } from 'react';
 import { signOut, useSession } from 'next-auth/react';
 
 const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes in milliseconds
+const THROTTLE_INTERVAL = 30 * 1000; // Only reset timer once per 30 seconds
 
 export default function InactivityLogout() {
   const { data: session } = useSession();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
 
   useEffect(() => {
     // Only run if user is logged in
@@ -16,6 +18,15 @@ export default function InactivityLogout() {
     }
 
     const resetTimer = () => {
+      const now = Date.now();
+      
+      // Throttle: only reset if at least THROTTLE_INTERVAL has passed since last activity
+      if (now - lastActivityRef.current < THROTTLE_INTERVAL) {
+        return;
+      }
+
+      lastActivityRef.current = now;
+
       // Clear existing timeout
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -23,24 +34,24 @@ export default function InactivityLogout() {
 
       // Set new timeout
       timeoutRef.current = setTimeout(() => {
-        // Log out the user
+        console.log('Logging out user due to inactivity');
         signOut({ callbackUrl: '/' });
       }, INACTIVITY_TIMEOUT);
     };
 
     // Events that indicate user activity
+    // Removed 'mousemove' to prevent excessive triggering
     const events = [
       'mousedown',
-      'mousemove',
-      'keypress',
+      'keydown',
       'scroll',
       'touchstart',
       'click',
     ];
 
-    // Add event listeners
+    // Add event listeners with passive option for better performance
     events.forEach((event) => {
-      window.addEventListener(event, resetTimer);
+      window.addEventListener(event, resetTimer, { passive: true });
     });
 
     // Initialize timer
