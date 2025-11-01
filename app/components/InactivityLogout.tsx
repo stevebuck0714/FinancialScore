@@ -14,6 +14,13 @@ interface InactivityLogoutProps {
 export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: InactivityLogoutProps) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
+  const onLogoutRef = useRef(onLogout);
+  const isInitializedRef = useRef(false);
+
+  // Keep logout function ref up to date without triggering re-initialization
+  useEffect(() => {
+    onLogoutRef.current = onLogout;
+  }, [onLogout]);
 
   useEffect(() => {
     console.log('[InactivityLogout] Auth status:', isLoggedIn ? 'logged in' : 'logged out', 'User:', userEmail);
@@ -21,10 +28,18 @@ export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: In
     // Only run if user is logged in
     if (!isLoggedIn) {
       console.log('[InactivityLogout] Not logged in, skipping timer setup');
+      isInitializedRef.current = false;
+      return;
+    }
+
+    // Prevent re-initialization if already set up
+    if (isInitializedRef.current) {
+      console.log('[InactivityLogout] Timer already initialized, skipping duplicate setup');
       return;
     }
 
     console.log('[InactivityLogout] Setting up inactivity timer for user:', userEmail);
+    isInitializedRef.current = true;
 
     const resetTimer = () => {
       const now = Date.now();
@@ -43,10 +58,10 @@ export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: In
         clearTimeout(timeoutRef.current);
       }
 
-      // Set new timeout
+      // Set new timeout - use ref to get latest logout function
       timeoutRef.current = setTimeout(() => {
-        console.warn('[InactivityLogout] ⏰ 15 minutes of inactivity detected. Logging out user:', userEmail);
-        onLogout();
+        console.warn('[InactivityLogout] ⏰ 15 minutes of inactivity detected. Logging out user.');
+        onLogoutRef.current();
       }, INACTIVITY_TIMEOUT);
     };
 
@@ -77,8 +92,9 @@ export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: In
       events.forEach((event) => {
         window.removeEventListener(event, resetTimer);
       });
+      isInitializedRef.current = false;
     };
-  }, [isLoggedIn, userEmail, onLogout]);
+  }, [isLoggedIn, userEmail]);
 
   return null; // This component doesn't render anything
 }
