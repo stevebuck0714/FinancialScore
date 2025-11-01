@@ -7,15 +7,20 @@ const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes in milliseconds
 const THROTTLE_INTERVAL = 30 * 1000; // Only reset timer once per 30 seconds
 
 export default function InactivityLogout() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
   useEffect(() => {
-    // Only run if user is logged in
-    if (!session?.user) {
+    console.log('[InactivityLogout] Session status:', status, 'User:', session?.user?.email);
+    
+    // Only run if user is authenticated
+    if (status !== 'authenticated' || !session?.user) {
+      console.log('[InactivityLogout] Not authenticated, skipping timer setup');
       return;
     }
+
+    console.log('[InactivityLogout] Setting up inactivity timer for user:', session.user.email);
 
     const resetTimer = () => {
       const now = Date.now();
@@ -25,6 +30,8 @@ export default function InactivityLogout() {
         return;
       }
 
+      const minutesUntilLogout = INACTIVITY_TIMEOUT / 60000;
+      console.log(`[InactivityLogout] Activity detected. Timer reset. User will be logged out after ${minutesUntilLogout} minutes of inactivity.`);
       lastActivityRef.current = now;
 
       // Clear existing timeout
@@ -34,13 +41,12 @@ export default function InactivityLogout() {
 
       // Set new timeout
       timeoutRef.current = setTimeout(() => {
-        console.log('Logging out user due to inactivity');
-        signOut({ callbackUrl: '/' });
+        console.warn('[InactivityLogout] ⏰ 15 minutes of inactivity detected. Logging out user:', session.user.email);
+        signOut({ callbackUrl: '/', redirect: true });
       }, INACTIVITY_TIMEOUT);
     };
 
     // Events that indicate user activity
-    // Removed 'mousemove' to prevent excessive triggering
     const events = [
       'mousedown',
       'keydown',
@@ -55,10 +61,12 @@ export default function InactivityLogout() {
     });
 
     // Initialize timer
+    console.log('[InactivityLogout] ✅ Inactivity timer initialized');
     resetTimer();
 
     // Cleanup
     return () => {
+      console.log('[InactivityLogout] Cleaning up inactivity timer');
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
@@ -66,7 +74,7 @@ export default function InactivityLogout() {
         window.removeEventListener(event, resetTimer);
       });
     };
-  }, [session]);
+  }, [session, status]);
 
   return null; // This component doesn't render anything
 }
