@@ -1694,9 +1694,9 @@ export default function FinancialScorePage() {
     }
   }, [selectedCompanyId, financialDataRecords]);
 
-  // Load expense goals when Goals or Trend Analysis view is accessed
+  // Load expense goals when Goals, Trend Analysis, or MD&A view is accessed
   useEffect(() => {
-    if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis')) {
+    if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis' || currentView === 'mda')) {
       console.log('📊 Loading expense goals for company:', selectedCompanyId);
       // Reset to empty first, so fields are blank while loading
       setExpenseGoals({});
@@ -11607,7 +11607,7 @@ export default function FinancialScorePage() {
           {mdaTab === 'executive-summary' && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>Executive Summary</h2>
-            
+
             {/* Comprehensive Analysis Narrative */}
             <div style={{ marginBottom: '28px' }}>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#475569', background: '#f8fafc', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #667eea' }}>
@@ -11937,7 +11937,7 @@ export default function FinancialScorePage() {
                 <p style={{ margin: '12px 0' }}>
                   <strong style={{ color: '#667eea' }}>Goals</strong> tracking enables comparison of actual expense performance against management targets:
                   {(() => {
-                    if (monthly.length < 6) return ' (requires additional months of data for goals analysis)';
+                    if (monthly.length < 3) return ' (requires at least 3 months of data for quarterly goals analysis)';
                     
                     // Major expense categories to analyze
                     const majorCategories = [
@@ -11949,64 +11949,91 @@ export default function FinancialScorePage() {
                       { key: 'insurance', label: 'Insurance' }
                     ];
                     
-                    // Calculate last 6 months average for each category
-                    const last6 = monthly.slice(-6);
+                    // Calculate last quarter (3 months) totals for each category
+                    const lastQuarter = monthly.slice(-3);
                     const categoryAnalysis = majorCategories.map(cat => {
-                      const avgPct = last6.reduce((sum, m) => {
-                        const revenue = m.revenue || 0;
-                        if (revenue === 0) return sum;
-                        const expense = (m as any)[cat.key] || 0;
-                        return sum + (expense / revenue * 100);
-                      }, 0) / last6.length;
+                      // Sum total revenue and total expense for the quarter
+                      const totals = lastQuarter.reduce((acc, m) => {
+                        acc.totalRevenue += m.revenue || 0;
+                        acc.totalExpense += (m as any)[cat.key] || 0;
+                        return acc;
+                      }, { totalRevenue: 0, totalExpense: 0 });
                       
+                      // Calculate actual percentage as (total expense / total revenue)
+                      const actualPct = totals.totalRevenue > 0 ? (totals.totalExpense / totals.totalRevenue * 100) : 0;
                       const goalPct = expenseGoals[cat.key];
+                      
                       return {
                         label: cat.label,
-                        actual: avgPct,
+                        actual: actualPct,
                         goal: goalPct,
                         hasGoal: goalPct && goalPct > 0,
-                        variance: goalPct ? avgPct - goalPct : 0,
-                        metGoal: goalPct ? avgPct <= goalPct : null
+                        variance: goalPct ? actualPct - goalPct : 0,
+                        metGoal: goalPct ? actualPct <= goalPct : null
                       };
-                    }).filter(c => c.hasGoal && c.actual > 0.5); // Only show categories with goals and meaningful spend
+                    });
                     
-                    if (categoryAnalysis.length === 0) {
+                    // Check if ANY goals are set at all
+                    const anyGoalsSet = categoryAnalysis.some(c => c.hasGoal);
+                    if (!anyGoalsSet) {
                       return ' Management has not yet established expense goals for tracking and variance analysis. Setting goals for major expense categories enables proactive cost management and performance monitoring.';
                     }
                     
-                    const metGoals = categoryAnalysis.filter(c => c.metGoal);
-                    const missedGoals = categoryAnalysis.filter(c => !c.metGoal);
+                    // Filter to only show categories with goals and meaningful spend (>0.5% of revenue)
+                    const categoriesWithGoalsAndSpend = categoryAnalysis.filter(c => c.hasGoal && c.actual > 0.5);
+                    
+                    if (categoriesWithGoalsAndSpend.length === 0) {
+                      return ' Expense goals have been established, but the tracked categories currently show minimal spending activity. Continue monitoring as business activity increases.';
+                    }
+                    
+                    // Define threshold for "significant" deviation (1.5 percentage points)
+                    const SIGNIFICANT_THRESHOLD = 1.5;
+                    
+                    // Categorize based on significance
+                    const significantlyUnder = categoriesWithGoalsAndSpend.filter(c => c.metGoal && c.variance < -SIGNIFICANT_THRESHOLD);
+                    const onTarget = categoriesWithGoalsAndSpend.filter(c => Math.abs(c.variance) <= SIGNIFICANT_THRESHOLD);
+                    const significantlyOver = categoriesWithGoalsAndSpend.filter(c => !c.metGoal && c.variance > SIGNIFICANT_THRESHOLD);
+                    
+                    const hasSignificantDeviations = significantlyUnder.length > 0 || significantlyOver.length > 0;
                     
                     return (
                       <>
-                        {metGoals.length > 0 && (
+                        {!hasSignificantDeviations && (
+                          <span> All tracked expense categories are performing on target with no significant deviations from established goals, demonstrating effective expense management and strong financial discipline.</span>
+                        )}
+                        
+                        {significantlyUnder.length > 0 && (
                           <>
-                            <strong> Meeting targets:</strong>
-                            {metGoals.map((cat, idx) => (
+                            <strong style={{ color: '#10b981' }}> Significantly below target:</strong>
+                            {significantlyUnder.map((cat, idx) => (
                               <span key={idx}>
-                                {idx > 0 && (idx === metGoals.length - 1 ? ' and ' : ', ')}
-                                <strong style={{ color: '#10b981' }}>{cat.label}</strong> at {cat.actual.toFixed(1)}% of revenue (goal: {cat.goal.toFixed(1)}%, {(cat.goal - cat.actual).toFixed(1)}pp under target)
+                                {idx > 0 && (idx === significantlyUnder.length - 1 ? ' and ' : ', ')}
+                                <strong style={{ color: '#10b981' }}>{cat.label}</strong> at {cat.actual.toFixed(1)}% of revenue (goal: {cat.goal.toFixed(1)}%, <strong>{Math.abs(cat.variance).toFixed(1)}pp under</strong>)
                               </span>
                             ))}
-                            {missedGoals.length > 0 ? '.' : ', demonstrating strong expense discipline and effective cost management.'}
+                            {significantlyOver.length > 0 ? '.' : ', demonstrating exceptional expense discipline and effective cost management.'}
                           </>
                         )}
-                        {missedGoals.length > 0 && (
+                        
+                        {significantlyOver.length > 0 && (
                           <>
-                            {metGoals.length > 0 && <strong> Exceeding targets:</strong>}
-                            {metGoals.length === 0 && <strong> All tracked categories are exceeding targets:</strong>}
-                            {missedGoals.map((cat, idx) => (
+                            {significantlyUnder.length > 0 && <strong style={{ color: '#ef4444' }}> Significantly over target:</strong>}
+                            {significantlyUnder.length === 0 && <strong style={{ color: '#ef4444' }}> Significant variances requiring attention:</strong>}
+                            {significantlyOver.map((cat, idx) => (
                               <span key={idx}>
-                                {idx > 0 && (idx === missedGoals.length - 1 ? ' and ' : ', ')}
-                                <strong style={{ color: '#ef4444' }}>{cat.label}</strong> at {cat.actual.toFixed(1)}% (goal: {cat.goal.toFixed(1)}%, {cat.variance.toFixed(1)}pp over target)
+                                {idx > 0 && (idx === significantlyOver.length - 1 ? ' and ' : ', ')}
+                                <strong style={{ color: '#ef4444' }}>{cat.label}</strong> at {cat.actual.toFixed(1)}% (goal: {cat.goal.toFixed(1)}%, <strong>{cat.variance.toFixed(1)}pp over</strong>)
                               </span>
                             ))}
-                            {missedGoals.length === 1 ? ', requiring management attention to bring spending in line with targets' : 
-                             missedGoals.length === categoryAnalysis.length ? ', indicating need for comprehensive cost reduction initiatives across all expense categories' :
-                             ', requiring targeted cost management to align with established goals'}.
+                            {significantlyOver.length === 1 ? ', requiring immediate management attention to identify root causes and implement corrective actions' : 
+                             significantlyOver.length === categoriesWithGoalsAndSpend.length ? ', indicating need for comprehensive cost reduction initiatives across all expense categories with urgent management focus' :
+                             ', requiring targeted cost management initiatives to bring spending in line with established targets'}.
                           </>
                         )}
-                        {categoryAnalysis.length > 0 && ` Overall, ${metGoals.length} of ${categoryAnalysis.length} tracked expense categories are within target, ${metGoals.length / categoryAnalysis.length > 0.7 ? 'demonstrating strong financial discipline' : metGoals.length / categoryAnalysis.length > 0.5 ? 'with room for improvement in cost management' : 'requiring immediate management focus on expense control'}.`}
+                        
+                        {onTarget.length > 0 && hasSignificantDeviations && (
+                          <span> {onTarget.length} {onTarget.length === 1 ? 'category is' : 'categories are'} performing on target with no significant variances.</span>
+                        )}
                       </>
                     );
                   })()}
