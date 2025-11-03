@@ -1385,13 +1385,21 @@ export default function FinancialScorePage() {
     }
   };
   const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'profile'>('company-management');
-  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'default-pricing'>('consultants');
+  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
   const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
   const [expandedConsultantInfo, setExpandedConsultantInfo] = useState<Set<string>>(new Set());
   const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
   const [showAddConsultantForm, setShowAddConsultantForm] = useState(false);
+  
+  // Affiliate management state
+  const [affiliates, setAffiliates] = useState<any[]>([]);
+  const [editingAffiliate, setEditingAffiliate] = useState<any>(null);
+  const [showAddAffiliateForm, setShowAddAffiliateForm] = useState(false);
+  const [expandedAffiliateId, setExpandedAffiliateId] = useState<string | null>(null);
+  const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
+  
   const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios'>('all-ratios');
   const [priorityRatios, setPriorityRatios] = useState<string[]>([
     'Current Ratio', 'Quick Ratio', 'ROE', 'ROA', 'Interest Coverage', 'Debt/Net Worth'
@@ -1754,6 +1762,20 @@ export default function FinancialScorePage() {
       localStorage.setItem(storageKey, JSON.stringify(selectedDashboardWidgets));
     }
   }, [selectedCompanyId, selectedDashboardWidgets]);
+
+  // Load affiliates when Affiliates tab is opened
+  useEffect(() => {
+    if (siteAdminTab === 'affiliates') {
+      fetch('/api/affiliates')
+        .then(res => res.json())
+        .then(data => {
+          if (data.affiliates) {
+            setAffiliates(data.affiliates);
+          }
+        })
+        .catch(err => console.error('Error loading affiliates:', err));
+    }
+  }, [siteAdminTab]);
 
   // Load default pricing when Default Pricing tab is opened
   useEffect(() => {
@@ -5026,6 +5048,23 @@ export default function FinancialScorePage() {
                   Businesses
                 </button>
                 <button
+                  onClick={() => setSiteAdminTab('affiliates')}
+                  style={{
+                    padding: '8px 16px',
+                    background: siteAdminTab === 'affiliates' ? '#667eea' : 'transparent',
+                    color: siteAdminTab === 'affiliates' ? 'white' : '#64748b',
+                    border: 'none',
+                    borderBottom: siteAdminTab === 'affiliates' ? '3px solid #667eea' : '3px solid transparent',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    borderRadius: '6px 6px 0 0',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Affiliates
+                </button>
+                <button
                   onClick={() => setSiteAdminTab('default-pricing')}
                   style={{
                     padding: '8px 16px',
@@ -5812,6 +5851,602 @@ export default function FinancialScorePage() {
                       })}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Affiliates Tab */}
+              {siteAdminTab === 'affiliates' && (
+                <div>
+                  {/* Add Affiliate Button */}
+                  <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                      Affiliate Partners ({affiliates.length})
+                    </h2>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {affiliates.length > 0 && (
+                        <button
+                          onClick={() => {
+                            if (expandedAffiliateId) {
+                              setExpandedAffiliateId(null);
+                            } else {
+                              // Expand the first one as a sample
+                              setExpandedAffiliateId(affiliates[0]?.id || null);
+                            }
+                          }}
+                          style={{
+                            padding: '10px 16px',
+                            background: '#94a3b8',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {expandedAffiliateId ? 'Collapse All' : 'Expand All'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          if (showAddAffiliateForm) {
+                            setShowAddAffiliateForm(false);
+                            setEditingAffiliate(null);
+                          } else {
+                            setShowAddAffiliateForm(true);
+                            setEditingAffiliate({
+                              name: '',
+                              contactName: '',
+                              contactEmail: '',
+                              contactPhone: '',
+                              address: '',
+                              city: '',
+                              state: '',
+                              zip: '',
+                              website: '',
+                              isActive: true
+                            });
+                          }
+                        }}
+                        style={{
+                          padding: '10px 16px',
+                          background: showAddAffiliateForm ? '#94a3b8' : '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {showAddAffiliateForm ? 'Cancel' : '+ Add Affiliate'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Add/Edit Affiliate Form */}
+                  {(showAddAffiliateForm || editingAffiliate) && (
+                    <div style={{ background: 'white', borderRadius: '8px', padding: '16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '2px solid #667eea' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+                        {editingAffiliate?.id ? 'Edit Affiliate' : 'Add New Affiliate'}
+                      </h3>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                        {/* Left Column */}
+                        <div>
+                          <div style={{ marginBottom: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                              Affiliate Name *
+                            </label>
+                            <input
+                              type="text"
+                              value={editingAffiliate?.name || ''}
+                              onChange={(e) => setEditingAffiliate({...editingAffiliate, name: e.target.value})}
+                              placeholder="e.g., ABC Partnership"
+                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                            />
+                          </div>
+                          <div style={{ marginBottom: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                              Contact Name
+                            </label>
+                            <input
+                              type="text"
+                              value={editingAffiliate?.contactName || ''}
+                              onChange={(e) => setEditingAffiliate({...editingAffiliate, contactName: e.target.value})}
+                              placeholder="Contact person"
+                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                            />
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                Email
+                              </label>
+                              <input
+                                type="email"
+                                value={editingAffiliate?.contactEmail || ''}
+                                onChange={(e) => setEditingAffiliate({...editingAffiliate, contactEmail: e.target.value})}
+                                placeholder="email@example.com"
+                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                Phone
+                              </label>
+                              <input
+                                type="tel"
+                                value={editingAffiliate?.contactPhone || ''}
+                                onChange={(e) => setEditingAffiliate({...editingAffiliate, contactPhone: e.target.value})}
+                                placeholder="(555) 123-4567"
+                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right Column */}
+                        <div>
+                          <div style={{ marginBottom: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                              Street Address
+                            </label>
+                            <input
+                              type="text"
+                              value={editingAffiliate?.address || ''}
+                              onChange={(e) => setEditingAffiliate({...editingAffiliate, address: e.target.value})}
+                              placeholder="123 Main St"
+                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                            />
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 70px 90px', gap: '8px', marginBottom: '8px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                City
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAffiliate?.city || ''}
+                                onChange={(e) => setEditingAffiliate({...editingAffiliate, city: e.target.value})}
+                                placeholder="City"
+                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                State
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAffiliate?.state || ''}
+                                onChange={(e) => setEditingAffiliate({...editingAffiliate, state: e.target.value})}
+                                placeholder="ST"
+                                maxLength={2}
+                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', textTransform: 'uppercase' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                ZIP
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAffiliate?.zip || ''}
+                                onChange={(e) => setEditingAffiliate({...editingAffiliate, zip: e.target.value})}
+                                placeholder="12345"
+                                maxLength={10}
+                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ marginBottom: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                              Website
+                            </label>
+                            <input
+                              type="text"
+                              value={editingAffiliate?.website || ''}
+                              onChange={(e) => setEditingAffiliate({...editingAffiliate, website: e.target.value})}
+                              placeholder="www.example.com"
+                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status */}
+                      <div style={{ marginBottom: '12px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={editingAffiliate?.isActive !== false}
+                            onChange={(e) => setEditingAffiliate({...editingAffiliate, isActive: e.target.checked})}
+                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '12px', fontWeight: '500', color: '#475569' }}>
+                            Active (can be selected during registration)
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                        <button
+                          onClick={() => {
+                            setEditingAffiliate(null);
+                            setShowAddAffiliateForm(false);
+                          }}
+                          style={{ padding: '6px 16px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!editingAffiliate?.name) {
+                              alert('Please enter an affiliate name');
+                              return;
+                            }
+
+                            try {
+                              const method = editingAffiliate.id ? 'PUT' : 'POST';
+                              const response = await fetch('/api/affiliates', {
+                                method,
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(editingAffiliate)
+                              });
+
+                              const data = await response.json();
+                              if (!response.ok) {
+                                alert(data.error || 'Failed to save affiliate');
+                                return;
+                              }
+
+                              // Reload affiliates
+                              const affiliatesResponse = await fetch('/api/affiliates');
+                              const affiliatesData = await affiliatesResponse.json();
+                              if (affiliatesData.affiliates) {
+                                setAffiliates(affiliatesData.affiliates);
+                              }
+
+                              setEditingAffiliate(null);
+                              setShowAddAffiliateForm(false);
+                              alert(editingAffiliate.id ? 'Affiliate updated successfully!' : 'Affiliate created successfully!');
+                            } catch (error) {
+                              console.error('Error saving affiliate:', error);
+                              alert('Failed to save affiliate');
+                            }
+                          }}
+                          style={{ padding: '6px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                        >
+                          {editingAffiliate?.id ? 'Update Affiliate' : 'Create Affiliate'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Affiliates List */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {affiliates.length === 0 ? (
+                      <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                        <p style={{ fontSize: '16px', marginBottom: '8px' }}>No affiliates yet</p>
+                        <p style={{ fontSize: '14px' }}>Click "Add Affiliate" to create your first affiliate partner</p>
+                      </div>
+                    ) : (
+                      affiliates.map((affiliate: any) => (
+                        <div key={affiliate.id} style={{ background: 'white', borderRadius: '8px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                                  {affiliate.name}
+                                </h3>
+                                {!affiliate.isActive && (
+                                  <span style={{ padding: '4px 8px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
+                                    INACTIVE
+                                  </span>
+                                )}
+                                <span style={{ padding: '4px 8px', background: '#f0fdf4', color: '#15803d', border: '1px solid #86efac', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
+                                  {affiliate._count.companies} Business{affiliate._count.companies !== 1 ? 'es' : ''}
+                                </span>
+                                <span style={{ padding: '4px 8px', background: '#eff6ff', color: '#1e40af', border: '1px solid #93c5fd', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
+                                  {affiliate.codes?.length || 0} Code{affiliate.codes?.length !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                              
+                              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
+                                {affiliate.contactName && <div>Contact: {affiliate.contactName}</div>}
+                                {affiliate.contactEmail && <div>Email: {affiliate.contactEmail}</div>}
+                                {affiliate.contactPhone && <div>Phone: {affiliate.contactPhone}</div>}
+                              </div>
+
+                              <button
+                                onClick={() => setExpandedAffiliateId(expandedAffiliateId === affiliate.id ? null : affiliate.id)}
+                                style={{ padding: '6px 12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                {expandedAffiliateId === affiliate.id ? '▼ Hide Details' : '▶ See Codes & Pricing'}
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={() => {
+                                  setEditingAffiliate(affiliate);
+                                  setShowAddAffiliateForm(false);
+                                  setExpandedAffiliateId(null); // Close any expanded details
+                                  // Scroll to top to show the edit form
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                style={{ padding: '8px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`Delete affiliate "${affiliate.name}"? This cannot be undone.`)) return;
+                                  
+                                  try {
+                                    const response = await fetch(`/api/affiliates?id=${affiliate.id}`, {
+                                      method: 'DELETE'
+                                    });
+                                    
+                                    const data = await response.json();
+                                    if (!response.ok) {
+                                      alert(data.error || 'Failed to delete affiliate');
+                                      return;
+                                    }
+
+                                    // Reload affiliates
+                                    const affiliatesResponse = await fetch('/api/affiliates');
+                                    const affiliatesData = await affiliatesResponse.json();
+                                    if (affiliatesData.affiliates) {
+                                      setAffiliates(affiliatesData.affiliates);
+                                    }
+                                    alert('Affiliate deleted successfully!');
+                                  } catch (error) {
+                                    console.error('Error deleting affiliate:', error);
+                                    alert('Failed to delete affiliate');
+                                  }
+                                }}
+                                style={{ padding: '8px 12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Expanded Details */}
+                          {expandedAffiliateId === affiliate.id && (
+                            <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
+                              {/* Affiliate Codes Management */}
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                  <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Affiliate Codes</h4>
+                                </div>
+
+                                {/* Add New Code Form */}
+                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                                  {/* Row 1: Code Info */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 80px 120px', gap: '8px', marginBottom: '8px' }}>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Code *
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={newAffiliateCode.code}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, code: e.target.value.toUpperCase()})}
+                                        placeholder="PROMO2025"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Description
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={newAffiliateCode.description}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, description: e.target.value})}
+                                        placeholder="Optional"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Max Uses
+                                      </label>
+                                      <input
+                                        type="number"
+                                        value={newAffiliateCode.maxUses}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, maxUses: e.target.value})}
+                                        placeholder="∞"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Expires
+                                      </label>
+                                      <input
+                                        type="date"
+                                        value={newAffiliateCode.expiresAt}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, expiresAt: e.target.value})}
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Row 2: Pricing & Button */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Monthly ($) *
+                                      </label>
+                                      <input
+                                        type="number"
+                                        value={newAffiliateCode.monthlyPrice || ''}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, monthlyPrice: e.target.value})}
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Quarterly ($) *
+                                      </label>
+                                      <input
+                                        type="number"
+                                        value={newAffiliateCode.quarterlyPrice || ''}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, quarterlyPrice: e.target.value})}
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Annual ($) *
+                                      </label>
+                                      <input
+                                        type="number"
+                                        value={newAffiliateCode.annualPrice || ''}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, annualPrice: e.target.value})}
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
+                                    <button
+                                      onClick={async () => {
+                                        if (!newAffiliateCode.code) {
+                                          alert('Please enter a code');
+                                          return;
+                                        }
+                                        if (!newAffiliateCode.monthlyPrice || !newAffiliateCode.quarterlyPrice || !newAffiliateCode.annualPrice) {
+                                          alert('Please enter all pricing fields');
+                                          return;
+                                        }
+
+                                        try {
+                                          const response = await fetch('/api/affiliates/codes', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              affiliateId: affiliate.id,
+                                              code: newAffiliateCode.code,
+                                              description: newAffiliateCode.description || null,
+                                              monthlyPrice: parseFloat(newAffiliateCode.monthlyPrice),
+                                              quarterlyPrice: parseFloat(newAffiliateCode.quarterlyPrice),
+                                              annualPrice: parseFloat(newAffiliateCode.annualPrice),
+                                              maxUses: newAffiliateCode.maxUses ? parseInt(newAffiliateCode.maxUses) : null,
+                                              expiresAt: newAffiliateCode.expiresAt || null
+                                            })
+                                          });
+
+                                          const data = await response.json();
+                                          if (!response.ok) {
+                                            alert(data.error || 'Failed to create code');
+                                            return;
+                                          }
+
+                                          // Reload affiliates
+                                          const affiliatesResponse = await fetch('/api/affiliates');
+                                          const affiliatesData = await affiliatesResponse.json();
+                                          if (affiliatesData.affiliates) {
+                                            setAffiliates(affiliatesData.affiliates);
+                                          }
+
+                                          setNewAffiliateCode({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
+                                          alert('Code created successfully!');
+                                        } catch (error) {
+                                          console.error('Error creating code:', error);
+                                          alert('Failed to create code');
+                                        }
+                                      }}
+                                      style={{ padding: '6px 12px', background: '#22c55e', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                    >
+                                      + Add Code
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Codes List */}
+                                {affiliate.codes && affiliate.codes.length > 0 ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {affiliate.codes.map((code: any) => (
+                                      <div key={code.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                            <span style={{ fontFamily: 'monospace', fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
+                                              {code.code}
+                                            </span>
+                                            {!code.isActive && (
+                                              <span style={{ padding: '2px 6px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '10px', fontWeight: '600' }}>
+                                                INACTIVE
+                                              </span>
+                                            )}
+                                            {code.expiresAt && new Date(code.expiresAt) < new Date() && (
+                                              <span style={{ padding: '2px 6px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '10px', fontWeight: '600' }}>
+                                                EXPIRED
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                            {code.description && <span>{code.description} • </span>}
+                                            <span>Uses: {code.currentUses}{code.maxUses ? `/${code.maxUses}` : ''}</span>
+                                            {code.expiresAt && <span> • Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>}
+                                          </div>
+                                          <div style={{ fontSize: '11px', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>
+                                            Pricing: ${code.monthlyPrice}/mo • ${code.quarterlyPrice}/qtr • ${code.annualPrice}/yr
+                                          </div>
+                                        </div>
+                                        <button
+                                          onClick={async () => {
+                                            if (!confirm(`Delete code "${code.code}"?`)) return;
+                                            
+                                            try {
+                                              const response = await fetch(`/api/affiliates/codes?id=${code.id}`, {
+                                                method: 'DELETE'
+                                              });
+                                              
+                                              if (!response.ok) {
+                                                const data = await response.json();
+                                                alert(data.error || 'Failed to delete code');
+                                                return;
+                                              }
+
+                                              // Reload affiliates
+                                              const affiliatesResponse = await fetch('/api/affiliates');
+                                              const affiliatesData = await affiliatesResponse.json();
+                                              if (affiliatesData.affiliates) {
+                                                setAffiliates(affiliatesData.affiliates);
+                                              }
+                                            } catch (error) {
+                                              console.error('Error deleting code:', error);
+                                              alert('Failed to delete code');
+                                            }
+                                          }}
+                                          style={{ padding: '4px 8px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div style={{ textAlign: 'center', padding: '20px', color: '#64748b', fontSize: '13px' }}>
+                                    No codes yet. Add a code above.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -7763,7 +8398,7 @@ export default function FinancialScorePage() {
       )}
 
       {/* Content Area - Requires Company Selection */}
-      {!selectedCompanyId && currentView !== 'admin' && (
+      {!selectedCompanyId && currentView !== 'admin' && currentView !== 'siteadmin' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the {currentUser?.consultantCompanyName || 'Consultant Dashboard'} to continue.</p>

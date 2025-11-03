@@ -6,7 +6,8 @@ export async function POST(request: NextRequest) {
   try {
     const { 
       name, email, password, fullName, address, phone, type,
-      companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite
+      companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite,
+      affiliateId, affiliateCode
     } = await request.json();
 
     if (!name || !email || !password) {
@@ -31,21 +32,47 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Get default pricing from settings
-    let defaultPricing = await prisma.systemSettings.findUnique({
-      where: { key: 'default_pricing' }
-    });
+    // Get pricing - either from affiliate code or default
+    let pricingToUse = null;
+    
+    if (affiliateId && affiliateCode) {
+      // Fetch affiliate code pricing
+      const affiliateCodeRecord = await prisma.affiliateCode.findFirst({
+        where: {
+          affiliateId: affiliateId,
+          code: affiliateCode.toUpperCase(),
+          isActive: true
+        }
+      });
+      
+      if (affiliateCodeRecord) {
+        pricingToUse = {
+          businessMonthlyPrice: affiliateCodeRecord.monthlyPrice,
+          businessQuarterlyPrice: affiliateCodeRecord.quarterlyPrice,
+          businessAnnualPrice: affiliateCodeRecord.annualPrice
+        };
+      }
+    }
+    
+    // If no affiliate pricing, get default pricing from settings
+    if (!pricingToUse) {
+      let defaultPricing = await prisma.systemSettings.findUnique({
+        where: { key: 'default_pricing' }
+      });
 
-    // If no settings exist, use fallback defaults
-    if (!defaultPricing) {
-      defaultPricing = {
-        businessMonthlyPrice: 195,
-        businessQuarterlyPrice: 500,
-        businessAnnualPrice: 1750,
-        consultantMonthlyPrice: 195,
-        consultantQuarterlyPrice: 500,
-        consultantAnnualPrice: 1750
-      } as any;
+      // If no settings exist, use fallback defaults
+      if (!defaultPricing) {
+        pricingToUse = {
+          businessMonthlyPrice: 195,
+          businessQuarterlyPrice: 500,
+          businessAnnualPrice: 1750,
+          consultantMonthlyPrice: 195,
+          consultantQuarterlyPrice: 500,
+          consultantAnnualPrice: 1750
+        };
+      } else {
+        pricingToUse = defaultPricing;
+      }
     }
 
     // Create user, consultant, and company (for business users) in a transaction
@@ -80,16 +107,39 @@ export async function POST(request: NextRequest) {
       // Automatically create a company for business users
       let company = null;
       if (type === 'business') {
+        const companyData: any = {
+          name: name, // Use the business name as company name
+          consultantId: consultant.id,
+          subscriptionMonthlyPrice: pricingToUse?.businessMonthlyPrice ?? 0,
+          subscriptionQuarterlyPrice: pricingToUse?.businessQuarterlyPrice ?? 0,
+          subscriptionAnnualPrice: pricingToUse?.businessAnnualPrice ?? 0
+          // DO NOT set selectedSubscriptionPlan - they must pay first
+        };
+        
+        // If affiliate code was used, save it to the company
+        if (affiliateId && affiliateCode) {
+          companyData.affiliateId = affiliateId;
+          companyData.affiliateCode = affiliateCode.toUpperCase();
+        }
+        
         company = await tx.company.create({
-          data: {
-            name: name, // Use the business name as company name
-            consultantId: consultant.id,
-            subscriptionMonthlyPrice: defaultPricing?.businessMonthlyPrice ?? 0,
-            subscriptionQuarterlyPrice: defaultPricing?.businessQuarterlyPrice ?? 0,
-            subscriptionAnnualPrice: defaultPricing?.businessAnnualPrice ?? 0
-            // DO NOT set selectedSubscriptionPlan - they must pay first
-          }
+          data: companyData
         });
+        
+        // If affiliate code was used, increment its usage counter
+        if (affiliateId && affiliateCode) {
+          await tx.affiliateCode.updateMany({
+            where: {
+              affiliateId: affiliateId,
+              code: affiliateCode.toUpperCase()
+            },
+            data: {
+              currentUses: {
+                increment: 1
+              }
+            }
+          });
+        }
       }
 
       return { user, consultant, company };
