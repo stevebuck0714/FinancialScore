@@ -205,6 +205,7 @@ interface CompanyProfile {
   legalStructure: string;
   businessStatus: string;
   ownership: string;
+  keyEmployees?: Array<{ name: string; title: string; yearEmployed: string }>;
   workforce: string;
   keyAdvisors: string;
   specialNotes: string;
@@ -1400,7 +1401,7 @@ export default function FinancialScorePage() {
   const [expandedAffiliateId, setExpandedAffiliateId] = useState<string | null>(null);
   const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
   
-  const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios'>('all-ratios');
+  const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios' | 'monthly-ratios'>('all-ratios');
   const [priorityRatios, setPriorityRatios] = useState<string[]>([
     'Current Ratio', 'Quick Ratio', 'ROE', 'ROA', 'Interest Coverage', 'Debt/Net Worth'
   ]);
@@ -11238,7 +11239,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              All Ratios
+              Ratio Graphs
             </button>
             <button
               onClick={() => setKpiDashboardTab('priority-ratios')}
@@ -11257,9 +11258,26 @@ export default function FinancialScorePage() {
             >
               Priority Ratios
             </button>
+            <button
+              onClick={() => setKpiDashboardTab('monthly-ratios')}
+              style={{
+                padding: '12px 24px',
+                background: kpiDashboardTab === 'monthly-ratios' ? '#667eea' : 'transparent',
+                color: kpiDashboardTab === 'monthly-ratios' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: kpiDashboardTab === 'monthly-ratios' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Monthly Ratios by Category
+            </button>
           </div>
 
-          {/* All Ratios Tab */}
+          {/* Ratio Graphs Tab */}
           {kpiDashboardTab === 'all-ratios' && (
             <>
               <div style={{ marginBottom: '32px' }}>
@@ -11473,6 +11491,206 @@ export default function FinancialScorePage() {
                   <p>Select ratios from the dropdowns above to create your custom KPI dashboard.</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Monthly Ratios by Category Tab */}
+          {kpiDashboardTab === 'monthly-ratios' && (
+            <div>
+              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+                Financial Ratios Overview
+              </h2>
+              
+              {/* Liquidity Ratios */}
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Liquidity Ratios</h3>
+              <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                      {trendData.slice(-12).map((data, i) => (
+                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                          {data.month.substring(0, data.month.lastIndexOf('/'))}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Current Ratio</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.currentRatio !== undefined ? data.currentRatio.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Quick Ratio</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.quickRatio !== undefined ? data.quickRatio.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Activity Ratios */}
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Activity Ratios</h3>
+              <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                      {trendData.slice(-12).map((data, i) => (
+                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                          {data.month.substring(0, data.month.lastIndexOf('/'))}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Inventory Turnover</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.invTurnover !== undefined ? data.invTurnover.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Receivables Turnover</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.arTurnover !== undefined ? data.arTurnover.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Sales/Working Capital</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.salesWC !== undefined ? data.salesWC.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Coverage Ratios */}
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Coverage Ratios</h3>
+              <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                      {trendData.slice(-12).map((data, i) => (
+                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                          {data.month.substring(0, data.month.lastIndexOf('/'))}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Interest Coverage</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.interestCov !== undefined ? data.interestCov.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt Service Coverage</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.debtSvcCov !== undefined ? data.debtSvcCov.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Leverage Ratios */}
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Leverage Ratios</h3>
+              <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                      {trendData.slice(-12).map((data, i) => (
+                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                          {data.month.substring(0, data.month.lastIndexOf('/'))}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt/Net Worth</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.debtToNW !== undefined ? data.debtToNW.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Leverage Ratio</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.leverage !== undefined ? data.leverage.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Operating Ratios */}
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Operating Ratios</h3>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                      {trendData.slice(-12).map((data, i) => (
+                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                          {data.month.substring(0, data.month.lastIndexOf('/'))}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROE</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.roe !== undefined ? `${(data.roe * 100).toFixed(1)}%` : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROA</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.roa !== undefined ? `${(data.roa * 100).toFixed(1)}%` : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBITDA/Revenue</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.ebitdaMargin !== undefined ? `${(data.ebitdaMargin * 100).toFixed(1)}%` : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -21208,9 +21426,6 @@ export default function FinancialScorePage() {
               <div style={{ marginBottom: '8px' }}>
                 <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Company Profile</h1>
               </div>
-              <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                This summary was constructed from the company's past three years of financial statements.
-              </p>
             </div>
             <button
               onClick={() => window.print()}
@@ -21240,6 +21455,7 @@ export default function FinancialScorePage() {
                 legalStructure: '',
                 businessStatus: '',
                 ownership: '',
+                keyEmployees: [],
                 workforce: '',
                 keyAdvisors: '',
                 specialNotes: '',
@@ -21258,6 +21474,11 @@ export default function FinancialScorePage() {
                   auditedFinancials: 'No'
                 }
               };
+            }
+            
+            // Ensure keyEmployees exists
+            if (!profile.keyEmployees) {
+              profile.keyEmployees = [];
             }
 
             const updateProfile = (updates: Partial<CompanyProfile>) => {
@@ -21301,9 +21522,9 @@ export default function FinancialScorePage() {
                     Business Profile
                   </h2>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 140px 1fr', gap: '12px 16px', marginBottom: '16px' }}>
                     <div style={{ fontWeight: '600', color: '#475569' }}>COMPANY NAME</div>
-                    <div style={{ color: '#1e293b' }}>{company?.name || 'N/A'}</div>
+                    <div style={{ color: '#1e293b', gridColumn: 'span 3' }}>{company?.name || 'N/A'}</div>
                     
                     <div style={{ fontWeight: '600', color: '#475569' }}>LEGAL STRUCTURE</div>
                     <input 
@@ -21311,14 +21532,14 @@ export default function FinancialScorePage() {
                       value={profile.legalStructure} 
                       onChange={(e) => updateProfile({ legalStructure: e.target.value })}
                       placeholder="e.g., C Corp, S Corp, LLC"
-                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', maxWidth: '200px' }}
                     />
                     
                     <div style={{ fontWeight: '600', color: '#475569' }}>BUSINESS STATUS</div>
                     <select
                       value={profile.businessStatus}
                       onChange={(e) => updateProfile({ businessStatus: e.target.value })}
-                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', maxWidth: '200px' }}
                     >
                       <option value="">Select status</option>
                       <option value="ACTIVE">ACTIVE</option>
@@ -21332,20 +21553,115 @@ export default function FinancialScorePage() {
                       value={profile.ownership} 
                       onChange={(e) => updateProfile({ ownership: e.target.value })}
                       placeholder="Owner name(s)"
-                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', gridColumn: 'span 3' }}
                     />
+                  </div>
+                  
+                  {/* Key Employees Section */}
+                  <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '600', color: '#475569' }}>KEY EMPLOYEES</div>
+                      <button
+                        onClick={() => {
+                          const newEmployees = [...(profile.keyEmployees || []), { name: '', title: '', yearEmployed: '' }];
+                          updateProfile({ keyEmployees: newEmployees });
+                        }}
+                        style={{
+                          padding: '6px 12px',
+                          background: '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        + Add Employee
+                      </button>
+                    </div>
                     
+                    {profile.keyEmployees && profile.keyEmployees.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {profile.keyEmployees.map((employee: any, index: number) => (
+                          <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 140px 40px', gap: '12px', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
+                            <input
+                              type="text"
+                              value={employee.name || ''}
+                              onChange={(e) => {
+                                const newEmployees = [...profile.keyEmployees];
+                                newEmployees[index] = { ...newEmployees[index], name: e.target.value };
+                                updateProfile({ keyEmployees: newEmployees });
+                              }}
+                              placeholder="Name"
+                              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                            />
+                            <input
+                              type="text"
+                              value={employee.title || ''}
+                              onChange={(e) => {
+                                const newEmployees = [...profile.keyEmployees];
+                                newEmployees[index] = { ...newEmployees[index], title: e.target.value };
+                                updateProfile({ keyEmployees: newEmployees });
+                              }}
+                              placeholder="Title"
+                              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                            />
+                            <input
+                              type="text"
+                              value={employee.yearEmployed || ''}
+                              onChange={(e) => {
+                                const newEmployees = [...profile.keyEmployees];
+                                newEmployees[index] = { ...newEmployees[index], yearEmployed: e.target.value };
+                                updateProfile({ keyEmployees: newEmployees });
+                              }}
+                              placeholder="Year"
+                              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                            />
+                            <button
+                              onClick={() => {
+                                const newEmployees = profile.keyEmployees.filter((_: any, i: number) => i !== index);
+                                updateProfile({ keyEmployees: newEmployees });
+                              }}
+                              style={{
+                                padding: '8px',
+                                background: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '16px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              title="Remove employee"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '14px', background: '#f8fafc', borderRadius: '8px' }}>
+                        No key employees added. Click "+ Add Employee" to add one.
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 140px 1fr', gap: '12px 16px', marginBottom: '16px' }}>
                     <div style={{ fontWeight: '600', color: '#475569' }}>ADDRESS</div>
-                    <div style={{ color: '#1e293b' }}>
+                    <div style={{ color: '#1e293b', gridColumn: 'span 3' }}>
                       {company?.addressStreet || company?.addressCity ? (
                         <>
-                          {company?.addressStreet && <div>{company.addressStreet}</div>}
-                          <div>
-                            {company?.addressCity && company.addressCity}
-                            {company?.addressState && `, ${company.addressState}`}
-                            {company?.addressZip && ` ${company.addressZip}`}
-                          </div>
-                          {company?.addressCountry && <div>{company.addressCountry}</div>}
+                          {company?.addressStreet && `${company.addressStreet}, `}
+                          {company?.addressCity && company.addressCity}
+                          {company?.addressState && `, ${company.addressState}`}
+                          {company?.addressZip && ` ${company.addressZip}`}
+                          {company?.addressCountry && `, ${company.addressCountry}`}
                         </>
                       ) : (
                         'Not set'
@@ -21353,7 +21669,7 @@ export default function FinancialScorePage() {
                     </div>
                     
                     <div style={{ fontWeight: '600', color: '#475569' }}>INDUSTRY</div>
-                    <div style={{ color: '#1e293b' }}>
+                    <div style={{ color: '#1e293b', gridColumn: 'span 3' }}>
                       {industry ? `${industry.id} - ${industry.name}` : 'Not set'}
                     </div>
                     
@@ -21363,18 +21679,8 @@ export default function FinancialScorePage() {
                       value={profile.workforce} 
                       onChange={(e) => updateProfile({ workforce: e.target.value })}
                       placeholder="e.g., 3 FT, 1 owner"
-                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', gridColumn: 'span 3' }}
                     />
-                    
-                    <div style={{ fontWeight: '600', color: '#475569' }}>LTM REVENUE</div>
-                    <div style={{ color: '#1e293b' }}>
-                      {ltmRev < 500000 ? 'Under $500K' : `$${(ltmRev / 1000).toFixed(0)}K`}
-                    </div>
-                    
-                    <div style={{ fontWeight: '600', color: '#475569' }}>TOTAL ASSETS</div>
-                    <div style={{ color: '#1e293b' }}>
-                      ${ltmAssets.toLocaleString()}
-                    </div>
                     
                     <div style={{ fontWeight: '600', color: '#475569' }}>KEY ADVISORS</div>
                     <input 
@@ -21382,7 +21688,7 @@ export default function FinancialScorePage() {
                       value={profile.keyAdvisors} 
                       onChange={(e) => updateProfile({ keyAdvisors: e.target.value })}
                       placeholder="Advisor names"
-                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                      style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', gridColumn: 'span 3' }}
                     />
                   </div>
                   
@@ -21538,211 +21844,7 @@ export default function FinancialScorePage() {
                   </div>
                 </div>
 
-                {/* Section 3: Financial Ratios Overview */}
-                <div className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <div className="print-page-header">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
-                      <div style={{ fontSize: '13px', color: '#64748b' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-                    </div>
-                  </div>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
-                    Financial Ratios Overview
-                  </h2>
-                  
-                  {/* Liquidity Ratios */}
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Liquidity Ratios</h3>
-                  <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                          {last12Months.map((m, i) => (
-                            <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                              {m.month.substring(0, m.month.lastIndexOf('/'))}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Current Ratio</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.currentRatio !== undefined ? data.currentRatio.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Quick Ratio</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.quickRatio !== undefined ? data.quickRatio.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Activity Ratios */}
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Activity Ratios</h3>
-                  <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                          {last12Months.map((m, i) => (
-                            <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                              {m.month.substring(0, m.month.lastIndexOf('/'))}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Inventory Turnover</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.invTurnover !== undefined ? data.invTurnover.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Receivables Turnover</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.arTurnover !== undefined ? data.arTurnover.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Sales/Working Capital</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.salesWC !== undefined ? data.salesWC.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Coverage Ratios */}
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Coverage Ratios</h3>
-                  <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                          {last12Months.map((m, i) => (
-                            <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                              {m.month.substring(0, m.month.lastIndexOf('/'))}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Interest Coverage</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.interestCov !== undefined ? data.interestCov.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt Service Coverage</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.debtSvcCov !== undefined ? data.debtSvcCov.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Leverage Ratios */}
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Leverage Ratios</h3>
-                  <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                          {last12Months.map((m, i) => (
-                            <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                              {m.month.substring(0, m.month.lastIndexOf('/'))}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt/Net Worth</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.debtToNW !== undefined ? data.debtToNW.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Leverage Ratio</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.leverage !== undefined ? data.leverage.toFixed(1) : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Operating Ratios */}
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Operating Ratios</h3>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                          {last12Months.map((m, i) => (
-                            <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                              {m.month.substring(0, m.month.lastIndexOf('/'))}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROE</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.roe !== undefined ? `${(data.roe * 100).toFixed(1)}%` : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROA</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.roa !== undefined ? `${(data.roa * 100).toFixed(1)}%` : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBITDA/Revenue</td>
-                          {last12Trends.map((data, i) => (
-                            <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {data?.ebitdaMargin !== undefined ? `${(data.ebitdaMargin * 100).toFixed(1)}%` : 'N/A'}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Section 4: Company Disclosures */}
+                {/* Section 3: Company Disclosures */}
                 <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div className="print-page-header">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
