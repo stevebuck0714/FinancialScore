@@ -9656,7 +9656,7 @@ export default function FinancialScorePage() {
                 
                 <div style={{ display: 'grid', gap: '20px' }}>
                   <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>70 – 100: Strong Financial Performance</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 – 100: Strong Financial Performance</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#064e3b', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Good growth and good balance</li>
                       <li>In a good position for considering an M&A transaction</li>
@@ -9665,7 +9665,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 – 70: Good Fundamentals</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 – 80: Good Fundamentals</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>In a good position for revenue growth</li>
                       <li>Needs to focus on bringing costs down as volume grows</li>
@@ -11480,11 +11480,13 @@ export default function FinancialScorePage() {
 
       {/* MD&A View */}
       {currentView === 'mda' && selectedCompanyId && trendData.length > 0 && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Management Discussion & Analysis</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div className="mda-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+          <div className="mda-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+            <div>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>Management Discussion & Analysis</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button 
                 className="no-print"
                 onClick={() => window.print()} 
@@ -11604,48 +11606,482 @@ export default function FinancialScorePage() {
           {/* Executive Summary Tab */}
           {mdaTab === 'executive-summary' && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>Executive Summary</h2>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>Executive Summary</h2>
             
-            {/* Overview Metrics */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px', padding: '20px', background: '#f8fafc', borderRadius: '8px' }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px', fontWeight: '600' }}>Financial Score</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: finalScore >= 70 ? '#10b981' : finalScore >= 50 ? '#f59e0b' : '#ef4444' }}>{finalScore.toFixed(1)}</div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>Overall Health</div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px', fontWeight: '600' }}>24-Mo Growth</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: growth_24mo > 10 ? '#10b981' : growth_24mo > 0 ? '#f59e0b' : '#ef4444' }}>{growth_24mo.toFixed(1)}%</div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>Revenue Trend</div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px', fontWeight: '600' }}>Current Ratio</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: trendData[trendData.length - 1]?.currentRatio >= 1.5 ? '#10b981' : trendData[trendData.length - 1]?.currentRatio >= 1.0 ? '#f59e0b' : '#ef4444' }}>
-                  {trendData[trendData.length - 1]?.currentRatio?.toFixed(1)}
-                </div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>Liquidity</div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px', fontWeight: '600' }}>Benchmarks</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: benchmarks.length > 0 ? '#667eea' : '#94a3b8' }}>{benchmarks.length}</div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>Available</div>
-              </div>
-            </div>
-
             {/* Comprehensive Analysis Narrative */}
             <div style={{ marginBottom: '28px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>📊</span> Financial Performance Overview
-              </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#475569', background: '#f8fafc', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #667eea' }}>
                 <p style={{ margin: '0 0 12px 0' }}>
-                  {companyName || 'The company'} has achieved a Financial Score of <strong style={{ color: '#1e293b' }}>{finalScore.toFixed(1)}</strong>, indicating <strong>{finalScore >= 70 ? 'strong' : finalScore >= 50 ? 'moderate' : 'developing'}</strong> overall financial health. 
-                  The analysis encompasses {monthly.length} months of financial data, providing comprehensive insights into operational performance, liquidity position, and strategic positioning.
+                  The <strong style={{ color: '#667eea' }}>Dashboard</strong> reveals significant period-over-period performance:
+                  {(() => {
+                    if (monthly.length < 12) return ' (requires 12+ months of data for year-over-year comparisons)';
+                    
+                    // Current quarter vs 4 quarters ago
+                    const currentQ = monthly.slice(-3);
+                    const fourQAgo = monthly.length >= 15 ? monthly.slice(-15, -12) : monthly.slice(-6, -3);
+                    const currentQRev = currentQ.reduce((sum, m) => sum + m.revenue, 0);
+                    const currentQExp = currentQ.reduce((sum, m) => sum + m.expense, 0);
+                    const fourQAgoRev = fourQAgo.reduce((sum, m) => sum + m.revenue, 0);
+                    const fourQAgoExp = fourQAgo.reduce((sum, m) => sum + m.expense, 0);
+                    const qRevChange = fourQAgoRev > 0 ? ((currentQRev - fourQAgoRev) / fourQAgoRev * 100) : 0;
+                    const qExpChange = fourQAgoExp > 0 ? ((currentQExp - fourQAgoExp) / fourQAgoExp * 100) : 0;
+                    const currentQMargin = currentQRev > 0 ? ((currentQRev - currentQExp) / currentQRev * 100) : 0;
+                    const fourQAgoMargin = fourQAgoRev > 0 ? ((fourQAgoRev - fourQAgoExp) / fourQAgoRev * 100) : 0;
+                    const qMarginChange = currentQMargin - fourQAgoMargin;
+                    
+                    // TTM vs prior TTM
+                    const last12 = monthly.slice(-12);
+                    const prior12 = monthly.length >= 24 ? monthly.slice(-24, -12) : monthly.slice(0, 12);
+                    const ttmRev = last12.reduce((sum, m) => sum + m.revenue, 0);
+                    const ttmExp = last12.reduce((sum, m) => sum + m.expense, 0);
+                    const priorTTMRev = prior12.reduce((sum, m) => sum + m.revenue, 0);
+                    const priorTTMExp = prior12.reduce((sum, m) => sum + m.expense, 0);
+                    const ttmRevChange = priorTTMRev > 0 ? ((ttmRev - priorTTMRev) / priorTTMRev * 100) : 0;
+                    const ttmExpChange = priorTTMExp > 0 ? ((ttmExp - priorTTMExp) / priorTTMExp * 100) : 0;
+                    const ttmMargin = ttmRev > 0 ? ((ttmRev - ttmExp) / ttmRev * 100) : 0;
+                    const priorTTMMargin = priorTTMRev > 0 ? ((priorTTMRev - priorTTMExp) / priorTTMRev * 100) : 0;
+                    const ttmMarginChange = ttmMargin - priorTTMMargin;
+                    
+                    return (
+                      <>
+                        <strong> Current quarter</strong> revenue of <strong>${(currentQRev / 1000).toFixed(1)}K</strong> represents a {qRevChange > 0 ? 'increase' : 'decrease'} of <strong style={{ color: qRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qRevChange).toFixed(1)}%</strong> compared to four quarters ago (${(fourQAgoRev / 1000).toFixed(1)}K), 
+                        while total expenses of <strong>${(currentQExp / 1000).toFixed(1)}K</strong> {qExpChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: Math.abs(qExpChange) < Math.abs(qRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(qExpChange).toFixed(1)}%</strong> from ${(fourQAgoExp / 1000).toFixed(1)}K.
+                        Quarterly profit margin {qMarginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: qMarginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qMarginChange).toFixed(1)}</strong> percentage points to <strong>{currentQMargin.toFixed(1)}%</strong>
+                        {qMarginChange > 5 ? <span style={{ color: '#10b981' }}>, reflecting significant margin expansion and improving profitability</span> :
+                         qMarginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
+                         qMarginChange > -5 ? <span style={{ color: '#64748b' }}>, maintaining relatively stable profitability</span> :
+                         <span style={{ color: '#ef4444' }}>, signaling substantial margin pressure requiring immediate management attention</span>}.
+                        <strong> Trailing twelve months (TTM)</strong> revenue of <strong>${(ttmRev / 1000).toFixed(1)}K</strong> shows {ttmRevChange > 0 ? 'growth' : 'decline'} of <strong style={{ color: ttmRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmRevChange).toFixed(1)}%</strong> compared to the prior twelve-month period (${(priorTTMRev / 1000).toFixed(1)}K), 
+                        with total expenses of <strong>${(ttmExp / 1000).toFixed(1)}K</strong> {ttmExpChange > 0 ? 'growing' : 'declining'} by <strong style={{ color: Math.abs(ttmExpChange) < Math.abs(ttmRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(ttmExpChange).toFixed(1)}%</strong> from ${(priorTTMExp / 1000).toFixed(1)}K.
+                        Annual profit margin {ttmMarginChange > 0 ? 'improved' : 'deteriorated'} by <strong style={{ color: ttmMarginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmMarginChange).toFixed(1)}</strong> percentage points to <strong>{ttmMargin.toFixed(1)}%</strong>
+                        {ttmExpChange < ttmRevChange ? <span style={{ color: '#10b981' }}>, with excellent operational leverage as expense growth is controlled relative to revenue expansion</span> :
+                         ttmExpChange > ttmRevChange + 5 ? <span style={{ color: '#ef4444' }}>, indicating concerning expense growth outpacing revenue that requires cost management initiatives</span> :
+                         ', maintaining operational efficiency'}.
+                      </>
+                    );
+                  })()}
+                </p>
+                <p style={{ margin: '12px 0' }}>
+                  <strong style={{ color: '#667eea' }}>Financial Ratios</strong> reveal key operational metrics: liquidity ratios including Quick Ratio of <strong>{trendData[trendData.length - 1]?.quickRatio?.toFixed(2)}</strong>
+                  {(() => {
+                    const quickRatioBM = benchmarks.find(b => b.metricName === 'Quick Ratio')?.fiveYearValue;
+                    if (quickRatioBM && trendData[trendData.length - 1]?.quickRatio) {
+                      const diff = ((trendData[trendData.length - 1].quickRatio / quickRatioBM - 1) * 100);
+                      return diff > 20 ? <span style={{ color: '#10b981' }}> ({Math.abs(diff).toFixed(0)}% above industry average of {quickRatioBM.toFixed(2)})</span> :
+                             diff < -20 ? <span style={{ color: '#ef4444' }}> ({Math.abs(diff).toFixed(0)}% below industry average of {quickRatioBM.toFixed(2)})</span> :
+                             <span style={{ color: '#64748b' }}> (near industry average of {quickRatioBM.toFixed(2)})</span>;
+                    }
+                    return '';
+                  })()}; 
+                  leverage metrics show Debt-to-Net Worth of <strong>{trendData[trendData.length - 1]?.debtToNW?.toFixed(2)}</strong>
+                  {(() => {
+                    const debtToNWBM = benchmarks.find(b => b.metricName === 'Total Debt to Net Worth Ratio')?.fiveYearValue;
+                    if (debtToNWBM && trendData[trendData.length - 1]?.debtToNW) {
+                      const actual = trendData[trendData.length - 1].debtToNW;
+                      return actual < debtToNWBM * 0.7 ? <span style={{ color: '#10b981' }}> (well below industry average of {debtToNWBM.toFixed(2)}, indicating conservative leverage)</span> :
+                             actual > debtToNWBM * 1.3 ? <span style={{ color: '#ef4444' }}> (above industry average of {debtToNWBM.toFixed(2)}, suggesting higher financial risk)</span> :
+                             <span style={{ color: '#64748b' }}> (comparable to industry average of {debtToNWBM.toFixed(2)})</span>;
+                    }
+                    return '';
+                  })()}; 
+                  profitability indicators include ROE of <strong>{(trendData[trendData.length - 1]?.roe * 100)?.toFixed(1)}%</strong>
+                  {(() => {
+                    const roeBM = benchmarks.find(b => b.metricName === 'Return on Net Worth %')?.fiveYearValue;
+                    if (roeBM && trendData[trendData.length - 1]?.roe) {
+                      const actualROE = trendData[trendData.length - 1].roe * 100;
+                      const diff = ((actualROE / roeBM - 1) * 100);
+                      return diff > 20 ? <span style={{ color: '#10b981' }}> ({Math.abs(diff).toFixed(0)}% above industry {roeBM.toFixed(1)}%)</span> :
+                             diff < -20 ? <span style={{ color: '#ef4444' }}> ({Math.abs(diff).toFixed(0)}% below industry {roeBM.toFixed(1)}%)</span> :
+                             <span style={{ color: '#64748b' }}> (near industry {roeBM.toFixed(1)}%)</span>;
+                    }
+                    return '';
+                  })()} and ROA of <strong>{(trendData[trendData.length - 1]?.roa * 100)?.toFixed(1)}%</strong>
+                  {(() => {
+                    const roaBM = benchmarks.find(b => b.metricName === 'Return on Total Assets %')?.fiveYearValue;
+                    if (roaBM && trendData[trendData.length - 1]?.roa) {
+                      const actualROA = trendData[trendData.length - 1].roa * 100;
+                      const diff = ((actualROA / roaBM - 1) * 100);
+                      return diff > 20 ? <span style={{ color: '#10b981' }}> ({Math.abs(diff).toFixed(0)}% above industry {roaBM.toFixed(1)}%)</span> :
+                             diff < -20 ? <span style={{ color: '#ef4444' }}> ({Math.abs(diff).toFixed(0)}% below industry {roaBM.toFixed(1)}%)</span> :
+                             <span style={{ color: '#64748b' }}> (near industry {roaBM.toFixed(1)}%)</span>;
+                    }
+                    return '';
+                  })()}; 
+                  and activity ratios demonstrate asset turnover of <strong>{trendData[trendData.length - 1]?.totalAssetTO?.toFixed(2)}</strong>
+                  {(() => {
+                    const assetTOBM = benchmarks.find(b => b.metricName === 'Total Asset Turnover')?.fiveYearValue;
+                    if (assetTOBM && trendData[trendData.length - 1]?.totalAssetTO) {
+                      const diff = ((trendData[trendData.length - 1].totalAssetTO / assetTOBM - 1) * 100);
+                      return diff > 20 ? <span style={{ color: '#10b981' }}> ({Math.abs(diff).toFixed(0)}% above industry {assetTOBM.toFixed(2)})</span> :
+                             diff < -20 ? <span style={{ color: '#ef4444' }}> ({Math.abs(diff).toFixed(0)}% below industry {assetTOBM.toFixed(2)})</span> :
+                             <span style={{ color: '#64748b' }}> (near industry {assetTOBM.toFixed(2)})</span>;
+                    }
+                    return '';
+                  })()} with collection period averaging <strong>{trendData[trendData.length - 1]?.daysAR?.toFixed(0)} days</strong>
+                  {(() => {
+                    const daysARBM = benchmarks.find(b => b.metricName === "Days' Receivables")?.fiveYearValue;
+                    if (daysARBM && trendData[trendData.length - 1]?.daysAR > 0) {
+                      const actual = trendData[trendData.length - 1].daysAR;
+                      return actual < daysARBM * 0.8 ? <span style={{ color: '#10b981' }}> ({((1 - actual / daysARBM) * 100).toFixed(0)}% faster than industry {daysARBM.toFixed(0)} days)</span> :
+                             actual > daysARBM * 1.2 ? <span style={{ color: '#ef4444' }}> ({((actual / daysARBM - 1) * 100).toFixed(0)}% slower than industry {daysARBM.toFixed(0)} days)</span> :
+                             <span style={{ color: '#64748b' }}> (comparable to industry {daysARBM.toFixed(0)} days)</span>;
+                    }
+                    return '';
+                  })()}.
+                  {benchmarks.length > 0 ? (() => {
+                    const comparisons = [];
+                    let aboveCount = 0;
+                    let belowCount = 0;
+                    
+                    // Check Current Ratio
+                    const currentRatioBM = benchmarks.find(b => b.metricName === 'Current Ratio')?.fiveYearValue;
+                    if (currentRatioBM && trendData[trendData.length - 1]?.currentRatio) {
+                      if (trendData[trendData.length - 1].currentRatio > currentRatioBM * 1.2) aboveCount++;
+                      else if (trendData[trendData.length - 1].currentRatio < currentRatioBM * 0.8) belowCount++;
+                    }
+                    
+                    // Check Quick Ratio
+                    const quickRatioBM = benchmarks.find(b => b.metricName === 'Quick Ratio')?.fiveYearValue;
+                    if (quickRatioBM && trendData[trendData.length - 1]?.quickRatio) {
+                      if (trendData[trendData.length - 1].quickRatio > quickRatioBM * 1.2) aboveCount++;
+                      else if (trendData[trendData.length - 1].quickRatio < quickRatioBM * 0.8) belowCount++;
+                    }
+                    
+                    // Check Debt-to-NW (lower is better)
+                    const debtToNWBM = benchmarks.find(b => b.metricName === 'Total Debt to Net Worth Ratio')?.fiveYearValue;
+                    if (debtToNWBM && trendData[trendData.length - 1]?.debtToNW) {
+                      if (trendData[trendData.length - 1].debtToNW < debtToNWBM * 0.7) aboveCount++;
+                      else if (trendData[trendData.length - 1].debtToNW > debtToNWBM * 1.3) belowCount++;
+                    }
+                    
+                    // Check ROE
+                    const roeBM = benchmarks.find(b => b.metricName === 'Return on Net Worth %')?.fiveYearValue;
+                    if (roeBM && trendData[trendData.length - 1]?.roe) {
+                      if ((trendData[trendData.length - 1].roe * 100) > roeBM * 1.2) aboveCount++;
+                      else if ((trendData[trendData.length - 1].roe * 100) < roeBM * 0.8) belowCount++;
+                    }
+                    
+                    // Check ROA
+                    const roaBM = benchmarks.find(b => b.metricName === 'Return on Total Assets %')?.fiveYearValue;
+                    if (roaBM && trendData[trendData.length - 1]?.roa) {
+                      if ((trendData[trendData.length - 1].roa * 100) > roaBM * 1.2) aboveCount++;
+                      else if ((trendData[trendData.length - 1].roa * 100) < roaBM * 0.8) belowCount++;
+                    }
+                    
+                    const totalCompared = aboveCount + belowCount;
+                    if (totalCompared > 0) {
+                      return <span> Overall, the company {aboveCount > belowCount ? <strong style={{ color: '#10b981' }}>outperforms</strong> : aboveCount < belowCount ? <strong style={{ color: '#ef4444' }}>underperforms</strong> : 'performs comparably to'} industry benchmarks in {aboveCount} of the key ratios shown above{belowCount > 0 ? `, with ${belowCount} areas below industry standards requiring attention` : ', demonstrating strong financial management'}.</span>;
+                    }
+                    return ` Industry benchmarks from ${benchmarks.length} metrics provide context for performance assessment.`;
+                  })() : ''}
+                </p>
+                <p style={{ margin: '12px 0' }}>
+                  <strong style={{ color: '#667eea' }}>Trend Analysis</strong> tracking {monthly.length} months reveals:
+                  {(() => {
+                    // Calculate recent vs historical trends
+                    const last6Mo = monthly.slice(-6);
+                    const prev6Mo = monthly.slice(-12, -6);
+                    const revRecent = last6Mo.reduce((s, m) => s + m.revenue, 0);
+                    const revPrior = prev6Mo.reduce((s, m) => s + m.revenue, 0);
+                    const revTrend = prev6Mo.length > 0 ? ((revRecent - revPrior) / revPrior * 100) : 0;
+                    
+                    const expRecent = last6Mo.reduce((s, m) => s + m.expense, 0);
+                    const expPrior = prev6Mo.reduce((s, m) => s + m.expense, 0);
+                    const expTrend = prev6Mo.length > 0 ? ((expRecent - expPrior) / expPrior * 100) : 0;
+                    
+                    // Calculate margin trends
+                    const recentMargin = revRecent > 0 ? ((revRecent - expRecent) / revRecent * 100) : 0;
+                    const priorMargin = revPrior > 0 ? ((revPrior - expPrior) / revPrior * 100) : 0;
+                    const marginChange = recentMargin - priorMargin;
+                    
+                    // Asset trends
+                    const currentAssets = monthly[monthly.length - 1]?.totalAssets || 0;
+                    const priorAssets = monthly[monthly.length - 13] ? monthly[monthly.length - 13].totalAssets : currentAssets;
+                    const assetGrowth = priorAssets > 0 ? ((currentAssets - priorAssets) / priorAssets * 100) : 0;
+                    
+                    return (
+                      <>
+                        <strong> Revenue</strong> {revTrend > 0 ? 'increased' : 'decreased'} by <strong style={{ color: revTrend > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(revTrend).toFixed(1)}%</strong> in the most recent 6 months compared to the prior 6 months
+                        {revTrend > 15 ? <span style={{ color: '#10b981' }}>, demonstrating strong accelerating growth momentum</span> : 
+                         revTrend > 5 ? <span style={{ color: '#10b981' }}>, showing healthy expansion</span> :
+                         revTrend > -5 ? <span style={{ color: '#64748b' }}>, indicating stable performance</span> :
+                         revTrend > -15 ? <span style={{ color: '#f59e0b' }}>, suggesting slowing momentum requiring attention</span> :
+                         <span style={{ color: '#ef4444' }}>, indicating significant contraction requiring strategic intervention</span>}.
+                        <strong> Expense</strong> trends show {expTrend > 0 ? 'growth' : 'reduction'} of <strong style={{ color: Math.abs(expTrend) < Math.abs(revTrend) ? '#10b981' : '#ef4444' }}>{Math.abs(expTrend).toFixed(1)}%</strong> over the same period
+                        {expTrend < revTrend ? <span style={{ color: '#10b981' }}>, with expenses growing {revTrend - expTrend > 10 ? 'significantly ' : ''}slower than revenue—excellent operational leverage</span> :
+                         expTrend === revTrend ? ', matching revenue growth pace' :
+                         <span style={{ color: '#ef4444' }}>, outpacing revenue growth by {(expTrend - revTrend).toFixed(1)} percentage points—margin compression risk</span>}.
+                        <strong> Net margin</strong> {marginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: marginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(marginChange).toFixed(1)}</strong> percentage points to <strong>{recentMargin.toFixed(1)}%</strong>
+                        {marginChange > 3 ? <span style={{ color: '#10b981' }}>, reflecting improving profitability and strong operational efficiency</span> :
+                         marginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
+                         marginChange > -3 ? <span style={{ color: '#64748b' }}>, maintaining relatively stable profitability</span> :
+                         <span style={{ color: '#ef4444' }}>, signaling margin pressure requiring cost management focus</span>}.
+                        {assetGrowth !== 0 && (
+                          <>
+                            <strong> Asset base</strong> {assetGrowth > 0 ? 'grew' : 'declined'} by <strong style={{ color: assetGrowth > 0 ? '#667eea' : '#f59e0b' }}>{Math.abs(assetGrowth).toFixed(1)}%</strong> year-over-year
+                            {assetGrowth > revTrend + 10 ? <span style={{ color: '#f59e0b' }}>, growing faster than revenue—monitor asset efficiency and ROA</span> :
+                             assetGrowth > 5 ? ', supporting business expansion' :
+                             assetGrowth > -5 ? ', remaining relatively stable' :
+                             <span style={{ color: '#64748b' }}>, contracting which may improve asset turnover ratios</span>}.
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
+                </p>
+                <p style={{ margin: '12px 0' }}>
+                  <strong style={{ color: '#667eea' }}>Projections</strong> based on historical patterns forecast {monthly.length >= 24 ? (() => {
+                    // Calculate historical growth rates
+                    const last12 = monthly.slice(-12);
+                    const prev12 = monthly.slice(-24, -12);
+                    const annualRevGrowth = ((last12.reduce((s, m) => s + m.revenue, 0) - prev12.reduce((s, m) => s + m.revenue, 0)) / prev12.reduce((s, m) => s + m.revenue, 0)) * 100;
+                    const annualExpGrowth = ((last12.reduce((s, m) => s + m.expense, 0) - prev12.reduce((s, m) => s + m.expense, 0)) / prev12.reduce((s, m) => s + m.expense, 0)) * 100;
+                    
+                    // Calculate scenario growth rates
+                    const mostLikelyRevGrowth = annualRevGrowth;
+                    const mostLikelyExpGrowth = annualExpGrowth;
+                    const bestCaseRevGrowth = annualRevGrowth * bestCaseRevMultiplier;
+                    const bestCaseExpGrowth = annualExpGrowth * bestCaseExpMultiplier;
+                    const worstCaseRevGrowth = annualRevGrowth * worstCaseRevMultiplier;
+                    const worstCaseExpGrowth = annualExpGrowth * worstCaseExpMultiplier;
+                    
+                    return (
+                      <>
+                        three scenarios for the next 12 months: <strong>Most Likely</strong> projects revenue growing at <strong style={{ color: '#667eea' }}>{mostLikelyRevGrowth.toFixed(1)}%</strong> annually 
+                        with expenses at <strong style={{ color: '#667eea' }}>{mostLikelyExpGrowth.toFixed(1)}%</strong> (continuing historical trends); 
+                        <strong> Best Case</strong> models revenue accelerating to <strong style={{ color: '#10b981' }}>{bestCaseRevGrowth.toFixed(1)}%</strong> growth 
+                        while controlling expenses to <strong style={{ color: '#10b981' }}>{bestCaseExpGrowth.toFixed(1)}%</strong> growth 
+                        {bestCaseRevGrowth > bestCaseExpGrowth + 10 ? ', creating significant margin expansion potential' : 
+                         bestCaseRevGrowth > bestCaseExpGrowth ? ', supporting improved profitability' : ''};
+                        <strong> Worst Case</strong> assumes revenue slowing to <strong style={{ color: '#ef4444' }}>{worstCaseRevGrowth.toFixed(1)}%</strong> 
+                        with expenses rising to <strong style={{ color: '#ef4444' }}>{worstCaseExpGrowth.toFixed(1)}%</strong>
+                        {worstCaseExpGrowth > worstCaseRevGrowth ? ', potentially compressing margins and requiring cost management focus' : ''}.
+                        These scenarios model corresponding balance sheet evolution with sensitivity analysis for asset deployment, working capital needs, and capital structure implications
+                      </>
+                    );
+                  })() : 'forward-looking scenarios once sufficient historical data (24+ months) is available'}.
+                </p>
+                <p style={{ margin: '12px 0' }}>
+                  <strong style={{ color: '#667eea' }}>Working Capital</strong> management shows current assets of <strong>${((monthly[monthly.length - 1]?.cash + monthly[monthly.length - 1]?.ar + monthly[monthly.length - 1]?.inventory + monthly[monthly.length - 1]?.otherCA) / 1000).toFixed(1)}K</strong> against 
+                  current liabilities of <strong>${((monthly[monthly.length - 1]?.ap + monthly[monthly.length - 1]?.otherCL) / 1000).toFixed(1)}K</strong>, 
+                  resulting in {((monthly[monthly.length - 1]?.cash + monthly[monthly.length - 1]?.ar + monthly[monthly.length - 1]?.inventory + monthly[monthly.length - 1]?.otherCA) - (monthly[monthly.length - 1]?.ap + monthly[monthly.length - 1]?.otherCL)) > 0 ? 'positive' : 'negative'} working capital of <strong>${(Math.abs((monthly[monthly.length - 1]?.cash + monthly[monthly.length - 1]?.ar + monthly[monthly.length - 1]?.inventory + monthly[monthly.length - 1]?.otherCA) - (monthly[monthly.length - 1]?.ap + monthly[monthly.length - 1]?.otherCL)) / 1000).toFixed(1)}K</strong>. 
+                  The cash conversion cycle of <strong>{(trendData[trendData.length - 1]?.daysInv + trendData[trendData.length - 1]?.daysAR - trendData[trendData.length - 1]?.daysAP)?.toFixed(0)} days</strong> reflects the efficiency of working capital deployment.
+                </p>
+                <p style={{ margin: '12px 0' }}>
+                  <strong style={{ color: '#667eea' }}>Cash Flow</strong> analysis provides comprehensive insight into cash generation and deployment across three key categories:
+                  {(() => {
+                    if (monthly.length < 6) return ' (requires additional months of data for detailed analysis)';
+                    
+                    // Calculate last 12 months cash flow
+                    const last12 = monthly.slice(-12);
+                    const prior = monthly.length > 12 ? monthly[monthly.length - 13] : last12[0];
+                    
+                    // Operating Cash Flow
+                    const ltmNetIncome = last12.reduce((sum, m) => sum + (m.revenue - m.expense), 0);
+                    const ltmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+                    const changeInAR = last12[last12.length - 1].ar - prior.ar;
+                    const changeInInv = last12[last12.length - 1].inventory - prior.inventory;
+                    const changeInAP = last12[last12.length - 1].ap - prior.ap;
+                    const changeInWC = -(changeInAR + changeInInv - changeInAP);
+                    const operatingCF = ltmNetIncome + ltmDepreciation + changeInWC;
+                    const opCFMargin = ltmRev > 0 ? (operatingCF / ltmRev * 100) : 0;
+                    
+                    // Investing Cash Flow
+                    const changeInFA = last12[last12.length - 1].fixedAssets - prior.fixedAssets;
+                    const capEx = changeInFA + ltmDepreciation;
+                    const investingCF = -capEx;
+                    
+                    // Financing Cash Flow
+                    const changeInDebt = last12[last12.length - 1].ltd - prior.ltd;
+                    const changeInEquity = last12[last12.length - 1].totalEquity - prior.totalEquity - ltmNetIncome;
+                    const financingCF = changeInDebt + changeInEquity;
+                    
+                    // Free Cash Flow
+                    const freeCF = operatingCF - Math.max(0, capEx);
+                    
+                    // Cash change
+                    const cashChange = last12[last12.length - 1].cash - prior.cash;
+                    
+                    return (
+                      <>
+                        <strong> Operating activities</strong> generated <strong style={{ color: operatingCF > 0 ? '#10b981' : '#ef4444' }}>${(operatingCF / 1000).toFixed(1)}K</strong> over the past 12 months, 
+                        representing an operating cash flow margin of <strong style={{ color: opCFMargin > 15 ? '#10b981' : opCFMargin > 5 ? '#64748b' : '#ef4444' }}>{opCFMargin.toFixed(1)}%</strong>
+                        {opCFMargin > 15 ? <span style={{ color: '#10b981' }}>, demonstrating excellent cash conversion from operations</span> :
+                         opCFMargin > 5 ? ', indicating healthy cash generation' :
+                         opCFMargin > 0 ? <span style={{ color: '#f59e0b' }}>, suggesting opportunities to improve working capital efficiency</span> :
+                         <span style={{ color: '#ef4444' }}>, indicating cash outflow from operations requiring immediate attention</span>}.
+                        Working capital changes {changeInWC > 0 ? 'contributed' : 'consumed'} <strong>${(Math.abs(changeInWC) / 1000).toFixed(1)}K</strong>
+                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capital—review receivables and inventory management</span> :
+                         changeInWC > ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, with efficient working capital management releasing cash for other uses</span> :
+                         ''}.
+                        <strong> Investing activities</strong> {investingCF < 0 ? 'deployed' : 'generated'} <strong style={{ color: '#667eea' }}>${(Math.abs(investingCF) / 1000).toFixed(1)}K</strong>
+                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flow—monitor return on invested capital</span> :
+                         capEx > 0 ? ', supporting maintenance and growth of the asset base' :
+                         ', with minimal capital investment in fixed assets'}.
+                        <strong> Financing activities</strong> {financingCF > 0 ? 'provided' : 'consumed'} <strong style={{ color: financingCF > 0 ? '#667eea' : '#64748b' }}>${(Math.abs(financingCF) / 1000).toFixed(1)}K</strong>
+                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of ${(changeInDebt / 1000).toFixed(1)}K—monitor leverage ratios</span> :
+                         changeInDebt < -ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, reducing debt by ${(Math.abs(changeInDebt) / 1000).toFixed(1)}K and strengthening the balance sheet</span> :
+                         ''}.
+                        <strong> Free cash flow</strong> of <strong style={{ color: freeCF > 0 ? '#10b981' : '#ef4444' }}>${(freeCF / 1000).toFixed(1)}K</strong>
+                        {freeCF > ltmNetIncome * 1.2 ? <span style={{ color: '#10b981' }}> (exceeding net income) provides strong financial flexibility for growth, debt reduction, or distributions</span> :
+                         freeCF > 0 ? ' provides resources for strategic initiatives beyond operational requirements' :
+                         <span style={{ color: '#ef4444' }}> indicates operations are not generating sufficient cash to cover capital needs</span>}.
+                        Net cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#f59e0b' }}>${(Math.abs(cashChange) / 1000).toFixed(1)}K</strong> to <strong>${(last12[last12.length - 1].cash / 1000).toFixed(1)}K</strong>
+                        {cashChange / ltmRev > 0.15 ? <span style={{ color: '#10b981' }}>, building substantial cash reserves and financial resilience</span> :
+                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reserves—monitor cash runway and funding needs</span> :
+                         ''}.
+                      </>
+                    );
+                  })()}
+                </p>
+                <p style={{ margin: '12px 0' }}>
+                  <strong style={{ color: '#667eea' }}>Goals</strong> tracking enables comparison of actual expense performance against management targets:
+                  {(() => {
+                    if (monthly.length < 6) return ' (requires additional months of data for goals analysis)';
+                    
+                    // Major expense categories to analyze
+                    const majorCategories = [
+                      { key: 'opexPayroll', label: 'Payroll' },
+                      { key: 'ownersBasePay', label: 'Owner Compensation' },
+                      { key: 'rentLease', label: 'Rent/Lease' },
+                      { key: 'professionalServices', label: 'Professional Services' },
+                      { key: 'opexSalesMarketing', label: 'Sales & Marketing' },
+                      { key: 'insurance', label: 'Insurance' }
+                    ];
+                    
+                    // Calculate last 6 months average for each category
+                    const last6 = monthly.slice(-6);
+                    const categoryAnalysis = majorCategories.map(cat => {
+                      const avgPct = last6.reduce((sum, m) => {
+                        const revenue = m.revenue || 0;
+                        if (revenue === 0) return sum;
+                        const expense = (m as any)[cat.key] || 0;
+                        return sum + (expense / revenue * 100);
+                      }, 0) / last6.length;
+                      
+                      const goalPct = expenseGoals[cat.key];
+                      return {
+                        label: cat.label,
+                        actual: avgPct,
+                        goal: goalPct,
+                        hasGoal: goalPct && goalPct > 0,
+                        variance: goalPct ? avgPct - goalPct : 0,
+                        metGoal: goalPct ? avgPct <= goalPct : null
+                      };
+                    }).filter(c => c.hasGoal && c.actual > 0.5); // Only show categories with goals and meaningful spend
+                    
+                    if (categoryAnalysis.length === 0) {
+                      return ' Management has not yet established expense goals for tracking and variance analysis. Setting goals for major expense categories enables proactive cost management and performance monitoring.';
+                    }
+                    
+                    const metGoals = categoryAnalysis.filter(c => c.metGoal);
+                    const missedGoals = categoryAnalysis.filter(c => !c.metGoal);
+                    
+                    return (
+                      <>
+                        {metGoals.length > 0 && (
+                          <>
+                            <strong> Meeting targets:</strong>
+                            {metGoals.map((cat, idx) => (
+                              <span key={idx}>
+                                {idx > 0 && (idx === metGoals.length - 1 ? ' and ' : ', ')}
+                                <strong style={{ color: '#10b981' }}>{cat.label}</strong> at {cat.actual.toFixed(1)}% of revenue (goal: {cat.goal.toFixed(1)}%, {(cat.goal - cat.actual).toFixed(1)}pp under target)
+                              </span>
+                            ))}
+                            {missedGoals.length > 0 ? '.' : ', demonstrating strong expense discipline and effective cost management.'}
+                          </>
+                        )}
+                        {missedGoals.length > 0 && (
+                          <>
+                            {metGoals.length > 0 && <strong> Exceeding targets:</strong>}
+                            {metGoals.length === 0 && <strong> All tracked categories are exceeding targets:</strong>}
+                            {missedGoals.map((cat, idx) => (
+                              <span key={idx}>
+                                {idx > 0 && (idx === missedGoals.length - 1 ? ' and ' : ', ')}
+                                <strong style={{ color: '#ef4444' }}>{cat.label}</strong> at {cat.actual.toFixed(1)}% (goal: {cat.goal.toFixed(1)}%, {cat.variance.toFixed(1)}pp over target)
+                              </span>
+                            ))}
+                            {missedGoals.length === 1 ? ', requiring management attention to bring spending in line with targets' : 
+                             missedGoals.length === categoryAnalysis.length ? ', indicating need for comprehensive cost reduction initiatives across all expense categories' :
+                             ', requiring targeted cost management to align with established goals'}.
+                          </>
+                        )}
+                        {categoryAnalysis.length > 0 && ` Overall, ${metGoals.length} of ${categoryAnalysis.length} tracked expense categories are within target, ${metGoals.length / categoryAnalysis.length > 0.7 ? 'demonstrating strong financial discipline' : metGoals.length / categoryAnalysis.length > 0.5 ? 'with room for improvement in cost management' : 'requiring immediate management focus on expense control'}.`}
+                      </>
+                    );
+                  })()}
+                </p>
+                <p style={{ margin: '12px 0' }}>
+                  <strong style={{ color: '#667eea' }}>Valuation</strong> analysis employs three complementary methodologies to assess enterprise value:
+                  {(() => {
+                    if (monthly.length < 12) return ' (requires 12+ months of data for comprehensive valuation analysis)';
+                    
+                    // Calculate TTM metrics
+                    const last12 = monthly.slice(-12);
+                    const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
+                    const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
+                    const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
+                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+                    const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+                    const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
+                    const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
+                    const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                    const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
+                    
+                    // Valuation calculations
+                    const sdeVal = ttmSDE * sdeMultiplier;
+                    const ebitdaVal = ttmEBITDA * ebitdaMultiplier;
+                    
+                    // DCF calculation
+                    const currentMonth = monthly[monthly.length - 1];
+                    const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
+                    const currentWC_val = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
+                    const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
+                    const changeInWC = currentWC_val - priorWC;
+                    const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
+                    const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
+                    const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
+                    const growthRate = growth_24mo / 100;
+                    const discountRate = dcfDiscountRate / 100;
+                    const terminalGrowthRate = dcfTerminalGrowth / 100;
+                    let dcfVal = 0;
+                    for (let year = 1; year <= 5; year++) {
+                      const projectedFCF = ttmFreeCashFlow * Math.pow(1 + growthRate, year);
+                      dcfVal += projectedFCF / Math.pow(1 + discountRate, year);
+                    }
+                    const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
+                    dcfVal += terminalValue / Math.pow(1 + discountRate, 5);
+                    
+                    const avgValuation = (sdeVal + ebitdaVal + dcfVal) / 3;
+                    const minValuation = Math.min(sdeVal, ebitdaVal, dcfVal);
+                    const maxValuation = Math.max(sdeVal, ebitdaVal, dcfVal);
+                    
+                    return (
+                      <>
+                        <strong> SDE (Seller's Discretionary Earnings)</strong> method values the business at <strong style={{ color: '#10b981' }}>${(sdeVal / 1000000).toFixed(2)}M</strong>, 
+                        applying a {sdeMultiplier.toFixed(1)}x multiple to trailing twelve-month SDE of ${(ttmSDE / 1000).toFixed(1)}K
+                        {ttmSDE > 0 ? ', appropriate for owner-operated businesses and capturing total economic benefit to a single owner-operator' : ''}.
+                        <strong> EBITDA multiple</strong> approach indicates a value of <strong style={{ color: '#667eea' }}>${(ebitdaVal / 1000000).toFixed(2)}M</strong>, 
+                        using a {ebitdaMultiplier.toFixed(1)}x multiple on EBITDA of ${(ttmEBITDA / 1000).toFixed(1)}K
+                        {ttmEBITDA > 0 ? ', commonly used in strategic acquisitions and private equity transactions' : ''}.
+                        <strong> Discounted Cash Flow (DCF)</strong> analysis projects an enterprise value of <strong style={{ color: '#8b5cf6' }}>${(dcfVal / 1000000).toFixed(2)}M</strong>, 
+                        discounting 5-year free cash flow projections at {dcfDiscountRate.toFixed(1)}% with {dcfTerminalGrowth.toFixed(1)}% terminal growth
+                        {ttmFreeCashFlow > 0 ? ', reflecting the present value of future cash generation capability' : ', though limited by current cash flow generation'}.
+                        The valuation range of <strong>${(minValuation / 1000000).toFixed(2)}M - ${(maxValuation / 1000000).toFixed(2)}M</strong> (average: ${(avgValuation / 1000000).toFixed(2)}M) 
+                        provides a comprehensive perspective 
+                        {(maxValuation - minValuation) / avgValuation > 0.5 ? <span style={{ color: '#f59e0b' }}> with significant variance across methods, suggesting need for additional due diligence and multiple validation</span> :
+                         ', with reasonable consistency across methodologies supporting valuation confidence'}, 
+                        useful for M&A discussions, financing negotiations, equity planning, and strategic decision-making.
+                      </>
+                    );
+                  })()}
                 </p>
                 <p style={{ margin: '12px 0 0 0' }}>
-                  Over the past 24 months, revenue has {growth_24mo > 0 ? 'grown' : 'declined'} by <strong style={{ color: growth_24mo > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(growth_24mo).toFixed(1)}%</strong>, 
-                  with profitability score of <strong style={{ color: '#1e293b' }}>{profitabilityScore.toFixed(1)}</strong> and asset development score of <strong style={{ color: '#1e293b' }}>{assetDevScore.toFixed(1)}</strong>. 
-                  {benchmarks.length > 0 ? ` Industry benchmark comparisons against ${benchmarks.length} metrics reveal ${mdaAnalysis.strengths.filter((s: string) => s.includes('industry')).length} areas of superior performance and ${mdaAnalysis.weaknesses.filter((w: string) => w.includes('industry')).length} opportunities for improvement relative to industry peers.` : ''}
+                  The overall Financial Score of <strong>{finalScore.toFixed(1)}</strong>
+                  {finalScore >= 80 ? <span style={{ color: '#10b981' }}> (Strong Financial Performance)</span> :
+                   finalScore >= 50 ? <span style={{ color: '#3b82f6' }}> (Good Fundamentals - in a good position for revenue growth; needs to focus on bringing costs down as volume grows)</span> :
+                   finalScore >= 30 ? <span style={{ color: '#f59e0b' }}> (Financial Stress)</span> :
+                   <span style={{ color: '#ef4444' }}> (Critical Situation)</span>}.
                 </p>
               </div>
             </div>
