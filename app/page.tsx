@@ -7381,7 +7381,7 @@ export default function FinancialScorePage() {
                       {qbConnected && qbStatus === 'ACTIVE' ? '✓ Connected' : qbStatus === 'ERROR' ? '✗ Error' : qbStatus === 'EXPIRED' ? '⚠ Token Expired' : '⚠ Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
-                      {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Sandbox environment ready for testing')}
+                      {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
                     </div>
                   </div>
                 </div>
@@ -7404,7 +7404,7 @@ export default function FinancialScorePage() {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#239017'}
                       onMouseLeave={(e) => e.currentTarget.style.background = '#2ca01c'}
                     >
-                      {qbConnected ? 'Reconnect' : 'Connect'} to QuickBooks (Sandbox)
+                      {qbConnected ? 'Reconnect' : 'Connect'} to QuickBooks
                     </button>
                   ) : (
                     <>
