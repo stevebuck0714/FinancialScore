@@ -555,26 +555,52 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
       annual: 'annually',
     };
 
-    // Format next billing date as YYYY-MM-DD
+    // Format dates as YYYY-MM-DD
     const nextDate = billingData.startDate || new Date();
     const nextDateFormatted = nextDate.toISOString().split('T')[0];
+    
+    // Calculate start_date (same as next_date for immediate start)
+    const startDate = billingData.startDate || new Date();
+    const startDateFormatted = startDate.toISOString().split('T')[0];
+
+    // Map schedule to skip_count (frequency interval)
+    const skipCountMap = {
+      monthly: '1',    // Every month
+      quarterly: '3',  // Every 3 months
+      annual: '12',    // Every 12 months
+    };
 
     // Build recurring billing schedule (using USAePay API v2 format)
-    // According to USAePay docs, use customer-specific endpoint
-    const recurringData = {
-      paymethod_key: billingData.paymentMethodId, // Payment method key (note: paymethod_key not paymethod)
+    // According to official USAePay docs, request body must be an ARRAY
+    const scheduleObject = {
+      paymethod_key: billingData.paymentMethodId,
       amount: billingData.amount.toFixed(2),
-      frequency: scheduleMap[billingData.schedule], // Use 'frequency' not 'schedule'
+      frequency: scheduleMap[billingData.schedule],
       enabled: true,
-      next_date: nextDateFormatted, // Use 'next_date' in YYYY-MM-DD format
-      numleft: 0, // 0 = unlimited payments (runs until manually canceled)
+      next_date: nextDateFormatted,
+      start_date: startDateFormatted, // Required
+      numleft: '-1', // -1 = unlimited (string required, not number)
+      skip_count: skipCountMap[billingData.schedule], // Required: frequency interval
       description: billingData.description,
+      send_receipt: false,
+      currency_code: '0', // USD
+      // Required: billing schedule rules
+      rules: [
+        {
+          day_offset: '0',
+          month_offset: '0',
+          subject: 'Day'
+        }
+      ]
     };
+    
+    // API expects an ARRAY of billing schedules
+    const recurringData = [scheduleObject];
 
     console.log('🔄 Creating recurring billing schedule:', JSON.stringify(recurringData, null, 2));
 
-    // Try legacy /recurring endpoint first (some accounts may not have billing_schedules enabled)
-    // If this works, USAePay support can help migrate to the newer endpoint
+    // Try legacy /recurring endpoint as fallback (if billing_schedules endpoint fails)
+    // Legacy endpoint may use different format (object instead of array)
     const legacyRecurringData = {
       custkey: billingData.customerId,
       paymethod: billingData.paymentMethodId,
@@ -582,8 +608,18 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
       schedule: scheduleMap[billingData.schedule],
       enabled: true,
       next: nextDateFormatted,
-      numleft: 0,
+      start_date: startDateFormatted,
+      numleft: '-1', // -1 = unlimited
+      skip_count: skipCountMap[billingData.schedule],
       description: billingData.description,
+      send_receipt: false,
+      rules: [
+        {
+          day_offset: '0',
+          month_offset: '0',
+          subject: 'Day'
+        }
+      ]
     };
     
     console.log('🔄 Trying legacy /recurring endpoint:', JSON.stringify(legacyRecurringData, null, 2));
@@ -601,10 +637,13 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
 
     console.log('✅ Recurring billing schedule created:', result);
 
+    // Response is an array, get the first schedule
+    const schedule = Array.isArray(result) ? result[0] : result;
+
     return {
       success: true,
-      billingId: result.key || result.schedulekey,
-      nextBillingDate: result.next ? new Date(result.next) : undefined,
+      billingId: schedule.key || schedule.schedulekey,
+      nextBillingDate: schedule.next_date || schedule.next ? new Date(schedule.next_date || schedule.next) : undefined,
     };
   } catch (error) {
     console.error('❌ Create Recurring Billing Error:', error);
