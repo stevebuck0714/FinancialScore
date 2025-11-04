@@ -69,56 +69,72 @@ export async function POST(request: NextRequest) {
     }
 
     if (createSubscription) {
-      // === RECURRING SUBSCRIPTION FLOW ===
+      // === RECURRING SUBSCRIPTION FLOW (USAePay Recommended Approach) ===
       
-      // Step 1: Check if customer already exists in vault (to prevent duplicates)
-      let usaepayCustomerId: string;
-      let cardLast4: string | undefined;
-      let cardType: string | undefined;
+      // Step 1: Process initial sale with customer save flags
+      console.log(`💳 Processing initial sale with customer vault for company: ${company.name}`);
+      
+      const paymentDetails: PaymentDetails = {
+        amount: parseFloat(amount),
+        cardNumber,
+        cardholderName,
+        expirationMonth,
+        expirationYear,
+        cvv,
+        billingAddress: {
+          street: billingAddress.street,
+          city: billingAddress.city,
+          state: billingAddress.state,
+          zip: billingAddress.zip,
+        },
+        description: `${company.name} - Initial ${billingPeriod} payment`,
+        invoice: `SUB-${companyId}-${Date.now()}`,
+        customerId: companyId,
+        saveCustomer: true, // Save customer and payment method to vault
+      };
 
-      // Check if there's an existing subscription with a customer ID
-      const existingWithCustomer = await prisma.subscription.findUnique({
-        where: { companyId },
-        select: { usaepayCustomerId: true, cardLast4: true, cardType: true },
-      });
+      const paymentResult = await processPayment(paymentDetails);
 
-      if (existingWithCustomer?.usaepayCustomerId) {
-        // Reuse existing customer ID
-        console.log(`♻️ Reusing existing USAePay customer: ${existingWithCustomer.usaepayCustomerId}`);
-        usaepayCustomerId = existingWithCustomer.usaepayCustomerId;
-        cardLast4 = existingWithCustomer.cardLast4 || cardNumber.slice(-4);
-        cardType = existingWithCustomer.cardType || 'Unknown';
-      } else {
-        // Create new customer in vault
-        console.log(`🆕 Creating new USAePay customer for company: ${company.name}`);
-        const vaultResult = await addCustomerToVault({
-          companyId,
-          companyName: company.name,
-          cardNumber,
-          expirationMonth,
-          expirationYear,
-          cvv,
-          cardholderName,
-          billingAddress,
-          email,
-          phone,
-        });
-
-        if (!vaultResult.success || !vaultResult.customerId) {
-          return NextResponse.json(
-            { success: false, error: vaultResult.error || 'Failed to save payment method' },
-            { status: 400 }
-          );
-        }
-
-        usaepayCustomerId = vaultResult.customerId;
-        cardLast4 = vaultResult.cardLast4;
-        cardType = vaultResult.cardType;
+      if (!paymentResult.success || !paymentResult.custkey) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: paymentResult.error || 'Payment processing failed',
+            message: paymentResult.message,
+          },
+          { status: 400 }
+        );
       }
 
-      // Step 2: Create recurring billing schedule
+      const usaepayCustomerId = paymentResult.custkey!;
+      const cardLast4 = paymentResult.last4;
+      const cardType = paymentResult.cardType;
+
+      console.log(`✅ Payment successful. Customer ID: ${usaepayCustomerId}`);
+
+      // Step 2: Retrieve payment method key
+      console.log(`🔍 Retrieving payment method for customer: ${usaepayCustomerId}`);
+      
+      const { getCustomerPaymentMethod } = await import('@/lib/usaepay');
+      const paymentMethodResult = await getCustomerPaymentMethod(usaepayCustomerId);
+
+      if (!paymentMethodResult.success || !paymentMethodResult.paymentMethodKey) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: paymentMethodResult.error || 'Failed to retrieve payment method',
+          },
+          { status: 400 }
+        );
+      }
+
+      const paymentMethodKey = paymentMethodResult.paymentMethodKey;
+      console.log(`✅ Payment method key retrieved: ${paymentMethodKey}`);
+
+      // Step 3: Create recurring billing schedule
       const billingResult = await createRecurringBilling({
         customerId: usaepayCustomerId,
+        paymentMethodId: paymentMethodKey,
         amount: parseFloat(amount),
         schedule: billingPeriod as 'monthly' | 'quarterly' | 'annual',
         description: `${company.name} - ${billingPeriod} subscription`,
@@ -131,7 +147,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Step 3: Calculate next billing date
+      // Step 4: Calculate next billing date
       const now = new Date();
       const nextBillingDate = new Date(now);
       if (billingPeriod === 'monthly') {
@@ -142,7 +158,7 @@ export async function POST(request: NextRequest) {
         nextBillingDate.setFullYear(now.getFullYear() + 1);
       }
 
-      // Step 4: Create subscription record in database
+      // Step 5: Create subscription record in database
       const subscription = await prisma.subscription.create({
         data: {
           companyId,
@@ -161,7 +177,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Step 5: Create initial transaction record
+      // Step 6: Create initial transaction record
       await prisma.paymentTransaction.create({
         data: {
           subscriptionId: subscription.id,
@@ -169,14 +185,16 @@ export async function POST(request: NextRequest) {
           amount: parseFloat(amount),
           status: 'SUCCESS',
           type: 'INITIAL',
+          transactionId: paymentResult.transactionId,
+          authCode: paymentResult.authCode,
           cardLast4: cardLast4,
           cardType: cardType,
           description: `Initial ${billingPeriod} subscription payment`,
-          invoice: `SUB-${companyId}-${Date.now()}`,
+          invoice: paymentDetails.invoice,
         },
       });
 
-      // Step 6: Update company's selected plan
+      // Step 7: Update company's selected plan
       await prisma.company.update({
         where: { id: companyId },
         data: {
@@ -188,7 +206,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         subscription,
-        message: 'Subscription created successfully. You will be billed automatically.',
+        transactionId: paymentResult.transactionId,
+        authCode: paymentResult.authCode,
+        message: 'Payment successful! Your subscription is now active and will renew automatically.',
         cardType: cardType,
         last4: cardLast4,
       });

@@ -27,6 +27,7 @@ export interface PaymentDetails {
   description?: string;
   invoice?: string;
   customerId?: string;
+  saveCustomer?: boolean; // Set to true to save customer and payment method
 }
 
 export interface PaymentResponse {
@@ -38,6 +39,7 @@ export interface PaymentResponse {
   amount?: number;
   cardType?: string;
   last4?: string;
+  custkey?: string; // USAePay customer ID (returned when save_customer is true)
 }
 
 /**
@@ -58,7 +60,7 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     const expiration = `${paymentDetails.expirationMonth.padStart(2, '0')}${paymentDetails.expirationYear.slice(-2)}`;
 
     // Build the transaction request (matching USAePay API format)
-    const transactionData = {
+    const transactionData: any = {
       command: 'cc:sale',
       amount: paymentDetails.amount.toFixed(2),
       creditcard: {
@@ -71,6 +73,20 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
       },
       invoice: paymentDetails.invoice || `INV-${Date.now()}`,
     };
+
+    // Add customer save flags if requested
+    if (paymentDetails.saveCustomer) {
+      transactionData.save_customer = true;
+      transactionData.save_customer_paymethod = true;
+      
+      // Add billing address for customer profile
+      transactionData.billing_address = {
+        street: paymentDetails.billingAddress.street,
+        city: paymentDetails.billingAddress.city,
+        state: paymentDetails.billingAddress.state,
+        postalcode: paymentDetails.billingAddress.zip,
+      };
+    }
 
     // Make API request to USAePay
     // USAePay v2 REST API uses source key authentication with seed-based hashing
@@ -138,6 +154,7 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
         amount: paymentDetails.amount,
         cardType: result.cardtype,
         last4: result.cc_number ? result.cc_number.slice(-4) : undefined,
+        custkey: result.customer?.custkey || result.custkey, // Customer ID if saved
       };
     } else if (response.ok && (!result || Object.keys(result).length === 0)) {
       // Empty response - likely gateway configuration issue
@@ -312,6 +329,43 @@ async function usaepayRequest(endpoint: string, method: string = 'GET', data?: a
 
 // ============= CUSTOMER VAULT =============
 
+/**
+ * Retrieve customer details including payment methods
+ */
+export async function getCustomerPaymentMethod(custkey: string): Promise<{ success: boolean; paymentMethodKey?: string; error?: string }> {
+  try {
+    console.log(`🔍 Retrieving payment method for customer: ${custkey}`);
+    
+    const result = await usaepayRequest(`/customers/${custkey}`, 'GET');
+    
+    console.log('📥 Customer details retrieved:', result);
+    
+    // Extract payment method key from the first payment method
+    const paymentMethodKey = result.payment_methods?.[0]?.key || result.payment_methods?.[0]?.methodid;
+    
+    if (!paymentMethodKey) {
+      console.error('❌ No payment method found for customer');
+      return {
+        success: false,
+        error: 'No payment method found for customer',
+      };
+    }
+    
+    console.log(`✅ Payment method key retrieved: ${paymentMethodKey}`);
+    
+    return {
+      success: true,
+      paymentMethodKey,
+    };
+  } catch (error) {
+    console.error('❌ Get Customer Payment Method Error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to retrieve payment method',
+    };
+  }
+}
+
 export interface CustomerVaultData {
   companyId: string;
   companyName?: string;
@@ -456,7 +510,8 @@ export async function deleteCustomerFromVault(customerId: string): Promise<{ suc
 // ============= RECURRING BILLING =============
 
 export interface RecurringBillingData {
-  customerId: string;
+  customerId: string; // USAePay customer key (custkey)
+  paymentMethodId: string; // USAePay payment method key
   amount: number;
   schedule: 'monthly' | 'quarterly' | 'annual';
   description: string;
@@ -482,24 +537,26 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
       annual: 'annually',
     };
 
+    // Build recurring billing schedule (using USAePay schedules API format)
     const recurringData = {
-      customer: billingData.customerId,
+      custkey: billingData.customerId, // Customer key from initial sale
+      paymethod: billingData.paymentMethodId, // Payment method key
       amount: billingData.amount.toFixed(2),
       schedule: scheduleMap[billingData.schedule],
-      description: billingData.description,
       enabled: true,
       next: billingData.startDate || new Date(),
+      description: billingData.description,
     };
 
-    console.log('🔄 Creating recurring billing with data:', JSON.stringify(recurringData, null, 2));
+    console.log('🔄 Creating recurring billing schedule:', JSON.stringify(recurringData, null, 2));
 
     const result = await usaepayRequest('/recurring', 'POST', recurringData);
 
-    console.log('✅ Recurring billing created successfully:', result);
+    console.log('✅ Recurring billing schedule created:', result);
 
     return {
       success: true,
-      billingId: result.key || result.schedule_id,
+      billingId: result.key || result.schedulekey,
       nextBillingDate: result.next ? new Date(result.next) : undefined,
     };
   } catch (error) {
