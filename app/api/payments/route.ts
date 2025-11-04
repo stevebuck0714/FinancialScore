@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { processPayment, PaymentDetails } from '@/lib/usaepay';
+import { processPayment, PaymentDetails, addCustomerToVault, createRecurringBilling } from '@/lib/usaepay';
 import prisma from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
@@ -17,6 +17,9 @@ export async function POST(request: NextRequest) {
       expirationYear,
       cvv,
       billingAddress,
+      email,
+      phone,
+      createSubscription = true, // By default, create recurring subscription
     } = body;
 
     // Validate required fields
@@ -53,61 +56,186 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prepare payment details
-    const paymentDetails: PaymentDetails = {
-      amount: parseFloat(amount),
-      cardNumber,
-      cardholderName,
-      expirationMonth,
-      expirationYear,
-      cvv,
-      billingAddress: {
-        street: billingAddress.street,
-        city: billingAddress.city,
-        state: billingAddress.state,
-        zip: billingAddress.zip,
-      },
-      description: `${subscriptionPlan} - ${billingPeriod} subscription`,
-      invoice: `SUB-${companyId}-${Date.now()}`,
-      customerId: companyId,
-    };
+    // Check if subscription already exists
+    const existingSubscription = await prisma.subscription.findUnique({
+      where: { companyId },
+    });
 
-    // Process payment through USAePay
-    const paymentResult = await processPayment(paymentDetails);
-
-    if (!paymentResult.success) {
+    if (existingSubscription && createSubscription) {
       return NextResponse.json(
-        {
-          success: false,
-          error: paymentResult.error || 'Payment processing failed',
-          message: paymentResult.message,
-        },
-        { status: 400 }
+        { success: false, error: 'Subscription already exists for this company' },
+        { status: 409 }
       );
     }
 
-    // Payment successful - update company subscription
-    await prisma.company.update({
-      where: { id: companyId },
-      data: {
-        selectedSubscriptionPlan: billingPeriod,
-        updatedAt: new Date(),
-      },
-    });
+    if (createSubscription) {
+      // === RECURRING SUBSCRIPTION FLOW ===
+      
+      // Step 1: Add customer to vault
+      const vaultResult = await addCustomerToVault({
+        companyId,
+        cardNumber,
+        expirationMonth,
+        expirationYear,
+        cvv,
+        cardholderName,
+        billingAddress,
+        email,
+        phone,
+      });
 
-    // TODO: Store payment transaction in database for record keeping
-    // You may want to create a PaymentTransaction model in your schema
+      if (!vaultResult.success || !vaultResult.customerId) {
+        return NextResponse.json(
+          { success: false, error: vaultResult.error || 'Failed to save payment method' },
+          { status: 400 }
+        );
+      }
 
-    // Return success response
-    return NextResponse.json({
-      success: true,
-      transactionId: paymentResult.transactionId,
-      authCode: paymentResult.authCode,
-      message: paymentResult.message || 'Payment processed successfully',
-      amount: paymentResult.amount,
-      cardType: paymentResult.cardType,
-      last4: paymentResult.last4,
-    });
+      // Step 2: Create recurring billing schedule
+      const billingResult = await createRecurringBilling({
+        customerId: vaultResult.customerId,
+        amount: parseFloat(amount),
+        schedule: billingPeriod as 'monthly' | 'quarterly' | 'annual',
+        description: `${company.name} - ${billingPeriod} subscription`,
+      });
+
+      if (!billingResult.success || !billingResult.billingId) {
+        return NextResponse.json(
+          { success: false, error: billingResult.error || 'Failed to create recurring billing' },
+          { status: 400 }
+        );
+      }
+
+      // Step 3: Calculate next billing date
+      const now = new Date();
+      const nextBillingDate = new Date(now);
+      if (billingPeriod === 'monthly') {
+        nextBillingDate.setMonth(now.getMonth() + 1);
+      } else if (billingPeriod === 'quarterly') {
+        nextBillingDate.setMonth(now.getMonth() + 3);
+      } else if (billingPeriod === 'annual') {
+        nextBillingDate.setFullYear(now.getFullYear() + 1);
+      }
+
+      // Step 4: Create subscription record in database
+      const subscription = await prisma.subscription.create({
+        data: {
+          companyId,
+          usaepayCustomerId: vaultResult.customerId,
+          usaepayBillingId: billingResult.billingId,
+          plan: billingPeriod,
+          amount: parseFloat(amount),
+          status: 'ACTIVE',
+          nextBillingDate: billingResult.nextBillingDate || nextBillingDate,
+          lastPaymentDate: now,
+          billingStartDate: now,
+          cardLast4: vaultResult.cardLast4,
+          cardType: vaultResult.cardType,
+          cardExpMonth: expirationMonth,
+          cardExpYear: expirationYear,
+        },
+      });
+
+      // Step 5: Create initial transaction record
+      await prisma.paymentTransaction.create({
+        data: {
+          subscriptionId: subscription.id,
+          companyId,
+          amount: parseFloat(amount),
+          status: 'SUCCESS',
+          type: 'INITIAL',
+          cardLast4: vaultResult.cardLast4,
+          cardType: vaultResult.cardType,
+          description: `Initial ${billingPeriod} subscription payment`,
+          invoice: `SUB-${companyId}-${Date.now()}`,
+        },
+      });
+
+      // Step 6: Update company's selected plan
+      await prisma.company.update({
+        where: { id: companyId },
+        data: {
+          selectedSubscriptionPlan: billingPeriod,
+          updatedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        subscription,
+        message: 'Subscription created successfully. You will be billed automatically.',
+        cardType: vaultResult.cardType,
+        last4: vaultResult.cardLast4,
+      });
+
+    } else {
+      // === ONE-TIME PAYMENT FLOW (Legacy) ===
+      
+      const paymentDetails: PaymentDetails = {
+        amount: parseFloat(amount),
+        cardNumber,
+        cardholderName,
+        expirationMonth,
+        expirationYear,
+        cvv,
+        billingAddress: {
+          street: billingAddress.street,
+          city: billingAddress.city,
+          state: billingAddress.state,
+          zip: billingAddress.zip,
+        },
+        description: `${subscriptionPlan} - ${billingPeriod} payment`,
+        invoice: `PAY-${companyId}-${Date.now()}`,
+        customerId: companyId,
+      };
+
+      const paymentResult = await processPayment(paymentDetails);
+
+      if (!paymentResult.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: paymentResult.error || 'Payment processing failed',
+            message: paymentResult.message,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Store transaction record
+      await prisma.paymentTransaction.create({
+        data: {
+          companyId,
+          amount: parseFloat(amount),
+          status: 'SUCCESS',
+          type: 'MANUAL',
+          transactionId: paymentResult.transactionId,
+          authCode: paymentResult.authCode,
+          cardLast4: paymentResult.last4,
+          cardType: paymentResult.cardType,
+          description: `One-time ${billingPeriod} payment`,
+          invoice: paymentDetails.invoice,
+        },
+      });
+
+      await prisma.company.update({
+        where: { id: companyId },
+        data: {
+          selectedSubscriptionPlan: billingPeriod,
+          updatedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        transactionId: paymentResult.transactionId,
+        authCode: paymentResult.authCode,
+        message: paymentResult.message || 'Payment processed successfully',
+        amount: paymentResult.amount,
+        cardType: paymentResult.cardType,
+        last4: paymentResult.last4,
+      });
+    }
 
   } catch (error) {
     console.error('Payment API error:', error);

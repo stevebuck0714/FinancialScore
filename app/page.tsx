@@ -1182,6 +1182,10 @@ export default function FinancialScorePage() {
   // State - Subscription Selection
   const [selectedSubscriptionPlan, setSelectedSubscriptionPlan] = useState<string | null>(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  
+  // State - Active Subscription Management
+  const [activeSubscription, setActiveSubscription] = useState<any>(null);
+  const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [newUserPassword, setNewUserPassword] = useState('');
   // Separate state for Company Users
   const [newCompanyUserName, setNewCompanyUserName] = useState('');
@@ -1590,6 +1594,32 @@ export default function FinancialScorePage() {
       };
       refreshCompanyData();
     }
+  }, [adminDashboardTab, selectedCompanyId]);
+
+  // Load subscription details when accessing payments tab
+  useEffect(() => {
+    const loadSubscriptionDetails = async () => {
+      if (adminDashboardTab === 'payments' && selectedCompanyId) {
+        setLoadingSubscription(true);
+        try {
+          const response = await fetch(`/api/subscriptions?companyId=${selectedCompanyId}`);
+          const data = await response.json();
+          
+          if (data.subscription) {
+            setActiveSubscription(data.subscription);
+          } else {
+            setActiveSubscription(null);
+          }
+        } catch (error) {
+          console.error('Error loading subscription:', error);
+          setActiveSubscription(null);
+        } finally {
+          setLoadingSubscription(false);
+        }
+      }
+    };
+
+    loadSubscriptionDetails();
   }, [adminDashboardTab, selectedCompanyId]);
 
   // Load from localStorage (DEPRECATED - will be removed)
@@ -7732,7 +7762,7 @@ export default function FinancialScorePage() {
             </div>
           )}
 
-          {/* Payments/Billing Tab */}
+          {/* Payments Tab */}
           {adminDashboardTab === 'payments' && selectedCompanyId && (() => {
             const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
             const monthlyPrice = selectedCompany?.subscriptionMonthlyPrice ?? 0;
@@ -7740,13 +7770,27 @@ export default function FinancialScorePage() {
             const annualPrice = selectedCompany?.subscriptionAnnualPrice ?? 0;
             
             return (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Billing & Subscription</h2>
-
-              {/* Subscription Plans - Select One */}
-              <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '10px' }}>Select Subscription Plan</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+            <>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Payments & Subscription</h2>
+              
+              {/* Two Column Layout */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '20px' }}>
+                
+                {/* LEFT COLUMN - Plan Selection & Checkout */}
+                <div>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+                      {activeSubscription ? 'Change Plan' : 'Select a Plan'}
+                    </h3>
+                    
+                    {(monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? (
+                      <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '8px', padding: '12px' }}>
+                        <p style={{ fontSize: '14px', color: '#92400e' }}>
+                          No subscription plans configured. Please contact support.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
                   {/* Monthly Plan */}
                   <div 
                     onClick={() => setSelectedSubscriptionPlan('monthly')}
@@ -7822,70 +7866,65 @@ export default function FinancialScorePage() {
                     </div>
                     <div style={{ fontSize: '11px', color: '#059669', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
                   </div>
-                </div>
-              </div>
-
-              {/* Shopping Cart */}
-              <div style={{ marginBottom: '16px', background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  🛒 Shopping Cart
-                </h3>
-                
-                {selectedSubscriptionPlan ? (
-                    <div>
-                    {/* Cart Item */}
-                    <div style={{ background: 'white', borderRadius: '6px', padding: '12px', marginBottom: '12px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div>
-                          <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', textTransform: 'capitalize' }}>
-                            {selectedSubscriptionPlan} Subscription Plan
-                    </div>
-                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                            Billed {selectedSubscriptionPlan === 'monthly' ? 'monthly' : selectedSubscriptionPlan === 'quarterly' ? 'every 3 months' : 'annually'}
+                      </div>
+                    )}
                   </div>
-                    </div>
-                        <div style={{ fontSize: '18px', fontWeight: '700', color: '#667eea' }}>
-                          ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
-                             selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
-                             annualPrice.toFixed(2)}
-                    </div>
-                    </div>
-                      <button
-                        onClick={() => setSelectedSubscriptionPlan(null)}
-                        style={{
-                          padding: '4px 8px',
-                          background: 'transparent',
-                          color: '#ef4444',
-                          border: 'none',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        🗑️ Remove
-                      </button>
-                  </div>
-
-                    {/* Cart Total */}
-                    <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Total</div>
-                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
-                          ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
-                             selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
-                             annualPrice.toFixed(2)}
-                    </div>
-                    </div>
-                      <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'right', marginBottom: '12px' }}>
-                        {selectedSubscriptionPlan === 'monthly' && 'Per month'}
-                        {selectedSubscriptionPlan === 'quarterly' && 'Per quarter'}
-                        {selectedSubscriptionPlan === 'annual' && 'Per year'}
-                    </div>
+                  
+                  {/* Shopping Cart */}
+                  {selectedSubscriptionPlan && (
+                    <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        🛒 Checkout
+                      </h3>
                       
-                      {/* Checkout Button */}
+                      <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '12px', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', textTransform: 'capitalize' }}>
+                              {selectedSubscriptionPlan} Plan
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                              Billed {selectedSubscriptionPlan === 'monthly' ? 'monthly' : selectedSubscriptionPlan === 'quarterly' ? 'quarterly' : 'annually'}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: '18px', fontWeight: '700', color: '#667eea' }}>
+                            ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
+                               selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
+                               annualPrice.toFixed(2)}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setSelectedSubscriptionPlan(null)}
+                          style={{
+                            padding: '4px 8px',
+                            background: 'transparent',
+                            color: '#ef4444',
+                            border: 'none',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✕ Remove
+                        </button>
+                      </div>
+
+                      <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '12px', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Total</div>
+                          <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
+                            ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
+                               selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
+                               annualPrice.toFixed(2)}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
+                          {selectedSubscriptionPlan === 'monthly' && 'Per month'}
+                          {selectedSubscriptionPlan === 'quarterly' && 'Per quarter'}
+                          {selectedSubscriptionPlan === 'annual' && 'Per year'}
+                        </div>
+                      </div>
+                      
                       <button
                         onClick={() => setShowCheckoutModal(true)}
                         style={{
@@ -7906,24 +7945,209 @@ export default function FinancialScorePage() {
                       >
                         🛒 Proceed to Checkout
                       </button>
+                      <p style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', marginTop: '12px' }}>
+                        Subscription activates immediately after checkout
+                      </p>
                     </div>
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8' }}>
-                    <div style={{ fontSize: '40px', marginBottom: '8px' }}>🛒</div>
-                    <div style={{ fontSize: '13px' }}>Your cart is empty</div>
-                    <div style={{ fontSize: '11px', marginTop: '4px' }}>Select a subscription plan above to add it to your cart</div>
+                  )}
                 </div>
-                )}
+
+                {/* RIGHT COLUMN - Subscription Management */}
+                <div>
+                  {loadingSubscription ? (
+                    <div style={{ background: 'white', borderRadius: '12px', padding: '40px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                      <div style={{ fontSize: '16px', color: '#64748b' }}>Loading subscription...</div>
+                    </div>
+                  ) : activeSubscription ? (
+                    <>
+                      {/* Subscription Status */}
+                      <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>Your Subscription</h3>
+                          <span style={{
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            background: activeSubscription.status === 'ACTIVE' ? '#d1fae5' : activeSubscription.status === 'SUSPENDED' ? '#fee2e2' : activeSubscription.status === 'CANCELED' ? '#f3f4f6' : '#fef3c7',
+                            color: activeSubscription.status === 'ACTIVE' ? '#065f46' : activeSubscription.status === 'SUSPENDED' ? '#991b1b' : activeSubscription.status === 'CANCELED' ? '#1f2937' : '#92400e'
+                          }}>
+                            {activeSubscription.status}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                          <div>
+                            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Plan</p>
+                            <p style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', textTransform: 'capitalize' }}>{activeSubscription.plan}</p>
+                          </div>
+                          <div>
+                            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Amount</p>
+                            <p style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${activeSubscription.amount.toFixed(2)}</p>
+                          </div>
+                        </div>
+
+                        {activeSubscription.nextBillingDate && (
+                          <div style={{ background: '#dbeafe', border: '1px solid #93c5fd', borderRadius: '8px', padding: '12px', marginBottom: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '20px' }}>📅</span>
+                              <div>
+                                <p style={{ fontSize: '11px', color: '#1e40af', fontWeight: '500' }}>Next Billing Date</p>
+                                <p style={{ fontSize: '13px', fontWeight: '600', color: '#1e3a8a' }}>
+                                  {new Date(activeSubscription.nextBillingDate).toLocaleDateString('en-US', { 
+                                    weekday: 'long', 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {activeSubscription.cardLast4 && (
+                          <div style={{ marginBottom: '16px' }}>
+                            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Payment Method</p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                              <span style={{ fontSize: '18px' }}>💳</span>
+                              <span style={{ fontSize: '14px', fontWeight: '500', color: '#1e293b' }}>
+                                {activeSubscription.cardType} ending in {activeSubscription.cardLast4}
+                              </span>
+                              <span style={{ fontSize: '12px', color: '#64748b', marginLeft: 'auto' }}>
+                                Exp: {activeSubscription.cardExpMonth}/{activeSubscription.cardExpYear}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {activeSubscription.failedPaymentCount > 0 && (
+                          <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '12px', marginBottom: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
+                              <span style={{ fontSize: '18px' }}>⚠️</span>
+                              <div>
+                                <p style={{ fontSize: '13px', fontWeight: '600', color: '#991b1b' }}>Payment Issue</p>
+                                <p style={{ fontSize: '11px', color: '#7f1d1d' }}>
+                                  {activeSubscription.failedPaymentCount} failed attempt(s). {activeSubscription.lastFailureReason}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <button
+                            onClick={() => alert('Update payment method feature coming soon!')}
+                            style={{
+                              width: '100%',
+                              background: '#667eea',
+                              color: 'white',
+                              padding: '10px 16px',
+                              borderRadius: '8px',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              border: 'none',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Update Payment Method
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (confirm('Are you sure you want to cancel your subscription?')) {
+                                try {
+                                  const response = await fetch(`/api/subscriptions?companyId=${selectedCompanyId}`, {
+                                    method: 'DELETE'
+                                  });
+                                  if (response.ok) {
+                                    alert('Subscription canceled successfully');
+                                    setActiveSubscription(null);
+                                  }
+                                } catch (error) {
+                                  alert('Failed to cancel subscription');
+                                }
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              background: 'white',
+                              color: '#ef4444',
+                              border: '2px solid #ef4444',
+                              padding: '10px 16px',
+                              borderRadius: '8px',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Cancel Subscription
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Payment History */}
+                      <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Payment History</h3>
+                        
+                        {activeSubscription.transactions && activeSubscription.transactions.length > 0 ? (
+                          <div>
+                            {activeSubscription.transactions.map((txn: any) => (
+                              <div key={txn.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #e2e8f0' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <span style={{ fontSize: '18px' }}>
+                                    {txn.status === 'SUCCESS' ? '✅' : '❌'}
+                                  </span>
+                                  <div>
+                                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>
+                                      {txn.description || `${txn.type} Payment`}
+                                    </p>
+                                    <p style={{ fontSize: '11px', color: '#64748b' }}>
+                                      {new Date(txn.createdAt).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <p style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
+                                    ${txn.amount.toFixed(2)}
+                                  </p>
+                                  <p style={{
+                                    fontSize: '11px',
+                                    fontWeight: '500',
+                                    color: txn.status === 'SUCCESS' ? '#10b981' : '#ef4444'
+                                  }}>
+                                    {txn.status}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: '13px', color: '#64748b', textAlign: 'center', padding: '20px' }}>
+                            No transaction history available
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>🛒</div>
+                      <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>No Active Subscription</h3>
+                      <p style={{ fontSize: '14px', color: '#64748b' }}>
+                        Select a plan from the left to get started
+                      </p>
+                    </div>
+                  )}
+                </div>
+
               </div>
-            </div>
+            </>
             );
           })()}
 
           {!selectedCompanyId && adminDashboardTab === 'payments' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and billing.</p>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and payments.</p>
             </div>
           )}
 

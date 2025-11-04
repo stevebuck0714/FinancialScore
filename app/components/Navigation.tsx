@@ -14,11 +14,6 @@ export default function Navigation() {
       icon: Home
     },
     {
-      name: 'Billing',
-      href: '/billing',
-      icon: CreditCard
-    },
-    {
       name: 'Reports',
       href: '/reports',
       icon: FileText

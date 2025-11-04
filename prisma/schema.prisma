@@ -77,6 +77,7 @@ model Company {
   accountingConnections   AccountingConnection[]
   apiSyncLogs             ApiSyncLog[]
   accountMappings         AccountMapping[]
+  subscription            Subscription?
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt
 
@@ -445,4 +446,106 @@ model AffiliateCode {
 
   @@index([affiliateId])
   @@index([code])
+}
+
+// Subscription Status Enum
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+  SUSPENDED
+  PENDING
+}
+
+// Subscription - Recurring billing information
+model Subscription {
+  id                      String              @id @default(cuid())
+  companyId               String              @unique
+  company                 Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // USAePay integration
+  usaepayCustomerId       String?             // Customer Vault ID in USAePay
+  usaepayBillingId        String?             // Recurring billing schedule ID
+  
+  // Subscription details
+  plan                    String              // monthly, quarterly, annual
+  amount                  Float
+  status                  SubscriptionStatus  @default(PENDING)
+  
+  // Billing cycle
+  nextBillingDate         DateTime?
+  lastPaymentDate         DateTime?
+  billingStartDate        DateTime?
+  billingEndDate          DateTime?           // For canceled subscriptions
+  
+  // Payment method info (last 4 digits for display)
+  cardLast4               String?
+  cardType                String?
+  cardExpMonth            String?
+  cardExpYear             String?
+  
+  // Tracking
+  failedPaymentCount      Int                 @default(0)
+  lastFailureReason       String?
+  
+  transactions            PaymentTransaction[]
+  
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([nextBillingDate])
+}
+
+// Payment Transaction Status
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+  PENDING
+  REFUNDED
+}
+
+// Payment Transaction Type
+enum PaymentType {
+  INITIAL
+  RECURRING
+  MANUAL
+  REFUND
+}
+
+// Payment Transaction - Record of all payment attempts
+model PaymentTransaction {
+  id                      String          @id @default(cuid())
+  subscriptionId          String?
+  subscription            Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  companyId               String
+  
+  // Transaction details
+  amount                  Float
+  status                  PaymentStatus
+  type                    PaymentType
+  
+  // USAePay data
+  transactionId           String?         // USAePay transaction ID
+  authCode                String?
+  
+  // Card info
+  cardLast4               String?
+  cardType                String?
+  
+  // Error handling
+  errorMessage            String?
+  errorCode               String?
+  
+  // Metadata
+  description             String?
+  invoice                 String?
+  
+  createdAt               DateTime        @default(now())
+
+  @@index([subscriptionId])
+  @@index([companyId])
+  @@index([status])
+  @@index([createdAt])
 }

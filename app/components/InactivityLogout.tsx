@@ -61,6 +61,7 @@ export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: In
       // Set new timeout - use ref to get latest logout function
       timeoutRef.current = setTimeout(() => {
         console.warn('[InactivityLogout] ⏰ 15 minutes of inactivity detected. Logging out user.');
+        alert('You have been logged out due to 15 minutes of inactivity.');
         onLogoutRef.current();
       }, INACTIVITY_TIMEOUT);
     };
