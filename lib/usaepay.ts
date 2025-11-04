@@ -145,15 +145,15 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     });
 
     // Check if transaction was successful
-    if (response.ok && result.status === 'Approved') {
+    if (response.ok && (result.result === 'Approved' || result.result_code === 'A')) {
       return {
         success: true,
         transactionId: result.key || result.refnum,
         authCode: result.authcode,
         message: result.result || 'Payment processed successfully',
         amount: paymentDetails.amount,
-        cardType: result.cardtype,
-        last4: result.cc_number ? result.cc_number.slice(-4) : undefined,
+        cardType: result.creditcard?.type || result.cardtype,
+        last4: result.creditcard?.number ? result.creditcard.number.replace(/x/g, '').slice(-4) : undefined,
         custkey: result.customer?.custkey || result.custkey, // Customer ID if saved
       };
     } else if (response.ok && (!result || Object.keys(result).length === 0)) {
