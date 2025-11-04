@@ -282,9 +282,13 @@ async function usaepayRequest(endpoint: string, method: string = 'GET', data?: a
       options.body = JSON.stringify(data);
     }
 
+    console.log(`📡 USAePay ${method} ${endpoint}`, data ? JSON.stringify(data, null, 2) : '');
+
     const response = await fetch(`${USAEPAY_API_URL}${endpoint}`, options);
     const responseText = await response.text();
     
+    console.log(`📥 USAePay Response [${response.status}]:`, responseText);
+
     let result;
     try {
       result = responseText ? JSON.parse(responseText) : {};
@@ -294,7 +298,9 @@ async function usaepayRequest(endpoint: string, method: string = 'GET', data?: a
     }
 
     if (!response.ok) {
-      throw new Error(result.error || result.message || `API Error: ${response.status}`);
+      const errorMsg = result.error || result.message || `API Error: ${response.status}`;
+      console.error(`❌ USAePay API Error [${response.status}]:`, result);
+      throw new Error(errorMsg);
     }
 
     return result;
@@ -486,7 +492,11 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
       next: billingData.startDate || new Date(),
     };
 
+    console.log('🔄 Creating recurring billing with data:', JSON.stringify(recurringData, null, 2));
+
     const result = await usaepayRequest('/recurring', 'POST', recurringData);
+
+    console.log('✅ Recurring billing created successfully:', result);
 
     return {
       success: true,
@@ -494,7 +504,8 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
       nextBillingDate: result.next ? new Date(result.next) : undefined,
     };
   } catch (error) {
-    console.error('Create Recurring Billing Error:', error);
+    console.error('❌ Create Recurring Billing Error:', error);
+    console.error('Error details:', error instanceof Error ? error.message : error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create recurring billing',
