@@ -67,6 +67,9 @@ model Company {
   subscriptionQuarterlyPrice Float?
   subscriptionAnnualPrice Float?
   selectedSubscriptionPlan String?                // 'monthly', 'quarterly', or 'annual'
+  affiliateId             String?
+  affiliate               Affiliate?              @relation(fields: [affiliateId], references: [id])
+  affiliateCode           String?
   users                   User[]
   financialRecords        FinancialRecord[]
   assessmentRecords       AssessmentRecord[]
@@ -78,6 +81,7 @@ model Company {
   updatedAt               DateTime                @updatedAt
 
   @@index([consultantId])
+  @@index([affiliateId])
 }
 
 model User {
@@ -227,6 +231,7 @@ model CompanyProfile {
   legalStructure      String?
   businessStatus      String?
   ownership           String?
+  keyEmployees        Json?
   workforce           String?
   keyAdvisors         String?
   specialNotes        String?
@@ -393,4 +398,51 @@ model SystemSettings {
   createdAt                       DateTime  @default(now())
 
   @@index([key])
+}
+
+// Affiliate - Partner organizations that can provide special pricing
+model Affiliate {
+  id                      String          @id @default(cuid())
+  name                    String          @unique
+  contactName             String?
+  contactEmail            String?
+  contactPhone            String?
+  address                 String?
+  city                    String?
+  state                   String?
+  zip                     String?
+  website                 String?
+  
+  isActive                Boolean         @default(true)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  
+  codes                   AffiliateCode[]
+  companies               Company[]
+
+  @@index([name])
+}
+
+// Affiliate Code - Promotional codes for affiliates with code-specific pricing
+model AffiliateCode {
+  id                      String          @id @default(cuid())
+  affiliateId             String
+  affiliate               Affiliate       @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  code                    String          @unique
+  description             String?
+  
+  // Code-specific pricing
+  monthlyPrice            Float           @default(0)
+  quarterlyPrice          Float           @default(0)
+  annualPrice             Float           @default(0)
+  
+  isActive                Boolean         @default(true)
+  expiresAt               DateTime?
+  maxUses                 Int?
+  currentUses             Int             @default(0)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  @@index([affiliateId])
+  @@index([code])
 }

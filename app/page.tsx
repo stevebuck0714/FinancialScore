@@ -21496,6 +21496,20 @@ export default function FinancialScorePage() {
             const latest = monthly[monthly.length - 1];
             const oneYearAgo = monthly.length >= 13 ? monthly[monthly.length - 13] : null;
             const twoYearsAgo = monthly.length >= 25 ? monthly[monthly.length - 25] : null;
+            
+            // Debug logging
+            console.log('📊 Financial Statement Data:', {
+              monthsCount: monthly.length,
+              latest: latest ? {
+                month: latest.month,
+                totalAssets: latest.totalAssets,
+                totalLiab: latest.totalLiab,
+                totalEquity: latest.totalEquity
+              } : null,
+              oneYearAgo: oneYearAgo ? oneYearAgo.month : null,
+              twoYearsAgo: twoYearsAgo ? twoYearsAgo.month : null,
+              ltmRev
+            });
 
             // Get industry info
             const industry = INDUSTRY_SECTORS.find(i => i.id === company?.industrySector);
