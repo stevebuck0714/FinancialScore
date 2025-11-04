@@ -567,6 +567,7 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
       frequency: scheduleMap[billingData.schedule], // Use 'frequency' not 'schedule'
       enabled: true,
       next_date: nextDateFormatted, // Use 'next_date' in YYYY-MM-DD format
+      numleft: 0, // 0 = unlimited payments (runs until manually canceled)
       description: billingData.description,
     };
 
