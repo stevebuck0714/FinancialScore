@@ -350,9 +350,13 @@ export async function getCustomerPaymentMethod(custkey: string): Promise<{ succe
   try {
     console.log(`🔍 Retrieving payment method for customer: ${custkey}`);
     
-    const result = await usaepayRequest(`/customers/${custkey}`, 'GET');
+    // Request payment_methods and billing_schedules to be included in response
+    const result = await usaepayRequest(`/customers/${custkey}?expand=payment_methods,billing_schedules`, 'GET');
     
     console.log('📥 Customer details retrieved:', result);
+    console.log('📦 Payment methods count:', result.payment_methods?.length || 0);
+    console.log('📅 Billing schedules count:', result.billing_schedules?.length || 0);
+    console.log('📅 Billing schedules:', JSON.stringify(result.billing_schedules || [], null, 2));
     
     // Extract payment method key from the first payment method
     const paymentMethodKey = result.payment_methods?.[0]?.key || result.payment_methods?.[0]?.methodid;
@@ -551,20 +555,25 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
       annual: 'annually',
     };
 
-    // Build recurring billing schedule (using USAePay schedules API format)
+    // Format next billing date as YYYY-MM-DD
+    const nextDate = billingData.startDate || new Date();
+    const nextDateFormatted = nextDate.toISOString().split('T')[0];
+
+    // Build recurring billing schedule (using USAePay API v2 format)
+    // According to USAePay docs, use customer-specific endpoint
     const recurringData = {
-      custkey: billingData.customerId, // Customer key from initial sale
-      paymethod: billingData.paymentMethodId, // Payment method key
+      paymethod_key: billingData.paymentMethodId, // Payment method key (note: paymethod_key not paymethod)
       amount: billingData.amount.toFixed(2),
-      schedule: scheduleMap[billingData.schedule],
+      frequency: scheduleMap[billingData.schedule], // Use 'frequency' not 'schedule'
       enabled: true,
-      next: billingData.startDate || new Date(),
+      next_date: nextDateFormatted, // Use 'next_date' in YYYY-MM-DD format
       description: billingData.description,
     };
 
     console.log('🔄 Creating recurring billing schedule:', JSON.stringify(recurringData, null, 2));
 
-    const result = await usaepayRequest('/schedules', 'POST', recurringData);
+    // Use customer-specific endpoint: /customers/:custkey:/billing_schedules
+    const result = await usaepayRequest(`/customers/${billingData.customerId}/billing_schedules`, 'POST', recurringData);
 
     console.log('✅ Recurring billing schedule created:', result);
 
@@ -603,19 +612,30 @@ export async function updateRecurringBilling(
         quarterly: 'quarterly',
         annual: 'annually',
       };
-      updateData.schedule = scheduleMap[updates.schedule];
+      updateData.frequency = scheduleMap[updates.schedule]; // Use 'frequency' not 'schedule'
     }
 
     if (updates.description) {
       updateData.description = updates.description;
     }
 
+    // If customerId is provided in updates, use customer-specific endpoint
+    if (updates.customerId) {
+      const result = await usaepayRequest(`/customers/${updates.customerId}/billing_schedules/${billingId}`, 'PUT', updateData);
+      return {
+        success: true,
+        billingId: result.key || billingId,
+        nextBillingDate: result.next_date ? new Date(result.next_date) : undefined,
+      };
+    }
+
+    // Fall back to old endpoint for backwards compatibility
     const result = await usaepayRequest(`/recurring/${billingId}`, 'PUT', updateData);
 
     return {
       success: true,
       billingId: result.key || billingId,
-      nextBillingDate: result.next ? new Date(result.next) : undefined,
+      nextBillingDate: result.next_date || result.next ? new Date(result.next_date || result.next) : undefined,
     };
   } catch (error) {
     console.error('Update Recurring Billing Error:', error);
@@ -628,11 +648,19 @@ export async function updateRecurringBilling(
 
 /**
  * Cancel recurring billing schedule
+ * @param billingId - The billing schedule ID
+ * @param customerId - Optional customer ID for using customer-specific endpoint
  */
-export async function cancelRecurringBilling(billingId: string): Promise<{ success: boolean; error?: string }> {
+export async function cancelRecurringBilling(billingId: string, customerId?: string): Promise<{ success: boolean; error?: string }> {
   try {
     // USAePay disables recurring billing by setting enabled=false
-    await usaepayRequest(`/recurring/${billingId}`, 'PUT', { enabled: false });
+    if (customerId) {
+      // Use customer-specific endpoint
+      await usaepayRequest(`/customers/${customerId}/billing_schedules/${billingId}`, 'PUT', { enabled: false });
+    } else {
+      // Fall back to old endpoint for backwards compatibility
+      await usaepayRequest(`/recurring/${billingId}`, 'PUT', { enabled: false });
+    }
     return { success: true };
   } catch (error) {
     console.error('Cancel Recurring Billing Error:', error);
@@ -645,17 +673,27 @@ export async function cancelRecurringBilling(billingId: string): Promise<{ succe
 
 /**
  * Get recurring billing status
+ * @param billingId - The billing schedule ID
+ * @param customerId - Optional customer ID for using customer-specific endpoint
  */
-export async function getRecurringBillingStatus(billingId: string) {
+export async function getRecurringBillingStatus(billingId: string, customerId?: string) {
   try {
-    const result = await usaepayRequest(`/recurring/${billingId}`, 'GET');
+    let result;
+    if (customerId) {
+      // Use customer-specific endpoint
+      result = await usaepayRequest(`/customers/${customerId}/billing_schedules/${billingId}`, 'GET');
+    } else {
+      // Fall back to old endpoint for backwards compatibility
+      result = await usaepayRequest(`/recurring/${billingId}`, 'GET');
+    }
+    
     return {
       success: true,
       enabled: result.enabled,
       amount: result.amount,
-      schedule: result.schedule,
-      next: result.next ? new Date(result.next) : null,
-      last: result.last ? new Date(result.last) : null,
+      schedule: result.schedule || result.frequency,
+      next: result.next_date || result.next ? new Date(result.next_date || result.next) : null,
+      last: result.last_date || result.last ? new Date(result.last_date || result.last) : null,
     };
   } catch (error) {
     console.error('Get Recurring Billing Status Error:', error);

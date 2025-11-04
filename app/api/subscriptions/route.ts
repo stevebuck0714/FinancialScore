@@ -355,7 +355,10 @@ export async function DELETE(request: NextRequest) {
 
     // Cancel recurring billing in USAePay
     if (subscription.usaepayBillingId) {
-      const cancelResult = await cancelRecurringBilling(subscription.usaepayBillingId);
+      const cancelResult = await cancelRecurringBilling(
+        subscription.usaepayBillingId,
+        subscription.usaepayCustomerId || undefined
+      );
       if (!cancelResult.success) {
         return NextResponse.json(
           { error: cancelResult.error || 'Failed to cancel billing' },
