@@ -71,30 +71,54 @@ export async function POST(request: NextRequest) {
     if (createSubscription) {
       // === RECURRING SUBSCRIPTION FLOW ===
       
-      // Step 1: Add customer to vault
-      const vaultResult = await addCustomerToVault({
-        companyId,
-        companyName: company.name,
-        cardNumber,
-        expirationMonth,
-        expirationYear,
-        cvv,
-        cardholderName,
-        billingAddress,
-        email,
-        phone,
+      // Step 1: Check if customer already exists in vault (to prevent duplicates)
+      let usaepayCustomerId: string;
+      let cardLast4: string | undefined;
+      let cardType: string | undefined;
+
+      // Check if there's an existing subscription with a customer ID
+      const existingWithCustomer = await prisma.subscription.findUnique({
+        where: { companyId },
+        select: { usaepayCustomerId: true, cardLast4: true, cardType: true },
       });
 
-      if (!vaultResult.success || !vaultResult.customerId) {
-        return NextResponse.json(
-          { success: false, error: vaultResult.error || 'Failed to save payment method' },
-          { status: 400 }
-        );
+      if (existingWithCustomer?.usaepayCustomerId) {
+        // Reuse existing customer ID
+        console.log(`♻️ Reusing existing USAePay customer: ${existingWithCustomer.usaepayCustomerId}`);
+        usaepayCustomerId = existingWithCustomer.usaepayCustomerId;
+        cardLast4 = existingWithCustomer.cardLast4 || cardNumber.slice(-4);
+        cardType = existingWithCustomer.cardType || 'Unknown';
+      } else {
+        // Create new customer in vault
+        console.log(`🆕 Creating new USAePay customer for company: ${company.name}`);
+        const vaultResult = await addCustomerToVault({
+          companyId,
+          companyName: company.name,
+          cardNumber,
+          expirationMonth,
+          expirationYear,
+          cvv,
+          cardholderName,
+          billingAddress,
+          email,
+          phone,
+        });
+
+        if (!vaultResult.success || !vaultResult.customerId) {
+          return NextResponse.json(
+            { success: false, error: vaultResult.error || 'Failed to save payment method' },
+            { status: 400 }
+          );
+        }
+
+        usaepayCustomerId = vaultResult.customerId;
+        cardLast4 = vaultResult.cardLast4;
+        cardType = vaultResult.cardType;
       }
 
       // Step 2: Create recurring billing schedule
       const billingResult = await createRecurringBilling({
-        customerId: vaultResult.customerId,
+        customerId: usaepayCustomerId,
         amount: parseFloat(amount),
         schedule: billingPeriod as 'monthly' | 'quarterly' | 'annual',
         description: `${company.name} - ${billingPeriod} subscription`,
@@ -122,7 +146,7 @@ export async function POST(request: NextRequest) {
       const subscription = await prisma.subscription.create({
         data: {
           companyId,
-          usaepayCustomerId: vaultResult.customerId,
+          usaepayCustomerId: usaepayCustomerId,
           usaepayBillingId: billingResult.billingId,
           plan: billingPeriod,
           amount: parseFloat(amount),
@@ -130,8 +154,8 @@ export async function POST(request: NextRequest) {
           nextBillingDate: billingResult.nextBillingDate || nextBillingDate,
           lastPaymentDate: now,
           billingStartDate: now,
-          cardLast4: vaultResult.cardLast4,
-          cardType: vaultResult.cardType,
+          cardLast4: cardLast4,
+          cardType: cardType,
           cardExpMonth: expirationMonth,
           cardExpYear: expirationYear,
         },
@@ -145,8 +169,8 @@ export async function POST(request: NextRequest) {
           amount: parseFloat(amount),
           status: 'SUCCESS',
           type: 'INITIAL',
-          cardLast4: vaultResult.cardLast4,
-          cardType: vaultResult.cardType,
+          cardLast4: cardLast4,
+          cardType: cardType,
           description: `Initial ${billingPeriod} subscription payment`,
           invoice: `SUB-${companyId}-${Date.now()}`,
         },
@@ -165,8 +189,8 @@ export async function POST(request: NextRequest) {
         success: true,
         subscription,
         message: 'Subscription created successfully. You will be billed automatically.',
-        cardType: vaultResult.cardType,
-        last4: vaultResult.cardLast4,
+        cardType: cardType,
+        last4: cardLast4,
       });
 
     } else {
