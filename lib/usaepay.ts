@@ -95,6 +95,11 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
         postalcode: paymentDetails.billingAddress.zip,
         ...(paymentDetails.companyName && { company: paymentDetails.companyName }),
       };
+      
+      // Add customer ID for reference
+      if (paymentDetails.customerId) {
+        transactionData.customerid = paymentDetails.customerId;
+      }
     }
 
     // Make API request to USAePay
