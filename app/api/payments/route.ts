@@ -119,10 +119,14 @@ export async function POST(request: NextRequest) {
       const paymentMethodResult = await getCustomerPaymentMethod(usaepayCustomerId);
 
       if (!paymentMethodResult.success || !paymentMethodResult.paymentMethodKey) {
+        console.error('⚠️ Failed to retrieve payment method, but payment was successful');
         return NextResponse.json(
           {
             success: false,
-            error: paymentMethodResult.error || 'Failed to retrieve payment method',
+            error: 'Payment processed but recurring billing setup incomplete',
+            message: `Payment was approved (Transaction ID: ${paymentResult.transactionId}). However, we could not set up automatic recurring billing. Please contact support to complete your subscription setup.`,
+            transactionId: paymentResult.transactionId,
+            authCode: paymentResult.authCode,
           },
           { status: 400 }
         );
@@ -141,8 +145,15 @@ export async function POST(request: NextRequest) {
       });
 
       if (!billingResult.success || !billingResult.billingId) {
+        console.error('⚠️ Failed to create recurring billing, but payment was successful');
         return NextResponse.json(
-          { success: false, error: billingResult.error || 'Failed to create recurring billing' },
+          {
+            success: false,
+            error: 'Payment processed but recurring billing setup incomplete',
+            message: `Payment was approved (Transaction ID: ${paymentResult.transactionId}). However, we could not set up automatic recurring billing. Please contact support to complete your subscription setup. Error: ${billingResult.error}`,
+            transactionId: paymentResult.transactionId,
+            authCode: paymentResult.authCode,
+          },
           { status: 400 }
         );
       }
