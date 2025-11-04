@@ -361,16 +361,15 @@ export async function addCustomerToVault(customerData: CustomerVaultData): Promi
         avs_street: customerData.billingAddress.street,
         avs_zip: customerData.billingAddress.zip,
       },
-      billing_address: {
-        street: customerData.billingAddress.street,
-        city: customerData.billingAddress.city,
-        state: customerData.billingAddress.state,
-        zip: customerData.billingAddress.zip,
-      },
       customer_id: customerData.companyId,
       first_name: firstName,
       last_name: lastName,
       ...(customerData.companyName && { company: customerData.companyName }),
+      // Customer billing address (top-level fields for customer profile)
+      street: customerData.billingAddress.street,
+      city: customerData.billingAddress.city,
+      state: customerData.billingAddress.state,
+      zip: customerData.billingAddress.zip,
       ...(customerData.email && { email: customerData.email }),
       ...(customerData.phone && { phone: customerData.phone }),
     };
