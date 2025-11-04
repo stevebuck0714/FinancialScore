@@ -550,7 +550,7 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
 
     console.log('🔄 Creating recurring billing schedule:', JSON.stringify(recurringData, null, 2));
 
-    const result = await usaepayRequest('/recurring', 'POST', recurringData);
+    const result = await usaepayRequest('/schedules', 'POST', recurringData);
 
     console.log('✅ Recurring billing schedule created:', result);
 
