@@ -573,8 +573,31 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
 
     console.log('🔄 Creating recurring billing schedule:', JSON.stringify(recurringData, null, 2));
 
-    // Use customer-specific endpoint: /customers/:custkey:/billing_schedules
-    const result = await usaepayRequest(`/customers/${billingData.customerId}/billing_schedules`, 'POST', recurringData);
+    // Try legacy /recurring endpoint first (some accounts may not have billing_schedules enabled)
+    // If this works, USAePay support can help migrate to the newer endpoint
+    const legacyRecurringData = {
+      custkey: billingData.customerId,
+      paymethod: billingData.paymentMethodId,
+      amount: billingData.amount.toFixed(2),
+      schedule: scheduleMap[billingData.schedule],
+      enabled: true,
+      next: nextDateFormatted,
+      numleft: 0,
+      description: billingData.description,
+    };
+    
+    console.log('🔄 Trying legacy /recurring endpoint:', JSON.stringify(legacyRecurringData, null, 2));
+    
+    let result;
+    try {
+      // Try customer-specific endpoint first: /customers/:custkey:/billing_schedules
+      result = await usaepayRequest(`/customers/${billingData.customerId}/billing_schedules`, 'POST', recurringData);
+    } catch (error: any) {
+      console.warn('⚠️ Customer-specific billing_schedules endpoint failed, trying legacy /recurring endpoint');
+      console.warn('Error:', error.message);
+      // Fall back to legacy /recurring endpoint
+      result = await usaepayRequest('/recurring', 'POST', legacyRecurringData);
+    }
 
     console.log('✅ Recurring billing schedule created:', result);
 
