@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
         description: `${company.name} - Initial ${billingPeriod} payment`,
         invoice: `SUB-${companyId}-${Date.now()}`,
         customerId: companyId,
+        companyName: company.name, // Include company name in customer profile
         saveCustomer: true, // Save customer and payment method to vault
       };
 

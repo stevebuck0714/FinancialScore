@@ -27,6 +27,7 @@ export interface PaymentDetails {
   description?: string;
   invoice?: string;
   customerId?: string;
+  companyName?: string; // Company name for customer profile
   saveCustomer?: boolean; // Set to true to save customer and payment method
 }
 
@@ -79,12 +80,20 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
       transactionData.save_customer = true;
       transactionData.save_customer_paymethod = true;
       
-      // Add billing address for customer profile
+      // Split cardholder name for customer profile
+      const nameParts = paymentDetails.cardholderName.trim().split(/\s+/);
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
+      // Add billing address with customer details for profile
       transactionData.billing_address = {
+        first_name: firstName,
+        last_name: lastName,
         street: paymentDetails.billingAddress.street,
         city: paymentDetails.billingAddress.city,
         state: paymentDetails.billingAddress.state,
         postalcode: paymentDetails.billingAddress.zip,
+        ...(paymentDetails.companyName && { company: paymentDetails.companyName }),
       };
     }
 
