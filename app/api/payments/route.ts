@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
       // Step 1: Add customer to vault
       const vaultResult = await addCustomerToVault({
         companyId,
+        companyName: company.name,
         cardNumber,
         expirationMonth,
         expirationYear,

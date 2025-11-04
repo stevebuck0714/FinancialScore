@@ -308,6 +308,7 @@ async function usaepayRequest(endpoint: string, method: string = 'GET', data?: a
 
 export interface CustomerVaultData {
   companyId: string;
+  companyName?: string;
   cardNumber: string;
   expirationMonth: string;
   expirationYear: string;
@@ -338,6 +339,12 @@ export async function addCustomerToVault(customerData: CustomerVaultData): Promi
   try {
     const expiration = `${customerData.expirationMonth.padStart(2, '0')}${customerData.expirationYear.slice(-2)}`;
 
+    // Split cardholder name into first and last name
+    // First word = first name, everything else = last name
+    const nameParts = customerData.cardholderName.trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
     const vaultData = {
       command: 'cc:save',
       creditcard: {
@@ -355,6 +362,9 @@ export async function addCustomerToVault(customerData: CustomerVaultData): Promi
         zip: customerData.billingAddress.zip,
       },
       customer_id: customerData.companyId,
+      first_name: firstName,
+      last_name: lastName,
+      ...(customerData.companyName && { company: customerData.companyName }),
       ...(customerData.email && { email: customerData.email }),
       ...(customerData.phone && { phone: customerData.phone }),
     };
