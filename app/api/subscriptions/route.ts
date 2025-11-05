@@ -128,12 +128,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 2: Create recurring billing schedule
+    // Step 1.5: Get payment method ID from customer vault
+    const { getCustomerPaymentMethod } = await import('@/lib/usaepay');
+    const paymentMethodResult = await getCustomerPaymentMethod(vaultResult.customerId);
+    
+    if (!paymentMethodResult.success || !paymentMethodResult.paymentMethodKey) {
+      return NextResponse.json(
+        { error: paymentMethodResult.error || 'Failed to retrieve payment method' },
+        { status: 400 }
+      );
+    }
+
+    // Step 2: Calculate next billing date based on initial payment date (today)
+    const initialPaymentDate = new Date();
+    const nextBillingDate = new Date(initialPaymentDate);
+    if (plan === 'monthly') {
+      nextBillingDate.setMonth(initialPaymentDate.getMonth() + 1);
+    } else if (plan === 'quarterly') {
+      nextBillingDate.setMonth(initialPaymentDate.getMonth() + 3);
+    } else if (plan === 'annual') {
+      nextBillingDate.setFullYear(initialPaymentDate.getFullYear() + 1);
+    }
+
+    // Step 3: Create recurring billing schedule with proper payment method and start date
     const billingResult = await createRecurringBilling({
       customerId: vaultResult.customerId,
+      paymentMethodId: paymentMethodResult.paymentMethodKey,
       amount: parseFloat(amount),
       schedule: plan as 'monthly' | 'quarterly' | 'annual',
       description: `${company.name} - ${plan} subscription`,
+      startDate: nextBillingDate, // Set start date to when the next payment should occur
     });
 
     if (!billingResult.success || !billingResult.billingId) {
@@ -141,17 +165,6 @@ export async function POST(request: NextRequest) {
         { error: billingResult.error || 'Failed to create recurring billing' },
         { status: 400 }
       );
-    }
-
-    // Step 3: Calculate next billing date
-    const now = new Date();
-    const nextBillingDate = new Date(now);
-    if (plan === 'monthly') {
-      nextBillingDate.setMonth(now.getMonth() + 1);
-    } else if (plan === 'quarterly') {
-      nextBillingDate.setMonth(now.getMonth() + 3);
-    } else if (plan === 'annual') {
-      nextBillingDate.setFullYear(now.getFullYear() + 1);
     }
 
     // Step 4: Create subscription record in database
@@ -163,9 +176,9 @@ export async function POST(request: NextRequest) {
         plan,
         amount: parseFloat(amount),
         status: 'ACTIVE',
-        nextBillingDate: billingResult.nextBillingDate || nextBillingDate,
-        lastPaymentDate: now,
-        billingStartDate: now,
+        nextBillingDate: nextBillingDate, // Use our calculated date
+        lastPaymentDate: initialPaymentDate,
+        billingStartDate: initialPaymentDate,
         cardLast4: vaultResult.cardLast4,
         cardType: vaultResult.cardType,
         cardExpMonth: expirationMonth,

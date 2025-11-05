@@ -1186,6 +1186,19 @@ export default function FinancialScorePage() {
   // State - Active Subscription Management
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [loadingSubscription, setLoadingSubscription] = useState(false);
+  const [showUpdatePaymentModal, setShowUpdatePaymentModal] = useState(false);
+  const [updatingPayment, setUpdatingPayment] = useState(false);
+  const [updatePaymentData, setUpdatePaymentData] = useState({
+    cardNumber: '',
+    cardholderName: '',
+    expirationMonth: '',
+    expirationYear: '',
+    cvv: '',
+    billingStreet: '',
+    billingCity: '',
+    billingState: '',
+    billingZip: '',
+  });
   const [newUserPassword, setNewUserPassword] = useState('');
   // Separate state for Company Users
   const [newCompanyUserName, setNewCompanyUserName] = useState('');
@@ -1621,6 +1634,71 @@ export default function FinancialScorePage() {
 
     loadSubscriptionDetails();
   }, [adminDashboardTab, selectedCompanyId]);
+
+  // Update payment method handler
+  const handleUpdatePaymentMethod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedCompanyId) {
+      alert('No company selected');
+      return;
+    }
+    
+    setUpdatingPayment(true);
+    
+    try {
+      const response = await fetch('/api/subscriptions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          cardNumber: updatePaymentData.cardNumber.replace(/\s/g, ''),
+          cardholderName: updatePaymentData.cardholderName,
+          expirationMonth: updatePaymentData.expirationMonth.padStart(2, '0'),
+          expirationYear: updatePaymentData.expirationYear,
+          cvv: updatePaymentData.cvv,
+          billingAddress: {
+            street: updatePaymentData.billingStreet,
+            city: updatePaymentData.billingCity,
+            state: updatePaymentData.billingState,
+            zip: updatePaymentData.billingZip,
+          },
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('✅ Payment method updated successfully!');
+        setShowUpdatePaymentModal(false);
+        // Reset form
+        setUpdatePaymentData({
+          cardNumber: '',
+          cardholderName: '',
+          expirationMonth: '',
+          expirationYear: '',
+          cvv: '',
+          billingStreet: '',
+          billingCity: '',
+          billingState: '',
+          billingZip: '',
+        });
+        // Reload subscription details
+        const subResponse = await fetch(`/api/subscriptions?companyId=${selectedCompanyId}`);
+        const subData = await subResponse.json();
+        if (subData.subscription) {
+          setActiveSubscription(subData.subscription);
+        }
+      } else {
+        alert(`❌ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
+      }
+    } catch (error) {
+      console.error('Update payment method error:', error);
+      alert('❌ An error occurred while updating your payment method. Please try again.');
+    } finally {
+      setUpdatingPayment(false);
+    }
+  };
 
   // Load from localStorage (DEPRECATED - will be removed)
   useEffect(() => {
@@ -8037,7 +8115,7 @@ export default function FinancialScorePage() {
 
                         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           <button
-                            onClick={() => alert('Update payment method feature coming soon!')}
+                            onClick={() => setShowUpdatePaymentModal(true)}
                             style={{
                               width: '100%',
                               background: '#667eea',
@@ -8442,6 +8520,216 @@ export default function FinancialScorePage() {
               </div>
             );
           })()}
+
+          {/* Update Payment Method Modal */}
+          {showUpdatePaymentModal && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '600px', width: '90%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Update Payment Method</h2>
+                  <button
+                    onClick={() => setShowUpdatePaymentModal(false)}
+                    style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <form onSubmit={handleUpdatePaymentMethod}>
+                  {/* Card Information Section */}
+                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      💳 Card Details
+                    </h4>
+                    
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Card Number</label>
+                      <input
+                        type="text"
+                        value={updatePaymentData.cardNumber}
+                        onChange={(e) => {
+                          const formatted = e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
+                          setUpdatePaymentData({...updatePaymentData, cardNumber: formatted});
+                        }}
+                        placeholder="1234 5678 9012 3456"
+                        maxLength={19}
+                        required
+                        style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                      />
+                    </div>
+
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Cardholder Name</label>
+                      <input
+                        type="text"
+                        value={updatePaymentData.cardholderName}
+                        onChange={(e) => setUpdatePaymentData({...updatePaymentData, cardholderName: e.target.value})}
+                        placeholder="John Doe"
+                        required
+                        style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Exp Month</label>
+                        <input
+                          type="text"
+                          value={updatePaymentData.expirationMonth}
+                          onChange={(e) => setUpdatePaymentData({...updatePaymentData, expirationMonth: e.target.value})}
+                          placeholder="MM"
+                          maxLength={2}
+                          required
+                          style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Exp Year</label>
+                        <input
+                          type="text"
+                          value={updatePaymentData.expirationYear}
+                          onChange={(e) => setUpdatePaymentData({...updatePaymentData, expirationYear: e.target.value})}
+                          placeholder="YYYY"
+                          maxLength={4}
+                          required
+                          style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>CVV</label>
+                        <input
+                          type="text"
+                          value={updatePaymentData.cvv}
+                          onChange={(e) => setUpdatePaymentData({...updatePaymentData, cvv: e.target.value})}
+                          placeholder="123"
+                          maxLength={4}
+                          required
+                          style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Billing Address Section */}
+                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+                      📍 Billing Address
+                    </h4>
+
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
+                      <input
+                        type="text"
+                        value={updatePaymentData.billingStreet}
+                        onChange={(e) => setUpdatePaymentData({...updatePaymentData, billingStreet: e.target.value})}
+                        placeholder="123 Main St"
+                        required
+                        style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>City</label>
+                        <input
+                          type="text"
+                          value={updatePaymentData.billingCity}
+                          onChange={(e) => setUpdatePaymentData({...updatePaymentData, billingCity: e.target.value})}
+                          placeholder="City"
+                          required
+                          style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>State</label>
+                        <input
+                          type="text"
+                          value={updatePaymentData.billingState}
+                          onChange={(e) => setUpdatePaymentData({...updatePaymentData, billingState: e.target.value.toUpperCase()})}
+                          placeholder="State"
+                          maxLength={2}
+                          required
+                          style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>ZIP Code</label>
+                      <input
+                        type="text"
+                        value={updatePaymentData.billingZip}
+                        onChange={(e) => setUpdatePaymentData({...updatePaymentData, billingZip: e.target.value})}
+                        placeholder="12345"
+                        maxLength={10}
+                        required
+                        style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Security Notice */}
+                  <div style={{ background: '#d1fae5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '12px', marginBottom: '20px', display: 'flex', alignItems: 'start', gap: '8px' }}>
+                    <span style={{ fontSize: '18px' }}>🔒</span>
+                    <span style={{ fontSize: '13px', color: '#065f46', lineHeight: '1.5' }}>
+                      Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
+                    </span>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowUpdatePaymentModal(false)}
+                      disabled={updatingPayment}
+                      style={{
+                        flex: 1,
+                        padding: '12px 24px',
+                        background: 'white',
+                        border: '2px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#64748b',
+                        cursor: updatingPayment ? 'not-allowed' : 'pointer',
+                        opacity: updatingPayment ? 0.5 : 1
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={updatingPayment}
+                      style={{
+                        flex: 1,
+                        padding: '12px 24px',
+                        background: updatingPayment ? '#94a3b8' : '#667eea',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: 'white',
+                        cursor: updatingPayment ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      {updatingPayment ? (
+                        <>
+                          <span style={{ display: 'inline-block', width: '16px', height: '16px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+                          Updating...
+                        </>
+                      ) : (
+                        '💳 Update Payment Method'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* Profile Tab - No Company Selected */}
           {!selectedCompanyId && adminDashboardTab === 'profile' && (
