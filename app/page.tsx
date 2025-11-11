@@ -7915,9 +7915,9 @@ export default function FinancialScorePage() {
                     </h3>
                     
                     {(monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? (
-                      <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '8px', padding: '12px' }}>
-                        <p style={{ fontSize: '14px', color: '#92400e' }}>
-                          No subscription plans configured. Please contact support.
+                      <div style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px' }}>
+                        <p style={{ fontSize: '14px', color: '#065f46', fontWeight: '600' }}>
+                          No Payment Required
                         </p>
                       </div>
                     ) : (
