@@ -1518,6 +1518,59 @@ export default function FinancialScorePage() {
   const [selectedTrendItems, setSelectedTrendItems] = useState<string[]>(['revenue']);
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
   
+  // Helper function to get full display name for trend items
+  const getTrendItemDisplayName = (item: string): string => {
+    const displayNames: { [key: string]: string } = {
+      // Income Statement
+      'revenue': 'Total Revenue',
+      'expense': 'Total Expenses',
+      'cogsTotal': 'COGS Total',
+      'cogsPayroll': 'COGS Payroll',
+      'cogsOwnerPay': 'COGS Owner Pay',
+      'cogsContractors': 'COGS Contractors',
+      'cogsMaterials': 'COGS Materials',
+      'cogsCommissions': 'COGS Commissions',
+      'cogsOther': 'COGS Other',
+      'opexSalesMarketing': 'Sales & Marketing',
+      'rentLease': 'Rent/Lease',
+      'utilities': 'Utilities',
+      'equipment': 'Equipment',
+      'travel': 'Travel',
+      'professionalServices': 'Professional Services',
+      'insurance': 'Insurance',
+      'opexOther': 'OPEX Other',
+      'opexPayroll': 'OPEX Payroll',
+      'ownersBasePay': 'Owners Base Pay',
+      'ownersRetirement': 'Owners Retirement',
+      'contractorsDistribution': 'Contractors/Distribution',
+      'interestExpense': 'Interest Expense',
+      'depreciationExpense': 'Depreciation Expense',
+      'operatingExpenseTotal': 'Operating Expense Total',
+      'nonOperatingIncome': 'Non-Operating Income',
+      'extraordinaryItems': 'Extraordinary Items',
+      'netProfit': 'Net Profit',
+      // Balance Sheet - Assets
+      'totalAssets': 'Total Assets',
+      'cash': 'Cash',
+      'ar': 'Accounts Receivable',
+      'inventory': 'Inventory',
+      'otherCA': 'Other Current Assets',
+      'tca': 'Total Current Assets',
+      'fixedAssets': 'Fixed Assets',
+      'otherAssets': 'Other Assets',
+      // Balance Sheet - Liabilities
+      'totalLiab': 'Total Liabilities',
+      'ap': 'Accounts Payable',
+      'otherCL': 'Other Current Liabilities',
+      'tcl': 'Total Current Liabilities',
+      'ltd': 'Long Term Debt',
+      // Balance Sheet - Equity
+      'totalEquity': 'Total Equity'
+    };
+    
+    return displayNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1');
+  };
+  
   // State - Valuation
   const [sdeMultiplier, setSdeMultiplier] = useState(2.5);
   const [ebitdaMultiplier, setEbitdaMultiplier] = useState(5.0);
@@ -9566,7 +9619,7 @@ export default function FinancialScorePage() {
                             color: '#1e293b'
                           }}
                         >
-                          <span>{item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1')}</span>
+                          <span>{getTrendItemDisplayName(item)}</span>
                           <button
                             onClick={() => {
                               setSelectedTrendItems(selectedTrendItems.filter((_, i) => i !== index));
@@ -9596,7 +9649,7 @@ export default function FinancialScorePage() {
                   <div key={index} style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <LineChart 
-                        title={`${item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1')} Trend`}
+                        title={`${getTrendItemDisplayName(item)} Trend`}
                         data={monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
                     color="#667eea"
                     showTable={true}
@@ -11123,7 +11176,7 @@ export default function FinancialScorePage() {
                     💰 Working Capital Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-                    {['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle'].map(widget => (
+                    {['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle', 'Working Capital Trend'].map(widget => (
                       <div
                         key={widget}
                         onClick={() => {
@@ -11641,6 +11694,13 @@ export default function FinancialScorePage() {
                 }
                 if (widget === 'Cash Position') {
                   return <LineChart key={widget} title="Cash Position" data={monthly} valueKey="cash" color="#f59e0b" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                }
+                if (widget === 'Working Capital Trend') {
+                  const wcTrendData = monthly.map(m => ({
+                    month: m.month,
+                    value: ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0)) - ((m.ap || 0) + (m.otherCL || 0))
+                  }));
+                  return <LineChart key={widget} title="Working Capital Trend" data={wcTrendData} color="#667eea" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
                 }
                 
                 return null;
@@ -12392,71 +12452,127 @@ export default function FinancialScorePage() {
                   })()}
                 </p>
                 <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Financial Ratios</strong> reveal key operational metrics: liquidity ratios including Quick Ratio of <strong>{trendData[trendData.length - 1]?.quickRatio?.toFixed(2)}</strong>
+                  <strong style={{ color: '#667eea' }}>Financial Ratios</strong> analysis provides insight into operational performance and financial health:
                   {(() => {
+                    const ratioAnalysis = [];
+                    
+                    // Current Ratio
+                    const currentRatioBM = benchmarks.find(b => b.metricName === 'Current Ratio')?.fiveYearValue;
+                    if (currentRatioBM && trendData[trendData.length - 1]?.currentRatio) {
+                      const actual = trendData[trendData.length - 1].currentRatio;
+                      const diff = ((actual / currentRatioBM - 1) * 100);
+                      if (Math.abs(diff) > 20) {
+                        ratioAnalysis.push(
+                          <span key="current-ratio">
+                            <strong> Current Ratio</strong> of {actual.toFixed(2)} is <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> the industry average of {currentRatioBM.toFixed(2)}
+                            {diff > 0 ? ', indicating strong short-term liquidity with ample current assets to cover current liabilities, providing cushion for operational needs' : 
+                             ', suggesting potential liquidity constraints that may limit flexibility in meeting short-term obligations'}.
+                          </span>
+                        );
+                      }
+                    }
+                    
+                    // Quick Ratio
                     const quickRatioBM = benchmarks.find(b => b.metricName === 'Quick Ratio')?.fiveYearValue;
                     if (quickRatioBM && trendData[trendData.length - 1]?.quickRatio) {
-                      const diff = ((trendData[trendData.length - 1].quickRatio / quickRatioBM - 1) * 100);
-                      return diff > 20 ? <span style={{ color: '#10b981' }}> ({Math.abs(diff).toFixed(0)}% above industry average of {quickRatioBM.toFixed(2)})</span> :
-                             diff < -20 ? <span style={{ color: '#ef4444' }}> ({Math.abs(diff).toFixed(0)}% below industry average of {quickRatioBM.toFixed(2)})</span> :
-                             <span style={{ color: '#64748b' }}> (near industry average of {quickRatioBM.toFixed(2)})</span>;
+                      const actual = trendData[trendData.length - 1].quickRatio;
+                      const diff = ((actual / quickRatioBM - 1) * 100);
+                      if (Math.abs(diff) > 20) {
+                        ratioAnalysis.push(
+                          <span key="quick-ratio">
+                            <strong> Quick Ratio</strong> of {actual.toFixed(2)} stands <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> industry norms of {quickRatioBM.toFixed(2)}
+                            {diff > 0 ? ', demonstrating excellent immediate liquidity with liquid assets readily available to meet urgent obligations without relying on inventory conversion' :
+                             ', indicating the company may face challenges meeting immediate obligations from liquid assets alone, potentially requiring inventory liquidation or external financing'}.
+                          </span>
+                        );
+                      }
                     }
-                    return '';
-                  })()}; 
-                  leverage metrics show Debt-to-Net Worth of <strong>{trendData[trendData.length - 1]?.debtToNW?.toFixed(2)}</strong>
-                  {(() => {
+                    
+                    // Debt to Net Worth
                     const debtToNWBM = benchmarks.find(b => b.metricName === 'Total Debt to Net Worth Ratio')?.fiveYearValue;
                     if (debtToNWBM && trendData[trendData.length - 1]?.debtToNW) {
                       const actual = trendData[trendData.length - 1].debtToNW;
-                      return actual < debtToNWBM * 0.7 ? <span style={{ color: '#10b981' }}> (well below industry average of {debtToNWBM.toFixed(2)}, indicating conservative leverage)</span> :
-                             actual > debtToNWBM * 1.3 ? <span style={{ color: '#ef4444' }}> (above industry average of {debtToNWBM.toFixed(2)}, suggesting higher financial risk)</span> :
-                             <span style={{ color: '#64748b' }}> (comparable to industry average of {debtToNWBM.toFixed(2)})</span>;
+                      const diff = ((actual / debtToNWBM - 1) * 100);
+                      if (Math.abs(diff) > 30) {
+                        ratioAnalysis.push(
+                          <span key="debt-nw">
+                            <strong> Debt-to-Net Worth</strong> ratio of {actual.toFixed(2)} is <strong style={{ color: diff < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> industry average of {debtToNWBM.toFixed(2)}
+                            {diff < 0 ? ', reflecting conservative capital structure with lower financial leverage, which reduces financial risk but may indicate underutilization of debt financing opportunities' :
+                             ', indicating aggressive leverage that increases financial risk, amplifies return volatility, and may constrain future borrowing capacity or increase financing costs'}.
+                          </span>
+                        );
+                      }
                     }
-                    return '';
-                  })()}; 
-                  profitability indicators include ROE of <strong>{(trendData[trendData.length - 1]?.roe * 100)?.toFixed(1)}%</strong>
-                  {(() => {
+                    
+                    // ROE
                     const roeBM = benchmarks.find(b => b.metricName === 'Return on Net Worth %')?.fiveYearValue;
                     if (roeBM && trendData[trendData.length - 1]?.roe) {
                       const actualROE = trendData[trendData.length - 1].roe * 100;
                       const diff = ((actualROE / roeBM - 1) * 100);
-                      return diff > 20 ? <span style={{ color: '#10b981' }}> ({Math.abs(diff).toFixed(0)}% above industry {roeBM.toFixed(1)}%)</span> :
-                             diff < -20 ? <span style={{ color: '#ef4444' }}> ({Math.abs(diff).toFixed(0)}% below industry {roeBM.toFixed(1)}%)</span> :
-                             <span style={{ color: '#64748b' }}> (near industry {roeBM.toFixed(1)}%)</span>;
+                      if (Math.abs(diff) > 20) {
+                        ratioAnalysis.push(
+                          <span key="roe">
+                            <strong> Return on Equity</strong> of {actualROE.toFixed(1)}% is <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> industry benchmark of {roeBM.toFixed(1)}%
+                            {diff > 0 ? ', demonstrating superior profitability and efficient use of shareholder capital, suggesting strong competitive positioning and effective management execution' :
+                             ', indicating below-average returns on equity investment, which may signal operational inefficiencies, margin pressures, or suboptimal capital deployment'}.
+                          </span>
+                        );
+                      }
                     }
-                    return '';
-                  })()} and ROA of <strong>{(trendData[trendData.length - 1]?.roa * 100)?.toFixed(1)}%</strong>
-                  {(() => {
+                    
+                    // ROA
                     const roaBM = benchmarks.find(b => b.metricName === 'Return on Total Assets %')?.fiveYearValue;
                     if (roaBM && trendData[trendData.length - 1]?.roa) {
                       const actualROA = trendData[trendData.length - 1].roa * 100;
                       const diff = ((actualROA / roaBM - 1) * 100);
-                      return diff > 20 ? <span style={{ color: '#10b981' }}> ({Math.abs(diff).toFixed(0)}% above industry {roaBM.toFixed(1)}%)</span> :
-                             diff < -20 ? <span style={{ color: '#ef4444' }}> ({Math.abs(diff).toFixed(0)}% below industry {roaBM.toFixed(1)}%)</span> :
-                             <span style={{ color: '#64748b' }}> (near industry {roaBM.toFixed(1)}%)</span>;
+                      if (Math.abs(diff) > 20) {
+                        ratioAnalysis.push(
+                          <span key="roa">
+                            <strong> Return on Assets</strong> of {actualROA.toFixed(1)}% is <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> industry norm of {roaBM.toFixed(1)}%
+                            {diff > 0 ? ', reflecting efficient asset utilization and strong operational performance in converting invested capital into profits' :
+                             ', suggesting assets are generating below-average returns, potentially indicating overcapitalization, underutilized capacity, or operational inefficiencies'}.
+                          </span>
+                        );
+                      }
                     }
-                    return '';
-                  })()}; 
-                  and activity ratios demonstrate asset turnover of <strong>{trendData[trendData.length - 1]?.totalAssetTO?.toFixed(2)}</strong>
-                  {(() => {
+                    
+                    // Asset Turnover
                     const assetTOBM = benchmarks.find(b => b.metricName === 'Total Asset Turnover')?.fiveYearValue;
                     if (assetTOBM && trendData[trendData.length - 1]?.totalAssetTO) {
-                      const diff = ((trendData[trendData.length - 1].totalAssetTO / assetTOBM - 1) * 100);
-                      return diff > 20 ? <span style={{ color: '#10b981' }}> ({Math.abs(diff).toFixed(0)}% above industry {assetTOBM.toFixed(2)})</span> :
-                             diff < -20 ? <span style={{ color: '#ef4444' }}> ({Math.abs(diff).toFixed(0)}% below industry {assetTOBM.toFixed(2)})</span> :
-                             <span style={{ color: '#64748b' }}> (near industry {assetTOBM.toFixed(2)})</span>;
+                      const actual = trendData[trendData.length - 1].totalAssetTO;
+                      const diff = ((actual / assetTOBM - 1) * 100);
+                      if (Math.abs(diff) > 20) {
+                        ratioAnalysis.push(
+                          <span key="asset-to">
+                            <strong> Asset Turnover</strong> of {actual.toFixed(2)} is <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'higher than' : 'lower than'}</strong> industry average of {assetTOBM.toFixed(2)}
+                            {diff > 0 ? ', indicating efficient revenue generation per dollar of assets, suggesting effective asset management and strong sales productivity' :
+                             ', reflecting lower revenue generation efficiency, which may indicate excess asset investments, idle capacity, or need for improved asset utilization strategies'}.
+                          </span>
+                        );
+                      }
                     }
-                    return '';
-                  })()} with collection period averaging <strong>{trendData[trendData.length - 1]?.daysAR?.toFixed(0)} days</strong>
-                  {(() => {
+                    
+                    // Days Receivables
                     const daysARBM = benchmarks.find(b => b.metricName === "Days' Receivables")?.fiveYearValue;
                     if (daysARBM && trendData[trendData.length - 1]?.daysAR > 0) {
                       const actual = trendData[trendData.length - 1].daysAR;
-                      return actual < daysARBM * 0.8 ? <span style={{ color: '#10b981' }}> ({((1 - actual / daysARBM) * 100).toFixed(0)}% faster than industry {daysARBM.toFixed(0)} days)</span> :
-                             actual > daysARBM * 1.2 ? <span style={{ color: '#ef4444' }}> ({((actual / daysARBM - 1) * 100).toFixed(0)}% slower than industry {daysARBM.toFixed(0)} days)</span> :
-                             <span style={{ color: '#64748b' }}> (comparable to industry {daysARBM.toFixed(0)} days)</span>;
+                      const diff = ((actual / daysARBM - 1) * 100);
+                      if (Math.abs(diff) > 20) {
+                        ratioAnalysis.push(
+                          <span key="days-ar">
+                            <strong> Days Receivables</strong> of {actual.toFixed(0)} days is <strong style={{ color: diff < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'slower' : 'faster'}</strong> than industry average of {daysARBM.toFixed(0)} days
+                            {diff < 0 ? ', demonstrating strong collections processes and efficient working capital management, freeing up cash for operations' :
+                             ', indicating collection challenges that tie up working capital, potentially reflecting lenient credit terms, weak collection procedures, or customer payment difficulties'}.
+                          </span>
+                        );
+                      }
                     }
-                    return '';
+                    
+                    if (ratioAnalysis.length === 0) {
+                      return <span> The company's key financial ratios are generally in line with industry benchmarks, indicating balanced financial performance across liquidity, leverage, profitability, and efficiency metrics.</span>;
+                    }
+                    
+                    return ratioAnalysis;
                   })()}.
                   {benchmarks.length > 0 ? (() => {
                     const comparisons = [];
@@ -12504,6 +12620,181 @@ export default function FinancialScorePage() {
                     }
                     return ` Industry benchmarks from ${benchmarks.length} metrics provide context for performance assessment.`;
                   })() : ''}
+                  {trendData.length >= 12 && (() => {
+                    // Analyze ALL ratio trends over time with 5% threshold
+                    const currentRatios = trendData[trendData.length - 1];
+                    const year1AgoIdx = trendData.length >= 13 ? trendData.length - 13 : 0;
+                    const ratios1YrAgo = trendData[year1AgoIdx];
+                    
+                    const trendInsights = [];
+                    let decliningCount = 0;
+                    let improvingCount = 0;
+                    
+                    // Helper function to analyze ratio trends
+                    const analyzeRatio = (ratioName: string, currentVal: number | undefined, priorVal: number | undefined, config: {
+                      isPercentage?: boolean,
+                      lowerIsBetter?: boolean,
+                      declineVerb?: string,
+                      improveVerb?: string,
+                      declineContext?: string,
+                      improveContext?: string
+                    }) => {
+                      if (!currentVal || !priorVal || priorVal === 0) return;
+                      
+                      const change = ((currentVal - priorVal) / Math.abs(priorVal)) * 100;
+                      if (Math.abs(change) <= 5) return; // Only flag changes > 5%
+                      
+                      const isImproving = config.lowerIsBetter ? (change < 0) : (change > 0);
+                      const direction = config.lowerIsBetter ? 
+                        (change < 0 ? (config.improveVerb || 'decreased') : (config.declineVerb || 'increased')) :
+                        (change > 0 ? (config.improveVerb || 'improved') : (config.declineVerb || 'declined'));
+                      const color = isImproving ? '#10b981' : '#ef4444';
+                      const context = isImproving ? (config.improveContext || '') : (config.declineContext || '');
+                      
+                      if (isImproving) improvingCount++;
+                      else decliningCount++;
+                      
+                      const displayCurrent = config.isPercentage ? `${(currentVal * 100).toFixed(1)}%` : currentVal.toFixed(2);
+                      const displayPrior = config.isPercentage ? `${(priorVal * 100).toFixed(1)}%` : priorVal.toFixed(2);
+                      
+                      trendInsights.push(
+                        <span key={ratioName}>
+                          <strong> {ratioName}</strong> has <strong style={{ color }}>{direction}</strong> by <strong style={{ color }}>{Math.abs(change).toFixed(1)}%</strong> year-over-year from {displayPrior} to {displayCurrent}{context}.
+                        </span>
+                      );
+                    };
+                    
+                    // Analyze all available ratios
+                    analyzeRatio('Current Ratio', currentRatios?.currentRatio, ratios1YrAgo?.currentRatio, {
+                      improveVerb: 'increased',
+                      declineVerb: 'declined',
+                      declineContext: ' (suggesting either decreasing current assets or increasing current liabilities, which may indicate tightening liquidity or growing short-term obligations)',
+                      improveContext: ' (indicating improving short-term liquidity position with strengthening ability to meet current obligations)'
+                    });
+                    
+                    analyzeRatio('Quick Ratio', currentRatios?.quickRatio, ratios1YrAgo?.quickRatio, {
+                      improveVerb: 'improved',
+                      declineVerb: 'deteriorated',
+                      declineContext: ' (indicating potential challenges in immediate liquidity, cash position, or receivables collection)',
+                      improveContext: ' (demonstrating stronger immediate liquidity and cash management)'
+                    });
+                    
+                    analyzeRatio('Debt-to-Net Worth', currentRatios?.debtToNW, ratios1YrAgo?.debtToNW, {
+                      lowerIsBetter: true,
+                      improveVerb: 'decreased',
+                      declineVerb: 'increased',
+                      declineContext: ' (reflecting higher leverage and increased financial risk)',
+                      improveContext: ' (demonstrating deleveraging and improved financial stability)'
+                    });
+                    
+                    analyzeRatio('Return on Equity', currentRatios?.roe, ratios1YrAgo?.roe, {
+                      isPercentage: true,
+                      improveVerb: 'improved',
+                      declineVerb: 'declined',
+                      declineContext: ' (indicating reduced profitability relative to equity base)',
+                      improveContext: ' (showing stronger returns on equity investment)'
+                    });
+                    
+                    analyzeRatio('Return on Assets', currentRatios?.roa, ratios1YrAgo?.roa, {
+                      isPercentage: true,
+                      improveVerb: 'strengthened',
+                      declineVerb: 'weakened',
+                      declineContext: ' (suggesting declining asset efficiency or profitability)',
+                      improveContext: ' (indicating improved asset utilization and profitability)'
+                    });
+                    
+                    analyzeRatio('Asset Turnover', currentRatios?.totalAssetTO, ratios1YrAgo?.totalAssetTO, {
+                      improveVerb: 'increased',
+                      declineVerb: 'decreased',
+                      declineContext: ' (indicating assets are generating less revenue, possibly due to overcapitalization or declining sales efficiency)',
+                      improveContext: ' (showing improved revenue generation per dollar of assets)'
+                    });
+                    
+                    analyzeRatio('Inventory Turnover', currentRatios?.invTO, ratios1YrAgo?.invTO, {
+                      improveVerb: 'accelerated',
+                      declineVerb: 'slowed',
+                      declineContext: ' (suggesting slower inventory movement, potential obsolescence, or overstocking)',
+                      improveContext: ' (indicating more efficient inventory management and faster product movement)'
+                    });
+                    
+                    analyzeRatio('Receivables Turnover', currentRatios?.arTO, ratios1YrAgo?.arTO, {
+                      improveVerb: 'accelerated',
+                      declineVerb: 'slowed',
+                      declineContext: ' (indicating slower collections or customer payment challenges)',
+                      improveContext: ' (demonstrating improved collection efficiency)'
+                    });
+                    
+                    analyzeRatio('Days Receivables', currentRatios?.daysAR, ratios1YrAgo?.daysAR, {
+                      lowerIsBetter: true,
+                      improveVerb: 'decreased',
+                      declineVerb: 'increased',
+                      declineContext: ' (reflecting slower collection cycle and working capital tied up in receivables)',
+                      improveContext: ' (indicating faster collections and more efficient working capital management)'
+                    });
+                    
+                    analyzeRatio('Days Inventory', currentRatios?.daysInv, ratios1YrAgo?.daysInv, {
+                      lowerIsBetter: true,
+                      improveVerb: 'decreased',
+                      declineVerb: 'increased',
+                      declineContext: ' (suggesting inventory is sitting longer before sale)',
+                      improveContext: ' (indicating faster inventory turnover)'
+                    });
+                    
+                    analyzeRatio('Days Payables', currentRatios?.daysAP, ratios1YrAgo?.daysAP, {
+                      improveVerb: 'increased',
+                      declineVerb: 'decreased',
+                      declineContext: ' (indicating paying suppliers faster, which may strain cash but could reflect liquidity concerns or discount opportunities)',
+                      improveContext: ' (suggesting extended payment terms that improve short-term cash flow)'
+                    });
+                    
+                    analyzeRatio('Interest Coverage', currentRatios?.interestCoverage, ratios1YrAgo?.interestCoverage, {
+                      improveVerb: 'strengthened',
+                      declineVerb: 'weakened',
+                      declineContext: ' (indicating reduced capacity to service debt from operating earnings)',
+                      improveContext: ' (demonstrating enhanced ability to cover interest obligations)'
+                    });
+                    
+                    analyzeRatio('EBITDA Margin', currentRatios?.ebitdaMargin, ratios1YrAgo?.ebitdaMargin, {
+                      isPercentage: true,
+                      improveVerb: 'expanded',
+                      declineVerb: 'contracted',
+                      declineContext: ' (reflecting margin pressure or declining operational efficiency)',
+                      improveContext: ' (indicating improving operational profitability)'
+                    });
+                    
+                    analyzeRatio('Gross Margin', currentRatios?.grossMargin, ratios1YrAgo?.grossMargin, {
+                      isPercentage: true,
+                      improveVerb: 'expanded',
+                      declineVerb: 'contracted',
+                      declineContext: ' (suggesting pricing pressure, rising input costs, or unfavorable product mix)',
+                      improveContext: ' (indicating improved pricing power or cost management)'
+                    });
+                    
+                    if (trendInsights.length > 0) {
+                      return (
+                        <span>
+                          <strong> Ratio trend analysis</strong> over the past 12 months reveals {trendInsights.length} significant ratio {trendInsights.length === 1 ? 'change' : 'changes'}:
+                          {trendInsights}
+                          {decliningCount >= 3 && (
+                            <span style={{ color: '#ef4444' }}>
+                              <strong> Warning:</strong> {decliningCount} ratios are declining, which warrants immediate management attention to investigate underlying causes and implement corrective measures before financial position weakens further.
+                            </span>
+                          )}
+                          {decliningCount >= 2 && decliningCount < 3 && (
+                            <span style={{ color: '#f59e0b' }}>
+                              <strong> Caution:</strong> Multiple declining ratios suggest potential challenges that merit management focus to prevent further deterioration.
+                            </span>
+                          )}
+                          {improvingCount >= 3 && decliningCount < 2 && (
+                            <span style={{ color: '#10b981' }}>
+                              <strong> Positive momentum:</strong> Multiple improving ratios indicate strengthening financial performance and operational execution.
+                            </span>
+                          )}
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
                 </p>
                 <p style={{ margin: '12px 0' }}>
                   <strong style={{ color: '#667eea' }}>Trend Analysis</strong> tracking {monthly.length} months reveals:
@@ -12592,10 +12883,154 @@ export default function FinancialScorePage() {
                   })() : 'forward-looking scenarios once sufficient historical data (24+ months) is available'}.
                 </p>
                 <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Working Capital</strong> management shows current assets of <strong>${((monthly[monthly.length - 1]?.cash + monthly[monthly.length - 1]?.ar + monthly[monthly.length - 1]?.inventory + monthly[monthly.length - 1]?.otherCA) / 1000).toFixed(1)}K</strong> against 
-                  current liabilities of <strong>${((monthly[monthly.length - 1]?.ap + monthly[monthly.length - 1]?.otherCL) / 1000).toFixed(1)}K</strong>, 
-                  resulting in {((monthly[monthly.length - 1]?.cash + monthly[monthly.length - 1]?.ar + monthly[monthly.length - 1]?.inventory + monthly[monthly.length - 1]?.otherCA) - (monthly[monthly.length - 1]?.ap + monthly[monthly.length - 1]?.otherCL)) > 0 ? 'positive' : 'negative'} working capital of <strong>${(Math.abs((monthly[monthly.length - 1]?.cash + monthly[monthly.length - 1]?.ar + monthly[monthly.length - 1]?.inventory + monthly[monthly.length - 1]?.otherCA) - (monthly[monthly.length - 1]?.ap + monthly[monthly.length - 1]?.otherCL)) / 1000).toFixed(1)}K</strong>. 
-                  The cash conversion cycle of <strong>{(trendData[trendData.length - 1]?.daysInv + trendData[trendData.length - 1]?.daysAR - trendData[trendData.length - 1]?.daysAP)?.toFixed(0)} days</strong> reflects the efficiency of working capital deployment.
+                  <strong style={{ color: '#667eea' }}>Working Capital</strong> analysis reveals critical insights into liquidity management and operational efficiency:
+                  {(() => {
+                    const current = monthly[monthly.length - 1];
+                    const prior = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
+                    const prior6Mo = monthly.length >= 7 ? monthly[monthly.length - 7] : monthly[0];
+                    
+                    // Current period working capital components
+                    const currentCash = current?.cash || 0;
+                    const currentAR = current?.ar || 0;
+                    const currentInv = current?.inventory || 0;
+                    const currentOtherCA = current?.otherCA || 0;
+                    const currentAP = current?.ap || 0;
+                    const currentOtherCL = current?.otherCL || 0;
+                    
+                    const totalCA = currentCash + currentAR + currentInv + currentOtherCA;
+                    const totalCL = currentAP + currentOtherCL;
+                    const currentWC = totalCA - totalCL;
+                    const currentRevenue = current?.revenue || 1;
+                    
+                    // Prior period working capital
+                    const priorCA = (prior?.cash || 0) + (prior?.ar || 0) + (prior?.inventory || 0) + (prior?.otherCA || 0);
+                    const priorCL = (prior?.ap || 0) + (prior?.otherCL || 0);
+                    const priorWC = priorCA - priorCL;
+                    
+                    // 6 months ago working capital
+                    const prior6MoCA = (prior6Mo?.cash || 0) + (prior6Mo?.ar || 0) + (prior6Mo?.inventory || 0) + (prior6Mo?.otherCA || 0);
+                    const prior6MoCL = (prior6Mo?.ap || 0) + (prior6Mo?.otherCL || 0);
+                    const prior6MoWC = prior6MoCA - prior6MoCL;
+                    
+                    // Calculate changes
+                    const wcChange12Mo = priorWC !== 0 ? ((currentWC - priorWC) / Math.abs(priorWC)) * 100 : 0;
+                    const wcChange6Mo = prior6MoWC !== 0 ? ((currentWC - prior6MoWC) / Math.abs(prior6MoWC)) * 100 : 0;
+                    const wcAbsChange = currentWC - priorWC;
+                    
+                    // Component changes
+                    const cashChange = currentCash - (prior?.cash || 0);
+                    const arChange = currentAR - (prior?.ar || 0);
+                    const invChange = currentInv - (prior?.inventory || 0);
+                    const apChange = currentAP - (prior?.ap || 0);
+                    
+                    // Working capital ratios
+                    const wcRatio = totalCL > 0 ? totalCA / totalCL : 0;
+                    const priorWCRatio = priorCL > 0 ? priorCA / priorCL : 0;
+                    const wcRatioChange = priorWCRatio > 0 ? ((wcRatio - priorWCRatio) / priorWCRatio) * 100 : 0;
+                    
+                    // Working capital as % of revenue (last 12 months)
+                    const last12Revenue = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0);
+                    const wcPctRevenue = last12Revenue > 0 ? (currentWC / last12Revenue) * 100 : 0;
+                    
+                    // Cash Conversion Cycle
+                    const ccc = (trendData[trendData.length - 1]?.daysInv || 0) + (trendData[trendData.length - 1]?.daysAR || 0) - (trendData[trendData.length - 1]?.daysAP || 0);
+                    const priorIdx = trendData.length >= 13 ? trendData.length - 13 : 0;
+                    const priorCCC = (trendData[priorIdx]?.daysInv || 0) + (trendData[priorIdx]?.daysAR || 0) - (trendData[priorIdx]?.daysAP || 0);
+                    const cccChange = priorCCC !== 0 ? ccc - priorCCC : 0;
+                    
+                    // Days inventory, AR, AP changes
+                    const daysARChange = (trendData[trendData.length - 1]?.daysAR || 0) - (trendData[priorIdx]?.daysAR || 0);
+                    const daysInvChange = (trendData[trendData.length - 1]?.daysInv || 0) - (trendData[priorIdx]?.daysInv || 0);
+                    const daysAPChange = (trendData[trendData.length - 1]?.daysAP || 0) - (trendData[priorIdx]?.daysAP || 0);
+                    
+                    return (
+                      <>
+                        <strong> Current position</strong> shows working capital of <strong style={{ color: currentWC > 0 ? '#10b981' : '#ef4444' }}>${(Math.abs(currentWC) / 1000).toFixed(1)}K</strong> ({currentWC > 0 ? 'positive' : 'negative'}), 
+                        representing <strong>{wcPctRevenue.toFixed(1)}%</strong> of trailing twelve-month revenue
+                        {wcPctRevenue > 20 ? <span style={{ color: '#10b981' }}>, indicating strong liquidity cushion and operational flexibility</span> :
+                         wcPctRevenue > 10 ? <span style={{ color: '#64748b' }}>, providing adequate working capital for normal operations</span> :
+                         wcPctRevenue > 0 ? <span style={{ color: '#f59e0b' }}>, suggesting limited liquidity buffer that may constrain operational flexibility</span> :
+                         <span style={{ color: '#ef4444' }}>, indicating negative working capital position requiring immediate attention and potential financing needs</span>}.
+                        The working capital ratio of <strong>{wcRatio.toFixed(2)}</strong> has {wcRatioChange > 0 ? 'improved' : wcRatioChange < 0 ? 'declined' : 'remained stable'} 
+                        {Math.abs(wcRatioChange) > 5 ? <span> by <strong style={{ color: wcRatioChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(wcRatioChange).toFixed(1)}%</strong> from {priorWCRatio.toFixed(2)} a year ago</span> : ' over the past year'}
+                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assets—a concerning liquidity position</span> :
+                         wcRatio < 1.5 ? <span style={{ color: '#f59e0b' }}>, suggesting tight liquidity that may limit operational flexibility</span> :
+                         wcRatio > 3.0 ? <span style={{ color: '#10b981' }}>, reflecting exceptionally strong liquidity, though potentially excess capital that could be deployed more productively</span> :
+                         ', indicating adequate short-term liquidity'}.
+                        
+                        <strong> Component analysis</strong> reveals current assets totaling <strong>${(totalCA / 1000).toFixed(1)}K</strong>, comprised of 
+                        cash <strong>${(currentCash / 1000).toFixed(1)}K</strong> ({((currentCash / totalCA) * 100).toFixed(0)}%), 
+                        receivables <strong>${(currentAR / 1000).toFixed(1)}K</strong> ({((currentAR / totalCA) * 100).toFixed(0)}%), 
+                        inventory <strong>${(currentInv / 1000).toFixed(1)}K</strong> ({((currentInv / totalCA) * 100).toFixed(0)}%), 
+                        and other current assets <strong>${(currentOtherCA / 1000).toFixed(1)}K</strong> ({((currentOtherCA / totalCA) * 100).toFixed(0)}%), 
+                        against current liabilities of <strong>${(totalCL / 1000).toFixed(1)}K</strong> including 
+                        payables <strong>${(currentAP / 1000).toFixed(1)}K</strong> ({((currentAP / totalCL) * 100).toFixed(0)}%) 
+                        and other current liabilities <strong>${(currentOtherCL / 1000).toFixed(1)}K</strong> ({((currentOtherCL / totalCL) * 100).toFixed(0)}%)
+                        {(currentCash / totalCA) > 0.4 ? <span style={{ color: '#10b981' }}>, with high cash composition providing excellent immediate liquidity</span> :
+                         (currentCash / totalCA) < 0.15 ? <span style={{ color: '#f59e0b' }}>, with limited cash representing potential liquidity risk if receivables or inventory cannot be quickly converted</span> : ''}.
+                        
+                        {monthly.length >= 13 && (
+                          <>
+                            <strong> Trend analysis</strong> shows working capital has {currentWC > priorWC ? 'increased' : 'decreased'} by <strong style={{ color: currentWC > priorWC ? '#10b981' : '#ef4444' }}>${(Math.abs(wcAbsChange) / 1000).toFixed(1)}K</strong> ({Math.abs(wcChange12Mo).toFixed(0)}%) 
+                            over the past 12 months from ${(priorWC / 1000).toFixed(1)}K to ${(currentWC / 1000).toFixed(1)}K
+                            {Math.abs(wcChange12Mo) > 30 && currentWC < priorWC ? <span style={{ color: '#ef4444' }}>, representing significant deterioration that requires management attention</span> :
+                             Math.abs(wcChange12Mo) > 30 && currentWC > priorWC ? <span style={{ color: '#10b981' }}>, demonstrating substantial strengthening of the liquidity position</span> :
+                             Math.abs(wcChange12Mo) > 15 ? <span style={{ color: currentWC > priorWC ? '#10b981' : '#f59e0b' }}>, indicating {currentWC > priorWC ? 'improving' : 'tightening'} liquidity trends</span> :
+                             ', maintaining relatively stable working capital levels'}.
+                            Key drivers include: 
+                            cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#ef4444' }}>${(Math.abs(cashChange) / 1000).toFixed(1)}K</strong>
+                            {Math.abs(cashChange) > Math.abs(wcAbsChange) * 0.5 ? ' (primary driver)' : ''}, 
+                            receivables {arChange > 0 ? 'grew' : 'decreased'} by <strong style={{ color: arChange < 0 ? '#10b981' : '#64748b' }}>${(Math.abs(arChange) / 1000).toFixed(1)}K</strong>
+                            {arChange > last12Revenue * 0.1 ? <span style={{ color: '#f59e0b' }}> (significant increase tying up working capital)</span> : ''}, 
+                            inventory {invChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: invChange < 0 ? '#10b981' : '#64748b' }}>${(Math.abs(invChange) / 1000).toFixed(1)}K</strong>
+                            {invChange > last12Revenue * 0.08 ? <span style={{ color: '#f59e0b' }}> (substantial buildup requiring attention)</span> : ''}, 
+                            and payables {apChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: apChange > 0 ? '#10b981' : '#64748b' }}>${(Math.abs(apChange) / 1000).toFixed(1)}K</strong>
+                            {apChange > 0 && Math.abs(apChange) > Math.abs(wcAbsChange) * 0.3 ? ' (improving working capital through extended payables)' : ''}.
+                          </>
+                        )}
+                        
+                        <strong> Cash Conversion Cycle</strong> of <strong style={{ color: ccc < 30 ? '#10b981' : ccc < 60 ? '#64748b' : ccc < 90 ? '#f59e0b' : '#ef4444' }}>{ccc.toFixed(0)} days</strong>
+                        {monthly.length >= 13 && Math.abs(cccChange) > 5 && (
+                          <span> has {cccChange > 0 ? 'lengthened' : 'shortened'} by <strong style={{ color: cccChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(cccChange).toFixed(0)} days</strong> year-over-year</span>
+                        )}
+                        {ccc < 0 ? <span style={{ color: '#10b981' }}>, indicating the business receives payment before paying suppliers—an exceptionally favorable working capital dynamic generating float</span> :
+                         ccc < 30 ? <span style={{ color: '#10b981' }}>, demonstrating highly efficient working capital management with rapid cash generation cycles</span> :
+                         ccc < 60 ? ', reflecting reasonable working capital efficiency' :
+                         ccc < 90 ? <span style={{ color: '#f59e0b' }}>, suggesting extended working capital cycle that ties up significant cash in operations</span> :
+                         <span style={{ color: '#ef4444' }}>, indicating excessive working capital requirements that strain liquidity and may require external financing</span>}
+                        {' '}comprises Days Inventory <strong>{(trendData[trendData.length - 1]?.daysInv || 0).toFixed(0)} days</strong>
+                        {monthly.length >= 13 && Math.abs(daysInvChange) > 5 && (
+                          <span> ({daysInvChange > 0 ? 'up' : 'down'} <strong style={{ color: daysInvChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(daysInvChange).toFixed(0)}</strong> days YoY{daysInvChange > 10 ? ', suggesting inventory buildup or slower turnover' : daysInvChange < -10 ? ', indicating improved inventory management' : ''})</span>
+                        )}, Days Receivables <strong>{(trendData[trendData.length - 1]?.daysAR || 0).toFixed(0)} days</strong>
+                        {monthly.length >= 13 && Math.abs(daysARChange) > 5 && (
+                          <span> ({daysARChange > 0 ? 'up' : 'down'} <strong style={{ color: daysARChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(daysARChange).toFixed(0)}</strong> days YoY{daysARChange > 10 ? ', reflecting slower collections' : daysARChange < -10 ? ', demonstrating improved collection efficiency' : ''})</span>
+                        )}, less Days Payables <strong>{(trendData[trendData.length - 1]?.daysAP || 0).toFixed(0)} days</strong>
+                        {monthly.length >= 13 && Math.abs(daysAPChange) > 5 && (
+                          <span> ({daysAPChange > 0 ? 'up' : 'down'} <strong style={{ color: daysAPChange > 0 ? '#10b981' : '#64748b' }}>{Math.abs(daysAPChange).toFixed(0)}</strong> days YoY{daysAPChange > 10 ? ', extending payment terms to preserve cash' : daysAPChange < -10 ? ', paying suppliers faster' : ''})</span>
+                        )}.
+                        {monthly.length >= 13 && cccChange > 15 && (
+                          <span style={{ color: '#ef4444' }}>
+                            <strong> The lengthening cash conversion cycle</strong> indicates deteriorating working capital efficiency, potentially driven by 
+                            {daysARChange > 5 && daysInvChange > 5 ? 'both slower collections and inventory buildup' :
+                             daysARChange > 5 ? 'slower customer collections' :
+                             daysInvChange > 5 ? 'inventory accumulation' :
+                             daysAPChange < -5 ? 'faster supplier payments' : 'multiple operational factors'}, 
+                            requiring management focus to prevent further cash flow strain.
+                          </span>
+                        )}
+                        {monthly.length >= 13 && cccChange < -15 && (
+                          <span style={{ color: '#10b981' }}>
+                            <strong> The improving cash conversion cycle</strong> reflects strengthening working capital management through 
+                            {daysARChange < -5 && daysInvChange < -5 ? 'both faster collections and improved inventory turnover' :
+                             daysARChange < -5 ? 'accelerated customer collections' :
+                             daysInvChange < -5 ? 'more efficient inventory management' :
+                             daysAPChange > 5 ? 'extended supplier payment terms' : 'enhanced operational efficiency'}, 
+                            freeing up cash for growth initiatives and strengthening financial flexibility.
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </p>
                 <p style={{ margin: '12px 0' }}>
                   <strong style={{ color: '#667eea' }}>Cash Flow</strong> analysis provides comprehensive insight into cash generation and deployment across three key categories:
