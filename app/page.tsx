@@ -4863,7 +4863,7 @@ export default function FinancialScorePage() {
                 {currentUser.consultantType !== 'business' && (
                   <div style={{ marginBottom: '1px' }}>
                     {/* List of Companies */}
-                    {Array.isArray(companies) && companies.filter(c => c.consultantId === currentUser.consultantId).length > 0 ? (
+                    {Array.isArray(companies) && companies.filter(c => c.consultantId === currentUser.consultantId).length > 0 && (
                       <>
                         <h3 
                           onClick={() => setIsMyCompaniesExpanded(!isMyCompaniesExpanded)}
@@ -4923,7 +4923,7 @@ export default function FinancialScorePage() {
                         </div>
                         )}
                       </>
-                    ) : null}
+                    )}
                     
                     {/* Add Company Button */}
                     <div style={{ paddingLeft: '28px', paddingTop: '12px' }}>
