@@ -799,11 +799,28 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
               return monthStr;
             };
             
-            // Show labels at regular intervals - every 3rd point, first point, and last point
-            const showEveryNth = 3;
-            const shouldShow = i === 0 || i === points.length - 1 || i % showEveryNth === 0;
+            // Only show labels for quarter-end months (March, June, September, December)
+            // AND skip every other quarter to reduce crowding
+            const isQuarterEnd = (monthStr: string) => {
+              let date = new Date(monthStr);
+              if (!isNaN(date.getTime())) {
+                const month = date.getMonth() + 1;
+                return month % 3 === 0; // Months 3, 6, 9, 12
+              }
+              
+              const parts = monthStr.split('-');
+              if (parts.length >= 2) {
+                const month = parseInt(parts[1]);
+                return month % 3 === 0;
+              }
+              return false;
+            };
             
-            if (!shouldShow) return null;
+            // Show every other quarter (skip one between labels)
+            const quarterEndPoints = points.filter((pt, idx) => isQuarterEnd(pt.month));
+            const isThisPointShown = isQuarterEnd(p.month) && quarterEndPoints.findIndex(pt => pt.month === p.month) % 2 === 0;
+            
+            if (!isThisPointShown) return null;
             return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{getQuarterLabel(p.month)}</text>;
           } else {
             // Semi-annual format (default)
@@ -9674,7 +9691,7 @@ export default function FinancialScorePage() {
                         data={monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
                     color="#667eea"
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     goalLineData={(() => {
                       // Check if selected item is "expense" (Total Expenses)
                           if (item === 'expense') {
@@ -9842,7 +9859,7 @@ export default function FinancialScorePage() {
                   color="#ef4444"
                   compact
                   showTable={true}
-                  labelFormat="semi-annual"
+                  labelFormat="quarterly"
                   formatter={(val: number) => `${val.toFixed(1)}%`}
                   goalLineData={(() => {
                     // Sum all operating expense goals (not COGS)
@@ -9867,7 +9884,7 @@ export default function FinancialScorePage() {
                     color="#f59e0b"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsTotal ? monthly.map(() => expenseGoals.cogsTotal) : undefined}
                   />
@@ -9884,7 +9901,7 @@ export default function FinancialScorePage() {
                     color="#fb923c"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsPayroll ? monthly.map(() => expenseGoals.cogsPayroll) : undefined}
                   />
@@ -9900,7 +9917,7 @@ export default function FinancialScorePage() {
                     color="#fdba74"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsOwnerPay ? monthly.map(() => expenseGoals.cogsOwnerPay) : undefined}
                   />
@@ -9916,7 +9933,7 @@ export default function FinancialScorePage() {
                     color="#fed7aa"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsContractors ? monthly.map(() => expenseGoals.cogsContractors) : undefined}
                   />
@@ -9932,7 +9949,7 @@ export default function FinancialScorePage() {
                     color="#fde047"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsMaterials ? monthly.map(() => expenseGoals.cogsMaterials) : undefined}
                   />
@@ -9948,7 +9965,7 @@ export default function FinancialScorePage() {
                     color="#bef264"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsCommissions ? monthly.map(() => expenseGoals.cogsCommissions) : undefined}
                   />
@@ -9964,7 +9981,7 @@ export default function FinancialScorePage() {
                     color="#86efac"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.cogsOther ? monthly.map(() => expenseGoals.cogsOther) : undefined}
                   />
@@ -9980,7 +9997,7 @@ export default function FinancialScorePage() {
                     color="#3b82f6"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={(() => {
                       // Sum all operating expense goals (not COGS)
@@ -10005,7 +10022,7 @@ export default function FinancialScorePage() {
                     color="#60a5fa"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.opexPayroll ? monthly.map(() => expenseGoals.opexPayroll) : undefined}
                   />
@@ -10021,7 +10038,7 @@ export default function FinancialScorePage() {
                     color="#93c5fd"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.opexSalesMarketing ? monthly.map(() => expenseGoals.opexSalesMarketing) : undefined}
                   />
@@ -10037,7 +10054,7 @@ export default function FinancialScorePage() {
                     color="#8b5cf6"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.rentLease ? monthly.map(() => expenseGoals.rentLease) : undefined}
                   />
@@ -10053,7 +10070,7 @@ export default function FinancialScorePage() {
                     color="#a78bfa"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.utilities ? monthly.map(() => expenseGoals.utilities) : undefined}
                   />
@@ -10069,7 +10086,7 @@ export default function FinancialScorePage() {
                     color="#c4b5fd"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.equipment ? monthly.map(() => expenseGoals.equipment) : undefined}
                   />
@@ -10085,7 +10102,7 @@ export default function FinancialScorePage() {
                     color="#ec4899"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.travel ? monthly.map(() => expenseGoals.travel) : undefined}
                   />
@@ -10101,7 +10118,7 @@ export default function FinancialScorePage() {
                     color="#f472b6"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.professionalServices ? monthly.map(() => expenseGoals.professionalServices) : undefined}
                   />
@@ -10117,7 +10134,7 @@ export default function FinancialScorePage() {
                     color="#f9a8d4"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.insurance ? monthly.map(() => expenseGoals.insurance) : undefined}
                   />
@@ -10133,7 +10150,7 @@ export default function FinancialScorePage() {
                     color="#14b8a6"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.ownersBasePay ? monthly.map(() => expenseGoals.ownersBasePay) : undefined}
                   />
@@ -10149,7 +10166,7 @@ export default function FinancialScorePage() {
                     color="#2dd4bf"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                   />
                 )}
@@ -10164,7 +10181,7 @@ export default function FinancialScorePage() {
                     color="#5eead4"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.contractorsDistribution ? monthly.map(() => expenseGoals.contractorsDistribution) : undefined}
                   />
@@ -10180,7 +10197,7 @@ export default function FinancialScorePage() {
                     color="#fb7185"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.interestExpense ? monthly.map(() => expenseGoals.interestExpense) : undefined}
                   />
@@ -10196,7 +10213,7 @@ export default function FinancialScorePage() {
                     color="#fca5a5"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.depreciationExpense ? monthly.map(() => expenseGoals.depreciationExpense) : undefined}
                   />
@@ -10212,7 +10229,7 @@ export default function FinancialScorePage() {
                     color="#fecaca"
                     compact
                     showTable={true}
-                    labelFormat="semi-annual"
+                    labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals.opexOther ? monthly.map(() => expenseGoals.opexOther) : undefined}
                   />
@@ -11169,7 +11186,7 @@ export default function FinancialScorePage() {
                               gap: '8px'
                             }}
                           >
-                            <span>{widget.startsWith('Expense % - ') ? widget : (widget.charAt(0).toUpperCase() + widget.slice(1).replace(/([A-Z])/g, ' $1'))}</span>
+                            <span>{widget.startsWith('Expense % - ') ? widget : getTrendItemDisplayName(widget)}</span>
                             <button
                               onClick={() => setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget))}
                               style={{
@@ -11635,7 +11652,7 @@ export default function FinancialScorePage() {
                   'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'];
                 
                 if (itemTrendFields.includes(widget)) {
-                  const title = widget.charAt(0).toUpperCase() + widget.slice(1).replace(/([A-Z])/g, ' $1');
+                  const title = getTrendItemDisplayName(widget);
                   const isCurrency = !['totalEquity', 'totalLiab', 'totalAssets'].includes(widget) || widget.includes('revenue') || widget.includes('expense') || widget.includes('profit');
                   return (
                     <LineChart 
@@ -12297,7 +12314,35 @@ export default function FinancialScorePage() {
               <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>Management Discussion & Analysis</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button 
+                className="no-print"
+                onClick={() => {
+                  // Force re-render by navigating away and back
+                  const currentCompany = selectedCompanyId;
+                  setCurrentView('dashboard');
+                  setTimeout(() => {
+                    setSelectedCompanyId(currentCompany);
+                    setCurrentView('mda');
+                  }, 10);
+                }} 
+                style={{ 
+                  padding: '12px 24px', 
+                  background: '#10b981', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '8px', 
+                  fontSize: '14px', 
+                  fontWeight: '600', 
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
+              >
+                🔄 Refresh Analysis
+              </button>
               <button 
                 className="no-print"
                 onClick={() => window.print()} 
@@ -12662,8 +12707,8 @@ export default function FinancialScorePage() {
                     }) => {
                       if (!currentVal || !priorVal || priorVal === 0) return;
                       
-                      const change = ((currentVal - priorVal) / Math.abs(priorVal)) * 100;
-                      if (Math.abs(change) <= 5) return; // Only flag changes > 5%
+                const change = ((currentVal - priorVal) / Math.abs(priorVal)) * 100;
+                if (Math.abs(change) <= 5) return; // Only flag changes > 5%
                       
                       const isImproving = config.lowerIsBetter ? (change < 0) : (change > 0);
                       const direction = config.lowerIsBetter ? 
@@ -12867,6 +12912,54 @@ export default function FinancialScorePage() {
                              <span style={{ color: '#64748b' }}>, contracting which may improve asset turnover ratios</span>}.
                           </>
                         )}
+                        {/* Analyze Dashboard-selected income statement items */}
+                        {monthly.length >= 13 && (() => {
+                          const incomeStatementItems = ['cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
+                            'opexSalesMarketing', 'rentLease', 'utilities', 'equipment', 'travel', 'professionalServices', 'insurance', 'opexOther', 'opexPayroll', 
+                            'ownersBasePay', 'ownersRetirement', 'contractorsDistribution', 'interestExpense', 'depreciationExpense', 'operatingExpenseTotal', 
+                            'nonOperatingIncome', 'extraordinaryItems', 'netProfit'];
+                          
+                          const dashboardIncomeItems = selectedDashboardWidgets.filter(w => incomeStatementItems.includes(w));
+                          if (dashboardIncomeItems.length === 0) return null;
+                          
+                          const itemAnalysis = [];
+                          const current = monthly[monthly.length - 1];
+                          const prior = monthly[monthly.length - 13];
+                          
+                          dashboardIncomeItems.forEach(item => {
+                            const currentVal = current[item as keyof typeof current] as number;
+                            const priorVal = prior[item as keyof typeof prior] as number;
+                            
+                            if (currentVal !== undefined && priorVal !== undefined && priorVal !== 0) {
+                              const change = ((currentVal - priorVal) / Math.abs(priorVal)) * 100;
+                              if (Math.abs(change) > 5) {
+                                const displayName = getTrendItemDisplayName(item);
+                                const isExpense = !['revenue', 'nonOperatingIncome'].includes(item);
+                                const isGoodChange = isExpense ? (change < 0) : (change > 0);
+                                
+                                itemAnalysis.push(
+                                  <span key={item}>
+                                    <strong> {displayName}</strong> {change > 0 ? 'increased' : 'decreased'} by <strong style={{ color: isGoodChange ? '#10b981' : '#ef4444' }}>{Math.abs(change).toFixed(1)}%</strong> year-over-year 
+                                    from ${(Math.abs(priorVal) / 1000).toFixed(1)}K to ${(Math.abs(currentVal) / 1000).toFixed(1)}K
+                                    {isExpense ? (
+                                      change < -10 ? <span style={{ color: '#10b981' }}>, reflecting strong cost controls and operational efficiency improvements</span> :
+                                      change < 0 ? <span style={{ color: '#10b981' }}>, showing positive cost management</span> :
+                                      change > 10 ? <span style={{ color: '#ef4444' }}>, indicating significant cost pressures requiring management attention</span> :
+                                      <span style={{ color: '#f59e0b' }}>, warranting monitoring to ensure costs remain aligned with revenue growth</span>
+                                    ) : (
+                                      change > 10 ? <span style={{ color: '#10b981' }}>, demonstrating strong growth momentum</span> :
+                                      change > 0 ? <span style={{ color: '#10b981' }}>, showing positive trajectory</span> :
+                                      change < -10 ? <span style={{ color: '#ef4444' }}>, indicating concerning decline requiring strategic intervention</span> :
+                                      <span style={{ color: '#f59e0b' }}>, suggesting need for revenue enhancement initiatives</span>
+                                    )}.
+                                  </span>
+                                );
+                              }
+                            }
+                          });
+                          
+                          return itemAnalysis.length > 0 ? itemAnalysis : null;
+                        })()}
                       </>
                     );
                   })()}
@@ -13049,6 +13142,74 @@ export default function FinancialScorePage() {
                             freeing up cash for growth initiatives and strengthening financial flexibility.
                           </span>
                         )}
+                        {/* Analyze Dashboard-selected balance sheet items */}
+                        {monthly.length >= 13 && (() => {
+                          const balanceSheetItems = ['cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalAssets', 
+                            'ap', 'otherCL', 'tcl', 'ltd', 'totalLiab', 'totalEquity'];
+                          
+                          const dashboardBalanceItems = selectedDashboardWidgets.filter(w => balanceSheetItems.includes(w));
+                          if (dashboardBalanceItems.length === 0) return null;
+                          
+                          const itemAnalysis = [];
+                          const current = monthly[monthly.length - 1];
+                          const prior = monthly[monthly.length - 13];
+                          
+                          dashboardBalanceItems.forEach(item => {
+                            const currentVal = current[item as keyof typeof current] as number;
+                            const priorVal = prior[item as keyof typeof prior] as number;
+                            
+                            if (currentVal !== undefined && priorVal !== undefined && priorVal !== 0) {
+                              const change = ((currentVal - priorVal) / Math.abs(priorVal)) * 100;
+                              if (Math.abs(change) > 5) {
+                                const displayName = getTrendItemDisplayName(item);
+                                const isAsset = ['cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalAssets', 'totalEquity'].includes(item);
+                                const isLiability = ['ap', 'otherCL', 'tcl', 'ltd', 'totalLiab'].includes(item);
+                                
+                                // Determine if change is good or bad
+                                let isGoodChange = false;
+                                if (item === 'cash') isGoodChange = change > 0;
+                                else if (item === 'ar') isGoodChange = change < 0; // Lower AR is generally better
+                                else if (item === 'inventory') isGoodChange = Math.abs(change) < 15; // Moderate inventory changes are good
+                                else if (isLiability) isGoodChange = change < 0; // Lower liabilities are better
+                                else if (isAsset) isGoodChange = change > 0; // Higher assets are generally better
+                                
+                                itemAnalysis.push(
+                                  <span key={item}>
+                                    <strong> {displayName}</strong> {change > 0 ? 'increased' : 'decreased'} by <strong style={{ color: isGoodChange ? '#10b981' : change > 10 || change < -10 ? '#ef4444' : '#f59e0b' }}>{Math.abs(change).toFixed(1)}%</strong> year-over-year 
+                                    from ${(Math.abs(priorVal) / 1000).toFixed(1)}K to ${(Math.abs(currentVal) / 1000).toFixed(1)}K
+                                    {item === 'cash' ? (
+                                      change > 20 ? <span style={{ color: '#10b981' }}>, significantly strengthening liquidity position and operational flexibility</span> :
+                                      change > 0 ? <span style={{ color: '#10b981' }}>, improving cash reserves and financial cushion</span> :
+                                      change < -20 ? <span style={{ color: '#ef4444' }}>, materially reducing liquidity and potentially constraining operations</span> :
+                                      <span style={{ color: '#f59e0b' }}>, decreasing cash reserves which warrants monitoring</span>
+                                    ) : item === 'ar' ? (
+                                      change > 15 ? <span style={{ color: '#ef4444' }}>, suggesting potential collection challenges or extended payment terms that tie up working capital</span> :
+                                      change > 0 ? <span style={{ color: '#f59e0b' }}>, increasing receivables which should be monitored relative to revenue growth</span> :
+                                      change < -10 ? <span style={{ color: '#10b981' }}>, reflecting improved collections and working capital efficiency</span> :
+                                      <span style={{ color: '#10b981' }}>, showing slight improvement in receivables management</span>
+                                    ) : item === 'inventory' ? (
+                                      change > 20 ? <span style={{ color: '#ef4444' }}>, indicating potential overstocking or slow-moving inventory requiring attention</span> :
+                                      change < -20 ? <span style={{ color: '#ef4444' }}>, suggesting possible stock-outs risk or aggressive inventory reduction</span> :
+                                      <span style={{ color: '#10b981' }}>, maintaining appropriate inventory levels aligned with business needs</span>
+                                    ) : isLiability ? (
+                                      change > 15 ? <span style={{ color: '#ef4444' }}>, increasing financial leverage and potential risk requiring monitoring</span> :
+                                      change > 0 ? <span style={{ color: '#f59e0b' }}>, rising which should be tracked against revenue growth</span> :
+                                      change < -10 ? <span style={{ color: '#10b981' }}>, reducing financial obligations and improving balance sheet strength</span> :
+                                      <span style={{ color: '#10b981' }}>, decreasing which strengthens financial position</span>
+                                    ) : (
+                                      change > 15 ? <span style={{ color: '#10b981' }}>, demonstrating strong asset growth supporting business expansion</span> :
+                                      change > 0 ? <span style={{ color: '#10b981' }}>, showing healthy asset base development</span> :
+                                      change < -10 ? <span style={{ color: '#f59e0b' }}>, declining which may impact operational capacity</span> :
+                                      <span style={{ color: '#64748b' }}>, experiencing minor fluctuation</span>
+                                    )}.
+                                  </span>
+                                );
+                              }
+                            }
+                          });
+                          
+                          return itemAnalysis.length > 0 ? itemAnalysis : null;
+                        })()}
                       </>
                     );
                   })()}
