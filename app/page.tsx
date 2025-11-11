@@ -1422,6 +1422,7 @@ export default function FinancialScorePage() {
   const [priorityRatios, setPriorityRatios] = useState<string[]>([
     'Current Ratio', 'Quick Ratio', 'ROE', 'ROA', 'Interest Coverage', 'Debt/Net Worth'
   ]);
+  const [isMyCompaniesExpanded, setIsMyCompaniesExpanded] = useState(true);
 
   // Available ratios by category for Priority Ratios tab
   const ratioCategories = {
@@ -4860,13 +4861,34 @@ export default function FinancialScorePage() {
                 
                 {/* My Companies List - Only for Regular Consultants */}
                 {currentUser.consultantType !== 'business' && (
-                  <div style={{ paddingLeft: '28px' }}>
+                  <div style={{ marginBottom: '1px' }}>
                     {/* List of Companies */}
                     {Array.isArray(companies) && companies.filter(c => c.consultantId === currentUser.consultantId).length > 0 ? (
-                      <div>
-                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', padding: '4px 0' }}>
-                          My Companies
-                        </div>
+                      <>
+                        <h3 
+                          onClick={() => setIsMyCompaniesExpanded(!isMyCompaniesExpanded)}
+                          style={{ 
+                            fontSize: '14px', 
+                            fontWeight: '700', 
+                            color: '#1e293b', 
+                            textTransform: 'uppercase', 
+                            letterSpacing: '0.5px', 
+                            marginBottom: '1px', 
+                            padding: '4px 24px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            transition: 'color 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
+                        >
+                          <span>My Companies</span>
+                          <span style={{ fontSize: '12px', color: '#667eea' }}>{isMyCompaniesExpanded ? '-' : '+'}</span>
+                        </h3>
+                        {isMyCompaniesExpanded && (
+                        <div style={{ paddingLeft: '28px' }}>
                         {Array.isArray(companies) && companies.filter(c => c.consultantId === currentUser.consultantId).map(comp => (
                           <div
                             key={comp.id}
@@ -4898,14 +4920,13 @@ export default function FinancialScorePage() {
                             {selectedCompanyId === comp.id && '• '}{comp.name}
                           </div>
                         ))}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: '13px', color: '#94a3b8', padding: '8px 0', fontStyle: 'italic' }}>
-                        No companies yet
-                      </div>
-                    )}
+                        </div>
+                        )}
+                      </>
+                    ) : null}
                     
                     {/* Add Company Button */}
+                    <div style={{ paddingLeft: '28px', paddingTop: '12px' }}>
                     <button
                       onClick={() => {
                         setCurrentView('admin');
@@ -4913,7 +4934,6 @@ export default function FinancialScorePage() {
                         setAdminDashboardTab('company-management');
                       }}
                       style={{
-                        marginTop: '12px',
                         width: '100%',
                         padding: '8px 12px',
                         background: '#10b981',
@@ -4934,6 +4954,7 @@ export default function FinancialScorePage() {
                     >
                       <span style={{ fontSize: '16px', fontWeight: '700' }}>+</span> Add Company
                     </button>
+                    </div>
                   </div>
                 )}
               </div>
