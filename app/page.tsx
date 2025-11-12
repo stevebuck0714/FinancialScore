@@ -2870,6 +2870,20 @@ export default function FinancialScorePage() {
         
         alert(`QuickBooks data synced successfully! ${data.recordsImported || 0} months of financial data imported.`);
       } else {
+        // Check if reconnection is needed
+        if (data.needsReconnect || response.status === 401) {
+          setQbConnected(false);
+          setQbStatus('EXPIRED');
+          
+          // Refresh QB status to update UI
+          if (selectedCompanyId) {
+            await checkQBStatus(selectedCompanyId);
+          }
+          
+          alert('⚠️ QuickBooks authorization expired.\n\nPlease reconnect to QuickBooks to sync your data.');
+          return;
+        }
+        
         // Include detailed error message from API
         const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
         throw new Error(errorMsg);

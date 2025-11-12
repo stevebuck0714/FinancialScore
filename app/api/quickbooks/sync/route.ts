@@ -57,8 +57,35 @@ export async function POST(request: NextRequest) {
     }
 
     // Decrypt tokens
-    const accessToken = decryptToken(connection.accessToken);
-    const refreshToken = decryptToken(connection.refreshToken);
+    console.log('🔐 Decrypting tokens...');
+    let accessToken: string;
+    let refreshToken: string;
+    
+    try {
+      accessToken = decryptToken(connection.accessToken);
+      refreshToken = decryptToken(connection.refreshToken);
+      console.log('✅ Tokens decrypted successfully');
+      console.log('Access token length:', accessToken?.length);
+      console.log('Refresh token length:', refreshToken?.length);
+    } catch (decryptError) {
+      console.error('❌ Token decryption failed:', decryptError);
+      await prisma.accountingConnection.update({
+        where: {
+          companyId_platform: {
+            companyId,
+            platform: 'QUICKBOOKS',
+          },
+        },
+        data: {
+          status: 'ERROR',
+          errorMessage: 'Token decryption failed - please reconnect',
+        },
+      });
+      return NextResponse.json({ 
+        error: 'Token decryption failed - please reconnect',
+        needsReconnect: true 
+      }, { status: 401 });
+    }
 
     // Initialize OAuth client
     const oauthClient = new OAuthClient({
@@ -76,9 +103,22 @@ export async function POST(request: NextRequest) {
       expires_in: 3600,
     };
 
-    // Check if token needs refresh
+    // Check if token needs refresh (refresh 5 minutes before actual expiry as a buffer)
     const now = new Date();
-    if (connection.tokenExpiresAt && connection.tokenExpiresAt < now) {
+    const bufferTime = 5 * 60 * 1000; // 5 minutes in milliseconds
+    
+    console.log('⏰ Token expiration check:');
+    console.log('  Current time:', now.toISOString());
+    console.log('  Token expires at:', connection.tokenExpiresAt?.toISOString() || 'Not set');
+    console.log('  Time until expiry:', connection.tokenExpiresAt 
+      ? Math.round((connection.tokenExpiresAt.getTime() - now.getTime()) / 1000 / 60) + ' minutes'
+      : 'Unknown');
+    
+    const shouldRefresh = connection.tokenExpiresAt && 
+                         (connection.tokenExpiresAt.getTime() - now.getTime() < bufferTime);
+    
+    if (shouldRefresh) {
+      console.log('🔄 Token expiring soon, refreshing...');
       try {
         const refreshResponse = await oauthClient.refresh();
         const newToken = refreshResponse.getJson();
@@ -95,12 +135,16 @@ export async function POST(request: NextRequest) {
             accessToken: encryptToken(newToken.access_token),
             refreshToken: encryptToken(newToken.refresh_token),
             tokenExpiresAt: new Date(Date.now() + (newToken.expires_in || 3600) * 1000),
+            status: 'ACTIVE',
+            errorMessage: null,
           },
         });
 
+        // Update the token on the client
         (oauthClient as any).token = newToken;
-      } catch (refreshError) {
-        console.error('Token refresh failed:', refreshError);
+        console.log('✅ Token refreshed successfully');
+      } catch (refreshError: any) {
+        console.error('❌ Token refresh failed:', refreshError);
         await prisma.accountingConnection.update({
           where: {
             companyId_platform: {
@@ -113,7 +157,10 @@ export async function POST(request: NextRequest) {
             errorMessage: 'Token refresh failed - please reconnect',
           },
         });
-        return NextResponse.json({ error: 'Token expired - please reconnect' }, { status: 401 });
+        return NextResponse.json({ 
+          error: 'Token expired - please reconnect',
+          needsReconnect: true 
+        }, { status: 401 });
       }
     }
 
@@ -160,6 +207,27 @@ export async function POST(request: NextRequest) {
       const errorText = await plResponse.text();
       console.error('QuickBooks API error - Status:', plResponse.status);
       console.error('Response body:', errorText);
+      
+      // Handle 401/403 errors - token is invalid/expired
+      if (plResponse.status === 401 || plResponse.status === 403) {
+        await prisma.accountingConnection.update({
+          where: {
+            companyId_platform: {
+              companyId,
+              platform: 'QUICKBOOKS',
+            },
+          },
+          data: {
+            status: 'EXPIRED',
+            errorMessage: 'Authorization failed - please reconnect to QuickBooks',
+          },
+        });
+        return NextResponse.json({ 
+          error: 'QuickBooks authorization failed - please reconnect',
+          needsReconnect: true 
+        }, { status: 401 });
+      }
+      
       throw new Error(`QuickBooks API returned status ${plResponse.status}: ${errorText}`);
     }
     
@@ -189,6 +257,27 @@ export async function POST(request: NextRequest) {
       const errorText = await bsResponse.text();
       console.error('QuickBooks BS API error - Status:', bsResponse.status);
       console.error('Response body:', errorText);
+      
+      // Handle 401/403 errors - token is invalid/expired
+      if (bsResponse.status === 401 || bsResponse.status === 403) {
+        await prisma.accountingConnection.update({
+          where: {
+            companyId_platform: {
+              companyId,
+              platform: 'QUICKBOOKS',
+            },
+          },
+          data: {
+            status: 'EXPIRED',
+            errorMessage: 'Authorization failed - please reconnect to QuickBooks',
+          },
+        });
+        return NextResponse.json({ 
+          error: 'QuickBooks authorization failed - please reconnect',
+          needsReconnect: true 
+        }, { status: 401 });
+      }
+      
       throw new Error(`QuickBooks Balance Sheet API returned status ${bsResponse.status}: ${errorText}`);
     }
     
