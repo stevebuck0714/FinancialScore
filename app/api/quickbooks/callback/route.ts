@@ -92,9 +92,9 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Redirect back to admin dashboard with success message
+    // Redirect back to admin dashboard API Connections tab with success message
     return NextResponse.redirect(
-      new URL(`/?view=admin&success=quickbooks_connected`, request.url)
+      new URL(`/?view=admin&tab=api-connections&success=quickbooks_connected`, request.url)
     );
   } catch (error: any) {
     console.error('QuickBooks callback error:', error);
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     }
     
     return NextResponse.redirect(
-      new URL('/?view=admin&error=quickbooks_connection_failed', request.url)
+      new URL('/?view=admin&tab=api-connections&error=quickbooks_connection_failed', request.url)
     );
   }
 }

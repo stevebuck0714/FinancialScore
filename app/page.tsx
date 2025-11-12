@@ -1997,15 +1997,15 @@ export default function FinancialScorePage() {
     // Show success message
     if (success === 'quickbooks_connected') {
       alert('QuickBooks connected successfully! You can now sync your financial data.');
-      // Clean URL
-      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+      // Clean URL but keep the tab parameter
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin&tab=api-connections');
     }
 
     // Show error message
     if (error === 'quickbooks_connection_failed') {
       alert('Failed to connect to QuickBooks. Please try again.');
-      // Clean URL
-      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+      // Clean URL but keep the tab parameter
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin&tab=api-connections');
     }
   }, []);
 
@@ -5006,8 +5006,60 @@ export default function FinancialScorePage() {
               </div>
             )}
 
-            {/* Contact Support Section */}
+            {/* Legal Links Section */}
             <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+              <a
+                href="/license-agreement"
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#64748b',
+                  textDecoration: 'none',
+                  padding: '12px 24px',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  margin: '0 12px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#f1f5f9';
+                  e.currentTarget.style.color = '#334155';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#64748b';
+                }}
+              >
+                📄 License Agreement
+              </a>
+              <a
+                href="/privacy-policy"
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#64748b',
+                  textDecoration: 'none',
+                  padding: '12px 24px',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  margin: '0 12px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#f1f5f9';
+                  e.currentTarget.style.color = '#334155';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#64748b';
+                }}
+              >
+                🔒 Privacy Policy
+              </a>
+            </div>
+
+            {/* Contact Support Section */}
+            <div style={{ paddingTop: '12px' }}>
               <a
                 href="mailto:steve@stevebuck.us"
                 style={{
@@ -5199,8 +5251,60 @@ export default function FinancialScorePage() {
               </h3>
             </div>
 
-            {/* Contact Support Section */}
+            {/* Legal Links Section */}
             <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+              <a
+                href="/license-agreement"
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#64748b',
+                  textDecoration: 'none',
+                  padding: '12px 24px',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  margin: '0 12px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#f1f5f9';
+                  e.currentTarget.style.color = '#334155';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#64748b';
+                }}
+              >
+                📄 License Agreement
+              </a>
+              <a
+                href="/privacy-policy"
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#64748b',
+                  textDecoration: 'none',
+                  padding: '12px 24px',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  margin: '0 12px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#f1f5f9';
+                  e.currentTarget.style.color = '#334155';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#64748b';
+                }}
+              >
+                🔒 Privacy Policy
+              </a>
+            </div>
+
+            {/* Contact Support Section */}
+            <div style={{ paddingTop: '12px' }}>
               <a
                 href="mailto:steve@stevebuck.us"
                 style={{
