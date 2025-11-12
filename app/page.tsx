@@ -2823,6 +2823,21 @@ export default function FinancialScorePage() {
     }
 
     try {
+      // If reconnecting (status is EXPIRED or ERROR), clear old connection first
+      if (qbStatus === 'EXPIRED' || qbStatus === 'ERROR') {
+        console.log('🧹 Clearing expired QuickBooks connection before reconnecting...');
+        try {
+          await fetch('/api/quickbooks/disconnect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId: selectedCompanyId }),
+          });
+          console.log('✅ Old connection cleared');
+        } catch (disconnectError) {
+          console.warn('Failed to clear old connection, continuing anyway:', disconnectError);
+        }
+      }
+
       const response = await fetch(`/api/quickbooks/auth?companyId=${selectedCompanyId}`);
       const data = await response.json();
       
