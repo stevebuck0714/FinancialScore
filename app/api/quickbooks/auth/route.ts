@@ -26,10 +26,13 @@ export async function GET(request: NextRequest) {
     });
 
     // Generate authorization URI
-    const authUri = oauthClient.authorizeUri({
+    let authUri = oauthClient.authorizeUri({
       scope: ['com.intuit.quickbooks.accounting'],
       state: companyId, // Pass company ID as state parameter
     });
+    
+    // Add a timestamp to force fresh authorization and prevent caching
+    authUri = authUri + `&timestamp=${Date.now()}`;
 
     return NextResponse.json({ authUri });
   } catch (error) {
