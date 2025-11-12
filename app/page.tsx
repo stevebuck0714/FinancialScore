@@ -1624,6 +1624,7 @@ export default function FinancialScorePage() {
   const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
   const [financialStatementsTab, setFinancialStatementsTab] = useState<'aggregated' | 'line-of-business'>('aggregated');
   const [selectedLineOfBusiness, setSelectedLineOfBusiness] = useState<string>('all');
+  const [lobDisplayFormat, setLobDisplayFormat] = useState<'$' | '%'>('$');
   const [statementDisplay, setStatementDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
   const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
   
@@ -2192,11 +2193,16 @@ export default function FinancialScorePage() {
         try {
           const mappingsResponse = await fetch(`/api/account-mappings?companyId=${selectedCompanyId}`);
           if (mappingsResponse.ok) {
-            const { mappings } = await mappingsResponse.json();
+            const { mappings, linesOfBusiness } = await mappingsResponse.json();
             if (mappings && mappings.length > 0) {
               console.log('Loaded saved account mappings:', mappings);
               setAiMappings(mappings);
               setShowMappingSection(true);
+            }
+            // Auto-load saved LOB names
+            if (linesOfBusiness && Array.isArray(linesOfBusiness) && linesOfBusiness.length > 0) {
+              console.log('Auto-loaded LOB names:', linesOfBusiness);
+              setLinesOfBusiness(linesOfBusiness);
             }
           }
         } catch (error) {
@@ -9365,9 +9371,9 @@ export default function FinancialScorePage() {
                                           (m.depreciationAmortization || 0) + 
                                           (m.otherExpense || 0);
                           return (
-                            <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
+                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
                               ${totalOpex.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </td>
+                          </td>
                           );
                         })}
                       </tr>
@@ -9621,9 +9627,9 @@ export default function FinancialScorePage() {
                                                         (m.additionalPaidInCapital || 0) + 
                                                         (m.treasuryStock || 0);
                           return (
-                            <td key={idx} style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', fontSize: '14px' }}>
+                          <td key={idx} style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', fontSize: '14px' }}>
                               ${calculatedTotalEquity.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </td>
+                          </td>
                           );
                         })}
                       </tr>
@@ -16744,7 +16750,8 @@ export default function FinancialScorePage() {
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
                                     companyId: selectedCompanyId,
-                                    mappings: uniqueMappings
+                                    mappings: uniqueMappings,
+                                    linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== '')
                                   })
                                 });
 
@@ -20226,7 +20233,7 @@ export default function FinancialScorePage() {
             )}
 
             {/* Line of Business Reporting Tab */}
-            {financialStatementsTab === 'line-of-business' && (
+            {financialStatementsTab === 'line-of-business' && monthly.length === 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <div style={{ marginBottom: '12px' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Line of Business Reporting</h2>
@@ -20245,6 +20252,1278 @@ export default function FinancialScorePage() {
                 </div>
               </div>
             )}
+
+            {/* Line of Business Reporting Tab - With Monthly Data */}
+            {financialStatementsTab === 'line-of-business' && monthly.length > 0 && (() => {
+              const activeLOBs = linesOfBusiness.filter(lob => lob.trim() !== '');
+              
+              if (activeLOBs.length === 0) {
+                return (
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '8px', padding: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AlertCircle size={20} color="#d97706" />
+                        <p style={{ fontSize: '14px', color: '#92400e', margin: 0 }}>
+                          Please define Lines of Business in the Data Mapping tab first.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Build field-level LOB map (targetField → LOB → average percentage)
+              // This calculates average LOB allocation for each standard field
+              const fieldLOBMap: Record<string, Record<string, number>> = {};
+              
+              // Group mappings by targetField
+              const fieldMappings: Record<string, any[]> = {};
+              aiMappings.forEach(mapping => {
+                if (mapping.targetField && mapping.lobAllocations) {
+                  if (!fieldMappings[mapping.targetField]) {
+                    fieldMappings[mapping.targetField] = [];
+                  }
+                  fieldMappings[mapping.targetField].push(mapping);
+                }
+              });
+              
+              // Calculate average LOB% for each field
+              Object.keys(fieldMappings).forEach(field => {
+                const mappings = fieldMappings[field];
+                const lobTotals: Record<string, number> = {};
+                const count = mappings.length;
+                
+                mappings.forEach(mapping => {
+                  const lobAllocations = mapping.lobAllocations as Record<string, number>;
+                  Object.keys(lobAllocations).forEach(lob => {
+                    lobTotals[lob] = (lobTotals[lob] || 0) + lobAllocations[lob];
+                  });
+                });
+                
+                // Calculate averages
+                fieldLOBMap[field] = {};
+                Object.keys(lobTotals).forEach(lob => {
+                  fieldLOBMap[field][lob] = lobTotals[lob] / count;
+                });
+              });
+              
+              console.log('📊 Field-level LOB Map:', fieldLOBMap);
+              console.log('📊 Fields with LOB allocations:', Object.keys(fieldLOBMap));
+              
+              // Get revenue LOB% as default for unallocated fields
+              const revenueLOB = fieldLOBMap['revenue'] || {};
+              console.log('📊 Revenue LOB% (used as default):', revenueLOB);
+              
+              // Function to calculate LOB values from monthly aggregated data
+              const calculateLOBFromMonthlyData = (lob: string, monthIndices: number[]) => {
+                const lobData: Record<string, number> = {};
+                
+                // Initialize all income statement fields (using actual monthly data field names)
+                const incomeFields = [
+                  'revenue', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials',
+                  'cogsCommissions', 'cogsOther', 'payroll', 'ownerBasePay', 'benefits',
+                  'insurance', 'professionalFees', 'subcontractors', 'rent', 'taxLicense',
+                  'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing',
+                  'trainingCert', 'mealsEntertainment', 'interestExpense', 'depreciationAmortization',
+                  'otherExpense', 'nonOperatingIncome', 'extraordinaryItems'
+                ];
+                incomeFields.forEach(f => lobData[f] = 0);
+                
+                // Sum values across the selected months
+                monthIndices.forEach(monthIdx => {
+                  if (monthIdx >= 0 && monthIdx < monthly.length) {
+                    const monthData = monthly[monthIdx];
+                    
+                    // Apply LOB% to each field
+                    incomeFields.forEach(field => {
+                      const monthValue = (monthData as any)[field] || 0;
+                      const lobPercent = fieldLOBMap[field]?.[lob] || 0;
+                      const lobValue = monthValue * (lobPercent / 100);
+                      lobData[field] = (lobData[field] || 0) + lobValue;
+                    });
+                  }
+                });
+                
+                return lobData;
+              };
+
+              return (
+                <>
+                  {/* Statement Controls */}
+                  <div style={{ marginBottom: '32px', padding: '24px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
+                  {/* Line of Business Selector */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                        Line of Business
+                      </label>
+                      <select 
+                        value={selectedLineOfBusiness}
+                        onChange={(e) => setSelectedLineOfBusiness(e.target.value)}
+                        style={{ 
+                          width: '100%', 
+                          padding: '10px 12px', 
+                          border: '1px solid #cbd5e1', 
+                          borderRadius: '6px', 
+                          fontSize: '14px',
+                          color: '#1e293b',
+                          background: 'white',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="all">All Lines of Business (Side by Side)</option>
+                          {activeLOBs.map((lob, idx) => (
+                            <option key={idx} value={lob}>
+                              {lob}
+                                </option>
+                          ))}
+                      </select>
+                    </div>
+
+                      {/* Period */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                        Period
+                      </label>
+                      <select 
+                        value={statementPeriod}
+                        onChange={(e) => setStatementPeriod(e.target.value as any)}
+                        style={{ 
+                          width: '100%', 
+                          padding: '10px 12px', 
+                          border: '1px solid #cbd5e1', 
+                          borderRadius: '6px', 
+                          fontSize: '14px',
+                          color: '#1e293b',
+                          background: 'white',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="current-month">Current Month</option>
+                        <option value="current-quarter">Current Quarter</option>
+                        <option value="last-12-months">Last 12 months</option>
+                        <option value="ytd">YTD</option>
+                        <option value="last-year">Last Year</option>
+                        <option value="last-3-years">Last 3 Years</option>
+                      </select>
+                    </div>
+
+                      {/* Display As (Time Periods) - Only for single LOB */}
+                    {selectedLineOfBusiness !== 'all' && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Display As
+                        </label>
+                        <select 
+                          value={statementDisplay}
+                          onChange={(e) => setStatementDisplay(e.target.value as 'monthly' | 'quarterly' | 'annual')}
+                          style={{ 
+                            width: '100%', 
+                            padding: '10px 12px', 
+                            border: '1px solid #cbd5e1', 
+                            borderRadius: '6px', 
+                            fontSize: '14px',
+                            color: '#1e293b',
+                            background: 'white',
+                            cursor: 'pointer'
+                          }}
+                        >
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="annual">Annual</option>
+                        </select>
+                      </div>
+                    )}
+
+                      {/* Display Format ($ or %) */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                        Display Format
+                      </label>
+                      <select 
+                        value={lobDisplayFormat}
+                        onChange={(e) => setLobDisplayFormat(e.target.value as '$' | '%')}
+                        style={{ 
+                          width: '100%', 
+                          padding: '10px 12px', 
+                          border: '1px solid #cbd5e1', 
+                          borderRadius: '6px', 
+                          fontSize: '14px',
+                          color: '#1e293b',
+                          background: 'white',
+                          cursor: 'pointer'
+                        }}
+                      >
+                          <option value="$">$ (Dollars)</option>
+                          <option value="%">% (Percent of Revenue)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                  {/* LOB Income Statement - All Periods */}
+                  {monthly.length > 0 && (() => {
+                    // Get month indices based on period
+                    let monthIndices: number[] = [];
+                    let periodLabel = '';
+                    
+                    const currentMonth = monthly[monthly.length - 1];
+                    const monthDate = new Date(currentMonth.date || currentMonth.month);
+                    const currentYear = monthDate.getFullYear();
+                    const currentMonthNum = monthDate.getMonth();
+                    
+                    if (statementPeriod === 'current-month') {
+                      // Last month only
+                      monthIndices = [monthly.length - 1];
+                      periodLabel = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                    } else if (statementPeriod === 'current-quarter') {
+                      // Last 3 months
+                      const startIdx = Math.max(0, monthly.length - 3);
+                      monthIndices = Array.from({ length: 3 }, (_, i) => startIdx + i).filter(i => i < monthly.length);
+                      const quarterStart = new Date(monthDate);
+                      quarterStart.setMonth(currentMonthNum - 2);
+                      periodLabel = `${quarterStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
+                    } else if (statementPeriod === 'last-12-months') {
+                      // Last 12 months
+                      const startIdx = Math.max(0, monthly.length - 12);
+                      monthIndices = Array.from({ length: 12 }, (_, i) => startIdx + i).filter(i => i < monthly.length);
+                      const start = new Date(monthDate);
+                      start.setMonth(currentMonthNum - 11);
+                      periodLabel = `${start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
+                    } else if (statementPeriod === 'ytd') {
+                      // Year to date - from January to current month
+                      const monthsInYear = currentMonthNum + 1; // 0-indexed, so add 1
+                      const startIdx = Math.max(0, monthly.length - monthsInYear);
+                      monthIndices = Array.from({ length: monthsInYear }, (_, i) => startIdx + i).filter(i => i < monthly.length);
+                      periodLabel = `YTD ${currentYear}`;
+                    } else if (statementPeriod === 'last-year') {
+                      // Last complete year (12 months)
+                      const endIdx = monthly.length - currentMonthNum - 2; // Go back to December of last year
+                      const startIdx = Math.max(0, endIdx - 11);
+                      if (endIdx > 0) {
+                        monthIndices = Array.from({ length: 12 }, (_, i) => startIdx + i).filter(i => i >= 0 && i < monthly.length);
+                      }
+                      periodLabel = `${currentYear - 1}`;
+                    } else if (statementPeriod === 'last-3-years') {
+                      // Last 36 months
+                      const startIdx = Math.max(0, monthly.length - 36);
+                      monthIndices = Array.from({ length: 36 }, (_, i) => startIdx + i).filter(i => i < monthly.length);
+                      const start = new Date(monthDate);
+                      start.setMonth(currentMonthNum - 35);
+                      periodLabel = `${start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
+                    }
+                    
+                    console.log('📅 Period:', statementPeriod, 'Month Indices:', monthIndices, 'Total Months:', monthly.length);
+
+                    // Calculate for a specific LOB using monthly aggregated data
+                    const calculateForLOB = (lob: string) => {
+                      const lobData = calculateLOBFromMonthlyData(lob, monthIndices);
+                      
+                      // Map monthly data fields to income statement display structure
+                      const revenue = lobData.revenue || 0;
+                      const cogsPayroll = lobData.cogsPayroll || 0;
+                      const cogsOwnerPay = lobData.cogsOwnerPay || 0;
+                      const cogsContractors = lobData.cogsContractors || 0;
+                      const cogsMaterials = lobData.cogsMaterials || 0;
+                      const cogsCommissions = lobData.cogsCommissions || 0;
+                      const cogsOther = lobData.cogsOther || 0;
+                      const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+                      const grossProfit = revenue - cogs;
+                      const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+
+                      // Map monthly data field names to display names
+                      const opexPayroll = lobData.payroll || 0;
+                      const ownersBasePay = lobData.ownerBasePay || 0;
+                      const ownersRetirement = 0; // Not tracked separately in monthly data
+                      const professionalServices = lobData.professionalFees || 0;
+                      const rentLease = lobData.rent || 0;
+                      const utilities = (lobData.phoneComm || 0) + (lobData.infrastructure || 0);
+                      const equipment = 0; // Typically part of other categories
+                      const travel = lobData.autoTravel || 0;
+                      const insurance = lobData.insurance || 0;
+                      const opexSalesMarketing = (lobData.salesExpense || 0) + (lobData.marketing || 0);
+                      const contractorsDistribution = lobData.subcontractors || 0;
+                      const depreciationExpense = lobData.depreciationAmortization || 0;
+                      const opexOther = lobData.otherExpense || 0;
+                      
+                      const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
+                                       rentLease + utilities + equipment + travel + insurance + 
+                                       opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                      
+                      const operatingIncome = grossProfit - totalOpex;
+                      const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
+                      
+                      const interestExpense = lobData.interestExpense || 0;
+                      const nonOperatingIncome = lobData.nonOperatingIncome || 0;
+                      const extraordinaryItems = lobData.extraordinaryItems || 0;
+                      
+                      const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                      const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
+
+                      return {
+                        revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs,
+                        grossProfit, grossMargin, opexPayroll, ownersBasePay, ownersRetirement, professionalServices,
+                        rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution,
+                        depreciationExpense, opexOther, totalOpex, operatingIncome, operatingMargin,
+                        interestExpense, nonOperatingIncome, extraordinaryItems, netIncome, netMargin
+                      };
+                    };
+
+                    // Helper function to format values based on display mode
+                    const formatValue = (value: number, revenue: number) => {
+                      if (lobDisplayFormat === '%') {
+                        const percent = revenue > 0 ? (value / revenue) * 100 : 0;
+                        return `${percent.toFixed(1)}%`;
+                      } else {
+                        return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                      }
+                    };
+
+                    if (selectedLineOfBusiness === 'all') {
+                      // Side-by-side view for all LOBs
+                      const lobsData = activeLOBs.map(lob => ({ lob, data: calculateForLOB(lob) }));
+                      const totals = calculateForLOB('total'); // We'll calculate totals separately
+                      
+                      // Calculate actual totals (sum across all LOBs)
+                      const totalRevenue = lobsData.reduce((sum, { data }) => sum + data.revenue, 0);
+                      const totalCOGS = lobsData.reduce((sum, { data }) => sum + data.cogs, 0);
+                      const totalGrossProfit = totalRevenue - totalCOGS;
+                      const totalOpex = lobsData.reduce((sum, { data }) => sum + data.totalOpex, 0);
+                      const totalOperatingIncome = totalGrossProfit - totalOpex;
+                      const totalInterest = lobsData.reduce((sum, { data }) => sum + data.interestExpense, 0);
+                      const totalNonOp = lobsData.reduce((sum, { data }) => sum + data.nonOperatingIncome, 0);
+                      const totalExtraord = lobsData.reduce((sum, { data }) => sum + data.extraordinaryItems, 0);
+                      const totalNetIncome = totalOperatingIncome - totalInterest + totalNonOp + totalExtraord;
+
+                      return (
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+                          <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
+                            <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Line of Business Income Statement</h2>
+                            <div style={{ fontSize: '14px', color: '#64748b' }}>
+                              For the Period: {periodLabel}{lobDisplayFormat === '%' ? ' • All items shown as % of Revenue' : ''}
+                  </div>
+                </div>
+
+                          <table style={{ width: '100%', fontSize: '14px' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                                <th style={{ textAlign: 'left', paddingBottom: '12px', fontWeight: '600', color: '#475569' }}>Account</th>
+                                {activeLOBs.map((lob, idx) => (
+                                  <th key={idx} style={{ textAlign: 'right', paddingBottom: '12px', fontWeight: '600', color: '#475569', minWidth: '140px' }}>{lob}</th>
+                                ))}
+                                <th style={{ textAlign: 'right', paddingBottom: '12px', fontWeight: '700', color: '#1e293b', minWidth: '140px', background: '#fef3c7' }}>Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {/* Revenue */}
+                              <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                <td style={{ padding: '8px 0', fontWeight: '600' }}>Revenue</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace' }}>
+                                    {formatValue(data.revenue, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', background: '#fef3c7' }}>
+                                  {formatValue(totalRevenue, totalRevenue)}
+                                </td>
+                              </tr>
+
+                              {/* COGS Section Header */}
+                              <tr>
+                                <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Cost of Goods Sold</td>
+                              </tr>
+
+                              {/* COGS Line Items - Show ALL */}
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Payroll</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.cogsPayroll, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsPayroll, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Owner Pay</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.cogsOwnerPay, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsOwnerPay, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Contractors</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.cogsContractors, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsContractors, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Materials</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.cogsMaterials, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsMaterials, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Commissions</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.cogsCommissions, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsCommissions, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Other</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.cogsOther, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsOther, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              {/* Total COGS */}
+                              <tr style={{ borderTop: '1px solid #e2e8f0' }}>
+                                <td style={{ padding: '8px 0', fontWeight: '600' }}>Total COGS</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>
+                                    {formatValue(data.cogs, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', background: '#fef3c7' }}>
+                                  {formatValue(totalCOGS, totalRevenue)}
+                                </td>
+                              </tr>
+
+                              {/* Gross Profit - Highlighted Row */}
+                              <tr style={{ background: '#dbeafe' }}>
+                                <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e40af' }}>Gross Profit</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af' }}>
+                                    {formatValue(data.grossProfit, data.revenue)}
+                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{data.grossMargin.toFixed(1)}%</div>}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af', background: '#dbeafe' }}>
+                                  {formatValue(totalGrossProfit, totalRevenue)}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{totalRevenue > 0 ? ((totalGrossProfit / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
+                                </td>
+                              </tr>
+
+                              {/* Operating Expenses Section */}
+                              <tr>
+                                <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Operating Expenses</td>
+                              </tr>
+
+                              {/* OpEx Line Items - Show ALL */}
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Payroll</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.opexPayroll, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexPayroll, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Owner's Base Pay</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.ownersBasePay, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.ownersBasePay, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Owner's Retirement</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.ownersRetirement, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.ownersRetirement, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Professional Services</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.professionalServices, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.professionalServices, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Rent/Lease</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.rentLease, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.rentLease, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Utilities</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.utilities, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.utilities, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Equipment</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.equipment, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.equipment, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Travel</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.travel, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.travel, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Insurance</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.insurance, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.insurance, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Sales & Marketing</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.opexSalesMarketing, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexSalesMarketing, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Contractors Distribution</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.contractorsDistribution, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.contractorsDistribution, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Depreciation</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.depreciationExpense, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.depreciationExpense, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Other Operating Expenses</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                    {formatValue(data.opexOther, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexOther, 0), totalRevenue)}
+                                </td>
+                              </tr>
+
+                              {/* Total Operating Expenses */}
+                              <tr style={{ borderTop: '1px solid #e2e8f0' }}>
+                                <td style={{ padding: '8px 0', fontWeight: '600' }}>Total Operating Expenses</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>
+                                    {formatValue(data.totalOpex, data.revenue)}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', background: '#fef3c7' }}>
+                                  {formatValue(totalOpex, totalRevenue)}
+                                </td>
+                              </tr>
+
+                              {/* Operating Income - Highlighted Row */}
+                              <tr style={{ background: '#dbeafe' }}>
+                                <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e40af' }}>Operating Income</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af' }}>
+                                    {formatValue(data.operatingIncome, data.revenue)}
+                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{data.operatingMargin.toFixed(1)}%</div>}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af', background: '#dbeafe' }}>
+                                  {formatValue(totalOperatingIncome, totalRevenue)}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{totalRevenue > 0 ? ((totalOperatingIncome / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
+                                </td>
+                              </tr>
+
+                              {/* Other Income/Expense */}
+                              {lobsData.some(({ data }) => data.interestExpense > 0 || data.nonOperatingIncome > 0 || data.extraordinaryItems > 0) && (
+                                <>
+                                  <tr>
+                                    <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Other Income/(Expense)</td>
+                                  </tr>
+
+                                  {lobsData.some(({ data }) => data.interestExpense > 0) && (
+                                    <tr>
+                                      <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Interest Expense</td>
+                                      {lobsData.map(({ data }, idx) => (
+                                        <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                          ({formatValue(data.interestExpense, data.revenue)})
+                                        </td>
+                                      ))}
+                                      <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                        ({formatValue(totalInterest, totalRevenue)})
+                                      </td>
+                                    </tr>
+                                  )}
+
+                                  {lobsData.some(({ data }) => data.nonOperatingIncome > 0) && (
+                                    <tr>
+                                      <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Non-Operating Income</td>
+                                      {lobsData.map(({ data }, idx) => (
+                                        <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                          {formatValue(data.nonOperatingIncome, data.revenue)}
+                                        </td>
+                                      ))}
+                                      <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                        {formatValue(totalNonOp, totalRevenue)}
+                                      </td>
+                                    </tr>
+                                  )}
+
+                                  {lobsData.some(({ data }) => data.extraordinaryItems > 0) && (
+                                    <tr>
+                                      <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Extraordinary Items</td>
+                                      {lobsData.map(({ data }, idx) => (
+                                        <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                          {formatValue(data.extraordinaryItems, data.revenue)}
+                                        </td>
+                                      ))}
+                                      <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                        {formatValue(totalExtraord, totalRevenue)}
+                                      </td>
+                                    </tr>
+                                  )}
+                                </>
+                              )}
+
+                              {/* Net Income - Highlighted Row */}
+                              <tr style={{ background: '#d1fae5', borderTop: '2px solid #10b981' }}>
+                                <td style={{ padding: '12px 8px', fontWeight: '700', color: '#047857', fontSize: '16px' }}>NET INCOME</td>
+                                {lobsData.map(({ data }, idx) => (
+                                  <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#047857', fontSize: '16px' }}>
+                                    {formatValue(data.netIncome, data.revenue)}
+                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{data.netMargin.toFixed(1)}%</div>}
+                                  </td>
+                                ))}
+                                <td style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#047857', fontSize: '16px', background: '#d1fae5' }}>
+                                  {formatValue(totalNetIncome, totalRevenue)}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{totalRevenue > 0 ? ((totalNetIncome / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                </div>
+                      );
+                    }
+
+                    // Single LOB View - Multi-column
+                    // Determine which month indices to show based on display format
+                    let periodColumns: { label: string; monthIndices: number[] }[] = [];
+                    
+                    if (statementDisplay === 'monthly') {
+                      // Show individual months
+                      monthIndices.forEach(idx => {
+                        if (idx >= 0 && idx < monthly.length) {
+                          const monthData = monthly[idx];
+                          const date = new Date(monthData.date || monthData.month);
+                          const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                          periodColumns.push({ label, monthIndices: [idx] });
+                        }
+                      });
+                    } else if (statementDisplay === 'quarterly') {
+                      // Group months into quarters
+                      for (let i = 0; i < monthIndices.length; i += 3) {
+                        const quarterIndices = monthIndices.slice(i, i + 3);
+                        if (quarterIndices.length > 0) {
+                          const firstMonth = monthly[quarterIndices[0]];
+                          const lastMonth = monthly[quarterIndices[quarterIndices.length - 1]];
+                          const startDate = new Date(firstMonth.date || firstMonth.month);
+                          const endDate = new Date(lastMonth.date || lastMonth.month);
+                          const label = `Q ${startDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}`;
+                          periodColumns.push({ label, monthIndices: quarterIndices });
+                        }
+                      }
+                    } else if (statementDisplay === 'annual') {
+                      // Group months into years
+                      const yearGroups: Record<number, number[]> = {};
+                      monthIndices.forEach(idx => {
+                        if (idx >= 0 && idx < monthly.length) {
+                          const monthData = monthly[idx];
+                          const date = new Date(monthData.date || monthData.month);
+                          const year = date.getFullYear();
+                          if (!yearGroups[year]) yearGroups[year] = [];
+                          yearGroups[year].push(idx);
+                        }
+                      });
+                      Object.keys(yearGroups).sort().forEach(year => {
+                        periodColumns.push({ label: year, monthIndices: yearGroups[parseInt(year)] });
+                      });
+                    }
+                    
+                    // Calculate data for each period column
+                    const columnsData = periodColumns.map(col => ({
+                      label: col.label,
+                      data: calculateForLOB(selectedLineOfBusiness)
+                    }));
+                    
+                    // Need to recalculate for each period!
+                    const columnsDataCorrect = periodColumns.map(col => {
+                      const lobData = calculateLOBFromMonthlyData(selectedLineOfBusiness, col.monthIndices);
+                      
+                      const revenue = lobData.revenue || 0;
+                      const cogsPayroll = lobData.cogsPayroll || 0;
+                      const cogsOwnerPay = lobData.cogsOwnerPay || 0;
+                      const cogsContractors = lobData.cogsContractors || 0;
+                      const cogsMaterials = lobData.cogsMaterials || 0;
+                      const cogsCommissions = lobData.cogsCommissions || 0;
+                      const cogsOther = lobData.cogsOther || 0;
+                      const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+                      const grossProfit = revenue - cogs;
+                      const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+
+                      const opexPayroll = lobData.payroll || 0;
+                      const ownersBasePay = lobData.ownerBasePay || 0;
+                      const ownersRetirement = 0;
+                      const professionalServices = lobData.professionalFees || 0;
+                      const rentLease = lobData.rent || 0;
+                      const utilities = (lobData.phoneComm || 0) + (lobData.infrastructure || 0);
+                      const equipment = 0;
+                      const travel = lobData.autoTravel || 0;
+                      const insurance = lobData.insurance || 0;
+                      const opexSalesMarketing = (lobData.salesExpense || 0) + (lobData.marketing || 0);
+                      const contractorsDistribution = lobData.subcontractors || 0;
+                      const depreciationExpense = lobData.depreciationAmortization || 0;
+                      const opexOther = lobData.otherExpense || 0;
+                      
+                      const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
+                                       rentLease + utilities + equipment + travel + insurance + 
+                                       opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                      
+                      const operatingIncome = grossProfit - totalOpex;
+                      const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
+                      
+                      const interestExpense = lobData.interestExpense || 0;
+                      const nonOperatingIncome = lobData.nonOperatingIncome || 0;
+                      const extraordinaryItems = lobData.extraordinaryItems || 0;
+                      
+                      const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                      const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
+
+                      return {
+                        label: col.label,
+                        data: {
+                          revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs,
+                          grossProfit, grossMargin, opexPayroll, ownersBasePay, ownersRetirement, professionalServices,
+                          rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution,
+                          depreciationExpense, opexOther, totalOpex, operatingIncome, operatingMargin,
+                          interestExpense, nonOperatingIncome, extraordinaryItems, netIncome, netMargin
+                        }
+                      };
+                    });
+                    
+                    return (
+                      <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+                        <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
+                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - {selectedLineOfBusiness}</h2>
+                          <div style={{ fontSize: '14px', color: '#64748b' }}>
+                            For the Period: {periodLabel} • {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'} View{lobDisplayFormat === '%' ? ' • All items shown as % of Revenue' : ''}
+                          </div>
+                        </div>
+
+                        <table style={{ width: '100%', fontSize: '14px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                              <th style={{ textAlign: 'left', paddingBottom: '12px', fontWeight: '600', color: '#475569' }}>Account</th>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <th key={idx} style={{ textAlign: 'right', paddingBottom: '12px', fontWeight: '600', color: '#475569', minWidth: '120px' }}>{col.label}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {/* Revenue */}
+                            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 0', fontWeight: '600' }}>Revenue</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace' }}>
+                                  {formatValue(col.data.revenue, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            {/* COGS Section Header */}
+                            <tr>
+                              <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Cost of Goods Sold</td>
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Payroll</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.cogsPayroll, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Owner Pay</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.cogsOwnerPay, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Contractors</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.cogsContractors, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Materials</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.cogsMaterials, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Commissions</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.cogsCommissions, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Other</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.cogsOther, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            {/* Total COGS */}
+                            <tr style={{ borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 0', fontWeight: '600' }}>Total COGS</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>
+                                  {formatValue(col.data.cogs, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            {/* Gross Profit */}
+                            <tr style={{ background: '#dbeafe' }}>
+                              <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e40af' }}>Gross Profit</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af' }}>
+                                  {formatValue(col.data.grossProfit, col.data.revenue)}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{col.data.grossMargin.toFixed(1)}%</div>}
+                                </td>
+                              ))}
+                            </tr>
+
+                            {/* Operating Expenses Section */}
+                            <tr>
+                              <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Operating Expenses</td>
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Payroll</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.opexPayroll, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Owner's Base Pay</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.ownersBasePay, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Owner's Retirement</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.ownersRetirement, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Professional Services</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.professionalServices, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Rent/Lease</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.rentLease, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Utilities</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.utilities, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Equipment</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.equipment, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Travel</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.travel, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Insurance</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.insurance, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Sales & Marketing</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.opexSalesMarketing, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Contractors Distribution</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.contractorsDistribution, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Depreciation</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.depreciationExpense, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            <tr>
+                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Other Operating Expenses</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                  {formatValue(col.data.opexOther, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            {/* Total Operating Expenses */}
+                            <tr style={{ borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 0', fontWeight: '600' }}>Total Operating Expenses</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>
+                                  {formatValue(col.data.totalOpex, col.data.revenue)}
+                                </td>
+                              ))}
+                            </tr>
+
+                            {/* Operating Income */}
+                            <tr style={{ background: '#dbeafe' }}>
+                              <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e40af' }}>Operating Income</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af' }}>
+                                  {formatValue(col.data.operatingIncome, col.data.revenue)}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{col.data.operatingMargin.toFixed(1)}%</div>}
+                                </td>
+                              ))}
+                            </tr>
+
+                            {/* Other Income/Expense */}
+                            {columnsDataCorrect.some(col => col.data.interestExpense > 0 || col.data.nonOperatingIncome > 0 || col.data.extraordinaryItems > 0) && (
+                              <>
+                                <tr>
+                                  <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Other Income/(Expense)</td>
+                                </tr>
+
+                                {columnsDataCorrect.some(col => col.data.interestExpense > 0) && (
+                                  <tr>
+                                    <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Interest Expense</td>
+                                    {columnsDataCorrect.map((col, idx) => (
+                                      <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                        -{formatValue(col.data.interestExpense, col.data.revenue)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                )}
+
+                                {columnsDataCorrect.some(col => col.data.nonOperatingIncome > 0) && (
+                                  <tr>
+                                    <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Non-Operating Income</td>
+                                    {columnsDataCorrect.map((col, idx) => (
+                                      <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                        {formatValue(col.data.nonOperatingIncome, col.data.revenue)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                )}
+
+                                {columnsDataCorrect.some(col => col.data.extraordinaryItems !== 0) && (
+                                  <tr>
+                                    <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Extraordinary Items</td>
+                                    {columnsDataCorrect.map((col, idx) => (
+                                      <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                        {formatValue(col.data.extraordinaryItems, col.data.revenue)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                )}
+                              </>
+                            )}
+
+                            {/* Net Income */}
+                            <tr style={{ background: '#d1fae5', borderTop: '2px solid #10b981' }}>
+                              <td style={{ padding: '12px 8px', fontWeight: '700', color: '#047857', fontSize: '16px' }}>NET INCOME</td>
+                              {columnsDataCorrect.map((col, idx) => (
+                                <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#047857', fontSize: '16px' }}>
+                                  {formatValue(col.data.netIncome, col.data.revenue)}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{col.data.netMargin.toFixed(1)}%</div>}
+                                </td>
+                              ))}
+                            </tr>
+                          </tbody>
+                        </table>
+
+                        {/* OLD CODE BELOW - Hidden but preserved for reference */}
+                        {false && (<div>
+                        {/* Operating Expenses */}
+                        <div style={{ marginBottom: '12px' }}>
+                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Payroll</span>
+                            <span style={{ color: '#475569' }}>${lobData.opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Owner's Base Pay</span>
+                            <span style={{ color: '#475569' }}>${lobData.ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Owner's Retirement</span>
+                            <span style={{ color: '#475569' }}>${lobData.ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Professional Services</span>
+                            <span style={{ color: '#475569' }}>${lobData.professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Rent/Lease</span>
+                            <span style={{ color: '#475569' }}>${lobData.rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Utilities</span>
+                            <span style={{ color: '#475569' }}>${lobData.utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Equipment</span>
+                            <span style={{ color: '#475569' }}>${lobData.equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Travel</span>
+                            <span style={{ color: '#475569' }}>${lobData.travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Insurance</span>
+                            <span style={{ color: '#475569' }}>${lobData.insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Sales & Marketing</span>
+                            <span style={{ color: '#475569' }}>${lobData.opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Contractors Distribution</span>
+                            <span style={{ color: '#475569' }}>${lobData.contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Depreciation</span>
+                            <span style={{ color: '#475569' }}>${lobData.depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Other Operating Expenses</span>
+                            <span style={{ color: '#475569' }}>${lobData.opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
+                            <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
+                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${lobData.totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+
+                        {/* Operating Income */}
+                        <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <span style={{ fontWeight: '700', color: '#1e40af' }}>Operating Income</span>
+                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${lobData.operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
+                            {lobData.operatingMargin.toFixed(1)}% margin
+                          </div>
+                        </div>
+
+                        {/* Other Income/Expense */}
+                        {(lobData.interestExpense > 0 || lobData.nonOperatingIncome > 0 || lobData.extraordinaryItems > 0) && (
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
+                            {lobData.interestExpense > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                                <span style={{ color: '#475569' }}>Interest Expense</span>
+                                <span style={{ color: '#475569' }}>($  {lobData.interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+              </div>
+            )}
+                            {lobData.nonOperatingIncome > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                                <span style={{ color: '#475569' }}>Non-Operating Income</span>
+                                <span style={{ color: '#475569' }}>${lobData.nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              </div>
+                            )}
+                            {lobData.extraordinaryItems > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                                <span style={{ color: '#475569' }}>Extraordinary Items</span>
+                                <span style={{ color: '#475569' }}>${lobData.extraordinaryItems.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Net Income */}
+                        <div style={{ background: '#d1fae5', padding: '16px', borderRadius: '8px', borderTop: '2px solid #10b981' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <span style={{ fontWeight: '700', color: '#047857', fontSize: '18px' }}>NET INCOME</span>
+                            <span style={{ fontWeight: '700', color: '#047857', fontSize: '18px' }}>${lobData.netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div style={{ fontSize: '14px', color: '#047857', textAlign: 'right' }}>
+                            {lobData.netMargin.toFixed(1)}% margin
+                          </div>
+                        </div>
+                        </div>)}
+                        {/* END OLD CODE */}
+                      </div>
+                    );
+                  })()}
+                </>
+              );
+            })()}
           </div>
         );
       })()}

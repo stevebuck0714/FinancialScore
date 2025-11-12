@@ -1,6 +1,3 @@
-// Prisma Schema for Venturis Business Evaluation Tool
-// PostgreSQL Database
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,7 +7,424 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enums
+model Consultant {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  type            String?
+  fullName        String
+  address         String?
+  phone           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  companyAddress1 String?
+  companyAddress2 String?
+  companyCity     String?
+  companyName     String?
+  companyState    String?
+  companyWebsite  String?
+  companyZip      String?
+  companies       Company[]
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Company {
+  id                         String                 @id @default(cuid())
+  name                       String
+  consultantId               String
+  addressStreet              String?
+  addressCity                String?
+  addressState               String?
+  addressZip                 String?
+  addressCountry             String?
+  industrySector             Int?
+  subscriptionMonthlyPrice   Float?
+  subscriptionQuarterlyPrice Float?
+  subscriptionAnnualPrice    Float?
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+  selectedSubscriptionPlan   String?
+  affiliateCode              String?
+  affiliateId                String?
+  linesOfBusiness            Json?                  // Array of LOB names defined for this company
+  accountMappings            AccountMapping[]
+  accountingConnections      AccountingConnection[]
+  apiSyncLogs                ApiSyncLog[]
+  assessmentRecords          AssessmentRecord[]
+  affiliate                  Affiliate?             @relation(fields: [affiliateId], references: [id])
+  consultant                 Consultant             @relation(fields: [consultantId], references: [id], onDelete: Cascade)
+  profile                    CompanyProfile?
+  financialRecords           FinancialRecord[]
+  subscription               Subscription?
+  users                      User[]
+
+  @@index([consultantId])
+  @@index([affiliateId])
+}
+
+model User {
+  id                   String             @id @default(cuid())
+  email                String             @unique
+  passwordHash         String
+  name                 String
+  title                String?
+  phone                String?
+  role                 UserRole
+  userType             UserType?
+  companyId            String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  passwordResetExpires DateTime?
+  passwordResetToken   String?            @unique
+  backupCodes          String?
+  mfaEnabled           Boolean            @default(false)
+  mfaSecret            String?
+  assessmentRecords    AssessmentRecord[]
+  consultant           Consultant?
+  financialRecords     FinancialRecord[]
+  company              Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([companyId])
+  @@index([passwordResetToken])
+}
+
+model FinancialRecord {
+  id               String             @id @default(cuid())
+  companyId        String
+  uploadedByUserId String
+  fileName         String
+  fileUrl          String?
+  rawData          Json
+  columnMapping    Json
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User               @relation(fields: [uploadedByUserId], references: [id])
+  monthlyData      MonthlyFinancial[]
+
+  @@index([companyId])
+  @@index([uploadedByUserId])
+}
+
+model MonthlyFinancial {
+  id                       String          @id @default(cuid())
+  companyId                String
+  financialRecordId        String
+  monthDate                DateTime
+  revenue                  Float           @default(0)
+  revenueBreakdown         Json?
+  expense                  Float           @default(0)
+  cogsPayroll              Float           @default(0)
+  cogsOwnerPay             Float           @default(0)
+  cogsContractors          Float           @default(0)
+  cogsMaterials            Float           @default(0)
+  cogsCommissions          Float           @default(0)
+  cogsOther                Float           @default(0)
+  cogsTotal                Float           @default(0)
+  payroll                  Float           @default(0)
+  ownerBasePay             Float           @default(0)
+  benefits                 Float           @default(0)
+  insurance                Float           @default(0)
+  professionalFees         Float           @default(0)
+  subcontractors           Float           @default(0)
+  rent                     Float           @default(0)
+  taxLicense               Float           @default(0)
+  phoneComm                Float           @default(0)
+  infrastructure           Float           @default(0)
+  autoTravel               Float           @default(0)
+  salesExpense             Float           @default(0)
+  marketing                Float           @default(0)
+  trainingCert             Float           @default(0)
+  mealsEntertainment       Float           @default(0)
+  interestExpense          Float           @default(0)
+  depreciationAmortization Float           @default(0)
+  otherExpense             Float           @default(0)
+  nonOperatingIncome       Float           @default(0)
+  extraordinaryItems       Float           @default(0)
+  cash                     Float           @default(0)
+  ar                       Float           @default(0)
+  inventory                Float           @default(0)
+  otherCA                  Float           @default(0)
+  tca                      Float           @default(0)
+  fixedAssets              Float           @default(0)
+  otherAssets              Float           @default(0)
+  totalAssets              Float           @default(0)
+  ap                       Float           @default(0)
+  otherCL                  Float           @default(0)
+  tcl                      Float           @default(0)
+  ltd                      Float           @default(0)
+  totalLiab                Float           @default(0)
+  ownersCapital            Float           @default(0)
+  ownersDraw               Float           @default(0)
+  commonStock              Float           @default(0)
+  preferredStock           Float           @default(0)
+  retainedEarnings         Float           @default(0)
+  additionalPaidInCapital  Float           @default(0)
+  treasuryStock            Float           @default(0)
+  totalEquity              Float           @default(0)
+  totalLAndE               Float           @default(0)
+  createdAt                DateTime        @default(now())
+  financialRecord          FinancialRecord @relation(fields: [financialRecordId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([financialRecordId])
+  @@index([monthDate])
+}
+
+model AssessmentRecord {
+  id           String    @id @default(cuid())
+  userId       String
+  companyId    String
+  responses    Json
+  notes        Json
+  isCompleted  Boolean   @default(false)
+  overallScore Float?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([isCompleted])
+  @@index([completedAt])
+}
+
+model CompanyProfile {
+  id             String   @id @default(cuid())
+  companyId      String   @unique
+  legalStructure String?
+  businessStatus String?
+  ownership      String?
+  workforce      String?
+  keyAdvisors    String?
+  specialNotes   String?
+  qoeNotes       String?
+  disclosures    Json
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+  keyEmployees   Json?
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  userEmail  String
+  action     String
+  entityType String
+  entityId   String?
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+model IndustryBenchmark {
+  id                String   @id @default(cuid())
+  industryId        String
+  industryName      String
+  assetSizeCategory String
+  metricName        String
+  fiveYearValue     Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([industryId, assetSizeCategory, metricName])
+  @@index([industryId])
+  @@index([assetSizeCategory])
+}
+
+model AccountingConnection {
+  id                 String             @id @default(cuid())
+  companyId          String
+  platform           AccountingPlatform
+  status             ConnectionStatus   @default(INACTIVE)
+  accessToken        String?
+  refreshToken       String?
+  tokenExpiresAt     DateTime?
+  realmId            String?
+  tenantId           String?
+  organizationId     String?
+  lastSyncAt         DateTime?
+  autoSync           Boolean            @default(false)
+  syncFrequency      String             @default("manual")
+  platformVersion    String?
+  connectionMetadata Json?
+  errorMessage       String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, platform])
+  @@index([companyId])
+  @@index([status])
+  @@index([lastSyncAt])
+}
+
+model ApiSyncLog {
+  id              String             @id @default(cuid())
+  companyId       String
+  platform        AccountingPlatform
+  syncType        String
+  status          String
+  recordsImported Int                @default(0)
+  errorCount      Int                @default(0)
+  errorDetails    Json?
+  duration        Int?
+  createdAt       DateTime           @default(now())
+  intuitTid       String?
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([platform])
+  @@index([createdAt])
+}
+
+model AccountMapping {
+  id                      String   @id @default(cuid())
+  companyId               String
+  qbAccount               String
+  qbAccountId             String?
+  qbAccountCode           String?
+  qbAccountClassification String?
+  targetField             String
+  confidence              String   @default("medium")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  lobAllocations          Json?
+  company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, qbAccount])
+  @@index([companyId])
+}
+
+model ExpenseGoal {
+  id        String   @id @default(cuid())
+  companyId String   @unique
+  goals     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+model SystemSettings {
+  id                       String   @id @default(cuid())
+  key                      String   @unique
+  businessMonthlyPrice     Float?   @default(0)
+  businessQuarterlyPrice   Float?   @default(0)
+  businessAnnualPrice      Float?   @default(0)
+  consultantMonthlyPrice   Float?   @default(0)
+  consultantQuarterlyPrice Float?   @default(0)
+  consultantAnnualPrice    Float?   @default(0)
+  updatedAt                DateTime @updatedAt
+  createdAt                DateTime @default(now())
+
+  @@index([key])
+}
+
+model Affiliate {
+  id           String          @id @default(cuid())
+  name         String          @unique
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  address      String?
+  city         String?
+  state        String?
+  zip          String?
+  website      String?
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  codes        AffiliateCode[]
+  companies    Company[]
+
+  @@index([name])
+}
+
+model AffiliateCode {
+  id             String    @id @default(cuid())
+  affiliateId    String
+  code           String    @unique
+  description    String?
+  isActive       Boolean   @default(true)
+  expiresAt      DateTime?
+  maxUses        Int?
+  currentUses    Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  annualPrice    Float     @default(0)
+  monthlyPrice   Float     @default(0)
+  quarterlyPrice Float     @default(0)
+  affiliate      Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateId])
+  @@index([code])
+}
+
+model Subscription {
+  id                 String               @id @default(cuid())
+  companyId          String               @unique
+  usaepayCustomerId  String?
+  usaepayBillingId   String?
+  plan               String
+  amount             Float
+  status             SubscriptionStatus   @default(PENDING)
+  nextBillingDate    DateTime?
+  lastPaymentDate    DateTime?
+  billingStartDate   DateTime?
+  billingEndDate     DateTime?
+  cardLast4          String?
+  cardType           String?
+  cardExpMonth       String?
+  cardExpYear        String?
+  failedPaymentCount Int                  @default(0)
+  lastFailureReason  String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  transactions       PaymentTransaction[]
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([status])
+  @@index([nextBillingDate])
+}
+
+model PaymentTransaction {
+  id             String        @id @default(cuid())
+  subscriptionId String?
+  companyId      String
+  amount         Float
+  status         PaymentStatus
+  type           PaymentType
+  transactionId  String?
+  authCode       String?
+  cardLast4      String?
+  cardType       String?
+  errorMessage   String?
+  errorCode      String?
+  description    String?
+  invoice        String?
+  createdAt      DateTime      @default(now())
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([companyId])
+  @@index([status])
+  @@index([createdAt])
+}
+
 enum UserRole {
   SITEADMIN
   CONSULTANT
@@ -28,263 +442,6 @@ enum BusinessStatus {
   PENDING
 }
 
-// Models
-
-model Consultant {
-  id               String    @id @default(cuid())
-  userId           String    @unique
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type             String?
-  fullName         String
-  address          String?
-  phone            String?
-  companyName      String?
-  companyAddress1  String?
-  companyAddress2  String?
-  companyCity      String?
-  companyState     String?
-  companyZip       String?
-  companyWebsite   String?
-  companies        Company[]
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-
-  @@index([userId])
-}
-
-model Company {
-  id                      String                  @id @default(cuid())
-  name                    String
-  consultantId            String
-  consultant              Consultant              @relation(fields: [consultantId], references: [id], onDelete: Cascade)
-  addressStreet           String?
-  addressCity             String?
-  addressState            String?
-  addressZip              String?
-  addressCountry          String?
-  industrySector          Int?
-  subscriptionMonthlyPrice Float?
-  subscriptionQuarterlyPrice Float?
-  subscriptionAnnualPrice Float?
-  selectedSubscriptionPlan String?                // 'monthly', 'quarterly', or 'annual'
-  affiliateId             String?
-  affiliate               Affiliate?              @relation(fields: [affiliateId], references: [id])
-  affiliateCode           String?
-  users                   User[]
-  financialRecords        FinancialRecord[]
-  assessmentRecords       AssessmentRecord[]
-  profile                 CompanyProfile?
-  accountingConnections   AccountingConnection[]
-  apiSyncLogs             ApiSyncLog[]
-  accountMappings         AccountMapping[]
-  subscription            Subscription?
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
-
-  @@index([consultantId])
-  @@index([affiliateId])
-}
-
-model User {
-  id                  String              @id @default(cuid())
-  email               String              @unique
-  passwordHash        String
-  name                String
-  title               String?
-  phone               String?
-  role                UserRole
-  userType            UserType?
-  companyId           String?
-  company             Company?            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  consultant          Consultant?
-  financialRecords    FinancialRecord[]
-  assessmentRecords   AssessmentRecord[]
-  passwordResetToken  String?             @unique
-  passwordResetExpires DateTime?
-  mfaEnabled          Boolean             @default(false)
-  mfaSecret           String?             // Encrypted TOTP secret
-  backupCodes         String?             // Encrypted JSON array of backup codes
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-
-  @@index([email])
-  @@index([companyId])
-  @@index([passwordResetToken])
-}
-
-model FinancialRecord {
-  id                  String              @id @default(cuid())
-  companyId           String
-  company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  uploadedByUserId    String
-  uploadedBy          User                @relation(fields: [uploadedByUserId], references: [id])
-  fileName            String
-  fileUrl             String?             // Azure Blob Storage URL
-  rawData             Json                // Original Excel data
-  columnMapping       Json                // Column mappings
-  monthlyData         MonthlyFinancial[]
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-
-  @@index([companyId])
-  @@index([uploadedByUserId])
-}
-
-model MonthlyFinancial {
-  id                      String          @id @default(cuid())
-  companyId               String
-  financialRecordId       String
-  financialRecord         FinancialRecord @relation(fields: [financialRecordId], references: [id], onDelete: Cascade)
-  monthDate               DateTime
-  
-  // Income Statement
-  revenue                 Float           @default(0)
-  revenueBreakdown        Json?           // Breakdown of revenue by source {accountName: value}
-  expense                 Float           @default(0)
-  cogsPayroll             Float           @default(0)
-  cogsOwnerPay            Float           @default(0)
-  cogsContractors         Float           @default(0)
-  cogsMaterials           Float           @default(0)
-  cogsCommissions         Float           @default(0)
-  cogsOther               Float           @default(0)
-  cogsTotal               Float           @default(0)
-  
-  // Operating Expenses
-  payroll                 Float           @default(0)
-  ownerBasePay            Float           @default(0)
-  benefits                Float           @default(0)
-  insurance               Float           @default(0)
-  professionalFees        Float           @default(0)
-  subcontractors          Float           @default(0)
-  rent                    Float           @default(0)
-  taxLicense              Float           @default(0)
-  phoneComm               Float           @default(0)
-  infrastructure          Float           @default(0)
-  autoTravel              Float           @default(0)
-  salesExpense            Float           @default(0)
-  marketing               Float           @default(0)
-  trainingCert            Float           @default(0)
-  mealsEntertainment      Float           @default(0)
-  interestExpense         Float           @default(0)
-  depreciationAmortization Float          @default(0)
-  otherExpense            Float           @default(0)
-  nonOperatingIncome      Float           @default(0)
-  extraordinaryItems      Float           @default(0)
-  
-  // Balance Sheet - Assets
-  cash                    Float           @default(0)
-  ar                      Float           @default(0)
-  inventory               Float           @default(0)
-  otherCA                 Float           @default(0)
-  tca                     Float           @default(0)
-  fixedAssets             Float           @default(0)
-  otherAssets             Float           @default(0)
-  totalAssets             Float           @default(0)
-  
-  // Balance Sheet - Liabilities
-  ap                      Float           @default(0)
-  otherCL                 Float           @default(0)
-  tcl                     Float           @default(0)
-  ltd                     Float           @default(0)
-  totalLiab               Float           @default(0)
-  
-  // Balance Sheet - Equity (Sub-accounts)
-  ownersCapital           Float           @default(0)
-  ownersDraw              Float           @default(0)
-  commonStock             Float           @default(0)
-  preferredStock          Float           @default(0)
-  retainedEarnings        Float           @default(0)
-  additionalPaidInCapital Float           @default(0)
-  treasuryStock           Float           @default(0)
-  
-  // Balance Sheet - Equity (Total)
-  totalEquity             Float           @default(0)
-  totalLAndE              Float           @default(0)
-  
-  createdAt               DateTime        @default(now())
-
-  @@index([companyId])
-  @@index([financialRecordId])
-  @@index([monthDate])
-}
-
-model AssessmentRecord {
-  id              String    @id @default(cuid())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  companyId       String
-  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  responses       Json      // Assessment responses object
-  notes           Json      // Category notes object
-  isCompleted     Boolean   @default(false) // true when assessment is finished
-  overallScore    Float?    // null for drafts, calculated when completed
-  completedAt     DateTime? // null for drafts, set when completed
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  @@index([userId])
-  @@index([companyId])
-  @@index([isCompleted])
-  @@index([completedAt])
-}
-
-model CompanyProfile {
-  id                  String          @id @default(cuid())
-  companyId           String          @unique
-  company             Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  legalStructure      String?
-  businessStatus      String?
-  ownership           String?
-  keyEmployees        Json?
-  workforce           String?
-  keyAdvisors         String?
-  specialNotes        String?
-  qoeNotes            String?
-  
-  // Disclosures (stored as JSON for flexibility)
-  disclosures         Json
-  
-  updatedAt           DateTime        @updatedAt
-  createdAt           DateTime        @default(now())
-
-  @@index([companyId])
-}
-
-// Audit log for tracking changes
-model AuditLog {
-  id              String    @id @default(cuid())
-  userId          String?
-  userEmail       String
-  action          String    // CREATE, UPDATE, DELETE, LOGIN, LOGOUT
-  entityType      String    // USER, COMPANY, FINANCIAL_RECORD, etc.
-  entityId        String?
-  changes         Json?     // What changed
-  ipAddress       String?
-  userAgent       String?
-  createdAt       DateTime  @default(now())
-
-  @@index([userId])
-  @@index([entityType])
-  @@index([createdAt])
-}
-
-// Industry benchmark data from IBISWorld reports
-model IndustryBenchmark {
-  id                String   @id @default(cuid())
-  industryId        String   // e.g., "51111"
-  industryName      String   // e.g., "Newspaper Publishing in the US"
-  assetSizeCategory String   // e.g., "All Asset Sizes", "<500k", "500k-1m"
-  metricName        String   // e.g., "Cash and Equivalents", "Current Ratio"
-  fiveYearValue     Float?   // The 5-year average value
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  @@unique([industryId, assetSizeCategory, metricName])
-  @@index([industryId])
-  @@index([assetSizeCategory])
-}
-
-// Accounting API Connections
 enum AccountingPlatform {
   QUICKBOOKS
   SAGE
@@ -299,161 +456,6 @@ enum ConnectionStatus {
   EXPIRED
 }
 
-model AccountingConnection {
-  id                  String              @id @default(cuid())
-  companyId           String
-  company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  platform            AccountingPlatform
-  status              ConnectionStatus    @default(INACTIVE)
-  
-  // OAuth tokens
-  accessToken         String?             // Encrypted OAuth access token
-  refreshToken        String?             // Encrypted OAuth refresh token
-  tokenExpiresAt      DateTime?           // When the access token expires
-  
-  // Platform-specific data
-  realmId             String?             // QuickBooks realm ID (company ID)
-  tenantId            String?             // For platforms that use tenants
-  organizationId      String?             // For Sage, NetSuite, etc.
-  
-  // Sync settings
-  lastSyncAt          DateTime?           // Last successful sync
-  autoSync            Boolean             @default(false)
-  syncFrequency       String              @default("manual") // manual, daily, weekly
-  
-  // Metadata
-  platformVersion     String?             // API version being used
-  connectionMetadata  Json?               // Additional platform-specific data
-  errorMessage        String?             // Last error if status is ERROR
-  
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-
-  @@unique([companyId, platform])
-  @@index([companyId])
-  @@index([status])
-  @@index([lastSyncAt])
-}
-
-// API Sync Logs
-model ApiSyncLog {
-  id                  String              @id @default(cuid())
-  companyId           String
-  company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  platform            AccountingPlatform
-  syncType            String              // full, incremental, manual
-  status              String              // success, error, partial
-  recordsImported     Int                 @default(0)
-  errorCount          Int                 @default(0)
-  errorDetails        Json?
-  intuitTid           String?             // Intuit Transaction ID for debugging/support
-  duration            Int?                // Sync duration in milliseconds
-  createdAt           DateTime            @default(now())
-
-  @@index([companyId])
-  @@index([platform])
-  @@index([createdAt])
-}
-
-// Account Mappings - Maps QuickBooks (or other accounting system) accounts to our standardized fields
-model AccountMapping {
-  id                      String              @id @default(cuid())
-  companyId               String
-  company                 Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  qbAccount               String              // QuickBooks account name
-  qbAccountId             String?             // QuickBooks account ID
-  qbAccountCode           String?             // Chart of Accounts code/number
-  qbAccountClassification String?             // Account type: Income, Expense, Asset, Liability, Equity
-  targetField             String              // Our standardized field name
-  confidence              String              @default("medium") // high, medium, low
-  lobAllocations          Json?               // Line of business allocation percentages
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
-
-  @@unique([companyId, qbAccount])
-  @@index([companyId])
-}
-
-// Expense Goals - User-defined target percentages for expense categories
-model ExpenseGoal {
-  id                      String              @id @default(cuid())
-  companyId               String              @unique
-  goals                   Json                // {categoryKey: percentage}
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
-
-  @@index([companyId])
-}
-
-// System Settings - Store default pricing and other system-wide configuration
-model SystemSettings {
-  id                              String    @id @default(cuid())
-  key                             String    @unique // e.g., "default_pricing"
-  
-  // Business Default Pricing
-  businessMonthlyPrice            Float?    @default(0)
-  businessQuarterlyPrice          Float?    @default(0)
-  businessAnnualPrice             Float?    @default(0)
-  
-  // Consultant Default Pricing
-  consultantMonthlyPrice          Float?    @default(0)
-  consultantQuarterlyPrice        Float?    @default(0)
-  consultantAnnualPrice           Float?    @default(0)
-  
-  updatedAt                       DateTime  @updatedAt
-  createdAt                       DateTime  @default(now())
-
-  @@index([key])
-}
-
-// Affiliate - Partner organizations that can provide special pricing
-model Affiliate {
-  id                      String          @id @default(cuid())
-  name                    String          @unique
-  contactName             String?
-  contactEmail            String?
-  contactPhone            String?
-  address                 String?
-  city                    String?
-  state                   String?
-  zip                     String?
-  website                 String?
-  
-  isActive                Boolean         @default(true)
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
-  
-  codes                   AffiliateCode[]
-  companies               Company[]
-
-  @@index([name])
-}
-
-// Affiliate Code - Promotional codes for affiliates with code-specific pricing
-model AffiliateCode {
-  id                      String          @id @default(cuid())
-  affiliateId             String
-  affiliate               Affiliate       @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
-  code                    String          @unique
-  description             String?
-  
-  // Code-specific pricing
-  monthlyPrice            Float           @default(0)
-  quarterlyPrice          Float           @default(0)
-  annualPrice             Float           @default(0)
-  
-  isActive                Boolean         @default(true)
-  expiresAt               DateTime?
-  maxUses                 Int?
-  currentUses             Int             @default(0)
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
-
-  @@index([affiliateId])
-  @@index([code])
-}
-
-// Subscription Status Enum
 enum SubscriptionStatus {
   ACTIVE
   CANCELED
@@ -462,48 +464,6 @@ enum SubscriptionStatus {
   PENDING
 }
 
-// Subscription - Recurring billing information
-model Subscription {
-  id                      String              @id @default(cuid())
-  companyId               String              @unique
-  company                 Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  // USAePay integration
-  usaepayCustomerId       String?             // Customer Vault ID in USAePay
-  usaepayBillingId        String?             // Recurring billing schedule ID
-  
-  // Subscription details
-  plan                    String              // monthly, quarterly, annual
-  amount                  Float
-  status                  SubscriptionStatus  @default(PENDING)
-  
-  // Billing cycle
-  nextBillingDate         DateTime?
-  lastPaymentDate         DateTime?
-  billingStartDate        DateTime?
-  billingEndDate          DateTime?           // For canceled subscriptions
-  
-  // Payment method info (last 4 digits for display)
-  cardLast4               String?
-  cardType                String?
-  cardExpMonth            String?
-  cardExpYear             String?
-  
-  // Tracking
-  failedPaymentCount      Int                 @default(0)
-  lastFailureReason       String?
-  
-  transactions            PaymentTransaction[]
-  
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
-
-  @@index([companyId])
-  @@index([status])
-  @@index([nextBillingDate])
-}
-
-// Payment Transaction Status
 enum PaymentStatus {
   SUCCESS
   FAILED
@@ -511,46 +471,9 @@ enum PaymentStatus {
   REFUNDED
 }
 
-// Payment Transaction Type
 enum PaymentType {
   INITIAL
   RECURRING
   MANUAL
   REFUND
-}
-
-// Payment Transaction - Record of all payment attempts
-model PaymentTransaction {
-  id                      String          @id @default(cuid())
-  subscriptionId          String?
-  subscription            Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  companyId               String
-  
-  // Transaction details
-  amount                  Float
-  status                  PaymentStatus
-  type                    PaymentType
-  
-  // USAePay data
-  transactionId           String?         // USAePay transaction ID
-  authCode                String?
-  
-  // Card info
-  cardLast4               String?
-  cardType                String?
-  
-  // Error handling
-  errorMessage            String?
-  errorCode               String?
-  
-  // Metadata
-  description             String?
-  invoice                 String?
-  
-  createdAt               DateTime        @default(now())
-
-  @@index([subscriptionId])
-  @@index([companyId])
-  @@index([status])
-  @@index([createdAt])
 }

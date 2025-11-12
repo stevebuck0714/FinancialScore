@@ -19,12 +19,28 @@ export async function GET(request: NextRequest) {
       orderBy: { qbAccount: 'asc' },
     });
 
+    // Get the company's saved LOB names
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { linesOfBusiness: true }
+    });
+
     console.log(`Retrieved ${mappings.length} mappings for company ${companyId}`);
     if (mappings.length > 0) {
       console.log('First mapping:', mappings[0]);
+      console.log('First mapping has lobAllocations?', !!mappings[0].lobAllocations);
+      if (mappings[0].lobAllocations) {
+        console.log('LOB Allocations:', mappings[0].lobAllocations);
+      }
+    }
+    if (company?.linesOfBusiness) {
+      console.log('Company LOB names:', company.linesOfBusiness);
     }
 
-    return NextResponse.json({ mappings });
+    return NextResponse.json({ 
+      mappings,
+      linesOfBusiness: company?.linesOfBusiness || []
+    });
   } catch (error: any) {
     console.error('Error fetching mappings:', error);
     return NextResponse.json(
@@ -38,7 +54,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { companyId, mappings } = body;
+    const { companyId, mappings, linesOfBusiness } = body;
 
     if (!companyId || !mappings || !Array.isArray(mappings)) {
       return NextResponse.json(
@@ -48,6 +64,15 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Saving ${mappings.length} mappings for company ${companyId}`);
+    
+    // Save the LOB names to the Company record if provided
+    if (linesOfBusiness && Array.isArray(linesOfBusiness) && linesOfBusiness.length > 0) {
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { linesOfBusiness: linesOfBusiness }
+      });
+      console.log(`Saved ${linesOfBusiness.length} LOB names to company record`);
+    }
     
     // Delete existing mappings for this company
     const deleted = await prisma.accountMapping.deleteMany({
