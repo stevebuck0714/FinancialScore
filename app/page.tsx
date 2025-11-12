@@ -12647,9 +12647,21 @@ export default function FinancialScorePage() {
                     const currentQ = monthly.slice(-3);
                     const fourQAgo = monthly.length >= 15 ? monthly.slice(-15, -12) : monthly.slice(-6, -3);
                     const currentQRev = currentQ.reduce((sum, m) => sum + m.revenue, 0);
-                    const currentQExp = currentQ.reduce((sum, m) => sum + m.expense, 0);
+                    const currentQExp = currentQ.reduce((sum, m) => sum + (
+                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+                      (m.interestExpense || 0) + (m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                    ), 0);
                     const fourQAgoRev = fourQAgo.reduce((sum, m) => sum + m.revenue, 0);
-                    const fourQAgoExp = fourQAgo.reduce((sum, m) => sum + m.expense, 0);
+                    const fourQAgoExp = fourQAgo.reduce((sum, m) => sum + (
+                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+                      (m.interestExpense || 0) + (m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                    ), 0);
                     const qRevChange = fourQAgoRev > 0 ? ((currentQRev - fourQAgoRev) / fourQAgoRev * 100) : 0;
                     const qExpChange = fourQAgoExp > 0 ? ((currentQExp - fourQAgoExp) / fourQAgoExp * 100) : 0;
                     const currentQMargin = currentQRev > 0 ? ((currentQRev - currentQExp) / currentQRev * 100) : 0;
@@ -12660,9 +12672,21 @@ export default function FinancialScorePage() {
                     const last12 = monthly.slice(-12);
                     const prior12 = monthly.length >= 24 ? monthly.slice(-24, -12) : monthly.slice(0, 12);
                     const ttmRev = last12.reduce((sum, m) => sum + m.revenue, 0);
-                    const ttmExp = last12.reduce((sum, m) => sum + m.expense, 0);
+                    const ttmExp = last12.reduce((sum, m) => sum + (
+                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+                      (m.interestExpense || 0) + (m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                    ), 0);
                     const priorTTMRev = prior12.reduce((sum, m) => sum + m.revenue, 0);
-                    const priorTTMExp = prior12.reduce((sum, m) => sum + m.expense, 0);
+                    const priorTTMExp = prior12.reduce((sum, m) => sum + (
+                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+                      (m.interestExpense || 0) + (m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                    ), 0);
                     const ttmRevChange = priorTTMRev > 0 ? ((ttmRev - priorTTMRev) / priorTTMRev * 100) : 0;
                     const ttmExpChange = priorTTMExp > 0 ? ((ttmExp - priorTTMExp) / priorTTMExp * 100) : 0;
                     const ttmMargin = ttmRev > 0 ? ((ttmRev - ttmExp) / ttmRev * 100) : 0;
