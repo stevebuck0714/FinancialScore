@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
             qbAccountClassification: m.qbAccountClassification || null,
             targetField: m.targetField,
             confidence: m.confidence || 'medium',
+            lobAllocations: m.lobAllocations || null,
           })),
         });
 
