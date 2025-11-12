@@ -110,9 +110,13 @@ export async function POST(request: NextRequest) {
     console.log('⏰ Token expiration check:');
     console.log('  Current time:', now.toISOString());
     console.log('  Token expires at:', connection.tokenExpiresAt?.toISOString() || 'Not set');
-    console.log('  Time until expiry:', connection.tokenExpiresAt 
-      ? Math.round((connection.tokenExpiresAt.getTime() - now.getTime()) / 1000 / 60) + ' minutes'
-      : 'Unknown');
+    if (connection.tokenExpiresAt) {
+      const timeUntilExpiry = connection.tokenExpiresAt.getTime() - now.getTime();
+      console.log('  Time until expiry:', Math.round(timeUntilExpiry / 1000 / 60) + ' minutes');
+      console.log('  Token status:', timeUntilExpiry < 0 ? '❌ EXPIRED' : timeUntilExpiry < bufferTime ? '⚠️ EXPIRING SOON' : '✅ VALID');
+    } else {
+      console.log('  Time until expiry: Unknown');
+    }
     
     const shouldRefresh = connection.tokenExpiresAt && 
                          (connection.tokenExpiresAt.getTime() - now.getTime() < bufferTime);
@@ -205,11 +209,14 @@ export async function POST(request: NextRequest) {
     // Check if the API call failed
     if (!plResponse.ok) {
       const errorText = await plResponse.text();
-      console.error('QuickBooks API error - Status:', plResponse.status);
-      console.error('Response body:', errorText);
+      console.error('❌ QuickBooks API error - Status:', plResponse.status);
+      console.error('❌ Response body:', errorText);
+      console.error('❌ Request URL:', plUrl);
+      console.error('❌ Access token (first 20 chars):', accessToken?.substring(0, 20) + '...');
       
       // Handle 401/403 errors - token is invalid/expired
       if (plResponse.status === 401 || plResponse.status === 403) {
+        console.error('❌ Token rejected by QuickBooks - marking connection as EXPIRED');
         await prisma.accountingConnection.update({
           where: {
             companyId_platform: {
@@ -220,11 +227,13 @@ export async function POST(request: NextRequest) {
           data: {
             status: 'EXPIRED',
             errorMessage: 'Authorization failed - please reconnect to QuickBooks',
+            lastSyncAt: new Date(),
           },
         });
         return NextResponse.json({ 
           error: 'QuickBooks authorization failed - please reconnect',
-          needsReconnect: true 
+          needsReconnect: true,
+          details: errorText 
         }, { status: 401 });
       }
       
