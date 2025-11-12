@@ -177,6 +177,13 @@ type MonthlyDataRow = {
   otherCL: number;
   tcl: number;
   ltd: number;
+  ownersCapital: number;
+  ownersDraw: number;
+  commonStock: number;
+  preferredStock: number;
+  retainedEarnings: number;
+  additionalPaidInCapital: number;
+  treasuryStock: number;
   totalEquity: number;
   totalLAndE: number;
 };
@@ -1275,7 +1282,6 @@ export default function FinancialScorePage() {
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
   const [showDashboardCustomizer, setShowDashboardCustomizer] = useState(false);
-  const [mdaRefreshTrigger, setMdaRefreshTrigger] = useState(0);
 
   // Check if payment is required for the current company
   const isPaymentRequired = useCallback(() => {
@@ -1998,15 +2004,15 @@ export default function FinancialScorePage() {
     // Show success message
     if (success === 'quickbooks_connected') {
       alert('QuickBooks connected successfully! You can now sync your financial data.');
-      // Clean URL but keep the tab parameter
-      window.history.replaceState({}, '', window.location.pathname + '?view=admin&tab=api-connections');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
     }
 
     // Show error message
     if (error === 'quickbooks_connection_failed') {
       alert('Failed to connect to QuickBooks. Please try again.');
-      // Clean URL but keep the tab parameter
-      window.history.replaceState({}, '', window.location.pathname + '?view=admin&tab=api-connections');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
     }
   }, []);
 
@@ -2097,6 +2103,40 @@ export default function FinancialScorePage() {
               cogsCommissions: m.cogsCommissions || 0,
               cogsOther: m.cogsOther || 0,
               cogsTotal: m.cogsTotal || 0,
+              payroll: m.payroll || 0,
+              ownerBasePay: m.ownerBasePay || 0,
+              benefits: m.benefits || 0,
+              insurance: m.insurance || 0,
+              professionalFees: m.professionalFees || 0,
+              subcontractors: m.subcontractors || 0,
+              rent: m.rent || 0,
+              taxLicense: m.taxLicense || 0,
+              phoneComm: m.phoneComm || 0,
+              infrastructure: m.infrastructure || 0,
+              autoTravel: m.autoTravel || 0,
+              salesExpense: m.salesExpense || 0,
+              marketing: m.marketing || 0,
+              trainingCert: m.trainingCert || 0,
+              mealsEntertainment: m.mealsEntertainment || 0,
+              interestExpense: m.interestExpense || 0,
+              depreciationAmortization: m.depreciationAmortization || 0,
+              otherExpense: m.otherExpense || 0,
+              nonOperatingIncome: m.nonOperatingIncome || 0,
+              extraordinaryItems: m.extraordinaryItems || 0,
+              netProfit: m.netProfit || 0,
+              opexSalesMarketing: m.salesExpense || 0,
+              rentLease: m.rent || 0,
+              utilities: m.infrastructure || 0,
+              equipment: m.infrastructure || 0,
+              travel: m.autoTravel || 0,
+              professionalServices: m.professionalFees || 0,
+              opexOther: m.otherExpense || 0,
+              opexPayroll: m.payroll || 0,
+              ownersBasePay: m.ownerBasePay || 0,
+              ownersRetirement: 0,
+              contractorsDistribution: m.subcontractors || 0,
+              depreciationExpense: m.depreciationAmortization || 0,
+              operatingExpenseTotal: m.expense || 0,
               cash: m.cash || 0,
               ar: m.ar || 0,
               inventory: m.inventory || 0,
@@ -2110,6 +2150,13 @@ export default function FinancialScorePage() {
               tcl: m.tcl || 0,
               ltd: m.ltd || 0,
               totalLiab: m.totalLiab || 0,
+              ownersCapital: m.ownersCapital || 0,
+              ownersDraw: m.ownersDraw || 0,
+              commonStock: m.commonStock || 0,
+              preferredStock: m.preferredStock || 0,
+              retainedEarnings: m.retainedEarnings || 0,
+              additionalPaidInCapital: m.additionalPaidInCapital || 0,
+              treasuryStock: m.treasuryStock || 0,
               totalEquity: m.totalEquity || 0,
               totalLAndE: m.totalLAndE || 0
             }));
@@ -2824,21 +2871,6 @@ export default function FinancialScorePage() {
     }
 
     try {
-      // If reconnecting (status is EXPIRED or ERROR), clear old connection first
-      if (qbStatus === 'EXPIRED' || qbStatus === 'ERROR') {
-        console.log('🧹 Clearing expired QuickBooks connection before reconnecting...');
-        try {
-          await fetch('/api/quickbooks/disconnect', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ companyId: selectedCompanyId }),
-          });
-          console.log('✅ Old connection cleared');
-        } catch (disconnectError) {
-          console.warn('Failed to clear old connection, continuing anyway:', disconnectError);
-        }
-      }
-
       const response = await fetch(`/api/quickbooks/auth?companyId=${selectedCompanyId}`);
       const data = await response.json();
       
@@ -2886,20 +2918,6 @@ export default function FinancialScorePage() {
         
         alert(`QuickBooks data synced successfully! ${data.recordsImported || 0} months of financial data imported.`);
       } else {
-        // Check if reconnection is needed
-        if (data.needsReconnect || response.status === 401) {
-          setQbConnected(false);
-          setQbStatus('EXPIRED');
-          
-          // Refresh QB status to update UI
-          if (selectedCompanyId) {
-            await checkQBStatus(selectedCompanyId);
-          }
-          
-          alert('⚠️ QuickBooks authorization expired.\n\nPlease reconnect to QuickBooks to sync your data.');
-          return;
-        }
-        
         // Include detailed error message from API
         const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
         throw new Error(errorMsg);
@@ -3878,7 +3896,7 @@ export default function FinancialScorePage() {
     }
     
     return { strengths, weaknesses, insights };
-  }, [trendData, finalScore, profitabilityScore, assetDevScore, growth_24mo, growth_6mo, expenseAdjustment, revExpSpread, ltmRev, ltmExp, monthly, benchmarks, mdaRefreshTrigger]);
+  }, [trendData, finalScore, profitabilityScore, assetDevScore, growth_24mo, growth_6mo, expenseAdjustment, revExpSpread, ltmRev, ltmExp, monthly, benchmarks]);
 
   // Projections
   const projections = useMemo(() => {
@@ -4070,11 +4088,6 @@ export default function FinancialScorePage() {
           ) : isRegistering ? (
             <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleRegisterConsultant(); }}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Register as Consultant</h2>
-              
-              {/* Hidden honey pot fields to prevent autofill */}
-              <input type="text" name="fake_username" autoComplete="off" tabIndex={-1} style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} />
-              <input type="password" name="fake_password" autoComplete="off" tabIndex={-1} style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} />
-              
               <input 
                 type="text" 
                 name={`fullname_${Date.now()}`}
@@ -4091,11 +4104,7 @@ export default function FinancialScorePage() {
                 placeholder="Email *" 
                 value={loginEmail} 
                 onChange={(e) => setLoginEmail(e.target.value)} 
-                autoComplete="chrome-off"
-                data-lpignore="true"
-                data-form-type="other"
-                readOnly
-                onFocus={(e) => e.target.removeAttribute('readonly')} 
+                autoComplete="off" 
                 required
                 style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
@@ -4196,11 +4205,7 @@ export default function FinancialScorePage() {
                   placeholder="Password *" 
                   value={loginPassword} 
                   onChange={(e) => setLoginPassword(e.target.value)} 
-                  autoComplete="chrome-off"
-                  data-lpignore="true"
-                  data-form-type="other"
-                  readOnly
-                  onFocus={(e) => e.target.removeAttribute('readonly')}
+                  autoComplete="new-password"
                   required
                   style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                 />
@@ -4222,22 +4227,13 @@ export default function FinancialScorePage() {
           ) : (
             <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (!isLoading) handleLogin(); }}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Sign In</h2>
-              
-              {/* Hidden honey pot fields to prevent autofill */}
-              <input type="text" name="fake_username" autoComplete="off" tabIndex={-1} style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} />
-              <input type="password" name="fake_password" autoComplete="off" tabIndex={-1} style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} />
-              
               <input 
                 type="text" 
                 name={`email_${Date.now()}`}
                 placeholder="Email" 
                 value={loginEmail} 
                 onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }} 
-                autoComplete="chrome-off"
-                data-lpignore="true"
-                data-form-type="other"
-                readOnly
-                onFocus={(e) => e.target.removeAttribute('readonly')}
+                autoComplete="off" 
                 style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
               
@@ -4249,11 +4245,7 @@ export default function FinancialScorePage() {
                   placeholder="Password" 
                   value={loginPassword} 
                   onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }} 
-                  autoComplete="chrome-off"
-                  data-lpignore="true"
-                  data-form-type="other"
-                  readOnly
-                  onFocus={(e) => e.target.removeAttribute('readonly')}
+                  autoComplete="new-password"
                   style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                 />
                 <button
@@ -5033,60 +5025,8 @@ export default function FinancialScorePage() {
               </div>
             )}
 
-            {/* Legal Links Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
-              <a
-                href="/license-agreement"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#64748b',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#f1f5f9';
-                  e.currentTarget.style.color = '#334155';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#64748b';
-                }}
-              >
-                📄 License Agreement
-              </a>
-              <a
-                href="/privacy-policy"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#64748b',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#f1f5f9';
-                  e.currentTarget.style.color = '#334155';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#64748b';
-                }}
-              >
-                🔒 Privacy Policy
-              </a>
-            </div>
-
             {/* Contact Support Section */}
-            <div style={{ paddingTop: '12px' }}>
+            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
               <a
                 href="mailto:steve@stevebuck.us"
                 style={{
@@ -5278,60 +5218,8 @@ export default function FinancialScorePage() {
               </h3>
             </div>
 
-            {/* Legal Links Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
-              <a
-                href="/license-agreement"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#64748b',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#f1f5f9';
-                  e.currentTarget.style.color = '#334155';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#64748b';
-                }}
-              >
-                📄 License Agreement
-              </a>
-              <a
-                href="/privacy-policy"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#64748b',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#f1f5f9';
-                  e.currentTarget.style.color = '#334155';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#64748b';
-                }}
-              >
-                🔒 Privacy Policy
-              </a>
-            </div>
-
             {/* Contact Support Section */}
-            <div style={{ paddingTop: '12px' }}>
+            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
               <a
                 href="mailto:steve@stevebuck.us"
                 style={{
@@ -5474,7 +5362,6 @@ export default function FinancialScorePage() {
                         placeholder="Type"
                         value={newConsultantType}
                         onChange={(e) => setNewConsultantType(e.target.value)}
-                        autoComplete="off"
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5482,7 +5369,6 @@ export default function FinancialScorePage() {
                         placeholder="Full Name"
                         value={newConsultantFullName}
                         onChange={(e) => setNewConsultantFullName(e.target.value)}
-                        autoComplete="off"
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5490,7 +5376,6 @@ export default function FinancialScorePage() {
                         placeholder="Address"
                         value={newConsultantAddress}
                         onChange={(e) => setNewConsultantAddress(e.target.value)}
-                        autoComplete="off"
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5498,11 +5383,6 @@ export default function FinancialScorePage() {
                         placeholder="Email"
                         value={newConsultantEmail}
                         onChange={(e) => setNewConsultantEmail(e.target.value)}
-                        autoComplete="chrome-off"
-                        data-lpignore="true"
-                        data-form-type="other"
-                        readOnly
-                        onFocus={(e) => e.target.removeAttribute('readonly')}
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5510,11 +5390,6 @@ export default function FinancialScorePage() {
                         placeholder="Phone"
                         value={newConsultantPhone}
                         onChange={(e) => setNewConsultantPhone(e.target.value)}
-                        autoComplete="chrome-off"
-                        data-lpignore="true"
-                        data-form-type="other"
-                        readOnly
-                        onFocus={(e) => e.target.removeAttribute('readonly')}
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5522,11 +5397,6 @@ export default function FinancialScorePage() {
                         placeholder="Password"
                         value={newConsultantPassword}
                         onChange={(e) => setNewConsultantPassword(e.target.value)}
-                        autoComplete="chrome-off"
-                        data-lpignore="true"
-                        data-form-type="other"
-                        readOnly
-                        onFocus={(e) => e.target.removeAttribute('readonly')}
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                     </div>
@@ -5681,7 +5551,6 @@ export default function FinancialScorePage() {
                                         ...editingConsultantInfo,
                                         [consultant.id]: { ...editingConsultantInfo[consultant.id], email: e.target.value }
                                       })}
-                                      autoComplete="off"
                                       style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                     />
                                   </div>
@@ -7381,11 +7250,7 @@ export default function FinancialScorePage() {
                               placeholder="Email" 
                               value={newCompanyUserEmail} 
                               onChange={(e) => setNewCompanyUserEmail(e.target.value)} 
-                              autoComplete="chrome-off"
-                              data-lpignore="true"
-                              data-form-type="other"
-                              readOnly
-                              onFocus={(e) => e.target.removeAttribute('readonly')}
+                              autoComplete="off"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                             <input 
@@ -7394,11 +7259,7 @@ export default function FinancialScorePage() {
                               placeholder="Phone Number" 
                               value={newCompanyUserPhone} 
                               onChange={(e) => setNewCompanyUserPhone(e.target.value)} 
-                              autoComplete="chrome-off"
-                              data-lpignore="true"
-                              data-form-type="other"
-                              readOnly
-                              onFocus={(e) => e.target.removeAttribute('readonly')}
+                              autoComplete="off"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                           </div>
@@ -7408,11 +7269,7 @@ export default function FinancialScorePage() {
                             placeholder="Password" 
                             value={newCompanyUserPassword} 
                             onChange={(e) => setNewCompanyUserPassword(e.target.value)} 
-                            autoComplete="chrome-off"
-                            data-lpignore="true"
-                            data-form-type="other"
-                            readOnly
-                            onFocus={(e) => e.target.removeAttribute('readonly')}
+                            autoComplete="new-password"
                             style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                           />
                           <button onClick={() => addUser(comp.id, 'company')} style={{ padding: '8px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Company User</button>
@@ -7490,11 +7347,7 @@ export default function FinancialScorePage() {
                               placeholder="Email" 
                               value={newAssessmentUserEmail} 
                               onChange={(e) => setNewAssessmentUserEmail(e.target.value)} 
-                              autoComplete="chrome-off"
-                              data-lpignore="true"
-                              data-form-type="other"
-                              readOnly
-                              onFocus={(e) => e.target.removeAttribute('readonly')}
+                              autoComplete="off"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                             <input 
@@ -7503,11 +7356,7 @@ export default function FinancialScorePage() {
                               placeholder="Password" 
                               value={newAssessmentUserPassword} 
                               onChange={(e) => setNewAssessmentUserPassword(e.target.value)} 
-                              autoComplete="chrome-off"
-                              data-lpignore="true"
-                              data-form-type="other"
-                              readOnly
-                              onFocus={(e) => e.target.removeAttribute('readonly')}
+                              autoComplete="new-password"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                             <button onClick={() => addUser(comp.id, 'assessment')} style={{ padding: '8px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Assessment User</button>
@@ -7649,7 +7498,7 @@ export default function FinancialScorePage() {
 
                 <div style={{ marginBottom: '20px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
-                  <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} autoComplete="off" style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
+                  <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
                   {error && <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>}
                   {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>✓ Loaded: {file.name}</div>}
                 </div>
@@ -9074,7 +8923,7 @@ export default function FinancialScorePage() {
                 <input 
                   type="text" 
                   value={companyAddressStreet} 
-                  onChange={(e) => setCompanyAddressStreet(e.target.value)} autoComplete="off" 
+                  onChange={(e) => setCompanyAddressStreet(e.target.value)} 
                   style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                   placeholder="Street Address" 
                 />
@@ -9082,7 +8931,7 @@ export default function FinancialScorePage() {
                   <input 
                     type="text" 
                     value={companyAddressCity} 
-                    onChange={(e) => setCompanyAddressCity(e.target.value)} autoComplete="off" 
+                    onChange={(e) => setCompanyAddressCity(e.target.value)} 
                     style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                     placeholder="City" 
                   />
@@ -9147,7 +8996,7 @@ export default function FinancialScorePage() {
                   <input 
                     type="text" 
                     value={companyAddressZip} 
-                    onChange={(e) => setCompanyAddressZip(e.target.value)} autoComplete="off" 
+                    onChange={(e) => setCompanyAddressZip(e.target.value)} 
                     style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                     placeholder="ZIP" 
                   />
@@ -9155,7 +9004,7 @@ export default function FinancialScorePage() {
                 <input 
                   type="text" 
                   value={companyAddressCountry} 
-                  onChange={(e) => setCompanyAddressCountry(e.target.value)} autoComplete="off" 
+                  onChange={(e) => setCompanyAddressCountry(e.target.value)} 
                   style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                   placeholder="Country" 
                 />
@@ -9496,18 +9345,56 @@ export default function FinancialScorePage() {
                       </tr>
                       <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#e0f2fe' }}>
                         <td style={{ padding: '8px 10px', fontWeight: '700', position: 'sticky', left: 0, background: '#e0f2fe', zIndex: 1 }}>Total Operating Expenses</td>
-                        {monthly.slice(-36).map((m: any, idx: number) => (
-                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
-                            ${(m.expense || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </td>
-                        ))}
+                        {monthly.slice(-36).map((m: any, idx: number) => {
+                          const totalOpex = (m.payroll || 0) + 
+                                          (m.ownerBasePay || 0) + 
+                                          (m.benefits || 0) + 
+                                          (m.insurance || 0) + 
+                                          (m.professionalFees || 0) + 
+                                          (m.subcontractors || 0) + 
+                                          (m.rent || 0) + 
+                                          (m.taxLicense || 0) + 
+                                          (m.phoneComm || 0) + 
+                                          (m.infrastructure || 0) + 
+                                          (m.autoTravel || 0) + 
+                                          (m.salesExpense || 0) + 
+                                          (m.marketing || 0) + 
+                                          (m.trainingCert || 0) + 
+                                          (m.mealsEntertainment || 0) + 
+                                          (m.interestExpense || 0) + 
+                                          (m.depreciationAmortization || 0) + 
+                                          (m.otherExpense || 0);
+                          return (
+                            <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
+                              ${totalOpex.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </td>
+                          );
+                        })}
                       </tr>
                       
                       {/* Net Income */}
                       <tr style={{ borderBottom: '3px solid #10b981', background: '#10b981', color: 'white' }}>
                         <td style={{ padding: '12px 10px', fontWeight: '700', fontSize: '15px', position: 'sticky', left: 0, background: '#10b981', zIndex: 1 }}>NET INCOME</td>
                         {monthly.slice(-36).map((m: any, idx: number) => {
-                          const netIncome = (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0);
+                          const totalOpex = (m.payroll || 0) + 
+                                          (m.ownerBasePay || 0) + 
+                                          (m.benefits || 0) + 
+                                          (m.insurance || 0) + 
+                                          (m.professionalFees || 0) + 
+                                          (m.subcontractors || 0) + 
+                                          (m.rent || 0) + 
+                                          (m.taxLicense || 0) + 
+                                          (m.phoneComm || 0) + 
+                                          (m.infrastructure || 0) + 
+                                          (m.autoTravel || 0) + 
+                                          (m.salesExpense || 0) + 
+                                          (m.marketing || 0) + 
+                                          (m.trainingCert || 0) + 
+                                          (m.mealsEntertainment || 0) + 
+                                          (m.interestExpense || 0) + 
+                                          (m.depreciationAmortization || 0) + 
+                                          (m.otherExpense || 0);
+                          const netIncome = (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
                           return (
                             <td key={idx} style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', fontSize: '15px' }}>
                               ${netIncome.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -9667,20 +9554,92 @@ export default function FinancialScorePage() {
                           <td key={idx} style={{ padding: '8px 10px' }}></td>
                         ))}
                       </tr>
-                      <tr style={{ borderBottom: '3px solid #10b981', background: '#f0fdf4' }}>
-                        <td style={{ padding: '10px', fontWeight: '700', fontSize: '14px', position: 'sticky', left: 0, background: '#f0fdf4', zIndex: 1 }}>TOTAL EQUITY</td>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Owner's Capital</td>
                         {monthly.slice(-36).map((m: any, idx: number) => (
-                          <td key={idx} style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', fontSize: '14px' }}>
-                            ${(m.totalEquity || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            ${(m.ownersCapital || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </td>
                         ))}
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Owner's Draw</td>
+                        {monthly.slice(-36).map((m: any, idx: number) => (
+                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            ${(m.ownersDraw || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Common Stock</td>
+                        {monthly.slice(-36).map((m: any, idx: number) => (
+                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            ${(m.commonStock || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Preferred Stock</td>
+                        {monthly.slice(-36).map((m: any, idx: number) => (
+                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            ${(m.preferredStock || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Retained Earnings</td>
+                        {monthly.slice(-36).map((m: any, idx: number) => (
+                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            ${(m.retainedEarnings || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Additional Paid-In Capital</td>
+                        {monthly.slice(-36).map((m: any, idx: number) => (
+                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            ${(m.additionalPaidInCapital || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Treasury Stock</td>
+                        {monthly.slice(-36).map((m: any, idx: number) => (
+                          <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                            ${(m.treasuryStock || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr style={{ borderBottom: '3px solid #10b981', background: '#f0fdf4' }}>
+                        <td style={{ padding: '10px', fontWeight: '700', fontSize: '14px', position: 'sticky', left: 0, background: '#f0fdf4', zIndex: 1 }}>TOTAL EQUITY</td>
+                        {monthly.slice(-36).map((m: any, idx: number) => {
+                          const calculatedTotalEquity = (m.ownersCapital || 0) + 
+                                                        (m.ownersDraw || 0) + 
+                                                        (m.commonStock || 0) + 
+                                                        (m.preferredStock || 0) + 
+                                                        (m.retainedEarnings || 0) + 
+                                                        (m.additionalPaidInCapital || 0) + 
+                                                        (m.treasuryStock || 0);
+                          return (
+                            <td key={idx} style={{ padding: '10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', fontSize: '14px' }}>
+                              ${calculatedTotalEquity.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </td>
+                          );
+                        })}
                       </tr>
                       
                       {/* Total Liabilities & Equity Check */}
                       <tr style={{ borderBottom: '4px double #475569', background: '#e2e8f0' }}>
                         <td style={{ padding: '12px 10px', fontWeight: '700', fontSize: '15px', position: 'sticky', left: 0, background: '#e2e8f0', zIndex: 1 }}>TOTAL LIABILITIES & EQUITY</td>
                         {monthly.slice(-36).map((m: any, idx: number) => {
-                          const totalLE = (m.totalLiab || 0) + (m.totalEquity || 0);
+                          const calculatedTotalEquity = (m.ownersCapital || 0) + 
+                                                        (m.ownersDraw || 0) + 
+                                                        (m.commonStock || 0) + 
+                                                        (m.preferredStock || 0) + 
+                                                        (m.retainedEarnings || 0) + 
+                                                        (m.additionalPaidInCapital || 0) + 
+                                                        (m.treasuryStock || 0);
+                          const totalLE = (m.totalLiab || 0) + calculatedTotalEquity;
                           return (
                             <td key={idx} style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', fontSize: '15px' }}>
                               ${totalLE.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -9806,6 +9765,13 @@ export default function FinancialScorePage() {
                     {mapping.ltd && <option value="ltd">Long Term Debt</option>}
                   </optgroup>
                   <optgroup label="Balance Sheet - Equity">
+                    <option value="ownersCapital">Owner's Capital</option>
+                    <option value="ownersDraw">Owner's Draw</option>
+                    <option value="commonStock">Common Stock</option>
+                    <option value="preferredStock">Preferred Stock</option>
+                    <option value="retainedEarnings">Retained Earnings</option>
+                    <option value="additionalPaidInCapital">Additional Paid-In Capital</option>
+                    <option value="treasuryStock">Treasury Stock</option>
                     <option value="totalEquity">Total Equity</option>
                   </optgroup>
                 </select>
@@ -11302,6 +11268,13 @@ export default function FinancialScorePage() {
                           <option value="ltd">Long Term Debt</option>
                         </optgroup>
                         <optgroup label="Balance Sheet - Equity">
+                          <option value="ownersCapital">Owner's Capital</option>
+                          <option value="ownersDraw">Owner's Draw</option>
+                          <option value="commonStock">Common Stock</option>
+                          <option value="preferredStock">Preferred Stock</option>
+                          <option value="retainedEarnings">Retained Earnings</option>
+                          <option value="additionalPaidInCapital">Additional Paid-In Capital</option>
+                          <option value="treasuryStock">Treasury Stock</option>
                           <option value="totalEquity">Total Equity</option>
                         </optgroup>
                       </select>
@@ -12517,8 +12490,13 @@ export default function FinancialScorePage() {
               <button 
                 className="no-print"
                 onClick={() => {
-                  // Trigger MD&A recalculation by updating the refresh trigger
-                  setMdaRefreshTrigger(prev => prev + 1);
+                  // Force re-render by navigating away and back
+                  const currentCompany = selectedCompanyId;
+                  setCurrentView('dashboard');
+                  setTimeout(() => {
+                    setSelectedCompanyId(currentCompany);
+                    setCurrentView('mda');
+                  }, 10);
                 }} 
                 style={{ 
                   padding: '12px 24px', 
@@ -12662,11 +12640,8 @@ export default function FinancialScorePage() {
             <div style={{ marginBottom: '28px' }}>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#475569', background: '#f8fafc', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #667eea' }}>
                 <p style={{ margin: '0 0 12px 0' }}>
-                  {selectedDashboardWidgets.length > 0 && (
-                    <>The <strong style={{ color: '#667eea' }}>Dashboard</strong> reveals significant period-over-period performance: </>
-                  )}
                   {(() => {
-                    if (monthly.length < 12) return ' (requires 12+ months of data for year-over-year comparisons)';
+                    if (monthly.length < 12) return 'Requires 12+ months of data for year-over-year comparisons.';
                     
                     // Current quarter vs 4 quarters ago
                     const currentQ = monthly.slice(-3);
@@ -14444,22 +14419,22 @@ export default function FinancialScorePage() {
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#10b981', marginBottom: '12px' }}>Best Case Scenario</h3>
                     <div style={{ marginBottom: '12px' }}>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Revenue Multiplier: {bestCaseRevMultiplier}x</label>
-                      <input type="range" min="1" max="3" step="0.1" value={bestCaseRevMultiplier} onChange={(e) => setBestCaseRevMultiplier(parseFloat(e.target.value))} autoComplete="off" style={{ width: '100%' }} />
+                      <input type="range" min="1" max="3" step="0.1" value={bestCaseRevMultiplier} onChange={(e) => setBestCaseRevMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Expense Multiplier: {bestCaseExpMultiplier}x</label>
-                      <input type="range" min="0.3" max="1" step="0.05" value={bestCaseExpMultiplier} onChange={(e) => setBestCaseExpMultiplier(parseFloat(e.target.value))} autoComplete="off" style={{ width: '100%' }} />
+                      <input type="range" min="0.3" max="1" step="0.05" value={bestCaseExpMultiplier} onChange={(e) => setBestCaseExpMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
                     </div>
                   </div>
                   <div>
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#ef4444', marginBottom: '12px' }}>Worst Case Scenario</h3>
                     <div style={{ marginBottom: '12px' }}>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Revenue Multiplier: {worstCaseRevMultiplier}x</label>
-                      <input type="range" min="0" max="1" step="0.05" value={worstCaseRevMultiplier} onChange={(e) => setWorstCaseRevMultiplier(parseFloat(e.target.value))} autoComplete="off" style={{ width: '100%' }} />
+                      <input type="range" min="0" max="1" step="0.05" value={worstCaseRevMultiplier} onChange={(e) => setWorstCaseRevMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Expense Multiplier: {worstCaseExpMultiplier}x</label>
-                      <input type="range" min="1" max="2" step="0.05" value={worstCaseExpMultiplier} onChange={(e) => setWorstCaseExpMultiplier(parseFloat(e.target.value))} autoComplete="off" style={{ width: '100%' }} />
+                      <input type="range" min="1" max="2" step="0.05" value={worstCaseExpMultiplier} onChange={(e) => setWorstCaseExpMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
                     </div>
                   </div>
                 </div>
@@ -15269,7 +15244,7 @@ export default function FinancialScorePage() {
                       max="5" 
                       step="0.1" 
                       value={sdeMultiplier} 
-                      onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))} autoComplete="off" 
+                      onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))} 
                       style={{ width: '100%', marginBottom: '8px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
@@ -15322,7 +15297,7 @@ export default function FinancialScorePage() {
                       max="10" 
                       step="0.1" 
                       value={ebitdaMultiplier} 
-                      onChange={(e) => setEbitdaMultiplier(parseFloat(e.target.value))} autoComplete="off" 
+                      onChange={(e) => setEbitdaMultiplier(parseFloat(e.target.value))} 
                       style={{ width: '100%', marginBottom: '8px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
@@ -15428,7 +15403,7 @@ export default function FinancialScorePage() {
                       max="20" 
                       step="0.5" 
                       value={dcfDiscountRate} 
-                      onChange={(e) => setDcfDiscountRate(parseFloat(e.target.value))} autoComplete="off" 
+                      onChange={(e) => setDcfDiscountRate(parseFloat(e.target.value))} 
                       style={{ width: '100%', marginBottom: '8px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
@@ -15448,7 +15423,7 @@ export default function FinancialScorePage() {
                       max="5" 
                       step="0.5" 
                       value={dcfTerminalGrowth} 
-                      onChange={(e) => setDcfTerminalGrowth(parseFloat(e.target.value))} autoComplete="off" 
+                      onChange={(e) => setDcfTerminalGrowth(parseFloat(e.target.value))} 
                       style={{ width: '100%', marginBottom: '8px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
@@ -16549,6 +16524,13 @@ export default function FinancialScorePage() {
                                         <option value="totalLiab">Total Liabilities</option>
                                       </optgroup>
                                       <optgroup label="Balance Sheet - Equity">
+                                        <option value="ownersCapital">Owner's Capital</option>
+                                        <option value="ownersDraw">Owner's Draw</option>
+                                        <option value="commonStock">Common Stock</option>
+                                        <option value="preferredStock">Preferred Stock</option>
+                                        <option value="retainedEarnings">Retained Earnings</option>
+                                        <option value="additionalPaidInCapital">Additional Paid-In Capital</option>
+                                        <option value="treasuryStock">Treasury Stock</option>
                                         <option value="totalEquity">Total Equity</option>
                                         <option value="totalLAndE">Total Liabilities & Equity</option>
                                       </optgroup>
@@ -16953,6 +16935,13 @@ export default function FinancialScorePage() {
                                 tcl: 0,
                                 ltd: 0,
                                 totalLiab: 0,
+                                ownersCapital: 0,
+                                ownersDraw: 0,
+                                commonStock: 0,
+                                preferredStock: 0,
+                                retainedEarnings: 0,
+                                additionalPaidInCapital: 0,
+                                treasuryStock: 0,
                                 totalEquity: 0,
                                 totalLAndE: 0
                               };
@@ -17025,6 +17014,13 @@ export default function FinancialScorePage() {
                                 else if (targetField === 'tcl') monthRecord.tcl += value;
                                 else if (targetField === 'ltd') monthRecord.ltd += value;
                                 else if (targetField === 'totalLiab') monthRecord.totalLiab += value;
+                                else if (targetField === 'ownersCapital') monthRecord.ownersCapital += value;
+                                else if (targetField === 'ownersDraw') monthRecord.ownersDraw += value;
+                                else if (targetField === 'commonStock') monthRecord.commonStock += value;
+                                else if (targetField === 'preferredStock') monthRecord.preferredStock += value;
+                                else if (targetField === 'retainedEarnings') monthRecord.retainedEarnings += value;
+                                else if (targetField === 'additionalPaidInCapital') monthRecord.additionalPaidInCapital += value;
+                                else if (targetField === 'treasuryStock') monthRecord.treasuryStock += value;
                                 else if (targetField === 'totalEquity') monthRecord.totalEquity += value;
                                 else if (targetField === 'totalLAndE') monthRecord.totalLAndE += value;
                               });
@@ -17033,10 +17029,23 @@ export default function FinancialScorePage() {
                               monthRecord.cogsTotal = monthRecord.cogsPayroll + monthRecord.cogsOwnerPay + 
                                                      monthRecord.cogsContractors + monthRecord.cogsMaterials + 
                                                      monthRecord.cogsCommissions + monthRecord.cogsOther;
+                              monthRecord.expense = monthRecord.payroll + monthRecord.ownerBasePay + 
+                                                   monthRecord.benefits + monthRecord.insurance + 
+                                                   monthRecord.professionalFees + monthRecord.subcontractors + 
+                                                   monthRecord.rent + monthRecord.taxLicense + 
+                                                   monthRecord.phoneComm + monthRecord.infrastructure + 
+                                                   monthRecord.autoTravel + monthRecord.salesExpense + 
+                                                   monthRecord.marketing + monthRecord.trainingCert + 
+                                                   monthRecord.mealsEntertainment + monthRecord.interestExpense + 
+                                                   monthRecord.depreciationAmortization + monthRecord.otherExpense;
                               monthRecord.tca = monthRecord.cash + monthRecord.ar + monthRecord.inventory + monthRecord.otherCA;
                               monthRecord.totalAssets = monthRecord.tca + monthRecord.fixedAssets + monthRecord.otherAssets;
                               monthRecord.tcl = monthRecord.ap + monthRecord.otherCL;
                               monthRecord.totalLiab = monthRecord.tcl + monthRecord.ltd;
+                              monthRecord.totalEquity = monthRecord.ownersCapital + monthRecord.ownersDraw + 
+                                                       monthRecord.commonStock + monthRecord.preferredStock + 
+                                                       monthRecord.retainedEarnings + monthRecord.additionalPaidInCapital + 
+                                                       monthRecord.treasuryStock;
                               monthRecord.totalLAndE = monthRecord.totalLiab + monthRecord.totalEquity;
                               
                               // Get month date from column header
@@ -17146,6 +17155,65 @@ export default function FinancialScorePage() {
                             if (!saveResponse.ok) {
                               throw new Error('Failed to save monthly data');
                             }
+                            
+                            // Convert and load the monthly data into state so Data Review tab shows it immediately
+                            const convertedMonthly = monthlyData.map((m: any) => ({
+                              date: new Date(m.monthDate),
+                              month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
+                              revenue: m.revenue || 0,
+                              expense: m.expense || 0,
+                              cogsPayroll: m.cogsPayroll || 0,
+                              cogsOwnerPay: m.cogsOwnerPay || 0,
+                              cogsContractors: m.cogsContractors || 0,
+                              cogsMaterials: m.cogsMaterials || 0,
+                              cogsCommissions: m.cogsCommissions || 0,
+                              cogsOther: m.cogsOther || 0,
+                              cogsTotal: m.cogsTotal || 0,
+                              payroll: m.payroll || 0,
+                              ownerBasePay: m.ownerBasePay || 0,
+                              benefits: m.benefits || 0,
+                              insurance: m.insurance || 0,
+                              professionalFees: m.professionalFees || 0,
+                              subcontractors: m.subcontractors || 0,
+                              rent: m.rent || 0,
+                              taxLicense: m.taxLicense || 0,
+                              phoneComm: m.phoneComm || 0,
+                              infrastructure: m.infrastructure || 0,
+                              autoTravel: m.autoTravel || 0,
+                              salesExpense: m.salesExpense || 0,
+                              marketing: m.marketing || 0,
+                              trainingCert: m.trainingCert || 0,
+                              mealsEntertainment: m.mealsEntertainment || 0,
+                              interestExpense: m.interestExpense || 0,
+                              depreciationAmortization: m.depreciationAmortization || 0,
+                              otherExpense: m.otherExpense || 0,
+                              nonOperatingIncome: m.nonOperatingIncome || 0,
+                              extraordinaryItems: m.extraordinaryItems || 0,
+                              cash: m.cash || 0,
+                              ar: m.ar || 0,
+                              inventory: m.inventory || 0,
+                              otherCA: m.otherCA || 0,
+                              tca: m.tca || 0,
+                              fixedAssets: m.fixedAssets || 0,
+                              otherAssets: m.otherAssets || 0,
+                              totalAssets: m.totalAssets || 0,
+                              ap: m.ap || 0,
+                              otherCL: m.otherCL || 0,
+                              tcl: m.tcl || 0,
+                              ltd: m.ltd || 0,
+                              totalLiab: m.totalLiab || 0,
+                              ownersCapital: m.ownersCapital || 0,
+                              ownersDraw: m.ownersDraw || 0,
+                              commonStock: m.commonStock || 0,
+                              preferredStock: m.preferredStock || 0,
+                              retainedEarnings: m.retainedEarnings || 0,
+                              additionalPaidInCapital: m.additionalPaidInCapital || 0,
+                              treasuryStock: m.treasuryStock || 0,
+                              totalEquity: m.totalEquity || 0,
+                              totalLAndE: m.totalLAndE || 0
+                            }));
+                            setLoadedMonthlyData(convertedMonthly);
+                            console.log('✅ Updated loadedMonthlyData state with', convertedMonthly.length, 'months');
                             
                             alert(`✅ Successfully processed and saved ${monthlyData.length} months of financial data!`);
                           } catch (error: any) {
