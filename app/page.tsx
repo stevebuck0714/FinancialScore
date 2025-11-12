@@ -10434,7 +10434,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 – 80: Good Fundamentals</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>60 – 80: Good Fundamentals</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>In a good position for revenue growth</li>
                       <li>Needs to focus on bringing costs down as volume grows</li>
@@ -10442,7 +10442,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 – 50: Basic Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>40 – 60: Basic Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Cost structure issues; not in a position to grow</li>
                       <li>Improvements needed in operations and process controls</li>
@@ -10451,7 +10451,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 – 30: Serious Performance Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 – 40: Serious Performance Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Problems exist which may not be correctable</li>
                       <li>Some form of major restructuring or liquidation may be best</li>
