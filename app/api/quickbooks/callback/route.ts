@@ -41,8 +41,15 @@ export async function GET(request: NextRequest) {
     });
 
     // Exchange authorization code for tokens
+    console.log('🔄 Exchanging authorization code for tokens...');
     const authResponse = await oauthClient.createToken(request.url);
     const token = authResponse.getJson();
+    
+    console.log('✅ Received new tokens from QuickBooks');
+    console.log('   Access token length:', token.access_token?.length);
+    console.log('   Refresh token length:', token.refresh_token?.length);
+    console.log('   Expires in:', token.expires_in, 'seconds');
+    console.log('   Realm ID:', realmId);
 
     // Encrypt tokens before storing
     const encryptedAccessToken = encryptToken(token.access_token);
@@ -51,6 +58,8 @@ export async function GET(request: NextRequest) {
     // Calculate token expiration
     const expiresIn = token.expires_in || 3600; // Default 1 hour
     const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
+    
+    console.log('💾 Storing tokens in database, will expire at:', tokenExpiresAt.toISOString());
 
     // Store connection in database
     await prisma.accountingConnection.upsert({

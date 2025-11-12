@@ -26,12 +26,16 @@ export async function GET(request: NextRequest) {
     });
 
     // Generate authorization URI
+    // Adding prompt=login to force fresh authorization even if user is already logged in
     const authUri = oauthClient.authorizeUri({
       scope: ['com.intuit.quickbooks.accounting'],
       state: companyId, // Pass company ID as state parameter
     });
+    
+    // Add prompt parameter to force re-authorization and get fresh tokens
+    const authUriWithPrompt = authUri + '&prompt=login';
 
-    return NextResponse.json({ authUri });
+    return NextResponse.json({ authUri: authUriWithPrompt });
   } catch (error) {
     console.error('QuickBooks auth error:', error);
     return NextResponse.json(
