@@ -54,6 +54,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if MFA is enabled
+    if (user.mfaEnabled) {
+      console.log('🔐 MFA is enabled for this user, requiring verification');
+      return NextResponse.json({
+        mfaRequired: true,
+        userId: user.id,
+        message: 'MFA verification required',
+      });
+    }
+
     console.log('✅ Login successful');
     // Return user data (password hash excluded)
     return NextResponse.json({

@@ -101,6 +101,9 @@ model User {
   assessmentRecords   AssessmentRecord[]
   passwordResetToken  String?             @unique
   passwordResetExpires DateTime?
+  mfaEnabled          Boolean             @default(false)
+  mfaSecret           String?             // Encrypted TOTP secret
+  backupCodes         String?             // Encrypted JSON array of backup codes
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -343,6 +346,7 @@ model ApiSyncLog {
   recordsImported     Int                 @default(0)
   errorCount          Int                 @default(0)
   errorDetails        Json?
+  intuitTid           String?             // Intuit Transaction ID for debugging/support
   duration            Int?                // Sync duration in milliseconds
   createdAt           DateTime            @default(now())
 

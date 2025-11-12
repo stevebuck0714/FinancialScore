@@ -3,6 +3,7 @@ import OAuthClient from 'intuit-oauth';
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
 import { createMonthlyRecords } from '@/lib/quickbooks-parser';
+import { emitSyncStatus } from '@/lib/websocket-emit';
 
 // Decrypt OAuth tokens using modern cipher
 function decryptToken(encryptedToken: string): string {
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
   let recordsImported = 0;
   let errorCount = 0;
   const errors: any[] = [];
+  let intuitTid: string | null = null; // Capture Intuit Transaction ID for debugging
 
   try {
     const { companyId, userId } = await request.json();
@@ -41,6 +43,13 @@ export async function POST(request: NextRequest) {
     if (!companyId || !userId) {
       return NextResponse.json({ error: 'Company ID and User ID are required' }, { status: 400 });
     }
+
+    // Emit sync started status
+    emitSyncStatus(companyId, {
+      status: 'started',
+      message: 'QuickBooks sync started',
+      progress: 0,
+    });
 
     // Get connection from database
     const connection = await prisma.accountingConnection.findUnique({
@@ -193,6 +202,13 @@ export async function POST(request: NextRequest) {
     
     console.log(`📅 QB Sync Date Range: ${dateStart} to ${dateEnd} (Last full month end)`);
 
+    // Emit progress update
+    emitSyncStatus(companyId, {
+      status: 'progress',
+      message: 'Fetching Profit & Loss data from QuickBooks...',
+      progress: 20,
+    });
+
     // Fetch Profit & Loss Report using direct HTTP request to avoid header size issues
     // Request monthly summarization to get end-of-month data for each month
     const plUrl = `${companyUrl}/reports/ProfitAndLoss?start_date=${dateStart}&end_date=${dateEnd}&accounting_method=Accrual&summarize_column_by=Month&minorversion=65`;
@@ -206,6 +222,12 @@ export async function POST(request: NextRequest) {
       },
     });
     
+    // Capture intuit_tid from response headers
+    intuitTid = plResponse.headers.get('intuit_tid');
+    if (intuitTid) {
+      console.log('📋 Intuit Transaction ID (P&L):', intuitTid);
+    }
+
     // Check if the API call failed
     if (!plResponse.ok) {
       const errorText = await plResponse.text();
@@ -213,6 +235,7 @@ export async function POST(request: NextRequest) {
       console.error('❌ Response body:', errorText);
       console.error('❌ Request URL:', plUrl);
       console.error('❌ Access token (first 20 chars):', accessToken?.substring(0, 20) + '...');
+      console.error('❌ Intuit Transaction ID:', intuitTid || 'Not available');
       
       // Handle 401/403 errors - token is invalid/expired
       if (plResponse.status === 401 || plResponse.status === 403) {
@@ -233,7 +256,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ 
           error: 'QuickBooks authorization failed - please reconnect',
           needsReconnect: true,
-          details: errorText 
+          details: errorText,
+          intuitTid: intuitTid 
         }, { status: 401 });
       }
       
@@ -248,6 +272,13 @@ export async function POST(request: NextRequest) {
     console.log(`📊 P&L Report returned ${plColumns.length} columns`);
     console.log('Column headers:', plColumns.map((c: any) => c.ColTitle || c.ColType).join(', '));
 
+    // Emit progress update
+    emitSyncStatus(companyId, {
+      status: 'progress',
+      message: 'Fetching Balance Sheet data from QuickBooks...',
+      progress: 50,
+    });
+
     // Fetch Balance Sheet Report using direct HTTP request
     // Request monthly summarization to get end-of-month data for each month
     const bsUrl = `${companyUrl}/reports/BalanceSheet?start_date=${dateStart}&end_date=${dateEnd}&summarize_column_by=Month&minorversion=65`;
@@ -261,11 +292,19 @@ export async function POST(request: NextRequest) {
       },
     });
     
+    // Capture intuit_tid from Balance Sheet response
+    const bsIntuitTid = bsResponse.headers.get('intuit_tid');
+    if (bsIntuitTid) {
+      console.log('📋 Intuit Transaction ID (Balance Sheet):', bsIntuitTid);
+      intuitTid = bsIntuitTid; // Update to latest TID
+    }
+
     // Check if the API call failed
     if (!bsResponse.ok) {
       const errorText = await bsResponse.text();
       console.error('QuickBooks BS API error - Status:', bsResponse.status);
       console.error('Response body:', errorText);
+      console.error('❌ Intuit Transaction ID:', bsIntuitTid || 'Not available');
       
       // Handle 401/403 errors - token is invalid/expired
       if (bsResponse.status === 401 || bsResponse.status === 403) {
@@ -283,7 +322,8 @@ export async function POST(request: NextRequest) {
         });
         return NextResponse.json({ 
           error: 'QuickBooks authorization failed - please reconnect',
-          needsReconnect: true 
+          needsReconnect: true,
+          intuitTid: bsIntuitTid 
         }, { status: 401 });
       }
       
@@ -297,6 +337,13 @@ export async function POST(request: NextRequest) {
     const bsColumns = bsData?.Columns?.Column || [];
     console.log(`📊 Balance Sheet returned ${bsColumns.length} columns`);
     console.log('Column headers:', bsColumns.map((c: any) => c.ColTitle || c.ColType).join(', '));
+
+    // Emit progress update
+    emitSyncStatus(companyId, {
+      status: 'progress',
+      message: 'Processing financial data...',
+      progress: 70,
+    });
 
     // Fetch Chart of Accounts to get account codes/numbers
     const accountsUrl = `${companyUrl}/query?query=SELECT * FROM Account&minorversion=65`;
@@ -404,17 +451,28 @@ export async function POST(request: NextRequest) {
         recordsImported,
         errorCount,
         errorDetails: errors.length > 0 ? { errors } : undefined,
+        intuitTid: intuitTid,
         duration: Date.now() - syncStartTime,
       },
     });
 
     console.log(`Successfully synced ${recordsImported} months of financial data`);
 
+    // Emit completion status
+    emitSyncStatus(companyId, {
+      status: 'completed',
+      message: `QuickBooks sync completed successfully! ${recordsImported} months imported.`,
+      progress: 100,
+      recordsImported,
+      intuitTid,
+    });
+
     return NextResponse.json({
       success: true,
       message: `QuickBooks data synced successfully! ${recordsImported} months imported.`,
       recordsImported,
       monthsImported: recordsImported,
+      intuitTid,
     });
   } catch (error: any) {
     console.error('QuickBooks sync error:', error);
@@ -424,6 +482,16 @@ export async function POST(request: NextRequest) {
     // Log the failed sync
     const body = await request.json().catch(() => ({}));
     const { companyId } = body;
+    
+    // Emit error status
+    if (companyId) {
+      emitSyncStatus(companyId, {
+        status: 'error',
+        message: 'QuickBooks sync failed',
+        error: error.message,
+        intuitTid,
+      });
+    }
     if (companyId) {
       await prisma.apiSyncLog.create({
         data: {
@@ -434,13 +502,18 @@ export async function POST(request: NextRequest) {
           recordsImported,
           errorCount,
           errorDetails: { errors },
+          intuitTid: intuitTid,
           duration: Date.now() - syncStartTime,
         },
       });
     }
 
     return NextResponse.json(
-      { error: 'Failed to sync QuickBooks data', details: error.message },
+      { 
+        error: 'Failed to sync QuickBooks data', 
+        details: error.message,
+        intuitTid: intuitTid 
+      },
       { status: 500 }
     );
   }
