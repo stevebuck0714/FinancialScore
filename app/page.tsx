@@ -1275,6 +1275,7 @@ export default function FinancialScorePage() {
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
   const [showDashboardCustomizer, setShowDashboardCustomizer] = useState(false);
+  const [mdaRefreshTrigger, setMdaRefreshTrigger] = useState(0);
 
   // Check if payment is required for the current company
   const isPaymentRequired = useCallback(() => {
@@ -3877,7 +3878,7 @@ export default function FinancialScorePage() {
     }
     
     return { strengths, weaknesses, insights };
-  }, [trendData, finalScore, profitabilityScore, assetDevScore, growth_24mo, growth_6mo, expenseAdjustment, revExpSpread, ltmRev, ltmExp, monthly, benchmarks]);
+  }, [trendData, finalScore, profitabilityScore, assetDevScore, growth_24mo, growth_6mo, expenseAdjustment, revExpSpread, ltmRev, ltmExp, monthly, benchmarks, mdaRefreshTrigger]);
 
   // Projections
   const projections = useMemo(() => {
@@ -4069,6 +4070,11 @@ export default function FinancialScorePage() {
           ) : isRegistering ? (
             <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleRegisterConsultant(); }}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Register as Consultant</h2>
+              
+              {/* Hidden honey pot fields to prevent autofill */}
+              <input type="text" name="fake_username" autoComplete="off" tabIndex={-1} style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} />
+              <input type="password" name="fake_password" autoComplete="off" tabIndex={-1} style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} />
+              
               <input 
                 type="text" 
                 name={`fullname_${Date.now()}`}
@@ -4085,7 +4091,11 @@ export default function FinancialScorePage() {
                 placeholder="Email *" 
                 value={loginEmail} 
                 onChange={(e) => setLoginEmail(e.target.value)} 
-                autoComplete="off" 
+                autoComplete="chrome-off"
+                data-lpignore="true"
+                data-form-type="other"
+                readOnly
+                onFocus={(e) => e.target.removeAttribute('readonly')} 
                 required
                 style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
@@ -4186,7 +4196,11 @@ export default function FinancialScorePage() {
                   placeholder="Password *" 
                   value={loginPassword} 
                   onChange={(e) => setLoginPassword(e.target.value)} 
-                  autoComplete="new-password"
+                  autoComplete="chrome-off"
+                  data-lpignore="true"
+                  data-form-type="other"
+                  readOnly
+                  onFocus={(e) => e.target.removeAttribute('readonly')}
                   required
                   style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                 />
@@ -4208,13 +4222,22 @@ export default function FinancialScorePage() {
           ) : (
             <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (!isLoading) handleLogin(); }}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Sign In</h2>
+              
+              {/* Hidden honey pot fields to prevent autofill */}
+              <input type="text" name="fake_username" autoComplete="off" tabIndex={-1} style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} />
+              <input type="password" name="fake_password" autoComplete="off" tabIndex={-1} style={{ position: 'absolute', top: '-9999px', left: '-9999px' }} />
+              
               <input 
                 type="text" 
                 name={`email_${Date.now()}`}
                 placeholder="Email" 
                 value={loginEmail} 
                 onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }} 
-                autoComplete="off" 
+                autoComplete="chrome-off"
+                data-lpignore="true"
+                data-form-type="other"
+                readOnly
+                onFocus={(e) => e.target.removeAttribute('readonly')}
                 style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
               
@@ -4226,7 +4249,11 @@ export default function FinancialScorePage() {
                   placeholder="Password" 
                   value={loginPassword} 
                   onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }} 
-                  autoComplete="new-password"
+                  autoComplete="chrome-off"
+                  data-lpignore="true"
+                  data-form-type="other"
+                  readOnly
+                  onFocus={(e) => e.target.removeAttribute('readonly')}
                   style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                 />
                 <button
@@ -5447,6 +5474,7 @@ export default function FinancialScorePage() {
                         placeholder="Type"
                         value={newConsultantType}
                         onChange={(e) => setNewConsultantType(e.target.value)}
+                        autoComplete="off"
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5454,6 +5482,7 @@ export default function FinancialScorePage() {
                         placeholder="Full Name"
                         value={newConsultantFullName}
                         onChange={(e) => setNewConsultantFullName(e.target.value)}
+                        autoComplete="off"
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5461,6 +5490,7 @@ export default function FinancialScorePage() {
                         placeholder="Address"
                         value={newConsultantAddress}
                         onChange={(e) => setNewConsultantAddress(e.target.value)}
+                        autoComplete="off"
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5468,6 +5498,11 @@ export default function FinancialScorePage() {
                         placeholder="Email"
                         value={newConsultantEmail}
                         onChange={(e) => setNewConsultantEmail(e.target.value)}
+                        autoComplete="chrome-off"
+                        data-lpignore="true"
+                        data-form-type="other"
+                        readOnly
+                        onFocus={(e) => e.target.removeAttribute('readonly')}
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5475,6 +5510,11 @@ export default function FinancialScorePage() {
                         placeholder="Phone"
                         value={newConsultantPhone}
                         onChange={(e) => setNewConsultantPhone(e.target.value)}
+                        autoComplete="chrome-off"
+                        data-lpignore="true"
+                        data-form-type="other"
+                        readOnly
+                        onFocus={(e) => e.target.removeAttribute('readonly')}
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                       <input
@@ -5482,6 +5522,11 @@ export default function FinancialScorePage() {
                         placeholder="Password"
                         value={newConsultantPassword}
                         onChange={(e) => setNewConsultantPassword(e.target.value)}
+                        autoComplete="chrome-off"
+                        data-lpignore="true"
+                        data-form-type="other"
+                        readOnly
+                        onFocus={(e) => e.target.removeAttribute('readonly')}
                         style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                       />
                     </div>
@@ -5636,6 +5681,7 @@ export default function FinancialScorePage() {
                                         ...editingConsultantInfo,
                                         [consultant.id]: { ...editingConsultantInfo[consultant.id], email: e.target.value }
                                       })}
+                                      autoComplete="off"
                                       style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                     />
                                   </div>
@@ -7335,7 +7381,11 @@ export default function FinancialScorePage() {
                               placeholder="Email" 
                               value={newCompanyUserEmail} 
                               onChange={(e) => setNewCompanyUserEmail(e.target.value)} 
-                              autoComplete="off"
+                              autoComplete="chrome-off"
+                              data-lpignore="true"
+                              data-form-type="other"
+                              readOnly
+                              onFocus={(e) => e.target.removeAttribute('readonly')}
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                             <input 
@@ -7344,7 +7394,11 @@ export default function FinancialScorePage() {
                               placeholder="Phone Number" 
                               value={newCompanyUserPhone} 
                               onChange={(e) => setNewCompanyUserPhone(e.target.value)} 
-                              autoComplete="off"
+                              autoComplete="chrome-off"
+                              data-lpignore="true"
+                              data-form-type="other"
+                              readOnly
+                              onFocus={(e) => e.target.removeAttribute('readonly')}
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                           </div>
@@ -7354,7 +7408,11 @@ export default function FinancialScorePage() {
                             placeholder="Password" 
                             value={newCompanyUserPassword} 
                             onChange={(e) => setNewCompanyUserPassword(e.target.value)} 
-                            autoComplete="new-password"
+                            autoComplete="chrome-off"
+                            data-lpignore="true"
+                            data-form-type="other"
+                            readOnly
+                            onFocus={(e) => e.target.removeAttribute('readonly')}
                             style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                           />
                           <button onClick={() => addUser(comp.id, 'company')} style={{ padding: '8px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Company User</button>
@@ -7432,7 +7490,11 @@ export default function FinancialScorePage() {
                               placeholder="Email" 
                               value={newAssessmentUserEmail} 
                               onChange={(e) => setNewAssessmentUserEmail(e.target.value)} 
-                              autoComplete="off"
+                              autoComplete="chrome-off"
+                              data-lpignore="true"
+                              data-form-type="other"
+                              readOnly
+                              onFocus={(e) => e.target.removeAttribute('readonly')}
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                             <input 
@@ -7441,7 +7503,11 @@ export default function FinancialScorePage() {
                               placeholder="Password" 
                               value={newAssessmentUserPassword} 
                               onChange={(e) => setNewAssessmentUserPassword(e.target.value)} 
-                              autoComplete="new-password"
+                              autoComplete="chrome-off"
+                              data-lpignore="true"
+                              data-form-type="other"
+                              readOnly
+                              onFocus={(e) => e.target.removeAttribute('readonly')}
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                             <button onClick={() => addUser(comp.id, 'assessment')} style={{ padding: '8px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Assessment User</button>
@@ -7583,7 +7649,7 @@ export default function FinancialScorePage() {
 
                 <div style={{ marginBottom: '20px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
-                  <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
+                  <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} autoComplete="off" style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
                   {error && <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>}
                   {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>✓ Loaded: {file.name}</div>}
                 </div>
@@ -9008,7 +9074,7 @@ export default function FinancialScorePage() {
                 <input 
                   type="text" 
                   value={companyAddressStreet} 
-                  onChange={(e) => setCompanyAddressStreet(e.target.value)} 
+                  onChange={(e) => setCompanyAddressStreet(e.target.value)} autoComplete="off" 
                   style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                   placeholder="Street Address" 
                 />
@@ -9016,7 +9082,7 @@ export default function FinancialScorePage() {
                   <input 
                     type="text" 
                     value={companyAddressCity} 
-                    onChange={(e) => setCompanyAddressCity(e.target.value)} 
+                    onChange={(e) => setCompanyAddressCity(e.target.value)} autoComplete="off" 
                     style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                     placeholder="City" 
                   />
@@ -9081,7 +9147,7 @@ export default function FinancialScorePage() {
                   <input 
                     type="text" 
                     value={companyAddressZip} 
-                    onChange={(e) => setCompanyAddressZip(e.target.value)} 
+                    onChange={(e) => setCompanyAddressZip(e.target.value)} autoComplete="off" 
                     style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                     placeholder="ZIP" 
                   />
@@ -9089,7 +9155,7 @@ export default function FinancialScorePage() {
                 <input 
                   type="text" 
                   value={companyAddressCountry} 
-                  onChange={(e) => setCompanyAddressCountry(e.target.value)} 
+                  onChange={(e) => setCompanyAddressCountry(e.target.value)} autoComplete="off" 
                   style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                   placeholder="Country" 
                 />
@@ -12451,13 +12517,8 @@ export default function FinancialScorePage() {
               <button 
                 className="no-print"
                 onClick={() => {
-                  // Force re-render by navigating away and back
-                  const currentCompany = selectedCompanyId;
-                  setCurrentView('dashboard');
-                  setTimeout(() => {
-                    setSelectedCompanyId(currentCompany);
-                    setCurrentView('mda');
-                  }, 10);
+                  // Trigger MD&A recalculation by updating the refresh trigger
+                  setMdaRefreshTrigger(prev => prev + 1);
                 }} 
                 style={{ 
                   padding: '12px 24px', 
@@ -12601,7 +12662,9 @@ export default function FinancialScorePage() {
             <div style={{ marginBottom: '28px' }}>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#475569', background: '#f8fafc', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #667eea' }}>
                 <p style={{ margin: '0 0 12px 0' }}>
-                  The <strong style={{ color: '#667eea' }}>Dashboard</strong> reveals significant period-over-period performance:
+                  {selectedDashboardWidgets.length > 0 && (
+                    <>The <strong style={{ color: '#667eea' }}>Dashboard</strong> reveals significant period-over-period performance: </>
+                  )}
                   {(() => {
                     if (monthly.length < 12) return ' (requires 12+ months of data for year-over-year comparisons)';
                     
@@ -12633,14 +12696,14 @@ export default function FinancialScorePage() {
                     
                     return (
                       <>
-                        <strong> Current quarter</strong> revenue of <strong>${(currentQRev / 1000).toFixed(1)}K</strong> represents a {qRevChange > 0 ? 'increase' : 'decrease'} of <strong style={{ color: qRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qRevChange).toFixed(1)}%</strong> compared to four quarters ago (${(fourQAgoRev / 1000).toFixed(1)}K), 
+                        <strong>Current quarter</strong> revenue of <strong>${(currentQRev / 1000).toFixed(1)}K</strong> represents a {qRevChange > 0 ? 'increase' : 'decrease'} of <strong style={{ color: qRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qRevChange).toFixed(1)}%</strong> compared to four quarters ago (${(fourQAgoRev / 1000).toFixed(1)}K), 
                         while total expenses of <strong>${(currentQExp / 1000).toFixed(1)}K</strong> {qExpChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: Math.abs(qExpChange) < Math.abs(qRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(qExpChange).toFixed(1)}%</strong> from ${(fourQAgoExp / 1000).toFixed(1)}K.
                         Quarterly profit margin {qMarginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: qMarginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qMarginChange).toFixed(1)}</strong> percentage points to <strong>{currentQMargin.toFixed(1)}%</strong>
                         {qMarginChange > 5 ? <span style={{ color: '#10b981' }}>, reflecting significant margin expansion and improving profitability</span> :
                          qMarginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
                          qMarginChange > -5 ? <span style={{ color: '#64748b' }}>, maintaining relatively stable profitability</span> :
                          <span style={{ color: '#ef4444' }}>, signaling substantial margin pressure requiring immediate management attention</span>}.
-                        <strong> Trailing twelve months (TTM)</strong> revenue of <strong>${(ttmRev / 1000).toFixed(1)}K</strong> shows {ttmRevChange > 0 ? 'growth' : 'decline'} of <strong style={{ color: ttmRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmRevChange).toFixed(1)}%</strong> compared to the prior twelve-month period (${(priorTTMRev / 1000).toFixed(1)}K), 
+                        {' '}<strong>Trailing twelve months (TTM)</strong> revenue of <strong>${(ttmRev / 1000).toFixed(1)}K</strong> shows {ttmRevChange > 0 ? 'growth' : 'decline'} of <strong style={{ color: ttmRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmRevChange).toFixed(1)}%</strong> compared to the prior twelve-month period (${(priorTTMRev / 1000).toFixed(1)}K), 
                         with total expenses of <strong>${(ttmExp / 1000).toFixed(1)}K</strong> {ttmExpChange > 0 ? 'growing' : 'declining'} by <strong style={{ color: Math.abs(ttmExpChange) < Math.abs(ttmRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(ttmExpChange).toFixed(1)}%</strong> from ${(priorTTMExp / 1000).toFixed(1)}K.
                         Annual profit margin {ttmMarginChange > 0 ? 'improved' : 'deteriorated'} by <strong style={{ color: ttmMarginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmMarginChange).toFixed(1)}</strong> percentage points to <strong>{ttmMargin.toFixed(1)}%</strong>
                         {ttmExpChange < ttmRevChange ? <span style={{ color: '#10b981' }}>, with excellent operational leverage as expense growth is controlled relative to revenue expansion</span> :
@@ -14381,22 +14444,22 @@ export default function FinancialScorePage() {
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#10b981', marginBottom: '12px' }}>Best Case Scenario</h3>
                     <div style={{ marginBottom: '12px' }}>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Revenue Multiplier: {bestCaseRevMultiplier}x</label>
-                      <input type="range" min="1" max="3" step="0.1" value={bestCaseRevMultiplier} onChange={(e) => setBestCaseRevMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
+                      <input type="range" min="1" max="3" step="0.1" value={bestCaseRevMultiplier} onChange={(e) => setBestCaseRevMultiplier(parseFloat(e.target.value))} autoComplete="off" style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Expense Multiplier: {bestCaseExpMultiplier}x</label>
-                      <input type="range" min="0.3" max="1" step="0.05" value={bestCaseExpMultiplier} onChange={(e) => setBestCaseExpMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
+                      <input type="range" min="0.3" max="1" step="0.05" value={bestCaseExpMultiplier} onChange={(e) => setBestCaseExpMultiplier(parseFloat(e.target.value))} autoComplete="off" style={{ width: '100%' }} />
                     </div>
                   </div>
                   <div>
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#ef4444', marginBottom: '12px' }}>Worst Case Scenario</h3>
                     <div style={{ marginBottom: '12px' }}>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Revenue Multiplier: {worstCaseRevMultiplier}x</label>
-                      <input type="range" min="0" max="1" step="0.05" value={worstCaseRevMultiplier} onChange={(e) => setWorstCaseRevMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
+                      <input type="range" min="0" max="1" step="0.05" value={worstCaseRevMultiplier} onChange={(e) => setWorstCaseRevMultiplier(parseFloat(e.target.value))} autoComplete="off" style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Expense Multiplier: {worstCaseExpMultiplier}x</label>
-                      <input type="range" min="1" max="2" step="0.05" value={worstCaseExpMultiplier} onChange={(e) => setWorstCaseExpMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
+                      <input type="range" min="1" max="2" step="0.05" value={worstCaseExpMultiplier} onChange={(e) => setWorstCaseExpMultiplier(parseFloat(e.target.value))} autoComplete="off" style={{ width: '100%' }} />
                     </div>
                   </div>
                 </div>
@@ -15206,7 +15269,7 @@ export default function FinancialScorePage() {
                       max="5" 
                       step="0.1" 
                       value={sdeMultiplier} 
-                      onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))} 
+                      onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))} autoComplete="off" 
                       style={{ width: '100%', marginBottom: '8px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
@@ -15259,7 +15322,7 @@ export default function FinancialScorePage() {
                       max="10" 
                       step="0.1" 
                       value={ebitdaMultiplier} 
-                      onChange={(e) => setEbitdaMultiplier(parseFloat(e.target.value))} 
+                      onChange={(e) => setEbitdaMultiplier(parseFloat(e.target.value))} autoComplete="off" 
                       style={{ width: '100%', marginBottom: '8px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
@@ -15365,7 +15428,7 @@ export default function FinancialScorePage() {
                       max="20" 
                       step="0.5" 
                       value={dcfDiscountRate} 
-                      onChange={(e) => setDcfDiscountRate(parseFloat(e.target.value))} 
+                      onChange={(e) => setDcfDiscountRate(parseFloat(e.target.value))} autoComplete="off" 
                       style={{ width: '100%', marginBottom: '8px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
@@ -15385,7 +15448,7 @@ export default function FinancialScorePage() {
                       max="5" 
                       step="0.5" 
                       value={dcfTerminalGrowth} 
-                      onChange={(e) => setDcfTerminalGrowth(parseFloat(e.target.value))} 
+                      onChange={(e) => setDcfTerminalGrowth(parseFloat(e.target.value))} autoComplete="off" 
                       style={{ width: '100%', marginBottom: '8px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>

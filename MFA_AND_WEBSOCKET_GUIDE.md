@@ -388,3 +388,4 @@ When setting up your QuickBooks app in the Intuit Developer Portal, you can now 
 
 For questions or issues with these features, contact: support@corelytics.com
 
+
