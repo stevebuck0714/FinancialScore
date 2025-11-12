@@ -5,8 +5,10 @@
   "private": true,
   "scripts": {
     "dev": "node server.js",
+    "dev:vercel": "next dev",
     "build": "next build",
     "start": "node server.js",
+    "start:vercel": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
