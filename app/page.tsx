@@ -2135,7 +2135,7 @@ export default function FinancialScorePage() {
               ownersBasePay: m.ownerBasePay || 0,
               ownersRetirement: 0,
               contractorsDistribution: m.subcontractors || 0,
-              depreciationExpense: Math.abs(m.depreciationAmortization || 0),
+              depreciationExpense: m.depreciationAmortization || 0,
               operatingExpenseTotal: m.expense || 0,
               cash: m.cash || 0,
               ar: m.ar || 0,
@@ -3402,24 +3402,11 @@ export default function FinancialScorePage() {
   }, [rawRows, mapping, loadedMonthlyData]);
 
   const ltmRev = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + m.revenue, 0) : 0;
-  const ltmExp = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + (
-    (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-    (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-    (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-    (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-    (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-  ), 0) : 0;
+  const ltmExp = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + m.expense, 0) : 0;
   
   const growth_24mo = monthly.length >= 24 ? ((ltmRev - monthly.slice(-24, -12).reduce((sum, m) => sum + m.revenue, 0)) / monthly.slice(-24, -12).reduce((sum, m) => sum + m.revenue, 0)) * 100 : 0;
   const growth_6mo = monthly.length >= 12 ? ((monthly.slice(-6).reduce((sum, m) => sum + m.revenue, 0) - monthly.slice(-12, -6).reduce((sum, m) => sum + m.revenue, 0)) / monthly.slice(-12, -6).reduce((sum, m) => sum + m.revenue, 0)) * 100 : 0;
-  const prev24to12Exp = monthly.length >= 24 ? monthly.slice(-24, -12).reduce((sum, m) => sum + (
-    (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-    (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-    (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-    (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-    (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-  ), 0) : 0;
-  const expGrowth_24mo = monthly.length >= 24 && prev24to12Exp > 0 ? ((ltmExp - prev24to12Exp) / prev24to12Exp) * 100 : 0;
+  const expGrowth_24mo = monthly.length >= 24 ? ((ltmExp - monthly.slice(-24, -12).reduce((sum, m) => sum + m.expense, 0)) / monthly.slice(-24, -12).reduce((sum, m) => sum + m.expense, 0)) * 100 : 0;
   
   let baseRGS = 10;
   if (growth_24mo >= 25) baseRGS = 100;
@@ -3483,21 +3470,9 @@ export default function FinancialScorePage() {
     for (let i = 12; i < monthly.length; i++) {
       const window = monthly.slice(i - 11, i + 1);
       const ltmR = window.reduce((s, m) => s + m.revenue, 0);
-      const ltmE = window.reduce((s, m) => s + (
-        (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-        (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-        (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-        (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-        (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-      ), 0);
+      const ltmE = window.reduce((s, m) => s + m.expense, 0);
       const prev12R = i >= 23 ? monthly.slice(i - 23, i - 11).reduce((s, m) => s + m.revenue, 0) : 0;
-      const prev12E = i >= 23 ? monthly.slice(i - 23, i - 11).reduce((s, m) => s + (
-        (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-        (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-        (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-        (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-        (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-      ), 0) : 0;
+      const prev12E = i >= 23 ? monthly.slice(i - 23, i - 11).reduce((s, m) => s + m.revenue, 0) : 0;
       const g24 = prev12R > 0 ? ((ltmR - prev12R) / prev12R) * 100 : 0;
       const gE24 = prev12E > 0 ? ((ltmE - prev12E) / prev12E) * 100 : 0;
       const recent6R = window.slice(-6).reduce((s, m) => s + m.revenue, 0);
@@ -3660,10 +3635,10 @@ export default function FinancialScorePage() {
     const insights: string[] = [];
     
     if (finalScore >= 70) strengths.push(`Strong overall financial score of ${finalScore.toFixed(1)}, indicating robust financial health.`);
-    else if (finalScore < 40) weaknesses.push(`Financial score of ${finalScore.toFixed(1)} suggests significant areas for improvement.`);
+    else if (finalScore < 50) weaknesses.push(`Financial score of ${finalScore.toFixed(1)} suggests significant areas for improvement.`);
     
     if (profitabilityScore >= 70) strengths.push(`Profitability score of ${profitabilityScore.toFixed(1)} demonstrates solid revenue growth and expense management.`);
-    else if (profitabilityScore < 40) weaknesses.push(`Profitability score of ${profitabilityScore.toFixed(1)} indicates challenges in revenue growth or expense control.`);
+    else if (profitabilityScore < 50) weaknesses.push(`Profitability score of ${profitabilityScore.toFixed(1)} indicates challenges in revenue growth or expense control.`);
     
     if (growth_24mo > 10) strengths.push(`24-month revenue growth of ${growth_24mo.toFixed(1)}% shows strong market expansion.`);
     else if (growth_24mo < 0) weaknesses.push(`Negative 24-month revenue growth of ${growth_24mo.toFixed(1)}% requires immediate strategic attention.`);
@@ -3672,7 +3647,7 @@ export default function FinancialScorePage() {
     else if (expenseAdjustment < 0) weaknesses.push(`Expenses are growing faster than revenue by ${Math.abs(revExpSpread).toFixed(1)}%, reducing profitability by ${Math.abs(expenseAdjustment)} points.`);
     
     if (assetDevScore >= 70) strengths.push(`Asset Development Score of ${assetDevScore.toFixed(1)} reflects a healthy asset-to-liability ratio and positive asset growth.`);
-    else if (assetDevScore < 40) weaknesses.push(`Asset Development Score of ${assetDevScore.toFixed(1)} suggests concerning leverage and asset composition.`);
+    else if (assetDevScore < 50) weaknesses.push(`Asset Development Score of ${assetDevScore.toFixed(1)} suggests concerning leverage and asset composition.`);
     
     if (last.currentRatio >= 1.5) strengths.push(`Current ratio of ${last.currentRatio.toFixed(1)} indicates strong short-term liquidity.`);
     else if (last.currentRatio < 1.0) weaknesses.push(`Current ratio of ${last.currentRatio.toFixed(1)} may indicate potential liquidity challenges.`);
@@ -9387,7 +9362,7 @@ export default function FinancialScorePage() {
                                           (m.trainingCert || 0) + 
                                           (m.mealsEntertainment || 0) + 
                                           (m.interestExpense || 0) + 
-                                          Math.abs(m.depreciationAmortization || 0) + 
+                                          (m.depreciationAmortization || 0) + 
                                           (m.otherExpense || 0);
                           return (
                             <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
@@ -9417,7 +9392,7 @@ export default function FinancialScorePage() {
                                           (m.trainingCert || 0) + 
                                           (m.mealsEntertainment || 0) + 
                                           (m.interestExpense || 0) + 
-                                          Math.abs(m.depreciationAmortization || 0) + 
+                                          (m.depreciationAmortization || 0) + 
                                           (m.otherExpense || 0);
                           const netIncome = (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
                           return (
@@ -10459,7 +10434,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>60 – 80: Good Fundamentals</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 – 80: Good Fundamentals</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>In a good position for revenue growth</li>
                       <li>Needs to focus on bringing costs down as volume grows</li>
@@ -10467,7 +10442,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>40 – 60: Basic Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 – 50: Basic Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Cost structure issues; not in a position to grow</li>
                       <li>Improvements needed in operations and process controls</li>
@@ -10476,7 +10451,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 – 40: Serious Performance Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 – 30: Serious Performance Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Problems exist which may not be correctable</li>
                       <li>Some form of major restructuring or liquidation may be best</li>
@@ -12672,21 +12647,9 @@ export default function FinancialScorePage() {
                     const currentQ = monthly.slice(-3);
                     const fourQAgo = monthly.length >= 15 ? monthly.slice(-15, -12) : monthly.slice(-6, -3);
                     const currentQRev = currentQ.reduce((sum, m) => sum + m.revenue, 0);
-                    const currentQExp = currentQ.reduce((sum, m) => sum + (
-                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-                    ), 0);
+                    const currentQExp = currentQ.reduce((sum, m) => sum + m.expense, 0);
                     const fourQAgoRev = fourQAgo.reduce((sum, m) => sum + m.revenue, 0);
-                    const fourQAgoExp = fourQAgo.reduce((sum, m) => sum + (
-                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-                    ), 0);
+                    const fourQAgoExp = fourQAgo.reduce((sum, m) => sum + m.expense, 0);
                     const qRevChange = fourQAgoRev > 0 ? ((currentQRev - fourQAgoRev) / fourQAgoRev * 100) : 0;
                     const qExpChange = fourQAgoExp > 0 ? ((currentQExp - fourQAgoExp) / fourQAgoExp * 100) : 0;
                     const currentQMargin = currentQRev > 0 ? ((currentQRev - currentQExp) / currentQRev * 100) : 0;
@@ -12697,21 +12660,9 @@ export default function FinancialScorePage() {
                     const last12 = monthly.slice(-12);
                     const prior12 = monthly.length >= 24 ? monthly.slice(-24, -12) : monthly.slice(0, 12);
                     const ttmRev = last12.reduce((sum, m) => sum + m.revenue, 0);
-                    const ttmExp = last12.reduce((sum, m) => sum + (
-                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-                    ), 0);
+                    const ttmExp = last12.reduce((sum, m) => sum + m.expense, 0);
                     const priorTTMRev = prior12.reduce((sum, m) => sum + m.revenue, 0);
-                    const priorTTMExp = prior12.reduce((sum, m) => sum + (
-                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-                    ), 0);
+                    const priorTTMExp = prior12.reduce((sum, m) => sum + m.expense, 0);
                     const ttmRevChange = priorTTMRev > 0 ? ((ttmRev - priorTTMRev) / priorTTMRev * 100) : 0;
                     const ttmExpChange = priorTTMExp > 0 ? ((ttmExp - priorTTMExp) / priorTTMExp * 100) : 0;
                     const ttmMargin = ttmRev > 0 ? ((ttmRev - ttmExp) / ttmRev * 100) : 0;
@@ -13092,21 +13043,9 @@ export default function FinancialScorePage() {
                     const revPrior = prev6Mo.reduce((s, m) => s + m.revenue, 0);
                     const revTrend = prev6Mo.length > 0 ? ((revRecent - revPrior) / revPrior * 100) : 0;
                     
-                    const expRecent = last6Mo.reduce((s, m) => s + (
-                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-                    ), 0);
-                    const expPrior = prev6Mo.reduce((s, m) => s + (
-                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
-                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
-                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
-                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
-                    ), 0);
-                    const expTrend = expPrior > 0 ? ((expRecent - expPrior) / expPrior * 100) : 0;
+                    const expRecent = last6Mo.reduce((s, m) => s + m.expense, 0);
+                    const expPrior = prev6Mo.reduce((s, m) => s + m.expense, 0);
+                    const expTrend = prev6Mo.length > 0 ? ((expRecent - expPrior) / expPrior * 100) : 0;
                     
                     // Calculate margin trends
                     const recentMargin = revRecent > 0 ? ((revRecent - expRecent) / revRecent * 100) : 0;
@@ -13685,9 +13624,9 @@ export default function FinancialScorePage() {
                 <p style={{ margin: '12px 0 0 0' }}>
                   The overall Financial Score of <strong>{finalScore.toFixed(1)}</strong>
                   {finalScore >= 80 ? <span style={{ color: '#10b981' }}> (Strong Financial Performance)</span> :
-                   finalScore >= 60 ? <span style={{ color: '#3b82f6' }}> (Good Fundamentals - in a good position for revenue growth; needs to focus on bringing costs down as volume grows)</span> :
-                   finalScore >= 40 ? <span style={{ color: '#f59e0b' }}> (Basic Problems - cost structure issues; not in a position to grow; improvements needed in operations and process controls)</span> :
-                   <span style={{ color: '#ef4444' }}> (Serious Performance Problems - problems exist which may not be correctable; some form of major restructuring or liquidation may be best)</span>}.
+                   finalScore >= 50 ? <span style={{ color: '#3b82f6' }}> (Good Fundamentals - in a good position for revenue growth; needs to focus on bringing costs down as volume grows)</span> :
+                   finalScore >= 30 ? <span style={{ color: '#f59e0b' }}> (Financial Stress)</span> :
+                   <span style={{ color: '#ef4444' }}> (Critical Situation)</span>}.
                 </p>
               </div>
             </div>
@@ -16748,6 +16687,31 @@ export default function FinancialScorePage() {
                           </button>
                           <button
                             onClick={() => {
+                              if (confirm('Clear all Line of Business percentages? This will reset all LOB % to 0%.')) {
+                                const updated = aiMappings.map(m => ({
+                                  ...m,
+                                  lobAllocations: {}
+                                }));
+                                setAiMappings(updated);
+                                alert('LOB percentages cleared! ✅ Remember to save mappings.');
+                              }
+                            }}
+                            disabled={aiMappings.length === 0}
+                            style={{
+                              padding: '10px 20px',
+                              background: aiMappings.length === 0 ? '#f1f5f9' : '#fef3c7',
+                              color: aiMappings.length === 0 ? '#94a3b8' : '#d97706',
+                              border: '1px solid #fbbf24',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              cursor: aiMappings.length === 0 ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            🔄 Clear LOB %
+                          </button>
+                          <button
+                            onClick={() => {
                               setShowMappingSection(false);
                               setAiMappings([]);
                             }}
@@ -17058,7 +17022,7 @@ export default function FinancialScorePage() {
                                 else if (targetField === 'trainingCert') monthRecord.trainingCert += value;
                                 else if (targetField === 'mealsEntertainment') monthRecord.mealsEntertainment += value;
                                 else if (targetField === 'interestExpense') monthRecord.interestExpense += value;
-                                else if (targetField === 'depreciationAmortization') monthRecord.depreciationAmortization += Math.abs(value);
+                                else if (targetField === 'depreciationAmortization') monthRecord.depreciationAmortization += value;
                                 else if (targetField === 'otherExpense') monthRecord.otherExpense += value;
                                 else if (targetField === 'nonOperatingIncome') monthRecord.nonOperatingIncome += value;
                                 else if (targetField === 'extraordinaryItems') monthRecord.extraordinaryItems += value;
@@ -20267,106 +20231,17 @@ export default function FinancialScorePage() {
                 <div style={{ marginBottom: '12px' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Line of Business Reporting</h2>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    View financial performance by line of business. Select a specific business line or view all lines side by side.
+                    Line of Business reporting requires processed monthly data. Please navigate to the Data Mapping tab and click "Process & Save Monthly Data" to generate LOB reports.
                   </p>
-                  
-                  {/* Line of Business Selector */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                        Line of Business
-                      </label>
-                      <select 
-                        value={selectedLineOfBusiness}
-                        onChange={(e) => setSelectedLineOfBusiness(e.target.value)}
-                        style={{ 
-                          width: '100%', 
-                          padding: '10px 12px', 
-                          border: '1px solid #cbd5e1', 
-                          borderRadius: '6px', 
-                          fontSize: '14px',
-                          color: '#1e293b',
-                          background: 'white',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="all">All Lines of Business (Side by Side)</option>
-                        {qbRawData?.profitAndLoss?.Columns?.Column && Array.isArray(qbRawData.profitAndLoss.Columns.Column) 
-                          ? qbRawData.profitAndLoss.Columns.Column
-                              .filter((col: any) => col.ColType !== 'Total')
-                              .map((col: any, idx: number) => (
-                                <option key={idx} value={col.ColTitle || `Column ${idx + 1}`}>
-                                  {col.ColTitle || `Column ${idx + 1}`}
-                                </option>
-                              ))
-                          : null
-                        }
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                        Period
-                      </label>
-                      <select 
-                        value={statementPeriod}
-                        onChange={(e) => setStatementPeriod(e.target.value as any)}
-                        style={{ 
-                          width: '100%', 
-                          padding: '10px 12px', 
-                          border: '1px solid #cbd5e1', 
-                          borderRadius: '6px', 
-                          fontSize: '14px',
-                          color: '#1e293b',
-                          background: 'white',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="current-month">Current Month</option>
-                        <option value="current-quarter">Current Quarter</option>
-                        <option value="last-12-months">Last 12 months</option>
-                        <option value="ytd">YTD</option>
-                        <option value="last-year">Last Year</option>
-                        <option value="last-3-years">Last 3 Years</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                        Display As
-                      </label>
-                      <select 
-                        value={statementDisplay}
-                        onChange={(e) => setStatementDisplay(e.target.value as 'monthly' | 'quarterly' | 'annual')}
-                        style={{ 
-                          width: '100%', 
-                          padding: '10px 12px', 
-                          border: '1px solid #cbd5e1', 
-                          borderRadius: '6px', 
-                          fontSize: '14px',
-                          color: '#1e293b',
-                          background: 'white',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="annual">Annual</option>
-                      </select>
-                    </div>
-                  </div>
                 </div>
 
-                {/* Coming Soon Message */}
-                <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                  <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                    Line of Business Reporting
+                <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertCircle size={20} color="#d97706" />
+                    <p style={{ fontSize: '14px', color: '#92400e', margin: 0 }}>
+                      To view Line of Business reports with QB API data, you must first process and save your monthly data in the Data Mapping tab.
+                    </p>
                   </div>
-                  <p style={{ fontSize: '14px', color: '#64748b', maxWidth: '500px', margin: '0 auto' }}>
-                    This feature will display Income Statement data broken down by line of business from your QuickBooks class tracking. 
-                    You'll be able to compare performance across different business lines side by side for the selected period.
-                  </p>
                 </div>
               </div>
             )}
