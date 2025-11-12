@@ -2135,7 +2135,7 @@ export default function FinancialScorePage() {
               ownersBasePay: m.ownerBasePay || 0,
               ownersRetirement: 0,
               contractorsDistribution: m.subcontractors || 0,
-              depreciationExpense: m.depreciationAmortization || 0,
+              depreciationExpense: Math.abs(m.depreciationAmortization || 0),
               operatingExpenseTotal: m.expense || 0,
               cash: m.cash || 0,
               ar: m.ar || 0,
@@ -3402,11 +3402,24 @@ export default function FinancialScorePage() {
   }, [rawRows, mapping, loadedMonthlyData]);
 
   const ltmRev = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + m.revenue, 0) : 0;
-  const ltmExp = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + m.expense, 0) : 0;
+  const ltmExp = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + (
+    (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+    (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+    (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+    (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+    (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
+  ), 0) : 0;
   
   const growth_24mo = monthly.length >= 24 ? ((ltmRev - monthly.slice(-24, -12).reduce((sum, m) => sum + m.revenue, 0)) / monthly.slice(-24, -12).reduce((sum, m) => sum + m.revenue, 0)) * 100 : 0;
   const growth_6mo = monthly.length >= 12 ? ((monthly.slice(-6).reduce((sum, m) => sum + m.revenue, 0) - monthly.slice(-12, -6).reduce((sum, m) => sum + m.revenue, 0)) / monthly.slice(-12, -6).reduce((sum, m) => sum + m.revenue, 0)) * 100 : 0;
-  const expGrowth_24mo = monthly.length >= 24 ? ((ltmExp - monthly.slice(-24, -12).reduce((sum, m) => sum + m.expense, 0)) / monthly.slice(-24, -12).reduce((sum, m) => sum + m.expense, 0)) * 100 : 0;
+  const prev24to12Exp = monthly.length >= 24 ? monthly.slice(-24, -12).reduce((sum, m) => sum + (
+    (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+    (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+    (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+    (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+    (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
+  ), 0) : 0;
+  const expGrowth_24mo = monthly.length >= 24 && prev24to12Exp > 0 ? ((ltmExp - prev24to12Exp) / prev24to12Exp) * 100 : 0;
   
   let baseRGS = 10;
   if (growth_24mo >= 25) baseRGS = 100;
@@ -3470,9 +3483,21 @@ export default function FinancialScorePage() {
     for (let i = 12; i < monthly.length; i++) {
       const window = monthly.slice(i - 11, i + 1);
       const ltmR = window.reduce((s, m) => s + m.revenue, 0);
-      const ltmE = window.reduce((s, m) => s + m.expense, 0);
+      const ltmE = window.reduce((s, m) => s + (
+        (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+        (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+        (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+        (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+        (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
+      ), 0);
       const prev12R = i >= 23 ? monthly.slice(i - 23, i - 11).reduce((s, m) => s + m.revenue, 0) : 0;
-      const prev12E = i >= 23 ? monthly.slice(i - 23, i - 11).reduce((s, m) => s + m.revenue, 0) : 0;
+      const prev12E = i >= 23 ? monthly.slice(i - 23, i - 11).reduce((s, m) => s + (
+        (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+        (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+        (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+        (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+        (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
+      ), 0) : 0;
       const g24 = prev12R > 0 ? ((ltmR - prev12R) / prev12R) * 100 : 0;
       const gE24 = prev12E > 0 ? ((ltmE - prev12E) / prev12E) * 100 : 0;
       const recent6R = window.slice(-6).reduce((s, m) => s + m.revenue, 0);
@@ -3635,10 +3660,10 @@ export default function FinancialScorePage() {
     const insights: string[] = [];
     
     if (finalScore >= 70) strengths.push(`Strong overall financial score of ${finalScore.toFixed(1)}, indicating robust financial health.`);
-    else if (finalScore < 50) weaknesses.push(`Financial score of ${finalScore.toFixed(1)} suggests significant areas for improvement.`);
+    else if (finalScore < 40) weaknesses.push(`Financial score of ${finalScore.toFixed(1)} suggests significant areas for improvement.`);
     
     if (profitabilityScore >= 70) strengths.push(`Profitability score of ${profitabilityScore.toFixed(1)} demonstrates solid revenue growth and expense management.`);
-    else if (profitabilityScore < 50) weaknesses.push(`Profitability score of ${profitabilityScore.toFixed(1)} indicates challenges in revenue growth or expense control.`);
+    else if (profitabilityScore < 40) weaknesses.push(`Profitability score of ${profitabilityScore.toFixed(1)} indicates challenges in revenue growth or expense control.`);
     
     if (growth_24mo > 10) strengths.push(`24-month revenue growth of ${growth_24mo.toFixed(1)}% shows strong market expansion.`);
     else if (growth_24mo < 0) weaknesses.push(`Negative 24-month revenue growth of ${growth_24mo.toFixed(1)}% requires immediate strategic attention.`);
@@ -3647,7 +3672,7 @@ export default function FinancialScorePage() {
     else if (expenseAdjustment < 0) weaknesses.push(`Expenses are growing faster than revenue by ${Math.abs(revExpSpread).toFixed(1)}%, reducing profitability by ${Math.abs(expenseAdjustment)} points.`);
     
     if (assetDevScore >= 70) strengths.push(`Asset Development Score of ${assetDevScore.toFixed(1)} reflects a healthy asset-to-liability ratio and positive asset growth.`);
-    else if (assetDevScore < 50) weaknesses.push(`Asset Development Score of ${assetDevScore.toFixed(1)} suggests concerning leverage and asset composition.`);
+    else if (assetDevScore < 40) weaknesses.push(`Asset Development Score of ${assetDevScore.toFixed(1)} suggests concerning leverage and asset composition.`);
     
     if (last.currentRatio >= 1.5) strengths.push(`Current ratio of ${last.currentRatio.toFixed(1)} indicates strong short-term liquidity.`);
     else if (last.currentRatio < 1.0) weaknesses.push(`Current ratio of ${last.currentRatio.toFixed(1)} may indicate potential liquidity challenges.`);
@@ -9362,7 +9387,7 @@ export default function FinancialScorePage() {
                                           (m.trainingCert || 0) + 
                                           (m.mealsEntertainment || 0) + 
                                           (m.interestExpense || 0) + 
-                                          (m.depreciationAmortization || 0) + 
+                                          Math.abs(m.depreciationAmortization || 0) + 
                                           (m.otherExpense || 0);
                           return (
                             <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
@@ -9392,7 +9417,7 @@ export default function FinancialScorePage() {
                                           (m.trainingCert || 0) + 
                                           (m.mealsEntertainment || 0) + 
                                           (m.interestExpense || 0) + 
-                                          (m.depreciationAmortization || 0) + 
+                                          Math.abs(m.depreciationAmortization || 0) + 
                                           (m.otherExpense || 0);
                           const netIncome = (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
                           return (
@@ -12652,7 +12677,7 @@ export default function FinancialScorePage() {
                       (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
                       (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
                       (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + (m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
                     ), 0);
                     const fourQAgoRev = fourQAgo.reduce((sum, m) => sum + m.revenue, 0);
                     const fourQAgoExp = fourQAgo.reduce((sum, m) => sum + (
@@ -12660,7 +12685,7 @@ export default function FinancialScorePage() {
                       (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
                       (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
                       (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + (m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
                     ), 0);
                     const qRevChange = fourQAgoRev > 0 ? ((currentQRev - fourQAgoRev) / fourQAgoRev * 100) : 0;
                     const qExpChange = fourQAgoExp > 0 ? ((currentQExp - fourQAgoExp) / fourQAgoExp * 100) : 0;
@@ -12677,7 +12702,7 @@ export default function FinancialScorePage() {
                       (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
                       (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
                       (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + (m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
                     ), 0);
                     const priorTTMRev = prior12.reduce((sum, m) => sum + m.revenue, 0);
                     const priorTTMExp = prior12.reduce((sum, m) => sum + (
@@ -12685,7 +12710,7 @@ export default function FinancialScorePage() {
                       (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
                       (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
                       (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
-                      (m.interestExpense || 0) + (m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
                     ), 0);
                     const ttmRevChange = priorTTMRev > 0 ? ((ttmRev - priorTTMRev) / priorTTMRev * 100) : 0;
                     const ttmExpChange = priorTTMExp > 0 ? ((ttmExp - priorTTMExp) / priorTTMExp * 100) : 0;
@@ -13067,9 +13092,21 @@ export default function FinancialScorePage() {
                     const revPrior = prev6Mo.reduce((s, m) => s + m.revenue, 0);
                     const revTrend = prev6Mo.length > 0 ? ((revRecent - revPrior) / revPrior * 100) : 0;
                     
-                    const expRecent = last6Mo.reduce((s, m) => s + m.expense, 0);
-                    const expPrior = prev6Mo.reduce((s, m) => s + m.expense, 0);
-                    const expTrend = prev6Mo.length > 0 ? ((expRecent - expPrior) / expPrior * 100) : 0;
+                    const expRecent = last6Mo.reduce((s, m) => s + (
+                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                    ), 0);
+                    const expPrior = prev6Mo.reduce((s, m) => s + (
+                      (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) + (m.insurance || 0) + 
+                      (m.professionalFees || 0) + (m.subcontractors || 0) + (m.rent || 0) + (m.taxLicense || 0) + 
+                      (m.phoneComm || 0) + (m.infrastructure || 0) + (m.autoTravel || 0) + (m.salesExpense || 0) + 
+                      (m.marketing || 0) + (m.trainingCert || 0) + (m.mealsEntertainment || 0) + 
+                      (m.interestExpense || 0) + Math.abs(m.depreciationAmortization || 0) + (m.otherExpense || 0)
+                    ), 0);
+                    const expTrend = expPrior > 0 ? ((expRecent - expPrior) / expPrior * 100) : 0;
                     
                     // Calculate margin trends
                     const recentMargin = revRecent > 0 ? ((revRecent - expRecent) / revRecent * 100) : 0;
@@ -13648,9 +13685,9 @@ export default function FinancialScorePage() {
                 <p style={{ margin: '12px 0 0 0' }}>
                   The overall Financial Score of <strong>{finalScore.toFixed(1)}</strong>
                   {finalScore >= 80 ? <span style={{ color: '#10b981' }}> (Strong Financial Performance)</span> :
-                   finalScore >= 50 ? <span style={{ color: '#3b82f6' }}> (Good Fundamentals - in a good position for revenue growth; needs to focus on bringing costs down as volume grows)</span> :
-                   finalScore >= 30 ? <span style={{ color: '#f59e0b' }}> (Financial Stress)</span> :
-                   <span style={{ color: '#ef4444' }}> (Critical Situation)</span>}.
+                   finalScore >= 60 ? <span style={{ color: '#3b82f6' }}> (Good Fundamentals - in a good position for revenue growth; needs to focus on bringing costs down as volume grows)</span> :
+                   finalScore >= 40 ? <span style={{ color: '#f59e0b' }}> (Basic Problems - cost structure issues; not in a position to grow; improvements needed in operations and process controls)</span> :
+                   <span style={{ color: '#ef4444' }}> (Serious Performance Problems - problems exist which may not be correctable; some form of major restructuring or liquidation may be best)</span>}.
                 </p>
               </div>
             </div>
@@ -17021,7 +17058,7 @@ export default function FinancialScorePage() {
                                 else if (targetField === 'trainingCert') monthRecord.trainingCert += value;
                                 else if (targetField === 'mealsEntertainment') monthRecord.mealsEntertainment += value;
                                 else if (targetField === 'interestExpense') monthRecord.interestExpense += value;
-                                else if (targetField === 'depreciationAmortization') monthRecord.depreciationAmortization += value;
+                                else if (targetField === 'depreciationAmortization') monthRecord.depreciationAmortization += Math.abs(value);
                                 else if (targetField === 'otherExpense') monthRecord.otherExpense += value;
                                 else if (targetField === 'nonOperatingIncome') monthRecord.nonOperatingIncome += value;
                                 else if (targetField === 'extraordinaryItems') monthRecord.extraordinaryItems += value;
