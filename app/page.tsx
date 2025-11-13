@@ -17655,37 +17655,37 @@ export default function FinancialScorePage() {
                       {/* COGS Section */}
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
-                        {cogsPayroll > 0 && (
+                        {(cogsPayroll > 0 || monthly.some(m => (m.cogsPayroll || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Payroll</span>
                             <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {cogsOwnerPay > 0 && (
+                        {(cogsOwnerPay > 0 || monthly.some(m => (m.cogsOwnerPay || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
                             <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {cogsContractors > 0 && (
+                        {(cogsContractors > 0 || monthly.some(m => (m.cogsContractors || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Contractors</span>
                             <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {cogsMaterials > 0 && (
+                        {(cogsMaterials > 0 || monthly.some(m => (m.cogsMaterials || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Materials</span>
                             <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {cogsCommissions > 0 && (
+                        {(cogsCommissions > 0 || monthly.some(m => (m.cogsCommissions || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Commissions</span>
                             <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {cogsOther > 0 && (
+                        {(cogsOther > 0 || monthly.some(m => (m.cogsOther || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Other</span>
                             <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -17711,79 +17711,79 @@ export default function FinancialScorePage() {
                       {/* Operating Expenses */}
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                        {opexPayroll > 0 && (
+                        {(opexPayroll > 0 || monthly.some(m => (m.payroll || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Payroll</span>
                             <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {ownersBasePay > 0 && (
+                        {(ownersBasePay > 0 || monthly.some(m => (m.ownerBasePay || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Owner's Base Pay</span>
                             <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {ownersRetirement > 0 && (
+                        {(ownersRetirement > 0 || monthly.some(m => (m.benefits || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Owner's Retirement</span>
                             <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {professionalServices > 0 && (
+                        {(professionalServices > 0 || monthly.some(m => (m.professionalFees || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Professional Services</span>
                             <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {rentLease > 0 && (
+                        {(rentLease > 0 || monthly.some(m => (m.rent || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Rent/Lease</span>
                             <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {utilities > 0 && (
+                        {(utilities > 0 || monthly.some(m => (m.phoneComm || 0) !== 0 || (m.infrastructure || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Utilities</span>
                             <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {equipment > 0 && (
+                        {(equipment > 0 || monthly.some(m => (m.autoTravel || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Equipment</span>
                             <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {travel > 0 && (
+                        {(travel > 0 || monthly.some(m => (m.autoTravel || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Travel</span>
                             <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {insurance > 0 && (
+                        {(insurance > 0 || monthly.some(m => (m.insurance || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Insurance</span>
                             <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {opexSalesMarketing > 0 && (
+                        {(opexSalesMarketing > 0 || monthly.some(m => (m.salesExpense || 0) !== 0 || (m.marketing || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Sales & Marketing</span>
                             <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {contractorsDistribution > 0 && (
+                        {(contractorsDistribution > 0 || monthly.some(m => (m.subcontractors || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Contractors Distribution</span>
                             <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {depreciationExpense > 0 && (
+                        {(depreciationExpense > 0 || monthly.some(m => (m.depreciationAmortization || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
                             <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {opexOther > 0 && (
+                        {(opexOther > 0 || monthly.some(m => (m.otherExpense || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Operating Expenses</span>
                             <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -17807,22 +17807,23 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Other Income/Expense */}
-                      {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
+                      {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0 || 
+                        monthly.some(m => (m.interestExpense || 0) !== 0 || (m.nonOperatingIncome || 0) !== 0 || (m.extraordinaryItems || 0) !== 0)) && (
                         <div style={{ marginBottom: '12px' }}>
                           <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
-                          {nonOperatingIncome > 0 && (
+                          {(nonOperatingIncome > 0 || monthly.some(m => (m.nonOperatingIncome || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Non-Operating Income</span>
                               <span style={{ color: '#10b981' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {interestExpense > 0 && (
+                          {(interestExpense > 0 || monthly.some(m => (m.interestExpense || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Interest Expense</span>
                               <span style={{ color: '#ef4444' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
                             </div>
                           )}
-                          {extraordinaryItems !== 0 && (
+                          {(extraordinaryItems !== 0 || monthly.some(m => (m.extraordinaryItems || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Extraordinary Items</span>
                               <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444' }}>
@@ -18184,25 +18185,25 @@ export default function FinancialScorePage() {
                       {/* Current Assets */}
                       <div style={{ marginBottom: '20px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Assets</div>
-                        {cash > 0 && (
+                        {(cash > 0 || monthly.some(m => (m.cash || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Cash</span>
                             <span style={{ color: '#475569' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {ar > 0 && (
+                        {(ar > 0 || monthly.some(m => (m.ar || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Accounts Receivable</span>
                             <span style={{ color: '#475569' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {inventory > 0 && (
+                        {(inventory > 0 || monthly.some(m => (m.inventory || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Inventory</span>
                             <span style={{ color: '#475569' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {otherCA > 0 && (
+                        {(otherCA > 0 || monthly.some(m => (m.otherCA || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Current Assets</span>
                             <span style={{ color: '#475569' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -18215,13 +18216,13 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Non-Current Assets */}
-                      {fixedAssets > 0 && (
+                      {(fixedAssets > 0 || monthly.some(m => (m.fixedAssets || 0) !== 0)) && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Fixed Assets</span>
                           <span style={{ color: '#475569' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                       )}
-                      {otherAssets > 0 && (
+                      {(otherAssets > 0 || monthly.some(m => (m.otherAssets || 0) !== 0)) && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Other Assets</span>
                           <span style={{ color: '#475569' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -18241,13 +18242,13 @@ export default function FinancialScorePage() {
                       {/* Current Liabilities */}
                       <div style={{ marginBottom: '20px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Liabilities</div>
-                        {ap > 0 && (
+                        {(ap > 0 || monthly.some(m => (m.ap || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Accounts Payable</span>
                             <span style={{ color: '#475569' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
-                        {otherCL > 0 && (
+                        {(otherCL > 0 || monthly.some(m => (m.otherCL || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Current Liabilities</span>
                             <span style={{ color: '#475569' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -18260,7 +18261,7 @@ export default function FinancialScorePage() {
                       </div>
 
                       {/* Long-term Debt */}
-                      {ltd > 0 && (
+                      {(ltd > 0 || monthly.some(m => (m.ltd || 0) !== 0)) && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Long-term Debt</span>
                           <span style={{ color: '#475569' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -18424,6 +18425,8 @@ export default function FinancialScorePage() {
                 // Check if showing multiple periods side-by-side
                 if (displayPeriods.length > 1) {
                   const calc = (months: any[], field: string) => months.reduce((sum, m) => sum + (m[field] || 0), 0);
+                  // Helper to check if field has any value across ALL 36 months
+                  const hasAnyValue = (field: string) => monthly.some(m => (m[field] || 0) !== 0);
                   const periodsData = displayPeriods.map(p => {
                     const m = p.months;
                     const cogsPayroll = calc(m, 'cogsPayroll');
@@ -18460,7 +18463,7 @@ export default function FinancialScorePage() {
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                       <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
                       {values.map((v: number, i: number) => (
-                        <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${(v / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                        <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                       ))}
                     </div>
                   );
@@ -18477,49 +18480,49 @@ export default function FinancialScorePage() {
                         </div>
                         <Row label="Revenue" values={periodsData.map(p => p.revenue)} bold />
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Cost of Goods Sold</div>
-                        {periodsData.some(p => p.cogsPayroll > 0) && <Row label="COGS - Payroll" values={periodsData.map(p => p.cogsPayroll)} indent={20} />}
-                        {periodsData.some(p => p.cogsOwnerPay > 0) && <Row label="COGS - Owner Pay" values={periodsData.map(p => p.cogsOwnerPay)} indent={20} />}
-                        {periodsData.some(p => p.cogsContractors > 0) && <Row label="COGS - Contractors" values={periodsData.map(p => p.cogsContractors)} indent={20} />}
-                        {periodsData.some(p => p.cogsMaterials > 0) && <Row label="COGS - Materials" values={periodsData.map(p => p.cogsMaterials)} indent={20} />}
-                        {periodsData.some(p => p.cogsCommissions > 0) && <Row label="COGS - Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
-                        {periodsData.some(p => p.cogsOther > 0) && <Row label="COGS - Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
+                        {hasAnyValue('cogsPayroll') && <Row label="COGS - Payroll" values={periodsData.map(p => p.cogsPayroll)} indent={20} />}
+                        {hasAnyValue('cogsOwnerPay') && <Row label="COGS - Owner Pay" values={periodsData.map(p => p.cogsOwnerPay)} indent={20} />}
+                        {hasAnyValue('cogsContractors') && <Row label="COGS - Contractors" values={periodsData.map(p => p.cogsContractors)} indent={20} />}
+                        {hasAnyValue('cogsMaterials') && <Row label="COGS - Materials" values={periodsData.map(p => p.cogsMaterials)} indent={20} />}
+                        {hasAnyValue('cogsCommissions') && <Row label="COGS - Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
+                        {hasAnyValue('cogsOther') && <Row label="COGS - Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
                         <Row label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Gross Profit</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${(p.grossProfit / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>)}
+                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                        {periodsData.some(p => p.opexPayroll > 0) && <Row label="Payroll" values={periodsData.map(p => p.opexPayroll)} indent={20} />}
-                        {periodsData.some(p => p.ownersBasePay > 0) && <Row label="Owner's Base Pay" values={periodsData.map(p => p.ownersBasePay)} indent={20} />}
-                        {periodsData.some(p => p.ownersRetirement > 0) && <Row label="Owner's Retirement" values={periodsData.map(p => p.ownersRetirement)} indent={20} />}
-                        {periodsData.some(p => p.professionalServices > 0) && <Row label="Professional Services" values={periodsData.map(p => p.professionalServices)} indent={20} />}
-                        {periodsData.some(p => p.rentLease > 0) && <Row label="Rent/Lease" values={periodsData.map(p => p.rentLease)} indent={20} />}
-                        {periodsData.some(p => p.utilities > 0) && <Row label="Utilities" values={periodsData.map(p => p.utilities)} indent={20} />}
-                        {periodsData.some(p => p.equipment > 0) && <Row label="Equipment" values={periodsData.map(p => p.equipment)} indent={20} />}
-                        {periodsData.some(p => p.travel > 0) && <Row label="Travel" values={periodsData.map(p => p.travel)} indent={20} />}
-                        {periodsData.some(p => p.insurance > 0) && <Row label="Insurance" values={periodsData.map(p => p.insurance)} indent={20} />}
-                        {periodsData.some(p => p.opexSalesMarketing > 0) && <Row label="Sales & Marketing" values={periodsData.map(p => p.opexSalesMarketing)} indent={20} />}
-                        {periodsData.some(p => p.contractorsDistribution > 0) && <Row label="Contractors - Distribution" values={periodsData.map(p => p.contractorsDistribution)} indent={20} />}
-                        {periodsData.some(p => p.depreciationExpense > 0) && <Row label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
-                        {periodsData.some(p => p.opexOther > 0) && <Row label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
+                        {hasAnyValue('opexPayroll') && <Row label="Payroll" values={periodsData.map(p => p.opexPayroll)} indent={20} />}
+                        {hasAnyValue('ownersBasePay') && <Row label="Owner's Base Pay" values={periodsData.map(p => p.ownersBasePay)} indent={20} />}
+                        {hasAnyValue('ownersRetirement') && <Row label="Owner's Retirement" values={periodsData.map(p => p.ownersRetirement)} indent={20} />}
+                        {hasAnyValue('professionalServices') && <Row label="Professional Services" values={periodsData.map(p => p.professionalServices)} indent={20} />}
+                        {hasAnyValue('rentLease') && <Row label="Rent/Lease" values={periodsData.map(p => p.rentLease)} indent={20} />}
+                        {hasAnyValue('utilities') && <Row label="Utilities" values={periodsData.map(p => p.utilities)} indent={20} />}
+                        {hasAnyValue('equipment') && <Row label="Equipment" values={periodsData.map(p => p.equipment)} indent={20} />}
+                        {hasAnyValue('travel') && <Row label="Travel" values={periodsData.map(p => p.travel)} indent={20} />}
+                        {hasAnyValue('insurance') && <Row label="Insurance" values={periodsData.map(p => p.insurance)} indent={20} />}
+                        {hasAnyValue('opexSalesMarketing') && <Row label="Sales & Marketing" values={periodsData.map(p => p.opexSalesMarketing)} indent={20} />}
+                        {hasAnyValue('contractorsDistribution') && <Row label="Contractors - Distribution" values={periodsData.map(p => p.contractorsDistribution)} indent={20} />}
+                        {hasAnyValue('depreciationExpense') && <Row label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
+                        {hasAnyValue('opexOther') && <Row label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
                         <Row label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Operating Income</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${(p.operatingIncome / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>)}
+                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
                         </div>
-                        {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
+                        {(hasAnyValue('interestExpense') || hasAnyValue('nonOperatingIncome') || hasAnyValue('extraordinaryItems')) && (
                           <>
                             <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Other Income/(Expense)</div>
-                            {periodsData.some(p => p.interestExpense > 0) && <Row label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
-                            {periodsData.some(p => p.nonOperatingIncome > 0) && <Row label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
-                            {periodsData.some(p => p.extraordinaryItems !== 0) && <Row label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
+                            {hasAnyValue('interestExpense') && <Row label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
+                            {hasAnyValue('nonOperatingIncome') && <Row label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
+                            {hasAnyValue('extraordinaryItems') && <Row label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
                           </>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
                           {periodsData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                              {p.netIncome >= 0 ? '$' : '($'}{(Math.abs(p.netIncome) / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K{p.netIncome < 0 ? ')' : ''}
+                              {p.netIncome >= 0 ? '$' : '($'}{Math.abs(p.netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.netIncome < 0 ? ')' : ''}
                             </div>
                           ))}
                         </div>
@@ -18822,7 +18825,7 @@ export default function FinancialScorePage() {
                           const pct = periodsData[i].revenue > 0 ? (v / periodsData[i].revenue) * 100 : 0;
                           return (
                             <div key={i} style={{ display: 'contents' }}>
-                              <div style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${(v / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                              <div style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
                             </div>
                           );
@@ -18847,12 +18850,12 @@ export default function FinancialScorePage() {
                           </div>
                           <RowWithPercent label="Revenue" values={periodsData.map(p => p.revenue)} bold />
                           <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Cost of Goods Sold</div>
-                          {periodsData.some(p => p.cogsPayroll > 0) && <RowWithPercent label="COGS - Payroll" values={periodsData.map(p => p.cogsPayroll)} indent={20} />}
-                          {periodsData.some(p => p.cogsOwnerPay > 0) && <RowWithPercent label="COGS - Owner Pay" values={periodsData.map(p => p.cogsOwnerPay)} indent={20} />}
-                          {periodsData.some(p => p.cogsContractors > 0) && <RowWithPercent label="COGS - Contractors" values={periodsData.map(p => p.cogsContractors)} indent={20} />}
-                          {periodsData.some(p => p.cogsMaterials > 0) && <RowWithPercent label="COGS - Materials" values={periodsData.map(p => p.cogsMaterials)} indent={20} />}
-                          {periodsData.some(p => p.cogsCommissions > 0) && <RowWithPercent label="COGS - Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
-                          {periodsData.some(p => p.cogsOther > 0) && <RowWithPercent label="COGS - Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
+                          {hasAnyValue('cogsPayroll') && <RowWithPercent label="COGS - Payroll" values={periodsData.map(p => p.cogsPayroll)} indent={20} />}
+                          {hasAnyValue('cogsOwnerPay') && <RowWithPercent label="COGS - Owner Pay" values={periodsData.map(p => p.cogsOwnerPay)} indent={20} />}
+                          {hasAnyValue('cogsContractors') && <RowWithPercent label="COGS - Contractors" values={periodsData.map(p => p.cogsContractors)} indent={20} />}
+                          {hasAnyValue('cogsMaterials') && <RowWithPercent label="COGS - Materials" values={periodsData.map(p => p.cogsMaterials)} indent={20} />}
+                          {hasAnyValue('cogsCommissions') && <RowWithPercent label="COGS - Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
+                          {hasAnyValue('cogsOther') && <RowWithPercent label="COGS - Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
                           <RowWithPercent label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                             <div>Gross Profit</div>
@@ -18860,26 +18863,26 @@ export default function FinancialScorePage() {
                               const pct = p.revenue > 0 ? (p.grossProfit / p.revenue) * 100 : 0;
                               return (
                                 <div key={i} style={{ display: 'contents' }}>
-                                  <div style={{ textAlign: 'right' }}>${(p.grossProfit / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                  <div style={{ textAlign: 'right' }}>${p.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                                   <div style={{ textAlign: 'right', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
                                 </div>
                               );
                             })}
                           </div>
                           <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                          {periodsData.some(p => p.opexPayroll > 0) && <RowWithPercent label="Payroll" values={periodsData.map(p => p.opexPayroll)} indent={20} />}
-                          {periodsData.some(p => p.ownersBasePay > 0) && <RowWithPercent label="Owner's Base Pay" values={periodsData.map(p => p.ownersBasePay)} indent={20} />}
-                          {periodsData.some(p => p.ownersRetirement > 0) && <RowWithPercent label="Owner's Retirement" values={periodsData.map(p => p.ownersRetirement)} indent={20} />}
-                          {periodsData.some(p => p.professionalServices > 0) && <RowWithPercent label="Professional Services" values={periodsData.map(p => p.professionalServices)} indent={20} />}
-                          {periodsData.some(p => p.rentLease > 0) && <RowWithPercent label="Rent/Lease" values={periodsData.map(p => p.rentLease)} indent={20} />}
-                          {periodsData.some(p => p.utilities > 0) && <RowWithPercent label="Utilities" values={periodsData.map(p => p.utilities)} indent={20} />}
-                          {periodsData.some(p => p.equipment > 0) && <RowWithPercent label="Equipment" values={periodsData.map(p => p.equipment)} indent={20} />}
-                          {periodsData.some(p => p.travel > 0) && <RowWithPercent label="Travel" values={periodsData.map(p => p.travel)} indent={20} />}
-                          {periodsData.some(p => p.insurance > 0) && <RowWithPercent label="Insurance" values={periodsData.map(p => p.insurance)} indent={20} />}
-                          {periodsData.some(p => p.opexSalesMarketing > 0) && <RowWithPercent label="Sales & Marketing" values={periodsData.map(p => p.opexSalesMarketing)} indent={20} />}
-                          {periodsData.some(p => p.contractorsDistribution > 0) && <RowWithPercent label="Contractors - Distribution" values={periodsData.map(p => p.contractorsDistribution)} indent={20} />}
-                          {periodsData.some(p => p.depreciationExpense > 0) && <RowWithPercent label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
-                          {periodsData.some(p => p.opexOther > 0) && <RowWithPercent label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
+                          {hasAnyValue('opexPayroll') && <RowWithPercent label="Payroll" values={periodsData.map(p => p.opexPayroll)} indent={20} />}
+                          {hasAnyValue('ownersBasePay') && <RowWithPercent label="Owner's Base Pay" values={periodsData.map(p => p.ownersBasePay)} indent={20} />}
+                          {hasAnyValue('ownersRetirement') && <RowWithPercent label="Owner's Retirement" values={periodsData.map(p => p.ownersRetirement)} indent={20} />}
+                          {hasAnyValue('professionalServices') && <RowWithPercent label="Professional Services" values={periodsData.map(p => p.professionalServices)} indent={20} />}
+                          {hasAnyValue('rentLease') && <RowWithPercent label="Rent/Lease" values={periodsData.map(p => p.rentLease)} indent={20} />}
+                          {hasAnyValue('utilities') && <RowWithPercent label="Utilities" values={periodsData.map(p => p.utilities)} indent={20} />}
+                          {hasAnyValue('equipment') && <RowWithPercent label="Equipment" values={periodsData.map(p => p.equipment)} indent={20} />}
+                          {hasAnyValue('travel') && <RowWithPercent label="Travel" values={periodsData.map(p => p.travel)} indent={20} />}
+                          {hasAnyValue('insurance') && <RowWithPercent label="Insurance" values={periodsData.map(p => p.insurance)} indent={20} />}
+                          {hasAnyValue('opexSalesMarketing') && <RowWithPercent label="Sales & Marketing" values={periodsData.map(p => p.opexSalesMarketing)} indent={20} />}
+                          {hasAnyValue('contractorsDistribution') && <RowWithPercent label="Contractors - Distribution" values={periodsData.map(p => p.contractorsDistribution)} indent={20} />}
+                          {hasAnyValue('depreciationExpense') && <RowWithPercent label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
+                          {hasAnyValue('opexOther') && <RowWithPercent label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
                           <RowWithPercent label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                             <div>Operating Income</div>
@@ -18887,18 +18890,18 @@ export default function FinancialScorePage() {
                               const pct = p.revenue > 0 ? (p.operatingIncome / p.revenue) * 100 : 0;
                               return (
                                 <div key={i} style={{ display: 'contents' }}>
-                                  <div style={{ textAlign: 'right' }}>${(p.operatingIncome / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                  <div style={{ textAlign: 'right' }}>${p.operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                                   <div style={{ textAlign: 'right', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
                                 </div>
                               );
                             })}
                           </div>
-                          {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
+                          {(hasAnyValue('interestExpense') || hasAnyValue('nonOperatingIncome') || hasAnyValue('extraordinaryItems')) && (
                             <>
                               <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Other Income/(Expense)</div>
-                              {periodsData.some(p => p.interestExpense > 0) && <RowWithPercent label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
-                              {periodsData.some(p => p.nonOperatingIncome > 0) && <RowWithPercent label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
-                              {periodsData.some(p => p.extraordinaryItems !== 0) && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
+                              {hasAnyValue('interestExpense') && <RowWithPercent label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
+                              {hasAnyValue('nonOperatingIncome') && <RowWithPercent label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
+                              {hasAnyValue('extraordinaryItems') && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
                             </>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
@@ -18908,7 +18911,7 @@ export default function FinancialScorePage() {
                               return (
                                 <div key={i} style={{ display: 'contents' }}>
                                   <div style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                                    {p.netIncome >= 0 ? '$' : '($'}{(Math.abs(p.netIncome) / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K{p.netIncome < 0 ? ')' : ''}
+                                    {p.netIncome >= 0 ? '$' : '($'}{Math.abs(p.netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.netIncome < 0 ? ')' : ''}
                                   </div>
                                   <div style={{ textAlign: 'right', fontSize: '12px', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>{pct.toFixed(1)}%</div>
                                 </div>
@@ -19192,49 +19195,58 @@ export default function FinancialScorePage() {
                   );
                 }
                 
-                // BALANCE SHEET - Latest point in time
+                // BALANCE SHEET - Latest point in time (UNIFIED APPROACH)
                 else if (statementType === 'balance-sheet') {
+                  // Helper to check if field has any value across ALL 36 months
+                  const hasAnyValue = (field: string) => monthly.some(m => (m[field] || 0) !== 0);
+                  
+                  // Unified calculation function for balance sheet data
+                  const calculateBalanceData = (months: any[]) => {
+                    // For balance sheet, use the latest month's values (point-in-time)
+                    const latest = months[months.length - 1];
+                    const cash = latest.cash || 0;
+                    const ar = latest.ar || 0;
+                    const inventory = latest.inventory || 0;
+                    const otherCA = latest.otherCA || 0;
+                    const tca = cash + ar + inventory + otherCA;
+                    
+                    const fixedAssets = latest.fixedAssets || 0;
+                    const intangibleAssets = latest.intangibleAssets || 0;
+                    const otherNonCurrentAssets = latest.otherNonCurrentAssets || 0;
+                    const otherAssets = latest.otherAssets || 0;
+                    const nonCurrentAssets = fixedAssets + intangibleAssets + otherNonCurrentAssets;
+                    const totalAssets = tca + nonCurrentAssets;
+                    
+                    const ap = latest.ap || 0;
+                    const shortTermDebt = latest.shortTermDebt || 0;
+                    const currentPortionLTD = latest.currentPortionLTD || 0;
+                    const otherCurrentLiabilities = latest.otherCurrentLiabilities || 0;
+                    const otherCL = latest.otherCL || 0;
+                    const totalCurrentLiabilities = ap + shortTermDebt + currentPortionLTD + otherCurrentLiabilities;
+                    
+                    const ltd = latest.ltd || 0;
+                    const otherLongTermLiabilities = latest.otherLongTermLiabilities || 0;
+                    const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
+                    const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
+                    
+                    const paidInCapital = latest.paidInCapital || 0;
+                    const ownersCapital = latest.ownersCapital || 0;
+                    const ownersDraw = latest.ownersDraw || 0;
+                    const retainedEarnings = latest.retainedEarnings || 0;
+                    const totalEquity = paidInCapital + ownersCapital + ownersDraw + retainedEarnings;
+                    
+                    return {
+                      cash, ar, inventory, otherCA, tca,
+                      fixedAssets, intangibleAssets, otherNonCurrentAssets, otherAssets, nonCurrentAssets, totalAssets,
+                      ap, shortTermDebt, currentPortionLTD, otherCurrentLiabilities, otherCL, totalCurrentLiabilities,
+                      ltd, otherLongTermLiabilities, totalLongTermLiabilities, totalLiabilities,
+                      paidInCapital, ownersCapital, ownersDraw, retainedEarnings, totalEquity
+                    };
+                  };
+                  
                   // Check if we're showing multiple periods side-by-side
                   if (displayPeriods.length > 1) {
                     // Multi-column comparative balance sheet
-                    const calculateBalanceData = (months: any[]) => {
-                      // For balance sheet, use the latest month's values (point-in-time)
-                      const latest = months[months.length - 1];
-                      const cash = latest.cash || 0;
-                      const ar = latest.ar || 0;
-                      const inventory = latest.inventory || 0;
-                      const otherCA = latest.otherCA || 0;
-                      const tca = cash + ar + inventory + otherCA;
-                      
-                      const fixedAssets = latest.fixedAssets || 0;
-                      const intangibleAssets = latest.intangibleAssets || 0;
-                      const otherNonCurrentAssets = latest.otherNonCurrentAssets || 0;
-                      const nonCurrentAssets = fixedAssets + intangibleAssets + otherNonCurrentAssets;
-                      const totalAssets = tca + nonCurrentAssets;
-                      
-                      const ap = latest.ap || 0;
-                      const shortTermDebt = latest.shortTermDebt || 0;
-                      const currentPortionLTD = latest.currentPortionLTD || 0;
-                      const otherCurrentLiabilities = latest.otherCurrentLiabilities || 0;
-                      const totalCurrentLiabilities = ap + shortTermDebt + currentPortionLTD + otherCurrentLiabilities;
-                      
-                      const ltd = latest.ltd || 0;
-                      const otherLongTermLiabilities = latest.otherLongTermLiabilities || 0;
-                      const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
-                      const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
-                      
-                      const paidInCapital = latest.paidInCapital || 0;
-                      const retainedEarnings = latest.retainedEarnings || 0;
-                      const totalEquity = paidInCapital + retainedEarnings;
-                      
-                      return {
-                        cash, ar, inventory, otherCA, tca,
-                        fixedAssets, intangibleAssets, otherNonCurrentAssets, nonCurrentAssets, totalAssets,
-                        ap, shortTermDebt, currentPortionLTD, otherCurrentLiabilities, totalCurrentLiabilities,
-                        ltd, otherLongTermLiabilities, totalLongTermLiabilities, totalLiabilities,
-                        paidInCapital, retainedEarnings, totalEquity
-                      };
-                    };
                     
                     const balanceData = displayPeriods.map(p => ({
                       label: p.label,
@@ -19271,42 +19283,42 @@ export default function FinancialScorePage() {
                           </div>
                           
                           {/* Current Assets Details */}
-                          {balanceData.some(p => p.cash > 0) && (
+                          {hasAnyValue('cash') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Cash & Cash Equivalents</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.cash / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.ar > 0) && (
+                          {hasAnyValue('ar') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Receivable</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.ar / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.inventory > 0) && (
+                          {hasAnyValue('inventory') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Inventory</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.inventory / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.otherCA > 0) && (
+                          {hasAnyValue('otherCA') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Assets</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.otherCA / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Current Assets</div>
                             {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.tca / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                           
@@ -19316,34 +19328,42 @@ export default function FinancialScorePage() {
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
-                          {balanceData.some(p => p.fixedAssets > 0) && (
+                          {hasAnyValue('fixedAssets') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Property, Plant & Equipment</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.fixedAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.intangibleAssets > 0) && (
+                          {hasAnyValue('intangibleAssets') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Intangible Assets</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.intangibleAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.intangibleAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.otherNonCurrentAssets > 0) && (
+                          {hasAnyValue('otherNonCurrentAssets') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Non-Current Assets</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.otherNonCurrentAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherNonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
+                          {hasAnyValue('otherAssets') && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Assets</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Non-Current Assets</div>
                             {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.nonCurrentAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.nonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                           
@@ -19351,7 +19371,7 @@ export default function FinancialScorePage() {
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
                             <div style={{ color: '#1e40af' }}>TOTAL ASSETS</div>
                             {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#1e40af' }}>${(p.totalAssets / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#1e40af' }}>${p.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                           
@@ -19367,42 +19387,50 @@ export default function FinancialScorePage() {
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
-                          {balanceData.some(p => p.ap > 0) && (
+                          {hasAnyValue('ap') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Payable</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.ap / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.shortTermDebt > 0) && (
+                          {hasAnyValue('shortTermDebt') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Short-Term Debt</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.shortTermDebt / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.shortTermDebt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.currentPortionLTD > 0) && (
+                          {hasAnyValue('currentPortionLTD') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Current Portion of LT Debt</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.currentPortionLTD / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.currentPortionLTD.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.otherCurrentLiabilities > 0) && (
+                          {hasAnyValue('otherCurrentLiabilities') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Liabilities</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.otherCurrentLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
+                          {hasAnyValue('otherCL') && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other CL</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Current Liabilities</div>
                             {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.totalCurrentLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.totalCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                           
@@ -19412,26 +19440,26 @@ export default function FinancialScorePage() {
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
-                          {balanceData.some(p => p.ltd > 0) && (
+                          {hasAnyValue('ltd') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Long-Term Debt</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.ltd / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.otherLongTermLiabilities > 0) && (
+                          {hasAnyValue('otherLongTermLiabilities') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Long-Term Liabilities</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.otherLongTermLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Long-Term Liabilities</div>
                             {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${(p.totalLongTermLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.totalLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                           
@@ -19439,7 +19467,7 @@ export default function FinancialScorePage() {
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
                             <div style={{ color: '#92400e' }}>TOTAL LIABILITIES</div>
                             {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#92400e' }}>${(p.totalLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#92400e' }}>${p.totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                           
@@ -19449,20 +19477,38 @@ export default function FinancialScorePage() {
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
-                          {balanceData.some(p => p.paidInCapital > 0) && (
+                          {hasAnyValue('paidInCapital') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Paid-in Capital</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.paidInCapital / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.retainedEarnings !== 0) && (
+                          {hasAnyValue('ownersCapital') && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Capital</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
+                          {hasAnyValue('ownersDraw') && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Draw</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
+                                  {p.ownersDraw >= 0 ? '$' : '($'}{Math.abs(p.ownersDraw).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.ownersDraw < 0 ? ')' : ''}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {hasAnyValue('retainedEarnings') && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Retained Earnings</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
-                                  {p.retainedEarnings >= 0 ? '$' : '($'}{(Math.abs(p.retainedEarnings) / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K{p.retainedEarnings < 0 ? ')' : ''}
+                                  {p.retainedEarnings >= 0 ? '$' : '($'}{Math.abs(p.retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.retainedEarnings < 0 ? ')' : ''}
                                 </div>
                               ))}
                             </div>
@@ -19473,7 +19519,17 @@ export default function FinancialScorePage() {
                             <div style={{ color: '#166534' }}>TOTAL EQUITY</div>
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: p.totalEquity >= 0 ? '#166534' : '#991b1b' }}>
-                                {p.totalEquity >= 0 ? '$' : '($'}{(Math.abs(p.totalEquity) / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K{p.totalEquity < 0 ? ')' : ''}
+                                {p.totalEquity >= 0 ? '$' : '($'}{Math.abs(p.totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.totalEquity < 0 ? ')' : ''}
+                              </div>
+                            ))}
+                          </div>
+                          
+                          {/* TOTAL LIABILITIES AND EQUITY */}
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#e0e7ff', borderRadius: '4px', marginTop: '8px', fontWeight: '700', borderTop: '3px solid #4338ca' }}>
+                            <div style={{ color: '#4338ca' }}>TOTAL LIABILITIES AND EQUITY</div>
+                            {balanceData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#4338ca' }}>
+                                ${(p.totalLiabilities + p.totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </div>
                             ))}
                           </div>
@@ -19482,35 +19538,15 @@ export default function FinancialScorePage() {
                     );
                   }
                   
-                  // Single period balance sheet (original logic)
-                  const cash = latestMonth.cash || 0;
-                  const ar = latestMonth.ar || 0;
-                  const inventory = latestMonth.inventory || 0;
-                  const otherCA = latestMonth.otherCA || 0;
-                  const tca = cash + ar + inventory + otherCA;
-                  
-                  const fixedAssets = latestMonth.fixedAssets || 0;
-                  const intangibleAssets = latestMonth.intangibleAssets || 0;
-                  const otherNonCurrentAssets = latestMonth.otherNonCurrentAssets || 0;
-                  const nonCurrentAssets = fixedAssets + intangibleAssets + otherNonCurrentAssets;
-                  
-                  const totalAssets = tca + nonCurrentAssets;
-                  
-                  const ap = latestMonth.ap || 0;
-                  const shortTermDebt = latestMonth.shortTermDebt || 0;
-                  const currentPortionLTD = latestMonth.currentPortionLTD || 0;
-                  const otherCurrentLiabilities = latestMonth.otherCurrentLiabilities || 0;
-                  const totalCurrentLiabilities = ap + shortTermDebt + currentPortionLTD + otherCurrentLiabilities;
-                  
-                  const ltd = latestMonth.ltd || 0;
-                  const otherLongTermLiabilities = latestMonth.otherLongTermLiabilities || 0;
-                  const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
-                  
-                  const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
-                  
-                  const paidInCapital = latestMonth.paidInCapital || 0;
-                  const retainedEarnings = latestMonth.retainedEarnings || 0;
-                  const totalEquity = paidInCapital + retainedEarnings;
+                  // Single period balance sheet (UNIFIED with multi-column logic)
+                  const balanceData = calculateBalanceData(displayPeriods[0].months);
+                  const {
+                    cash, ar, inventory, otherCA, tca,
+                    fixedAssets, intangibleAssets, otherNonCurrentAssets, otherAssets, nonCurrentAssets, totalAssets,
+                    ap, shortTermDebt, currentPortionLTD, otherCurrentLiabilities, otherCL, totalCurrentLiabilities,
+                    ltd, otherLongTermLiabilities, totalLongTermLiabilities, totalLiabilities,
+                    paidInCapital, ownersCapital, ownersDraw, retainedEarnings, totalEquity
+                  } = balanceData;
                   
                   const totalLAndE = totalLiabilities + totalEquity;
                   
@@ -19531,25 +19567,25 @@ export default function FinancialScorePage() {
                         {/* Current Assets */}
                         <div style={{ marginBottom: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Assets</div>
-                          {cash > 0 && (
+                          {(cash > 0 || monthly.some(m => (m.cash || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Cash & Cash Equivalents</span>
                               <span style={{ color: '#64748b' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {ar > 0 && (
+                          {(ar > 0 || monthly.some(m => (m.ar || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Accounts Receivable</span>
                               <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {inventory > 0 && (
+                          {(inventory > 0 || monthly.some(m => (m.inventory || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Inventory</span>
                               <span style={{ color: '#64748b' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {otherCA > 0 && (
+                          {(otherCA > 0 || monthly.some(m => (m.otherCA || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Other Current Assets</span>
                               <span style={{ color: '#64748b' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -19564,22 +19600,28 @@ export default function FinancialScorePage() {
                         {/* Non-Current Assets */}
                         <div style={{ marginBottom: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Non-Current Assets</div>
-                          {fixedAssets > 0 && (
+                          {(fixedAssets > 0 || monthly.some(m => (m.fixedAssets || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Property, Plant & Equipment</span>
                               <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {intangibleAssets > 0 && (
+                          {(intangibleAssets > 0 || monthly.some(m => (m.intangibleAssets || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Intangible Assets</span>
                               <span style={{ color: '#64748b' }}>${intangibleAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {otherNonCurrentAssets > 0 && (
+                          {(otherNonCurrentAssets > 0 || monthly.some(m => (m.otherNonCurrentAssets || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Other Non-Current Assets</span>
                               <span style={{ color: '#64748b' }}>${otherNonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                          )}
+                          {(otherAssets > 0 || monthly.some(m => (m.otherAssets || 0) !== 0)) && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                              <span style={{ color: '#64748b' }}>Other Assets</span>
+                              <span style={{ color: '#64748b' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
@@ -19606,28 +19648,34 @@ export default function FinancialScorePage() {
                         {/* Current Liabilities */}
                         <div style={{ marginBottom: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Liabilities</div>
-                          {ap > 0 && (
+                          {(ap > 0 || monthly.some(m => (m.ap || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Accounts Payable</span>
                               <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {shortTermDebt > 0 && (
+                          {(shortTermDebt > 0 || monthly.some(m => (m.shortTermDebt || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Short-Term Debt</span>
                               <span style={{ color: '#64748b' }}>${shortTermDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {currentPortionLTD > 0 && (
+                          {(currentPortionLTD > 0 || monthly.some(m => (m.currentPortionLTD || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Current Portion of LT Debt</span>
                               <span style={{ color: '#64748b' }}>${currentPortionLTD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {otherCurrentLiabilities > 0 && (
+                          {(otherCurrentLiabilities > 0 || monthly.some(m => (m.otherCurrentLiabilities || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Other Current Liabilities</span>
                               <span style={{ color: '#64748b' }}>${otherCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                          )}
+                          {(otherCL > 0 || monthly.some(m => (m.otherCL || 0) !== 0)) && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                              <span style={{ color: '#64748b' }}>Other CL</span>
+                              <span style={{ color: '#64748b' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
@@ -19639,13 +19687,13 @@ export default function FinancialScorePage() {
                         {/* Long-Term Liabilities */}
                         <div style={{ marginBottom: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Long-Term Liabilities</div>
-                          {ltd > 0 && (
+                          {(ltd > 0 || monthly.some(m => (m.ltd || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Long-Term Debt</span>
                               <span style={{ color: '#64748b' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                           )}
-                          {otherLongTermLiabilities > 0 && (
+                          {(otherLongTermLiabilities > 0 || monthly.some(m => (m.otherLongTermLiabilities || 0) !== 0)) && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Other Long-Term Liabilities</span>
                               <span style={{ color: '#64748b' }}>${otherLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -19671,10 +19719,26 @@ export default function FinancialScorePage() {
                       {/* EQUITY */}
                       <div style={{ marginBottom: '32px' }}>
                         <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>EQUITY</div>
-                        {paidInCapital > 0 && (
+                        {(paidInCapital !== 0 || monthly.some(m => (m.paidInCapital || 0) !== 0)) && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Paid-in Capital</span>
                             <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {(ownersCapital !== 0 || monthly.some(m => (m.ownersCapital || 0) !== 0)) && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>Owner's Capital</span>
+                            <span style={{ color: '#64748b' }}>
+                              {ownersCapital >= 0 ? '$' : '($'}{Math.abs(ownersCapital).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{ownersCapital < 0 ? ')' : ''}
+                            </span>
+                          </div>
+                        )}
+                        {(ownersDraw !== 0 || monthly.some(m => (m.ownersDraw || 0) !== 0)) && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>Owner's Draw</span>
+                            <span style={{ color: '#64748b' }}>
+                              {ownersDraw >= 0 ? '$' : '($'}{Math.abs(ownersDraw).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{ownersDraw < 0 ? ')' : ''}
+                            </span>
                           </div>
                         )}
                         {retainedEarnings !== 0 && (
