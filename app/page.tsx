@@ -2529,13 +2529,15 @@ export default function FinancialScorePage() {
         console.log('📊 Sample Excel values from row 0:', { 
           revenue: rawRows[0]?.[mapping.revenue!], 
           expense: rawRows[0]?.[mapping.expense!],
-          professionalServices: rawRows[0]?.[mapping.professionalServices!]
+          ltd: rawRows[0]?.[mapping.ltd!],
+          commonStock: rawRows[0]?.[mapping.commonStock!]
         });
         console.log('📊 First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
           month: m.month, 
           revenue: m.revenue, 
           expense: m.expense,
-          professionalServices: m.professionalServices
+          ltd: m.ltd,
+          commonStock: m.commonStock
         })));
         
         const result = await financialsApi.upload({
@@ -2552,6 +2554,9 @@ export default function FinancialScorePage() {
         
         // Immediately set loadedMonthlyData so reports show it
         setLoadedMonthlyData(fullMonthlyData);
+        
+        // Force a data refresh by incrementing the refresh key
+        setDataRefreshKey(prev => prev + 1);
         
         alert('Financial data saved successfully! You can now view it in the reports.');
       } catch (error) {
