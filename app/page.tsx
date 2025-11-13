@@ -20646,6 +20646,11 @@ export default function FinancialScorePage() {
                     if (selectedLineOfBusiness === 'all') {
                       // Side-by-side view for all LOBs
                       const lobsData = activeLOBs.map(lob => ({ lob, data: calculateForLOB(lob) }));
+                      
+                      // Helper to check if any LOB has a non-zero value for a field
+                      const hasAnyLOBValue = (fieldName: string) => {
+                        return lobsData.some(({ data }) => (data as any)[fieldName] > 0);
+                      };
                       const totals = calculateForLOB('total'); // We'll calculate totals separately
                       
                       // Calculate actual totals (sum across all LOBs)
@@ -20668,323 +20673,361 @@ export default function FinancialScorePage() {
                   </div>
                 </div>
 
-                          <table style={{ width: '100%', fontSize: '14px' }}>
+                          <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
                             <thead>
                               <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                                 <th style={{ textAlign: 'left', paddingBottom: '12px', fontWeight: '600', color: '#475569' }}>Account</th>
                                 {activeLOBs.map((lob, idx) => (
-                                  <th key={idx} style={{ textAlign: 'right', paddingBottom: '12px', fontWeight: '600', color: '#475569', minWidth: '140px' }}>{lob}</th>
+                                  <th key={idx} style={{ textAlign: 'right', paddingBottom: '12px', paddingLeft: '8px', fontWeight: '600', color: '#475569' }}>{lob}</th>
                                 ))}
-                                <th style={{ textAlign: 'right', paddingBottom: '12px', fontWeight: '700', color: '#1e293b', minWidth: '140px', background: '#fef3c7' }}>Total</th>
+                                <th style={{ textAlign: 'right', paddingBottom: '12px', paddingLeft: '8px', fontWeight: '700', color: '#1e293b', background: '#fef3c7' }}>Total</th>
                               </tr>
                             </thead>
                             <tbody>
                               {/* Revenue */}
                               <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                <td style={{ padding: '8px 0', fontWeight: '600' }}>Revenue</td>
+                                <td style={{ padding: '8px 0', fontWeight: '600', color: '#1e293b' }}>Revenue</td>
                                 {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace' }}>
+                                  <td key={idx} style={{ padding: '8px 0 8px 8px', textAlign: 'right' }}>
                                     {formatValue(data.revenue, data.revenue)}
                                   </td>
                                 ))}
-                                <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', background: '#fef3c7' }}>
+                                <td style={{ padding: '8px 0 8px 8px', textAlign: 'right', fontWeight: '600', background: '#fef3c7' }}>
                                   {formatValue(totalRevenue, totalRevenue)}
                                 </td>
                               </tr>
 
                               {/* COGS Section Header */}
                               <tr>
-                                <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Cost of Goods Sold</td>
+                                <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#475569', fontSize: '14px' }}>Cost of Goods Sold</td>
                               </tr>
 
-                              {/* COGS Line Items - Show ALL */}
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Payroll</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.cogsPayroll, data.revenue)}
+                              {/* COGS Line Items - Show only if any LOB has value */}
+                              {hasAnyLOBValue('cogsPayroll') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Payroll</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.cogsPayroll, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsPayroll, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsPayroll, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Owner Pay</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.cogsOwnerPay, data.revenue)}
+                              {hasAnyLOBValue('cogsOwnerPay') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Owner Pay</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.cogsOwnerPay, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsOwnerPay, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsOwnerPay, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Contractors</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.cogsContractors, data.revenue)}
+                              {hasAnyLOBValue('cogsContractors') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Contractors</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.cogsContractors, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsContractors, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsContractors, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Materials</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.cogsMaterials, data.revenue)}
+                              {hasAnyLOBValue('cogsMaterials') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Materials</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.cogsMaterials, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsMaterials, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsMaterials, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Commissions</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.cogsCommissions, data.revenue)}
+                              {hasAnyLOBValue('cogsCommissions') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Commissions</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.cogsCommissions, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsCommissions, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsCommissions, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Other</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.cogsOther, data.revenue)}
+                              {hasAnyLOBValue('cogsOther') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Other</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.cogsOther, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsOther, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.cogsOther, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
                               {/* Total COGS */}
                               <tr style={{ borderTop: '1px solid #e2e8f0' }}>
-                                <td style={{ padding: '8px 0', fontWeight: '600' }}>Total COGS</td>
+                                <td style={{ padding: '8px 0', fontWeight: '600', color: '#1e293b' }}>Total COGS</td>
                                 {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>
+                                  <td key={idx} style={{ padding: '8px 0 8px 8px', textAlign: 'right', fontWeight: '600' }}>
                                     {formatValue(data.cogs, data.revenue)}
                                   </td>
                                 ))}
-                                <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', background: '#fef3c7' }}>
+                                <td style={{ padding: '8px 0 8px 8px', textAlign: 'right', fontWeight: '600', background: '#fef3c7' }}>
                                   {formatValue(totalCOGS, totalRevenue)}
                                 </td>
                               </tr>
 
                               {/* Gross Profit - Highlighted Row */}
                               <tr style={{ background: '#dbeafe' }}>
-                                <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e40af' }}>Gross Profit</td>
+                                <td style={{ padding: '10px 0 10px 8px', fontWeight: '700', color: '#1e40af' }}>Gross Profit</td>
                                 {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af' }}>
+                                  <td key={idx} style={{ padding: '10px 0 10px 8px', textAlign: 'right', fontWeight: '700', color: '#1e40af' }}>
                                     {formatValue(data.grossProfit, data.revenue)}
-                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{data.grossMargin.toFixed(1)}%</div>}
+                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{data.grossMargin.toFixed(1)}%</div>}
                                   </td>
                                 ))}
-                                <td style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af', background: '#dbeafe' }}>
+                                <td style={{ padding: '10px 0 10px 8px', textAlign: 'right', fontWeight: '700', color: '#1e40af', background: '#dbeafe' }}>
                                   {formatValue(totalGrossProfit, totalRevenue)}
-                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{totalRevenue > 0 ? ((totalGrossProfit / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{totalRevenue > 0 ? ((totalGrossProfit / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
                                 </td>
                               </tr>
 
                               {/* Operating Expenses Section */}
                               <tr>
-                                <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Operating Expenses</td>
+                                <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#475569', fontSize: '14px' }}>Operating Expenses</td>
                               </tr>
 
-                              {/* OpEx Line Items - Show ALL */}
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Payroll</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.opexPayroll, data.revenue)}
+                              {/* OpEx Line Items - Show only if any LOB has value */}
+                              {hasAnyLOBValue('opexPayroll') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Payroll</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.opexPayroll, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexPayroll, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexPayroll, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Owner's Base Pay</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.ownersBasePay, data.revenue)}
+                              {hasAnyLOBValue('ownersBasePay') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Owner's Base Pay</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.ownersBasePay, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.ownersBasePay, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.ownersBasePay, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Owner's Retirement</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.ownersRetirement, data.revenue)}
+                              {hasAnyLOBValue('ownersRetirement') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Owner's Retirement</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.ownersRetirement, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.ownersRetirement, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.ownersRetirement, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Professional Services</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.professionalServices, data.revenue)}
+                              {hasAnyLOBValue('professionalServices') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Professional Services</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.professionalServices, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.professionalServices, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.professionalServices, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Rent/Lease</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.rentLease, data.revenue)}
+                              {hasAnyLOBValue('rentLease') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Rent/Lease</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.rentLease, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.rentLease, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.rentLease, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Utilities</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.utilities, data.revenue)}
+                              {hasAnyLOBValue('utilities') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Utilities</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.utilities, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.utilities, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.utilities, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Equipment</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.equipment, data.revenue)}
+                              {hasAnyLOBValue('equipment') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Equipment</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.equipment, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.equipment, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.equipment, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Travel</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.travel, data.revenue)}
+                              {hasAnyLOBValue('travel') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Travel</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.travel, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.travel, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.travel, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Insurance</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.insurance, data.revenue)}
+                              {hasAnyLOBValue('insurance') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Insurance</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.insurance, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.insurance, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.insurance, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Sales & Marketing</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.opexSalesMarketing, data.revenue)}
+                              {hasAnyLOBValue('opexSalesMarketing') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Sales & Marketing</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.opexSalesMarketing, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexSalesMarketing, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexSalesMarketing, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Contractors Distribution</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.contractorsDistribution, data.revenue)}
+                              {hasAnyLOBValue('contractorsDistribution') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Contractors Distribution</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.contractorsDistribution, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.contractorsDistribution, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.contractorsDistribution, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Depreciation</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.depreciationExpense, data.revenue)}
+                              {hasAnyLOBValue('depreciationExpense') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Depreciation</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.depreciationExpense, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.depreciationExpense, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.depreciationExpense, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Other Operating Expenses</td>
-                                {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                    {formatValue(data.opexOther, data.revenue)}
+                              {hasAnyLOBValue('opexOther') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Other Operating Expenses</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.opexOther, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexOther, 0), totalRevenue)}
                                   </td>
-                                ))}
-                                <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
-                                  {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexOther, 0), totalRevenue)}
-                                </td>
-                              </tr>
+                                </tr>
+                              )}
 
                               {/* Total Operating Expenses */}
                               <tr style={{ borderTop: '1px solid #e2e8f0' }}>
-                                <td style={{ padding: '8px 0', fontWeight: '600' }}>Total Operating Expenses</td>
+                                <td style={{ padding: '8px 0', fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</td>
                                 {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>
+                                  <td key={idx} style={{ padding: '8px 0 8px 8px', textAlign: 'right', fontWeight: '600' }}>
                                     {formatValue(data.totalOpex, data.revenue)}
                                   </td>
                                 ))}
-                                <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', background: '#fef3c7' }}>
+                                <td style={{ padding: '8px 0 8px 8px', textAlign: 'right', fontWeight: '600', background: '#fef3c7' }}>
                                   {formatValue(totalOpex, totalRevenue)}
                                 </td>
                               </tr>
 
                               {/* Operating Income - Highlighted Row */}
                               <tr style={{ background: '#dbeafe' }}>
-                                <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e40af' }}>Operating Income</td>
+                                <td style={{ padding: '10px 0 10px 8px', fontWeight: '700', color: '#1e40af' }}>Operating Income</td>
                                 {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af' }}>
+                                  <td key={idx} style={{ padding: '10px 0 10px 8px', textAlign: 'right', fontWeight: '700', color: '#1e40af' }}>
                                     {formatValue(data.operatingIncome, data.revenue)}
-                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{data.operatingMargin.toFixed(1)}%</div>}
+                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{data.operatingMargin.toFixed(1)}%</div>}
                                   </td>
                                 ))}
-                                <td style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af', background: '#dbeafe' }}>
+                                <td style={{ padding: '10px 0 10px 8px', textAlign: 'right', fontWeight: '700', color: '#1e40af', background: '#dbeafe' }}>
                                   {formatValue(totalOperatingIncome, totalRevenue)}
-                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{totalRevenue > 0 ? ((totalOperatingIncome / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{totalRevenue > 0 ? ((totalOperatingIncome / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
                                 </td>
                               </tr>
 
@@ -20992,18 +21035,18 @@ export default function FinancialScorePage() {
                               {lobsData.some(({ data }) => data.interestExpense > 0 || data.nonOperatingIncome > 0 || data.extraordinaryItems > 0) && (
                                 <>
                                   <tr>
-                                    <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Other Income/(Expense)</td>
+                                    <td colSpan={activeLOBs.length + 2} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#475569', fontSize: '14px' }}>Other Income/(Expense)</td>
                                   </tr>
 
                                   {lobsData.some(({ data }) => data.interestExpense > 0) && (
                                     <tr>
-                                      <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Interest Expense</td>
+                                      <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Interest Expense</td>
                                       {lobsData.map(({ data }, idx) => (
-                                        <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                        <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                           ({formatValue(data.interestExpense, data.revenue)})
                                         </td>
                                       ))}
-                                      <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                      <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
                                         ({formatValue(totalInterest, totalRevenue)})
                                       </td>
                                     </tr>
@@ -21011,13 +21054,13 @@ export default function FinancialScorePage() {
 
                                   {lobsData.some(({ data }) => data.nonOperatingIncome > 0) && (
                                     <tr>
-                                      <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Non-Operating Income</td>
+                                      <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Non-Operating Income</td>
                                       {lobsData.map(({ data }, idx) => (
-                                        <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                        <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                           {formatValue(data.nonOperatingIncome, data.revenue)}
                                         </td>
                                       ))}
-                                      <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                      <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
                                         {formatValue(totalNonOp, totalRevenue)}
                                       </td>
                                     </tr>
@@ -21025,13 +21068,13 @@ export default function FinancialScorePage() {
 
                                   {lobsData.some(({ data }) => data.extraordinaryItems > 0) && (
                                     <tr>
-                                      <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Extraordinary Items</td>
+                                      <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Extraordinary Items</td>
                                       {lobsData.map(({ data }, idx) => (
-                                        <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                        <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                           {formatValue(data.extraordinaryItems, data.revenue)}
                                         </td>
                                       ))}
-                                      <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', background: '#fef3c7' }}>
+                                      <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
                                         {formatValue(totalExtraord, totalRevenue)}
                                       </td>
                                     </tr>
@@ -21041,16 +21084,16 @@ export default function FinancialScorePage() {
 
                               {/* Net Income - Highlighted Row */}
                               <tr style={{ background: '#d1fae5', borderTop: '2px solid #10b981' }}>
-                                <td style={{ padding: '12px 8px', fontWeight: '700', color: '#047857', fontSize: '16px' }}>NET INCOME</td>
+                                <td style={{ padding: '12px 0 12px 8px', fontWeight: '700', color: '#047857' }}>NET INCOME</td>
                                 {lobsData.map(({ data }, idx) => (
-                                  <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#047857', fontSize: '16px' }}>
+                                  <td key={idx} style={{ padding: '12px 0 12px 8px', textAlign: 'right', fontWeight: '700', color: '#047857' }}>
                                     {formatValue(data.netIncome, data.revenue)}
-                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{data.netMargin.toFixed(1)}%</div>}
+                                    {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{data.netMargin.toFixed(1)}%</div>}
                                   </td>
                                 ))}
-                                <td style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#047857', fontSize: '16px', background: '#d1fae5' }}>
+                                <td style={{ padding: '12px 0 12px 8px', textAlign: 'right', fontWeight: '700', color: '#047857', background: '#d1fae5' }}>
                                   {formatValue(totalNetIncome, totalRevenue)}
-                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{totalRevenue > 0 ? ((totalNetIncome / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{totalRevenue > 0 ? ((totalNetIncome / totalRevenue) * 100).toFixed(1) : '0.0'}%</div>}
                                 </td>
                               </tr>
                             </tbody>
@@ -21164,6 +21207,11 @@ export default function FinancialScorePage() {
                       };
                     });
                     
+                    // Helper to check if any column has a non-zero value for a field
+                    const hasAnySingleLOBValue = (fieldName: string) => {
+                      return columnsDataCorrect.some(col => (col.data as any)[fieldName] > 0);
+                    };
+                    
                     return (
                       <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
                         <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
@@ -21173,21 +21221,21 @@ export default function FinancialScorePage() {
                           </div>
                         </div>
 
-                        <table style={{ width: '100%', fontSize: '14px' }}>
+                        <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
                           <thead>
                             <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                               <th style={{ textAlign: 'left', paddingBottom: '12px', fontWeight: '600', color: '#475569' }}>Account</th>
                               {columnsDataCorrect.map((col, idx) => (
-                                <th key={idx} style={{ textAlign: 'right', paddingBottom: '12px', fontWeight: '600', color: '#475569', minWidth: '120px' }}>{col.label}</th>
+                                <th key={idx} style={{ textAlign: 'right', paddingBottom: '12px', paddingLeft: '8px', fontWeight: '600', color: '#475569' }}>{col.label}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {/* Revenue */}
                             <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                              <td style={{ padding: '8px 0', fontWeight: '600' }}>Revenue</td>
+                              <td style={{ padding: '8px 0', fontWeight: '600', color: '#1e293b' }}>Revenue</td>
                               {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace' }}>
+                                <td key={idx} style={{ padding: '8px 0 8px 8px', textAlign: 'right' }}>
                                   {formatValue(col.data.revenue, col.data.revenue)}
                                 </td>
                               ))}
@@ -21195,68 +21243,80 @@ export default function FinancialScorePage() {
 
                             {/* COGS Section Header */}
                             <tr>
-                              <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Cost of Goods Sold</td>
+                              <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#475569', fontSize: '14px' }}>Cost of Goods Sold</td>
                             </tr>
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Payroll</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.cogsPayroll, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('cogsPayroll') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Payroll</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.cogsPayroll, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Owner Pay</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.cogsOwnerPay, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('cogsOwnerPay') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Owner Pay</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.cogsOwnerPay, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Contractors</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.cogsContractors, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('cogsContractors') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Contractors</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.cogsContractors, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Materials</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.cogsMaterials, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('cogsMaterials') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Materials</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.cogsMaterials, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Commissions</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.cogsCommissions, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('cogsCommissions') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Commissions</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.cogsCommissions, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>COGS - Other</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.cogsOther, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('cogsOther') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>COGS - Other</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.cogsOther, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
                             {/* Total COGS */}
                             <tr style={{ borderTop: '1px solid #e2e8f0' }}>
-                              <td style={{ padding: '8px 0', fontWeight: '600' }}>Total COGS</td>
+                              <td style={{ padding: '8px 0', fontWeight: '600', color: '#1e293b' }}>Total COGS</td>
                               {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>
+                                <td key={idx} style={{ padding: '8px 0 8px 8px', textAlign: 'right', fontWeight: '600' }}>
                                   {formatValue(col.data.cogs, col.data.revenue)}
                                 </td>
                               ))}
@@ -21264,142 +21324,168 @@ export default function FinancialScorePage() {
 
                             {/* Gross Profit */}
                             <tr style={{ background: '#dbeafe' }}>
-                              <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e40af' }}>Gross Profit</td>
+                              <td style={{ padding: '10px 0 10px 8px', fontWeight: '700', color: '#1e40af' }}>Gross Profit</td>
                               {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af' }}>
+                                <td key={idx} style={{ padding: '10px 0 10px 8px', textAlign: 'right', fontWeight: '700', color: '#1e40af' }}>
                                   {formatValue(col.data.grossProfit, col.data.revenue)}
-                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{col.data.grossMargin.toFixed(1)}%</div>}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{col.data.grossMargin.toFixed(1)}%</div>}
                                 </td>
                               ))}
                             </tr>
 
                             {/* Operating Expenses Section */}
                             <tr>
-                              <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Operating Expenses</td>
+                              <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#475569', fontSize: '14px' }}>Operating Expenses</td>
                             </tr>
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Payroll</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.opexPayroll, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('opexPayroll') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Payroll</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.opexPayroll, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Owner's Base Pay</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.ownersBasePay, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('ownersBasePay') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Owner's Base Pay</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.ownersBasePay, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Owner's Retirement</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.ownersRetirement, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('ownersRetirement') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Owner's Retirement</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.ownersRetirement, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Professional Services</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.professionalServices, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('professionalServices') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Professional Services</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.professionalServices, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Rent/Lease</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.rentLease, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('rentLease') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Rent/Lease</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.rentLease, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Utilities</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.utilities, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('utilities') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Utilities</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.utilities, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Equipment</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.equipment, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('equipment') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Equipment</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.equipment, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Travel</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.travel, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('travel') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Travel</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.travel, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Insurance</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.insurance, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('insurance') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Insurance</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.insurance, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Sales & Marketing</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.opexSalesMarketing, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('opexSalesMarketing') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Sales & Marketing</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.opexSalesMarketing, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Contractors Distribution</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.contractorsDistribution, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('contractorsDistribution') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Contractors Distribution</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.contractorsDistribution, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Depreciation</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.depreciationExpense, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('depreciationExpense') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Depreciation</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.depreciationExpense, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
-                            <tr>
-                              <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Other Operating Expenses</td>
-                              {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
-                                  {formatValue(col.data.opexOther, col.data.revenue)}
-                                </td>
-                              ))}
-                            </tr>
+                            {hasAnySingleLOBValue('opexOther') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Other Operating Expenses</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.opexOther, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
 
                             {/* Total Operating Expenses */}
                             <tr style={{ borderTop: '1px solid #e2e8f0' }}>
-                              <td style={{ padding: '8px 0', fontWeight: '600' }}>Total Operating Expenses</td>
+                              <td style={{ padding: '8px 0', fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</td>
                               {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '8px 0', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>
+                                <td key={idx} style={{ padding: '8px 0 8px 8px', textAlign: 'right', fontWeight: '600' }}>
                                   {formatValue(col.data.totalOpex, col.data.revenue)}
                                 </td>
                               ))}
@@ -21407,11 +21493,11 @@ export default function FinancialScorePage() {
 
                             {/* Operating Income */}
                             <tr style={{ background: '#dbeafe' }}>
-                              <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e40af' }}>Operating Income</td>
+                              <td style={{ padding: '10px 0 10px 8px', fontWeight: '700', color: '#1e40af' }}>Operating Income</td>
                               {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#1e40af' }}>
+                                <td key={idx} style={{ padding: '10px 0 10px 8px', textAlign: 'right', fontWeight: '700', color: '#1e40af' }}>
                                   {formatValue(col.data.operatingIncome, col.data.revenue)}
-                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{col.data.operatingMargin.toFixed(1)}%</div>}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{col.data.operatingMargin.toFixed(1)}%</div>}
                                 </td>
                               ))}
                             </tr>
@@ -21420,14 +21506,14 @@ export default function FinancialScorePage() {
                             {columnsDataCorrect.some(col => col.data.interestExpense > 0 || col.data.nonOperatingIncome > 0 || col.data.extraordinaryItems > 0) && (
                               <>
                                 <tr>
-                                  <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#1e293b' }}>Other Income/(Expense)</td>
+                                  <td colSpan={columnsDataCorrect.length + 1} style={{ paddingTop: '16px', paddingBottom: '8px', fontWeight: '600', color: '#475569', fontSize: '14px' }}>Other Income/(Expense)</td>
                                 </tr>
 
                                 {columnsDataCorrect.some(col => col.data.interestExpense > 0) && (
                                   <tr>
-                                    <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Interest Expense</td>
+                                    <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Interest Expense</td>
                                     {columnsDataCorrect.map((col, idx) => (
-                                      <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                      <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                         -{formatValue(col.data.interestExpense, col.data.revenue)}
                                       </td>
                                     ))}
@@ -21436,9 +21522,9 @@ export default function FinancialScorePage() {
 
                                 {columnsDataCorrect.some(col => col.data.nonOperatingIncome > 0) && (
                                   <tr>
-                                    <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Non-Operating Income</td>
+                                    <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Non-Operating Income</td>
                                     {columnsDataCorrect.map((col, idx) => (
-                                      <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                      <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                         {formatValue(col.data.nonOperatingIncome, col.data.revenue)}
                                       </td>
                                     ))}
@@ -21447,9 +21533,9 @@ export default function FinancialScorePage() {
 
                                 {columnsDataCorrect.some(col => col.data.extraordinaryItems !== 0) && (
                                   <tr>
-                                    <td style={{ paddingLeft: '20px', padding: '6px 0 6px 20px', fontSize: '13px', color: '#475569' }}>Extraordinary Items</td>
+                                    <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Extraordinary Items</td>
                                     {columnsDataCorrect.map((col, idx) => (
-                                      <td key={idx} style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace', fontSize: '13px', color: '#475569' }}>
+                                      <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                         {formatValue(col.data.extraordinaryItems, col.data.revenue)}
                                       </td>
                                     ))}
@@ -21460,11 +21546,11 @@ export default function FinancialScorePage() {
 
                             {/* Net Income */}
                             <tr style={{ background: '#d1fae5', borderTop: '2px solid #10b981' }}>
-                              <td style={{ padding: '12px 8px', fontWeight: '700', color: '#047857', fontSize: '16px' }}>NET INCOME</td>
+                              <td style={{ padding: '12px 0 12px 8px', fontWeight: '700', color: '#047857' }}>NET INCOME</td>
                               {columnsDataCorrect.map((col, idx) => (
-                                <td key={idx} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#047857', fontSize: '16px' }}>
+                                <td key={idx} style={{ padding: '12px 0 12px 8px', textAlign: 'right', fontWeight: '700', color: '#047857' }}>
                                   {formatValue(col.data.netIncome, col.data.revenue)}
-                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px' }}>{col.data.netMargin.toFixed(1)}%</div>}
+                                  {lobDisplayFormat === '$' && <div style={{ fontSize: '11px', fontWeight: 'normal' }}>{col.data.netMargin.toFixed(1)}%</div>}
                                 </td>
                               ))}
                             </tr>
