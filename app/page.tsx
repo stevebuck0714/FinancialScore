@@ -3306,6 +3306,7 @@ export default function FinancialScorePage() {
 
     setFile(f);
     setError(null);
+    setLoadedMonthlyData([]); // Clear old loaded data so new file data is processed
     setIsFreshUpload(true);
     const ab = await f.arrayBuffer();
     const wb = XLSX.read(ab, { cellDates: false });
