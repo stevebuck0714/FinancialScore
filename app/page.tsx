@@ -109,6 +109,13 @@ type Mappings = {
   tcl?: string;
   ltd?: string;
   totalLiab?: string;
+  ownersCapital?: string;
+  ownersDraw?: string;
+  commonStock?: string;
+  preferredStock?: string;
+  retainedEarnings?: string;
+  additionalPaidInCapital?: string;
+  treasuryStock?: string;
   totalEquity?: string;
   totalLAndE?: string;
 };
@@ -2506,6 +2513,13 @@ export default function FinancialScorePage() {
           otherCL: parseFloat(row[mapping.otherCL!]) || 0,
           tcl: parseFloat(row[mapping.tcl!]) || 0,
           ltd: parseFloat(row[mapping.ltd!]) || 0,
+          ownersCapital: parseFloat(row[mapping.ownersCapital!]) || 0,
+          ownersDraw: parseFloat(row[mapping.ownersDraw!]) || 0,
+          commonStock: parseFloat(row[mapping.commonStock!]) || 0,
+          preferredStock: parseFloat(row[mapping.preferredStock!]) || 0,
+          retainedEarnings: parseFloat(row[mapping.retainedEarnings!]) || 0,
+          additionalPaidInCapital: parseFloat(row[mapping.additionalPaidInCapital!]) || 0,
+          treasuryStock: parseFloat(row[mapping.treasuryStock!]) || 0,
           totalEquity: parseFloat(row[mapping.totalEquity!]) || 0,
           totalLAndE: parseFloat(row[mapping.totalLAndE!]) || 0
           };
@@ -2612,6 +2626,16 @@ export default function FinancialScorePage() {
       if (!mapping.otherCL && (n.includes('othercurrentliab') || n === 'othercurrentliabilities')) mapping.otherCL = col;
       if (!mapping.tcl && (n.includes('totalcurrentliab') || n === 'totalcurrentliabilities' || n === 'currentliabilities')) mapping.tcl = col;
       if (!mapping.ltd && (n.includes('longtermdebt') || n.includes('ltd') || n === 'longtermdebt')) mapping.ltd = col;
+      
+      // Equity Detail
+      if (!mapping.ownersCapital && (n.includes('ownerscapital') || n.includes('ownercapital') || n === 'ownersequity')) mapping.ownersCapital = col;
+      if (!mapping.ownersDraw && (n.includes('ownersdraw') || n.includes('ownerdraw') || n.includes('distributions'))) mapping.ownersDraw = col;
+      if (!mapping.retainedEarnings && (n.includes('retainedearnings') || n === 'retainedearnings')) mapping.retainedEarnings = col;
+      if (!mapping.additionalPaidInCapital && (n.includes('additionalpaidincapital') || n.includes('paidincapital') || n === 'apic')) mapping.additionalPaidInCapital = col;
+      if (!mapping.commonStock && (n.includes('commonstock') || n === 'commonstock')) mapping.commonStock = col;
+      if (!mapping.preferredStock && (n.includes('preferredstock') || n === 'preferredstock')) mapping.preferredStock = col;
+      if (!mapping.treasuryStock && (n.includes('treasurystock') || n === 'treasurystock')) mapping.treasuryStock = col;
+      
       if (!mapping.totalEquity && (n.includes('totalequity') || n.includes('equity') || n.includes('networth'))) mapping.totalEquity = col;
       if (!mapping.totalLAndE && (n.includes('liabequity') || n.includes('liabilitiesequity'))) mapping.totalLAndE = col;
     });
@@ -3402,6 +3426,14 @@ export default function FinancialScorePage() {
       otherCL: parseFloat(row[mapping.otherCL!]) || 0,
       tcl: parseFloat(row[mapping.tcl!]) || 0,
       ltd: parseFloat(row[mapping.ltd!]) || 0,
+      // Equity Detail
+      ownersCapital: parseFloat(row[mapping.ownersCapital!]) || 0,
+      ownersDraw: parseFloat(row[mapping.ownersDraw!]) || 0,
+      commonStock: parseFloat(row[mapping.commonStock!]) || 0,
+      preferredStock: parseFloat(row[mapping.preferredStock!]) || 0,
+      retainedEarnings: parseFloat(row[mapping.retainedEarnings!]) || 0,
+      additionalPaidInCapital: parseFloat(row[mapping.additionalPaidInCapital!]) || 0,
+      treasuryStock: parseFloat(row[mapping.treasuryStock!]) || 0,
       totalEquity: parseFloat(row[mapping.totalEquity!]) || 0,
       totalLAndE: parseFloat(row[mapping.totalLAndE!]) || 0
     }));
@@ -7574,11 +7606,22 @@ export default function FinancialScorePage() {
                     </div>
                     
                     <div>
-                      <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Liabilities & Other</h4>
+                      <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Liabilities</h4>
                       {renderColumnSelector('Accounts Payable', 'ap')}
                       {renderColumnSelector('Other Current Liabilities', 'otherCL')}
                       {renderColumnSelector('Total Current Liabilities', 'tcl')}
                       {renderColumnSelector('Long Term Debt', 'ltd')}
+                      
+                      <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Equity</h4>
+                      {renderColumnSelector("Owner's Capital", 'ownersCapital')}
+                      {renderColumnSelector("Owner's Draw", 'ownersDraw')}
+                      {renderColumnSelector('Retained Earnings', 'retainedEarnings')}
+                      {renderColumnSelector('Additional Paid-In Capital', 'additionalPaidInCapital')}
+                      {renderColumnSelector('Common Stock', 'commonStock')}
+                      {renderColumnSelector('Preferred Stock', 'preferredStock')}
+                      {renderColumnSelector('Treasury Stock', 'treasuryStock')}
+                      
+                      <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Totals</h4>
                       {renderColumnSelector('Total Liabilities & Equity', 'totalLAndE')}
                     </div>
                   </div>
@@ -7589,6 +7632,36 @@ export default function FinancialScorePage() {
                       Map detailed P&L and balance sheet items for comprehensive analysis and reporting.
                     </p>
                   </div>
+                  
+                  {file && rawRows.length > 0 && mapping.date && (
+                    <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>
+                      <button
+                        onClick={() => setIsFreshUpload(true)}
+                        style={{
+                          padding: '12px 32px',
+                          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 6px rgba(102, 126, 234, 0.25)',
+                          transition: 'transform 0.2s, box-shadow 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                          e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.3)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 4px 6px rgba(102, 126, 234, 0.25)';
+                        }}
+                      >
+                        💾 Save Updated Mappings
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -18166,7 +18239,14 @@ export default function FinancialScorePage() {
                 const totalLiabilities = tcl + ltd;
                 
                 // Equity
-                const totalEquity = currentMonth.totalEquity || 0;
+                const additionalPaidInCapital = currentMonth.additionalPaidInCapital || 0;
+                const ownersCapital = currentMonth.ownersCapital || 0;
+                const ownersDraw = currentMonth.ownersDraw || 0;
+                const commonStock = currentMonth.commonStock || 0;
+                const preferredStock = currentMonth.preferredStock || 0;
+                const treasuryStock = currentMonth.treasuryStock || 0;
+                const retainedEarnings = currentMonth.retainedEarnings || 0;
+                const totalEquity = additionalPaidInCapital + ownersCapital + ownersDraw + commonStock + preferredStock + treasuryStock + retainedEarnings;
                 
                 // Total L&E
                 const totalLAndE = totalLiabilities + totalEquity;
@@ -18278,7 +18358,54 @@ export default function FinancialScorePage() {
                     <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #10b981' }}>EQUITY</div>
                       
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', background: '#d1fae5' }}>
+                      {(additionalPaidInCapital > 0 || monthly.some(m => (m.additionalPaidInCapital || 0) > 0)) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Additional Paid-In Capital</span>
+                          <span style={{ color: '#64748b' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {(ownersCapital > 0 || monthly.some(m => (m.ownersCapital || 0) > 0)) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Owner's Capital</span>
+                          <span style={{ color: '#64748b' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {(ownersDraw !== 0 || monthly.some(m => (m.ownersDraw || 0) !== 0)) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Owner's Draw</span>
+                          <span style={{ color: '#64748b' }}>
+                            {ownersDraw >= 0 ? '($' : '$'}{Math.abs(ownersDraw).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{ownersDraw >= 0 ? ')' : ''}
+                          </span>
+                        </div>
+                      )}
+                      {(commonStock > 0 || monthly.some(m => (m.commonStock || 0) > 0)) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Common Stock</span>
+                          <span style={{ color: '#64748b' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {(preferredStock > 0 || monthly.some(m => (m.preferredStock || 0) > 0)) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Preferred Stock</span>
+                          <span style={{ color: '#64748b' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {(treasuryStock !== 0 || monthly.some(m => (m.treasuryStock || 0) !== 0)) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Treasury Stock</span>
+                          <span style={{ color: '#64748b' }}>
+                            {treasuryStock >= 0 ? '($' : '$'}{Math.abs(treasuryStock).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{treasuryStock >= 0 ? ')' : ''}
+                          </span>
+                        </div>
+                      )}
+                      {(retainedEarnings > 0 || monthly.some(m => (m.retainedEarnings || 0) !== 0)) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Retained Earnings</span>
+                          <span style={{ color: '#64748b' }}>${retainedEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', marginTop: '8px', background: '#d1fae5' }}>
                         <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL EQUITY</span>
                         <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
@@ -22579,7 +22706,14 @@ export default function FinancialScorePage() {
               const totalLiabilities = tcl + ltd;
               
               // Equity
-              const totalEquity = currentMonth.totalEquity || 0;
+              const additionalPaidInCapital = currentMonth.additionalPaidInCapital || 0;
+              const ownersCapital = currentMonth.ownersCapital || 0;
+              const ownersDraw = currentMonth.ownersDraw || 0;
+              const commonStock = currentMonth.commonStock || 0;
+              const preferredStock = currentMonth.preferredStock || 0;
+              const treasuryStock = currentMonth.treasuryStock || 0;
+              const retainedEarnings = currentMonth.retainedEarnings || 0;
+              const totalEquity = additionalPaidInCapital + ownersCapital + ownersDraw + commonStock + preferredStock + treasuryStock + retainedEarnings;
               
               // Total L&E
               const totalLAndE = totalLiabilities + totalEquity;
@@ -22691,7 +22825,54 @@ export default function FinancialScorePage() {
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #10b981' }}>EQUITY</div>
                     
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', background: '#d1fae5' }}>
+                    {additionalPaidInCapital > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#64748b' }}>Additional Paid-In Capital</span>
+                        <span style={{ color: '#64748b' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {ownersCapital > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#64748b' }}>Owner's Capital</span>
+                        <span style={{ color: '#64748b' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {ownersDraw !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#64748b' }}>Owner's Draw</span>
+                        <span style={{ color: '#64748b' }}>
+                          {ownersDraw >= 0 ? '($' : '$'}{Math.abs(ownersDraw).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{ownersDraw >= 0 ? ')' : ''}
+                        </span>
+                      </div>
+                    )}
+                    {commonStock > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#64748b' }}>Common Stock</span>
+                        <span style={{ color: '#64748b' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {preferredStock > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#64748b' }}>Preferred Stock</span>
+                        <span style={{ color: '#64748b' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {treasuryStock !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#64748b' }}>Treasury Stock</span>
+                        <span style={{ color: '#64748b' }}>
+                          {treasuryStock >= 0 ? '($' : '$'}{Math.abs(treasuryStock).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{treasuryStock >= 0 ? ')' : ''}
+                        </span>
+                      </div>
+                    )}
+                    {retainedEarnings > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#64748b' }}>Retained Earnings</span>
+                        <span style={{ color: '#64748b' }}>${retainedEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', marginTop: '8px', background: '#d1fae5' }}>
                       <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL EQUITY</span>
                       <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
@@ -23833,6 +24014,9 @@ export default function FinancialScorePage() {
               
               // BALANCE SHEET - Latest point in time
               else if (statementType === 'balance-sheet') {
+                // Helper to check if field has any value across ALL months
+                const hasAnyValue = (field: string) => monthly.some(m => (m[field] || 0) !== 0);
+                
                 // Check if showing multiple periods side-by-side
                 if (displayPeriods.length > 1) {
                   const balanceData = displayPeriods.map(p => {
@@ -23856,10 +24040,16 @@ export default function FinancialScorePage() {
                     const otherLongTermLiabilities = latest.otherLongTermLiabilities || 0;
                     const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
                     const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
-                    const paidInCapital = latest.paidInCapital || 0;
+                    const additionalPaidInCapital = latest.additionalPaidInCapital || 0;
+                    const ownersCapital = latest.ownersCapital || 0;
+                    const ownersDraw = latest.ownersDraw || 0;
+                    const commonStock = latest.commonStock || 0;
+                    const preferredStock = latest.preferredStock || 0;
+                    const treasuryStock = latest.treasuryStock || 0;
                     const retainedEarnings = latest.retainedEarnings || 0;
-                    const totalEquity = paidInCapital + retainedEarnings;
-                    return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, intangibleAssets, otherNonCurrentAssets, nonCurrentAssets, totalAssets, ap, shortTermDebt, currentPortionLTD, otherCurrentLiabilities, totalCurrentLiabilities, ltd, otherLongTermLiabilities, totalLongTermLiabilities, totalLiabilities, paidInCapital, retainedEarnings, totalEquity };
+                    const totalEquity = additionalPaidInCapital + ownersCapital + ownersDraw + commonStock + preferredStock + treasuryStock + retainedEarnings;
+                    const totalLAndE = totalLiabilities + totalEquity;
+                    return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, intangibleAssets, otherNonCurrentAssets, nonCurrentAssets, totalAssets, ap, shortTermDebt, currentPortionLTD, otherCurrentLiabilities, totalCurrentLiabilities, ltd, otherLongTermLiabilities, totalLongTermLiabilities, totalLiabilities, additionalPaidInCapital, ownersCapital, ownersDraw, commonStock, preferredStock, treasuryStock, retainedEarnings, totalEquity, totalLAndE };
                   });
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -23912,8 +24102,31 @@ export default function FinancialScorePage() {
                           {balanceData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${(p.totalLiabilities / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>EQUITY</div>
-                        {balanceData.some(p => p.paidInCapital > 0) && <Row label="Paid-in Capital" values={balanceData.map(p => p.paidInCapital)} indent={20} />}
-                        {balanceData.some(p => p.retainedEarnings !== 0) && (
+                        {hasAnyValue('additionalPaidInCapital') && <Row label="Paid-in Capital" values={balanceData.map(p => p.additionalPaidInCapital)} indent={20} />}
+                        {hasAnyValue('ownersCapital') && <Row label="Owner's Capital" values={balanceData.map(p => p.ownersCapital)} indent={20} />}
+                        {hasAnyValue('ownersDraw') && (
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Draw</div>
+                            {balanceData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
+                                {p.ownersDraw >= 0 ? '$' : '($'}{(Math.abs(p.ownersDraw) / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K{p.ownersDraw < 0 ? ')' : ''}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {hasAnyValue('commonStock') && <Row label="Common Stock" values={balanceData.map(p => p.commonStock)} indent={20} />}
+                        {hasAnyValue('preferredStock') && <Row label="Preferred Stock" values={balanceData.map(p => p.preferredStock)} indent={20} />}
+                        {hasAnyValue('treasuryStock') && (
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Treasury Stock</div>
+                            {balanceData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
+                                {p.treasuryStock >= 0 ? '($' : '$'}{(Math.abs(p.treasuryStock) / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K{p.treasuryStock >= 0 ? ')' : ''}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {hasAnyValue('retainedEarnings') && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Retained Earnings</div>
                             {balanceData.map((p, i) => (
@@ -23928,6 +24141,14 @@ export default function FinancialScorePage() {
                           {balanceData.map((p, i) => (
                             <div key={i} style={{ textAlign: 'right', color: p.totalEquity >= 0 ? '#166534' : '#991b1b' }}>
                               {p.totalEquity >= 0 ? '$' : '($'}{(Math.abs(p.totalEquity) / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K{p.totalEquity < 0 ? ')' : ''}
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#e0e7ff', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px', borderTop: '3px solid #4338ca' }}>
+                          <div style={{ color: '#4338ca' }}>TOTAL LIABILITIES AND EQUITY</div>
+                          {balanceData.map((p, i) => (
+                            <div key={i} style={{ textAlign: 'right', color: '#4338ca' }}>
+                              ${(p.totalLAndE / 1000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}K
                             </div>
                           ))}
                         </div>
@@ -23962,9 +24183,14 @@ export default function FinancialScorePage() {
                 
                 const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
                 
-                const paidInCapital = latestMonth.paidInCapital || 0;
+                const additionalPaidInCapital = latestMonth.additionalPaidInCapital || 0;
+                const ownersCapital = latestMonth.ownersCapital || 0;
+                const ownersDraw = latestMonth.ownersDraw || 0;
+                const commonStock = latestMonth.commonStock || 0;
+                const preferredStock = latestMonth.preferredStock || 0;
+                const treasuryStock = latestMonth.treasuryStock || 0;
                 const retainedEarnings = latestMonth.retainedEarnings || 0;
-                const totalEquity = paidInCapital + retainedEarnings;
+                const totalEquity = additionalPaidInCapital + ownersCapital + ownersDraw + commonStock + preferredStock + treasuryStock + retainedEarnings;
                 
                 const totalLAndE = totalLiabilities + totalEquity;
                 
@@ -24125,13 +24351,47 @@ export default function FinancialScorePage() {
                     {/* EQUITY */}
                     <div style={{ marginBottom: '32px' }}>
                       <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>EQUITY</div>
-                      {paidInCapital > 0 && (
+                      {(additionalPaidInCapital > 0 || hasAnyValue('additionalPaidInCapital')) && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#64748b' }}>Paid-in Capital</span>
-                          <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#64748b' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                       )}
-                      {retainedEarnings !== 0 && (
+                      {(ownersCapital > 0 || hasAnyValue('ownersCapital')) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Owner's Capital</span>
+                          <span style={{ color: '#64748b' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {(ownersDraw !== 0 || hasAnyValue('ownersDraw')) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Owner's Draw</span>
+                          <span style={{ color: '#64748b' }}>
+                            {ownersDraw >= 0 ? '($' : '$'}{Math.abs(ownersDraw).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{ownersDraw >= 0 ? ')' : ''}
+                          </span>
+                        </div>
+                      )}
+                      {(commonStock > 0 || hasAnyValue('commonStock')) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Common Stock</span>
+                          <span style={{ color: '#64748b' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {(preferredStock > 0 || hasAnyValue('preferredStock')) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Preferred Stock</span>
+                          <span style={{ color: '#64748b' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {(treasuryStock !== 0 || hasAnyValue('treasuryStock')) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Treasury Stock</span>
+                          <span style={{ color: '#64748b' }}>
+                            {treasuryStock >= 0 ? '($' : '$'}{Math.abs(treasuryStock).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{treasuryStock >= 0 ? ')' : ''}
+                          </span>
+                        </div>
+                      )}
+                      {(retainedEarnings !== 0 || hasAnyValue('retainedEarnings')) && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#64748b' }}>Retained Earnings</span>
                           <span style={{ color: '#64748b' }}>
