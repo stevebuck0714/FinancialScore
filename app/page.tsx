@@ -20595,24 +20595,29 @@ export default function FinancialScorePage() {
                       const grossProfit = revenue - cogs;
                       const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
-                      // Map monthly data field names to display names
+                      // Map ALL detailed monthly data fields to display names
                       const opexPayroll = lobData.payroll || 0;
                       const ownersBasePay = lobData.ownerBasePay || 0;
-                      const ownersRetirement = 0; // Not tracked separately in monthly data
-                      const professionalServices = lobData.professionalFees || 0;
-                      const rentLease = lobData.rent || 0;
-                      const utilities = (lobData.phoneComm || 0) + (lobData.infrastructure || 0);
-                      const equipment = 0; // Typically part of other categories
-                      const travel = lobData.autoTravel || 0;
+                      const benefits = lobData.benefits || 0;
                       const insurance = lobData.insurance || 0;
-                      const opexSalesMarketing = (lobData.salesExpense || 0) + (lobData.marketing || 0);
-                      const contractorsDistribution = lobData.subcontractors || 0;
+                      const professionalServices = lobData.professionalFees || 0;
+                      const subcontractors = lobData.subcontractors || 0;
+                      const rentLease = lobData.rent || 0;
+                      const taxLicense = lobData.taxLicense || 0;
+                      const phoneComm = lobData.phoneComm || 0;
+                      const infrastructure = lobData.infrastructure || 0;
+                      const autoTravel = lobData.autoTravel || 0;
+                      const salesExpense = lobData.salesExpense || 0;
+                      const marketing = lobData.marketing || 0;
+                      const trainingCert = lobData.trainingCert || 0;
+                      const mealsEntertainment = lobData.mealsEntertainment || 0;
                       const depreciationExpense = lobData.depreciationAmortization || 0;
                       const opexOther = lobData.otherExpense || 0;
                       
-                      const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                       rentLease + utilities + equipment + travel + insurance + 
-                                       opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                      const totalOpex = opexPayroll + ownersBasePay + benefits + insurance + professionalServices + 
+                                       subcontractors + rentLease + taxLicense + phoneComm + infrastructure + 
+                                       autoTravel + salesExpense + marketing + trainingCert + mealsEntertainment + 
+                                       depreciationExpense + opexOther;
                       
                       const operatingIncome = grossProfit - totalOpex;
                       const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -20626,10 +20631,10 @@ export default function FinancialScorePage() {
 
                       return {
                         revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs,
-                        grossProfit, grossMargin, opexPayroll, ownersBasePay, ownersRetirement, professionalServices,
-                        rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution,
-                        depreciationExpense, opexOther, totalOpex, operatingIncome, operatingMargin,
-                        interestExpense, nonOperatingIncome, extraordinaryItems, netIncome, netMargin
+                        grossProfit, grossMargin, opexPayroll, ownersBasePay, benefits, insurance, professionalServices,
+                        subcontractors, rentLease, taxLicense, phoneComm, infrastructure, autoTravel, salesExpense,
+                        marketing, trainingCert, mealsEntertainment, depreciationExpense, opexOther, totalOpex,
+                        operatingIncome, operatingMargin, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome, netMargin
                       };
                     };
 
@@ -20849,86 +20854,16 @@ export default function FinancialScorePage() {
                                 </tr>
                               )}
 
-                              {hasAnyLOBValue('ownersRetirement') && (
+                              {hasAnyLOBValue('benefits') && (
                                 <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Owner's Retirement</td>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Benefits</td>
                                   {lobsData.map(({ data }, idx) => (
                                     <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                      {formatValue(data.ownersRetirement, data.revenue)}
+                                      {formatValue(data.benefits, data.revenue)}
                                     </td>
                                   ))}
                                   <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
-                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.ownersRetirement, 0), totalRevenue)}
-                                  </td>
-                                </tr>
-                              )}
-
-                              {hasAnyLOBValue('professionalServices') && (
-                                <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Professional Services</td>
-                                  {lobsData.map(({ data }, idx) => (
-                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                      {formatValue(data.professionalServices, data.revenue)}
-                                    </td>
-                                  ))}
-                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
-                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.professionalServices, 0), totalRevenue)}
-                                  </td>
-                                </tr>
-                              )}
-
-                              {hasAnyLOBValue('rentLease') && (
-                                <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Rent/Lease</td>
-                                  {lobsData.map(({ data }, idx) => (
-                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                      {formatValue(data.rentLease, data.revenue)}
-                                    </td>
-                                  ))}
-                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
-                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.rentLease, 0), totalRevenue)}
-                                  </td>
-                                </tr>
-                              )}
-
-                              {hasAnyLOBValue('utilities') && (
-                                <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Utilities</td>
-                                  {lobsData.map(({ data }, idx) => (
-                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                      {formatValue(data.utilities, data.revenue)}
-                                    </td>
-                                  ))}
-                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
-                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.utilities, 0), totalRevenue)}
-                                  </td>
-                                </tr>
-                              )}
-
-                              {hasAnyLOBValue('equipment') && (
-                                <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Equipment</td>
-                                  {lobsData.map(({ data }, idx) => (
-                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                      {formatValue(data.equipment, data.revenue)}
-                                    </td>
-                                  ))}
-                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
-                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.equipment, 0), totalRevenue)}
-                                  </td>
-                                </tr>
-                              )}
-
-                              {hasAnyLOBValue('travel') && (
-                                <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Travel</td>
-                                  {lobsData.map(({ data }, idx) => (
-                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                      {formatValue(data.travel, data.revenue)}
-                                    </td>
-                                  ))}
-                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
-                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.travel, 0), totalRevenue)}
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.benefits, 0), totalRevenue)}
                                   </td>
                                 </tr>
                               )}
@@ -20947,37 +20882,163 @@ export default function FinancialScorePage() {
                                 </tr>
                               )}
 
-                              {hasAnyLOBValue('opexSalesMarketing') && (
+                              {hasAnyLOBValue('professionalServices') && (
                                 <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Sales & Marketing</td>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Professional Fees</td>
                                   {lobsData.map(({ data }, idx) => (
                                     <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                      {formatValue(data.opexSalesMarketing, data.revenue)}
+                                      {formatValue(data.professionalServices, data.revenue)}
                                     </td>
                                   ))}
                                   <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
-                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.opexSalesMarketing, 0), totalRevenue)}
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.professionalServices, 0), totalRevenue)}
                                   </td>
                                 </tr>
                               )}
 
-                              {hasAnyLOBValue('contractorsDistribution') && (
+                              {hasAnyLOBValue('subcontractors') && (
                                 <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Contractors Distribution</td>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Subcontractors</td>
                                   {lobsData.map(({ data }, idx) => (
                                     <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                      {formatValue(data.contractorsDistribution, data.revenue)}
+                                      {formatValue(data.subcontractors, data.revenue)}
                                     </td>
                                   ))}
                                   <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
-                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.contractorsDistribution, 0), totalRevenue)}
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.subcontractors, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('rentLease') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Rent/Lease</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.rentLease, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.rentLease, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('taxLicense') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Tax & License</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.taxLicense, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.taxLicense, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('phoneComm') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Phone & Communications</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.phoneComm, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.phoneComm, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('infrastructure') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Infrastructure</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.infrastructure, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.infrastructure, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('autoTravel') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Auto & Travel</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.autoTravel, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.autoTravel, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('salesExpense') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Sales Expense</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.salesExpense, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.salesExpense, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('marketing') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Marketing</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.marketing, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.marketing, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('trainingCert') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Training & Certification</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.trainingCert, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.trainingCert, 0), totalRevenue)}
+                                  </td>
+                                </tr>
+                              )}
+
+                              {hasAnyLOBValue('mealsEntertainment') && (
+                                <tr>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Meals & Entertainment</td>
+                                  {lobsData.map(({ data }, idx) => (
+                                    <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                      {formatValue(data.mealsEntertainment, data.revenue)}
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: '4px 0 4px 8px', textAlign: 'right', background: '#fef3c7' }}>
+                                    {formatValue(lobsData.reduce((sum, { data }) => sum + data.mealsEntertainment, 0), totalRevenue)}
                                   </td>
                                 </tr>
                               )}
 
                               {hasAnyLOBValue('depreciationExpense') && (
                                 <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Depreciation</td>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Depreciation & Amortization</td>
                                   {lobsData.map(({ data }, idx) => (
                                     <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                       {formatValue(data.depreciationExpense, data.revenue)}
@@ -20991,7 +21052,7 @@ export default function FinancialScorePage() {
 
                               {hasAnyLOBValue('opexOther') && (
                                 <tr>
-                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Other Operating Expenses</td>
+                                  <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Other Expenses</td>
                                   {lobsData.map(({ data }, idx) => (
                                     <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                       {formatValue(data.opexOther, data.revenue)}
@@ -21167,23 +21228,29 @@ export default function FinancialScorePage() {
                       const grossProfit = revenue - cogs;
                       const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
+                      // Map ALL detailed monthly data fields
                       const opexPayroll = lobData.payroll || 0;
                       const ownersBasePay = lobData.ownerBasePay || 0;
-                      const ownersRetirement = 0;
-                      const professionalServices = lobData.professionalFees || 0;
-                      const rentLease = lobData.rent || 0;
-                      const utilities = (lobData.phoneComm || 0) + (lobData.infrastructure || 0);
-                      const equipment = 0;
-                      const travel = lobData.autoTravel || 0;
+                      const benefits = lobData.benefits || 0;
                       const insurance = lobData.insurance || 0;
-                      const opexSalesMarketing = (lobData.salesExpense || 0) + (lobData.marketing || 0);
-                      const contractorsDistribution = lobData.subcontractors || 0;
+                      const professionalServices = lobData.professionalFees || 0;
+                      const subcontractors = lobData.subcontractors || 0;
+                      const rentLease = lobData.rent || 0;
+                      const taxLicense = lobData.taxLicense || 0;
+                      const phoneComm = lobData.phoneComm || 0;
+                      const infrastructure = lobData.infrastructure || 0;
+                      const autoTravel = lobData.autoTravel || 0;
+                      const salesExpense = lobData.salesExpense || 0;
+                      const marketing = lobData.marketing || 0;
+                      const trainingCert = lobData.trainingCert || 0;
+                      const mealsEntertainment = lobData.mealsEntertainment || 0;
                       const depreciationExpense = lobData.depreciationAmortization || 0;
                       const opexOther = lobData.otherExpense || 0;
                       
-                      const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                       rentLease + utilities + equipment + travel + insurance + 
-                                       opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                      const totalOpex = opexPayroll + ownersBasePay + benefits + insurance + professionalServices + 
+                                       subcontractors + rentLease + taxLicense + phoneComm + infrastructure + 
+                                       autoTravel + salesExpense + marketing + trainingCert + mealsEntertainment + 
+                                       depreciationExpense + opexOther;
                       
                       const operatingIncome = grossProfit - totalOpex;
                       const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -21199,10 +21266,10 @@ export default function FinancialScorePage() {
                         label: col.label,
                         data: {
                           revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs,
-                          grossProfit, grossMargin, opexPayroll, ownersBasePay, ownersRetirement, professionalServices,
-                          rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution,
-                          depreciationExpense, opexOther, totalOpex, operatingIncome, operatingMargin,
-                          interestExpense, nonOperatingIncome, extraordinaryItems, netIncome, netMargin
+                          grossProfit, grossMargin, opexPayroll, ownersBasePay, benefits, insurance, professionalServices,
+                          subcontractors, rentLease, taxLicense, phoneComm, infrastructure, autoTravel, salesExpense,
+                          marketing, trainingCert, mealsEntertainment, depreciationExpense, opexOther, totalOpex,
+                          operatingIncome, operatingMargin, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome, netMargin
                         }
                       };
                     });
@@ -21360,67 +21427,12 @@ export default function FinancialScorePage() {
                               </tr>
                             )}
 
-                            {hasAnySingleLOBValue('ownersRetirement') && (
+                            {hasAnySingleLOBValue('benefits') && (
                               <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Owner's Retirement</td>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Benefits</td>
                                 {columnsDataCorrect.map((col, idx) => (
                                   <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                    {formatValue(col.data.ownersRetirement, col.data.revenue)}
-                                  </td>
-                                ))}
-                              </tr>
-                            )}
-
-                            {hasAnySingleLOBValue('professionalServices') && (
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Professional Services</td>
-                                {columnsDataCorrect.map((col, idx) => (
-                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                    {formatValue(col.data.professionalServices, col.data.revenue)}
-                                  </td>
-                                ))}
-                              </tr>
-                            )}
-
-                            {hasAnySingleLOBValue('rentLease') && (
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Rent/Lease</td>
-                                {columnsDataCorrect.map((col, idx) => (
-                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                    {formatValue(col.data.rentLease, col.data.revenue)}
-                                  </td>
-                                ))}
-                              </tr>
-                            )}
-
-                            {hasAnySingleLOBValue('utilities') && (
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Utilities</td>
-                                {columnsDataCorrect.map((col, idx) => (
-                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                    {formatValue(col.data.utilities, col.data.revenue)}
-                                  </td>
-                                ))}
-                              </tr>
-                            )}
-
-                            {hasAnySingleLOBValue('equipment') && (
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Equipment</td>
-                                {columnsDataCorrect.map((col, idx) => (
-                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                    {formatValue(col.data.equipment, col.data.revenue)}
-                                  </td>
-                                ))}
-                              </tr>
-                            )}
-
-                            {hasAnySingleLOBValue('travel') && (
-                              <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Travel</td>
-                                {columnsDataCorrect.map((col, idx) => (
-                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                    {formatValue(col.data.travel, col.data.revenue)}
+                                    {formatValue(col.data.benefits, col.data.revenue)}
                                   </td>
                                 ))}
                               </tr>
@@ -21437,23 +21449,122 @@ export default function FinancialScorePage() {
                               </tr>
                             )}
 
-                            {hasAnySingleLOBValue('opexSalesMarketing') && (
+                            {hasAnySingleLOBValue('professionalServices') && (
                               <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Sales & Marketing</td>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Professional Fees</td>
                                 {columnsDataCorrect.map((col, idx) => (
                                   <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                    {formatValue(col.data.opexSalesMarketing, col.data.revenue)}
+                                    {formatValue(col.data.professionalServices, col.data.revenue)}
                                   </td>
                                 ))}
                               </tr>
                             )}
 
-                            {hasAnySingleLOBValue('contractorsDistribution') && (
+                            {hasAnySingleLOBValue('subcontractors') && (
                               <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Contractors Distribution</td>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Subcontractors</td>
                                 {columnsDataCorrect.map((col, idx) => (
                                   <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
-                                    {formatValue(col.data.contractorsDistribution, col.data.revenue)}
+                                    {formatValue(col.data.subcontractors, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('rentLease') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Rent/Lease</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.rentLease, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('taxLicense') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Tax & License</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.taxLicense, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('phoneComm') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Phone & Communications</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.phoneComm, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('infrastructure') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Infrastructure</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.infrastructure, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('autoTravel') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Auto & Travel</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.autoTravel, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('salesExpense') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Sales Expense</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.salesExpense, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('marketing') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Marketing</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.marketing, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('trainingCert') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Training & Certification</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.trainingCert, col.data.revenue)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )}
+
+                            {hasAnySingleLOBValue('mealsEntertainment') && (
+                              <tr>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Meals & Entertainment</td>
+                                {columnsDataCorrect.map((col, idx) => (
+                                  <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
+                                    {formatValue(col.data.mealsEntertainment, col.data.revenue)}
                                   </td>
                                 ))}
                               </tr>
@@ -21461,7 +21572,7 @@ export default function FinancialScorePage() {
 
                             {hasAnySingleLOBValue('depreciationExpense') && (
                               <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Depreciation</td>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Depreciation & Amortization</td>
                                 {columnsDataCorrect.map((col, idx) => (
                                   <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                     {formatValue(col.data.depreciationExpense, col.data.revenue)}
@@ -21472,7 +21583,7 @@ export default function FinancialScorePage() {
 
                             {hasAnySingleLOBValue('opexOther') && (
                               <tr>
-                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Other Operating Expenses</td>
+                                <td style={{ paddingLeft: '20px', padding: '4px 0 4px 20px', color: '#64748b' }}>Other Expenses</td>
                                 {columnsDataCorrect.map((col, idx) => (
                                   <td key={idx} style={{ padding: '4px 0 4px 8px', textAlign: 'right', color: '#64748b' }}>
                                     {formatValue(col.data.opexOther, col.data.revenue)}
