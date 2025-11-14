@@ -3594,8 +3594,10 @@ export default function FinancialScorePage() {
       // Calculate Operating Cash Flow for Cash Flow to Debt ratio
       const ltmNetIncome = ltmR - ltmE;
       const ltmDepreciation = ltmE * 0.05; // Estimated depreciation
-      const priorMonth = i >= 12 ? monthly[i - 12] : cur;
-      const priorWorkingCap = (priorMonth.cash + priorMonth.ar + priorMonth.inventory + priorMonth.otherCA) - (priorMonth.ap + priorMonth.otherCL);
+      const priorMonth12 = i >= 12 ? monthly[i - 12] : cur;
+      const priorWorkingCap12CA = priorMonth12.tca || ((priorMonth12.cash || 0) + (priorMonth12.ar || 0) + (priorMonth12.inventory || 0) + (priorMonth12.otherCA || 0));
+      const priorWorkingCap12CL = priorMonth12.tcl || ((priorMonth12.ap || 0) + (priorMonth12.otherCL || 0));
+      const priorWorkingCap = priorWorkingCap12CA - priorWorkingCap12CL;
       const changeInWorkingCap = workingCap - priorWorkingCap;
       const ltmOperatingCF = ltmNetIncome + ltmDepreciation - changeInWorkingCap;
       
