@@ -3613,7 +3613,7 @@ export default function FinancialScorePage() {
       const priorMonth = i > 0 ? monthly[i - 1] : cur;
       const avgTotalAssets = ((cur.totalAssets || 0) + (priorMonth.totalAssets || 0)) / 2;
       const avgTotalEquity = ((cur.totalEquity || 0) + (priorMonth.totalEquity || 0)) / 2;
-      const monthlyNetIncome = (cur.revenue || 0) - (cur.expense || 0);
+      const monthlyNetIncome = (cur.revenue || 0) - (cur.cogsTotal || 0) - (cur.expense || 0);
       const annualizedNetIncome = monthlyNetIncome * 12;
       
       const totalAssetTO = avgTotalAssets > 0 ? ((cur.revenue || 0) * 12) / avgTotalAssets : 0;
