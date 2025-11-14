@@ -12389,6 +12389,38 @@ export default function FinancialScorePage() {
                       ))}
                     </tr>
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Payables Turnover</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.apTurnover !== undefined ? data.apTurnover.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Inventory</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.daysInv !== undefined ? data.daysInv.toFixed(0) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Receivables</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.daysAR !== undefined ? data.daysAR.toFixed(0) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Payables</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.daysAP !== undefined ? data.daysAP.toFixed(0) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Sales/Working Capital</td>
                       {trendData.slice(-12).map((data, i) => (
                         <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
