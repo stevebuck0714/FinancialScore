@@ -615,6 +615,77 @@ const KPI_FORMULAS: Record<string, { formula: string; period: string; descriptio
   }
 };
 
+// Export to Excel functions
+function exportDataReviewToExcel(monthly: MonthlyData[], companyName: string) {
+  if (!monthly || monthly.length === 0) {
+    alert('No data to export');
+    return;
+  }
+
+  const ws = XLSX.utils.json_to_sheet(monthly);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Data Review');
+  XLSX.writeFile(wb, `${companyName || 'Company'}_DataReview_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+function exportMonthlyRatiosToExcel(trendData: any[], companyName: string) {
+  if (!trendData || trendData.length === 0) {
+    alert('No ratios to export');
+    return;
+  }
+
+  // Get last 12 months
+  const last12 = trendData.slice(-12);
+  const months = last12.map(d => d.month.substring(0, d.month.lastIndexOf('/')));
+
+  // Create data arrays with ratios as rows
+  const exportData: any[] = [];
+  
+  // Liquidity Ratios
+  exportData.push({ 'Ratio': 'LIQUIDITY RATIOS', ...Object.fromEntries(months.map(m => [m, ''])) });
+  exportData.push({ 'Ratio': 'Current Ratio', ...Object.fromEntries(last12.map((d, i) => [months[i], d.currentRatio?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Quick Ratio', ...Object.fromEntries(last12.map((d, i) => [months[i], d.quickRatio?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': '', ...Object.fromEntries(months.map(m => [m, ''])) }); // Empty row
+  
+  // Activity Ratios
+  exportData.push({ 'Ratio': 'ACTIVITY RATIOS', ...Object.fromEntries(months.map(m => [m, ''])) });
+  exportData.push({ 'Ratio': 'Inventory Turnover', ...Object.fromEntries(last12.map((d, i) => [months[i], d.invTurnover?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Receivables Turnover', ...Object.fromEntries(last12.map((d, i) => [months[i], d.arTurnover?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Payables Turnover', ...Object.fromEntries(last12.map((d, i) => [months[i], d.apTurnover?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Days Inventory', ...Object.fromEntries(last12.map((d, i) => [months[i], d.daysInv?.toFixed(0) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Days Receivables', ...Object.fromEntries(last12.map((d, i) => [months[i], d.daysAR?.toFixed(0) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Days Payables', ...Object.fromEntries(last12.map((d, i) => [months[i], d.daysAP?.toFixed(0) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Sales/Working Capital', ...Object.fromEntries(last12.map((d, i) => [months[i], d.salesWC?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': '', ...Object.fromEntries(months.map(m => [m, ''])) }); // Empty row
+  
+  // Coverage Ratios
+  exportData.push({ 'Ratio': 'COVERAGE RATIOS', ...Object.fromEntries(months.map(m => [m, ''])) });
+  exportData.push({ 'Ratio': 'Interest Coverage', ...Object.fromEntries(last12.map((d, i) => [months[i], d.interestCov?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Debt Service Coverage', ...Object.fromEntries(last12.map((d, i) => [months[i], d.debtSvcCov?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Cash Flow to Debt', ...Object.fromEntries(last12.map((d, i) => [months[i], d.cfToDebt?.toFixed(2) || 'N/A'])) });
+  exportData.push({ 'Ratio': '', ...Object.fromEntries(months.map(m => [m, ''])) }); // Empty row
+  
+  // Leverage Ratios
+  exportData.push({ 'Ratio': 'LEVERAGE RATIOS', ...Object.fromEntries(months.map(m => [m, ''])) });
+  exportData.push({ 'Ratio': 'Debt/Net Worth', ...Object.fromEntries(last12.map((d, i) => [months[i], d.debtToNW?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Fixed Assets/Net Worth', ...Object.fromEntries(last12.map((d, i) => [months[i], d.fixedToNW?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'Leverage Ratio', ...Object.fromEntries(last12.map((d, i) => [months[i], d.leverage?.toFixed(1) || 'N/A'])) });
+  exportData.push({ 'Ratio': '', ...Object.fromEntries(months.map(m => [m, ''])) }); // Empty row
+  
+  // Operating Ratios
+  exportData.push({ 'Ratio': 'OPERATING RATIOS', ...Object.fromEntries(months.map(m => [m, ''])) });
+  exportData.push({ 'Ratio': 'Total Asset Turnover', ...Object.fromEntries(last12.map((d, i) => [months[i], d.totalAssetTO?.toFixed(2) || 'N/A'])) });
+  exportData.push({ 'Ratio': 'ROE', ...Object.fromEntries(last12.map((d, i) => [months[i], d.roe !== undefined ? (d.roe * 100).toFixed(1) + '%' : 'N/A'])) });
+  exportData.push({ 'Ratio': 'ROA', ...Object.fromEntries(last12.map((d, i) => [months[i], d.roa !== undefined ? (d.roa * 100).toFixed(1) + '%' : 'N/A'])) });
+  exportData.push({ 'Ratio': 'EBITDA Margin', ...Object.fromEntries(last12.map((d, i) => [months[i], d.ebitdaMargin !== undefined ? (d.ebitdaMargin * 100).toFixed(1) + '%' : 'N/A'])) });
+  exportData.push({ 'Ratio': 'EBIT Margin', ...Object.fromEntries(last12.map((d, i) => [months[i], d.ebitMargin !== undefined ? (d.ebitMargin * 100).toFixed(1) + '%' : 'N/A'])) });
+
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Monthly Ratios');
+  XLSX.writeFile(wb, `${companyName || 'Company'}_MonthlyRatios_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
 // LineChart Component
 function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat, goalLineData }: { 
   title: string; 
@@ -9103,8 +9174,33 @@ export default function FinancialScorePage() {
       {currentView === 'admin' && adminDashboardTab === 'data-review' && selectedCompanyId && (
         <div style={{ maxWidth: '100%', padding: '32px', overflowX: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>📊 Data Review - Financial Data</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            <div>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>📊 Data Review - Financial Data</h1>
+              {companyName && <div style={{ fontSize: '24px', fontWeight: '600', color: '#64748b', marginTop: '4px' }}>{companyName}</div>}
+            </div>
+            {monthly && monthly.length > 0 && (
+              <button
+                onClick={() => exportDataReviewToExcel(monthly, companyName)}
+                style={{
+                  background: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
+                onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
+              >
+                📥 Export to Excel
+              </button>
+            )}
           </div>
           <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '32px' }}>
             Review all imported financial data for {companyName || 'this company'}
@@ -12318,9 +12414,32 @@ export default function FinancialScorePage() {
           {/* Monthly Ratios by Category Tab */}
           {kpiDashboardTab === 'monthly-ratios' && (
             <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
-                Financial Ratios Overview
-              </h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                  Financial Ratios Overview
+                </h2>
+                <button
+                  onClick={() => exportMonthlyRatiosToExcel(trendData, companyName)}
+                  style={{
+                    background: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
+                  onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
+                >
+                  📥 Export to Excel
+                </button>
+              </div>
               
               {/* Liquidity Ratios */}
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Liquidity Ratios</h3>
