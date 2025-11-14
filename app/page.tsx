@@ -589,18 +589,18 @@ const KPI_FORMULAS: Record<string, { formula: string; period: string; descriptio
     description: 'Measures the degree to which a company is utilizing borrowed money. Higher values indicate higher financial leverage.'
   },
   'Total Asset Turnover': {
-    formula: 'Revenue (LTM) ÷ Average Total Assets',
-    period: 'Last Twelve Months (LTM)',
+    formula: 'Revenue (Current Month × 12) ÷ Average Total Assets (Current & Prior Month)',
+    period: 'Current Month Annualized',
     description: 'Measures how efficiently a company uses its assets to generate sales. Higher values indicate better asset utilization.'
   },
   'Return on Equity (ROE)': {
-    formula: 'Net Income (LTM) ÷ Average Total Equity',
-    period: 'Last Twelve Months (LTM)',
+    formula: 'Net Income (Current Month × 12) ÷ Average Total Equity (Current & Prior Month)',
+    period: 'Current Month Annualized',
     description: 'Measures profitability relative to shareholders\' equity. Indicates how effectively management is using equity to generate profits.'
   },
   'Return on Assets (ROA)': {
-    formula: 'Net Income (LTM) ÷ Average Total Assets',
-    period: 'Last Twelve Months (LTM)',
+    formula: 'Net Income (Current Month × 12) ÷ Average Total Assets (Current & Prior Month)',
+    period: 'Current Month Annualized',
     description: 'Measures how profitable a company is relative to its total assets. Indicates how efficiently management uses assets to generate earnings.'
   },
   'EBITDA Margin': {
@@ -718,7 +718,7 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
               <g key={idx}>
                 <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
                 <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#94a3b8">
-                  {Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(1)}
+                  {formatter ? formatter(val) : (Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(1))}
                 </text>
               </g>
             );
@@ -776,7 +776,7 @@ function LineChart({ title, data, valueKey, color, yMax, showTable, compact, for
         )}
         {points.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r="5" fill={p.isOutOfRange ? '#ef4444' : color} stroke="white" strokeWidth="2">
-            <title>{`${p.month}: ${p.value.toFixed(1)}${p.isOutOfRange ? ' (out of range)' : ''}`}</title>
+            <title>{`${p.month}: ${formatter ? formatter(p.value) : p.value.toFixed(1)}${p.isOutOfRange ? ' (out of range)' : ''}`}</title>
           </circle>
         ))}
         {points.map((p, i) => {
@@ -11802,10 +11802,10 @@ export default function FinancialScorePage() {
                   return <LineChart key={widget} title="Debt/Net Worth" data={trendData} valueKey="debtToNW" color="#ec4899" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt/Net Worth')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'ROA') {
-                  return <LineChart key={widget} title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 if (widget === 'ROE') {
-                  return <LineChart key={widget} title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 if (widget === 'Interest Coverage') {
                   return <LineChart key={widget} title="Interest Coverage" data={trendData} valueKey="interestCov" color="#8b5cf6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Interest Coverage')} formatter={(v) => v.toFixed(1)} />;
@@ -12144,10 +12144,10 @@ export default function FinancialScorePage() {
                 <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Operating Ratios</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
                   <LineChart title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Total Asset Turnover')} />
-                  <LineChart title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Return on Equity (ROE)')} />
-                  <LineChart title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Return on Assets (ROA)')} />
-                  <LineChart title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBITDA/Revenue')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBITDA Margin')} />
-                  <LineChart title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBIT/Revenue')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBIT Margin')} />
+                  <LineChart title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Return on Equity (ROE)')} />
+                  <LineChart title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Return on Assets (ROA)')} />
+                  <LineChart title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBITDA/Revenue')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBITDA Margin')} />
+                  <LineChart title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBIT/Revenue')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBIT Margin')} />
                 </div>
               </div>
             </>
@@ -12463,6 +12463,14 @@ export default function FinancialScorePage() {
                         </td>
                       ))}
                     </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Cash Flow to Debt</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.cfToDebt !== undefined ? data.cfToDebt.toFixed(2) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -12487,6 +12495,14 @@ export default function FinancialScorePage() {
                       {trendData.slice(-12).map((data, i) => (
                         <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                           {data?.debtToNW !== undefined ? data.debtToNW.toFixed(1) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Fixed Assets/Net Worth</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.fixedToNW !== undefined ? data.fixedToNW.toFixed(1) : 'N/A'}
                         </td>
                       ))}
                     </tr>
@@ -12518,6 +12534,14 @@ export default function FinancialScorePage() {
                   </thead>
                   <tbody>
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Total Asset Turnover</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.totalAssetTO !== undefined ? data.totalAssetTO.toFixed(2) : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROE</td>
                       {trendData.slice(-12).map((data, i) => (
                         <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
@@ -12534,10 +12558,18 @@ export default function FinancialScorePage() {
                       ))}
                     </tr>
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBITDA/Revenue</td>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBITDA Margin</td>
                       {trendData.slice(-12).map((data, i) => (
                         <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                           {data?.ebitdaMargin !== undefined ? `${(data.ebitdaMargin * 100).toFixed(1)}%` : 'N/A'}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBIT Margin</td>
+                      {trendData.slice(-12).map((data, i) => (
+                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                          {data?.ebitMargin !== undefined ? `${(data.ebitMargin * 100).toFixed(1)}%` : 'N/A'}
                         </td>
                       ))}
                     </tr>
