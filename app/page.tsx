@@ -3612,7 +3612,11 @@ export default function FinancialScorePage() {
       // Monthly ratios: annualize monthly income with average balance sheet values
       const priorMonth = i > 0 ? monthly[i - 1] : cur;
       const avgTotalAssets = ((cur.totalAssets || 0) + (priorMonth.totalAssets || 0)) / 2;
-      const avgTotalEquity = ((cur.totalEquity || 0) + (priorMonth.totalEquity || 0)) / 2;
+      
+      // Calculate total equity from components if totalEquity field is not populated
+      const curEquity = cur.totalEquity || ((cur.ownersCapital || 0) + (cur.ownersDraw || 0) + (cur.commonStock || 0) + (cur.preferredStock || 0) + (cur.retainedEarnings || 0) + (cur.additionalPaidInCapital || 0) + (cur.treasuryStock || 0));
+      const priorEquity = priorMonth.totalEquity || ((priorMonth.ownersCapital || 0) + (priorMonth.ownersDraw || 0) + (priorMonth.commonStock || 0) + (priorMonth.preferredStock || 0) + (priorMonth.retainedEarnings || 0) + (priorMonth.additionalPaidInCapital || 0) + (priorMonth.treasuryStock || 0));
+      const avgTotalEquity = (curEquity + priorEquity) / 2;
       const monthlyNetIncome = (cur.revenue || 0) - (cur.cogsTotal || 0) - (cur.expense || 0);
       const annualizedNetIncome = monthlyNetIncome * 12;
       
