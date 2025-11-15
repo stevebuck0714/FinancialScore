@@ -14254,8 +14254,9 @@ export default function FinancialScorePage() {
                 });
               }
 
-              // Days Sales Outstanding
-              const dso = last.revenue > 0 ? (last.ar / (last.revenue / 365)) : 0;
+              // Days Sales Outstanding - using LTM revenue
+              const ltmRevenue = last12.reduce((s, m) => s + m.revenue, 0);
+              const dso = ltmRevenue > 0 ? (last.ar / (ltmRevenue / 365)) : 0;
               if (dso > 60) {
                 issues.push({
                   category: 'Working Capital',
@@ -14266,8 +14267,9 @@ export default function FinancialScorePage() {
                 });
               }
 
-              // Days Payable Outstanding
-              const dpo = last.expense > 0 ? (last.ap / (last.expense / 365)) : 0;
+              // Days Payable Outstanding - using LTM COGS
+              const ltmCOGS = last12.reduce((s, m) => s + m.cogsTotal, 0);
+              const dpo = ltmCOGS > 0 ? (last.ap / (ltmCOGS / 365)) : 0;
               if (dpo > 90) {
                 issues.push({
                   category: 'Working Capital',
