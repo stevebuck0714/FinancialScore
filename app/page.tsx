@@ -1469,6 +1469,17 @@ export default function FinancialScorePage() {
             // Company users see the same dashboard as consultants
             setCurrentView('admin');
             setSelectedCompanyId(user.companyId || '');
+            // Load the company data for this user
+            if (user.companyId) {
+              fetch(`/api/companies?companyId=${user.companyId}`)
+                .then(res => res.json())
+                .then(data => {
+                  if (data.companies && data.companies.length > 0) {
+                    setCompanies(data.companies);
+                  }
+                })
+                .catch(err => console.error('Error loading company:', err));
+            }
           } else {
             setCurrentView('upload');
             setSelectedCompanyId(user.companyId || '');
@@ -2805,6 +2816,15 @@ export default function FinancialScorePage() {
         
         // Direct to payments if not paid, otherwise company management
         setAdminDashboardTab(needsPayment ? 'payments' : 'company-management');
+      }
+      
+      // Load company data for company users
+      if (normalizedUser.userType === 'company' && user.companyId) {
+        const response = await fetch(`/api/companies?companyId=${user.companyId}`);
+        const data = await response.json();
+        if (data.companies && data.companies.length > 0) {
+          setCompanies(data.companies);
+        }
       }
       
       setLoginEmail('');

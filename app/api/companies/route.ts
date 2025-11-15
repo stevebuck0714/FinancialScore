@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// GET all companies (optionally filtered by consultant)
+// GET all companies (optionally filtered by consultant or company ID)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const consultantId = searchParams.get('consultantId');
+    const companyId = searchParams.get('companyId');
 
-    // Build where clause - if consultantId provided, filter by it; otherwise return all companies
-    const where = consultantId ? { consultantId } : {};
+    // Build where clause - if consultantId provided, filter by it; if companyId provided, filter by that; otherwise return all companies
+    const where = consultantId ? { consultantId } : companyId ? { id: companyId } : {};
 
     const companies = await prisma.company.findMany({
       where,
