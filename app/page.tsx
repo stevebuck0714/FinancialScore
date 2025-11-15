@@ -1672,6 +1672,7 @@ export default function FinancialScorePage() {
   const [ebitdaMultiplier, setEbitdaMultiplier] = useState(5.0);
   const [dcfDiscountRate, setDcfDiscountRate] = useState(10.0);
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
+  const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // State - Goals
   const [expenseGoals, setExpenseGoals] = useState<{[key: string]: number}>({});
@@ -1984,6 +1985,29 @@ export default function FinancialScorePage() {
         });
     }
   }, [selectedCompanyId, currentView]);
+
+  // Load valuation settings when company changes
+  useEffect(() => {
+    if (selectedCompanyId) {
+      fetch(`/api/valuation-settings?companyId=${selectedCompanyId}`)
+        .then(res => res.json())
+        .then(data => {
+          console.log('📊 Valuation settings loaded:', data);
+          setSdeMultiplier(data.sdeMultiplier || 2.5);
+          setEbitdaMultiplier(data.ebitdaMultiplier || 5.0);
+          setDcfDiscountRate(data.dcfDiscountRate || 10.0);
+          setDcfTerminalGrowth(data.dcfTerminalGrowth || 2.0);
+        })
+        .catch(err => {
+          console.error('❌ Error loading valuation settings:', err);
+          // Keep defaults on error
+          setSdeMultiplier(2.5);
+          setEbitdaMultiplier(5.0);
+          setDcfDiscountRate(10.0);
+          setDcfTerminalGrowth(2.0);
+        });
+    }
+  }, [selectedCompanyId]);
 
   // Load dashboard widgets from localStorage when company changes
   useEffect(() => {
@@ -15463,7 +15487,57 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Business Valuation</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <button
+                onClick={async () => {
+                  console.log('💾 Saving valuation settings for company:', selectedCompanyId);
+                  setValuationSaveStatus('saving');
+                  try {
+                    const response = await fetch('/api/valuation-settings', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        companyId: selectedCompanyId,
+                        sdeMultiplier,
+                        ebitdaMultiplier,
+                        dcfDiscountRate,
+                        dcfTerminalGrowth
+                      })
+                    });
+                    const result = await response.json();
+                    console.log('💾 Save response:', result);
+                    if (response.ok) {
+                      setValuationSaveStatus('saved');
+                      setTimeout(() => setValuationSaveStatus('idle'), 3000);
+                    } else {
+                      console.error('❌ Failed to save valuation settings:', result);
+                      setValuationSaveStatus('error');
+                      setTimeout(() => setValuationSaveStatus('idle'), 3000);
+                    }
+                  } catch (error) {
+                    console.error('❌ Error saving valuation settings:', error);
+                    setValuationSaveStatus('error');
+                    setTimeout(() => setValuationSaveStatus('idle'), 3000);
+                  }
+                }}
+                disabled={valuationSaveStatus === 'saving'}
+                style={{
+                  padding: '12px 32px',
+                  background: valuationSaveStatus === 'saved' ? '#10b981' : valuationSaveStatus === 'error' ? '#ef4444' : valuationSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: valuationSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                {valuationSaveStatus === 'saving' ? '💾 Saving...' : valuationSaveStatus === 'saved' ? '✓ Saved!' : valuationSaveStatus === 'error' ? '✗ Error' : 'Save Settings'}
+              </button>
+              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            </div>
           </div>
           
           {(() => {

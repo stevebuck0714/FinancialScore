@@ -318,6 +318,19 @@ model ExpenseGoal {
   @@index([companyId])
 }
 
+model ValuationSettings {
+  id                 String   @id @default(cuid())
+  companyId          String   @unique
+  sdeMultiplier      Float    @default(2.5)
+  ebitdaMultiplier   Float    @default(5.0)
+  dcfDiscountRate    Float    @default(10.0)
+  dcfTerminalGrowth  Float    @default(2.0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([companyId])
+}
+
 model SystemSettings {
   id                       String   @id @default(cuid())
   key                      String   @unique
