@@ -1465,6 +1465,10 @@ export default function FinancialScorePage() {
             setCurrentView('siteadmin');
           } else if (normalizedUser.userType === 'assessment') {
             setCurrentView('ma-welcome');
+          } else if (normalizedUser.userType === 'company') {
+            // Company users see the same dashboard as consultants
+            setCurrentView('admin');
+            setSelectedCompanyId(user.companyId || '');
           } else {
             setCurrentView('upload');
             setSelectedCompanyId(user.companyId || '');
@@ -2763,6 +2767,9 @@ export default function FinancialScorePage() {
         setCurrentView('admin');
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
+      } else if (normalizedUser.userType === 'company') {
+        // Company users see the same dashboard as consultants
+        setCurrentView('admin');
       } else {
         setCurrentView('upload');
       }
