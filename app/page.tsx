@@ -7167,7 +7167,7 @@ export default function FinancialScorePage() {
           )}
 
           {/* Admin Dashboard */}
-          {currentView === 'admin' && currentUser?.role === 'consultant' && (
+          {currentView === 'admin' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -23231,7 +23231,7 @@ export default function FinancialScorePage() {
       )}
 
       {/* Profile View */}
-      {currentView === 'admin' && adminDashboardTab === 'profile' && selectedCompanyId && currentUser?.role === 'consultant' && (
+      {currentView === 'admin' && adminDashboardTab === 'profile' && selectedCompanyId && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '8px 32px 32px 32px' }}>
           <style>{`
             @media print {
