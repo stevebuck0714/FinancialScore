@@ -3678,6 +3678,9 @@ export default function FinancialScorePage() {
       
       const workingCap = currentAssets - currentLiab;
       
+      // Get prior month for calculations
+      const priorMonth = i > 0 ? monthly[i - 1] : cur;
+      
       // Sales/Working Capital: Monthly revenue / Average WC (current + prior month)
       const priorMonthCurrentAssets = i > 0 ? (priorMonth.tca || ((priorMonth.cash || 0) + (priorMonth.ar || 0) + (priorMonth.inventory || 0) + (priorMonth.otherCA || 0))) : currentAssets;
       const priorMonthCurrentLiab = i > 0 ? (priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.otherCL || 0))) : currentLiab;
@@ -3711,7 +3714,6 @@ export default function FinancialScorePage() {
       const leverage = cur.totalEquity > 0 ? cur.totalAssets / cur.totalEquity : 0;
       
       // Monthly ratios: annualize monthly income with average balance sheet values
-      const priorMonth = i > 0 ? monthly[i - 1] : cur;
       const avgTotalAssets = ((cur.totalAssets || 0) + (priorMonth.totalAssets || 0)) / 2;
       
       // Calculate total equity from components if totalEquity field is not populated
