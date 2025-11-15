@@ -3681,8 +3681,8 @@ export default function FinancialScorePage() {
       // Sales/Working Capital: Monthly revenue / Average WC (current + prior month)
       const priorMonthCurrentAssets = i > 0 ? (priorMonth.tca || ((priorMonth.cash || 0) + (priorMonth.ar || 0) + (priorMonth.inventory || 0) + (priorMonth.otherCA || 0))) : currentAssets;
       const priorMonthCurrentLiab = i > 0 ? (priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.otherCL || 0))) : currentLiab;
-      const priorWorkingCap = priorMonthCurrentAssets - priorMonthCurrentLiab;
-      const avgWorkingCap = (workingCap + priorWorkingCap) / 2;
+      const priorMonthWorkingCap = priorMonthCurrentAssets - priorMonthCurrentLiab;
+      const avgWorkingCap = (workingCap + priorMonthWorkingCap) / 2;
       const salesWC = avgWorkingCap !== 0 ? (cur.revenue || 0) / avgWorkingCap : 0;
       
       const ltmInterest = ltmE * 0.05;
