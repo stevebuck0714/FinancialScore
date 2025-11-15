@@ -20733,41 +20733,97 @@ export default function FinancialScorePage() {
           <style>{`
             @media print {
               @page {
-                size: letter;
-                margin: 0.1in 0.15in 0.1in 0.15in;
+                size: portrait;
+                margin: 0.2in 0.3in;
               }
               
-              /* Hide navigation and UI elements */
+              /* Hide all navigation and controls */
               .no-print,
               header,
               nav,
               aside,
-              [role="navigation"],
-              button {
+              button,
+              [role="navigation"] {
                 display: none !important;
               }
               
-              /* Remove background colors and shadows */
+              /* Remove all visual styling that takes space */
               * {
                 box-shadow: none !important;
+                border-radius: 0 !important;
               }
               
-              /* Force very tight column spacing */
-              [style*="display: grid"] {
-                gap: 2px !important;
-                column-gap: 2px !important;
+              /* Aggressively compress spacing */
+              body, html {
+                margin: 0 !important;
+                padding: 0 !important;
               }
               
-              /* Reduce padding to bring content closer */
-              [style*="display: grid"] > * {
-                padding-left: 2px !important;
-                padding-right: 2px !important;
+              /* Reduce all padding and margins */
+              div {
+                padding-top: 2px !important;
+                padding-bottom: 2px !important;
+                margin-top: 2px !important;
+                margin-bottom: 2px !important;
               }
               
-              /* Reduce font sizes slightly for better fit */
+              /* Compress header section */
+              div[style*="marginBottom: '32px'"] {
+                margin-bottom: 4px !important;
+                padding-bottom: 4px !important;
+              }
+              
+              /* Compress blue/colored boxes (Gross Profit, Operating Income, etc) */
+              div[style*="background: '#dbeafe'"],
+              div[style*="background: '#dcfce7'"],
+              div[style*="background: '#fef3c7'"] {
+                padding: 4px 8px !important;
+                margin: 2px 0 !important;
+              }
+              
+              /* Reduce font sizes across the board */
+              h2 {
+                font-size: 14px !important;
+                margin: 0 0 2px 0 !important;
+                padding: 0 !important;
+              }
+              
+              div[style*="fontSize: '24px'"] {
+                font-size: 14px !important;
+              }
+              
               div[style*="fontSize: '14px'"],
-              div[style*="fontSize: '13px'"] {
-                font-size: 11px !important;
+              span[style*="fontSize: '14px'"] {
+                font-size: 10px !important;
+              }
+              
+              div[style*="fontSize: '13px'"],
+              span[style*="fontSize: '13px'"] {
+                font-size: 9px !important;
+              }
+              
+              /* Reduce line item spacing */
+              div[style*="padding: '6px 0 6px 20px'"],
+              div[style*="padding: '8px 0'"] {
+                padding: 2px 0 2px 12px !important;
+                line-height: 1.1 !important;
+              }
+              
+              /* Remove extra spacing from sections */
+              div[style*="marginBottom: '12px'"] {
+                margin-bottom: 2px !important;
+              }
+              
+              /* Compress section headers */
+              div[style*="marginBottom: '8px'"] {
+                margin-bottom: 2px !important;
+              }
+              
+              /* Keep sections together */
+              div[style*="Cost of Goods Sold"],
+              div[style*="Operating Expenses"],
+              div[style*="Other Income"] {
+                page-break-inside: avoid !important;
               }
             }
           `}</style>
