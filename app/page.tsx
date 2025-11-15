@@ -4763,8 +4763,8 @@ export default function FinancialScorePage() {
               )}
             </div>
 
-            {/* Management Assessment Section - For Assessment Users and Consultants */}
-            {((currentUser?.role === 'user' && (currentUser?.userType as any) === 'assessment') || currentUser?.role === 'consultant') && (
+            {/* Management Assessment Section - For Assessment Users, Company Users, and Consultants */}
+            {((currentUser?.role === 'user' && (currentUser?.userType === 'assessment' || currentUser?.userType === 'company')) || currentUser?.role === 'consultant') && (
             <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
@@ -4967,7 +4967,7 @@ export default function FinancialScorePage() {
             )}
 
             {/* Digital Presence Analysis  Section */}
-            {((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+            {((currentUser?.role === 'user' && (currentUser?.userType === 'assessment' || currentUser?.userType === 'company')) || currentUser?.role === 'consultant') && (
             <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => {
