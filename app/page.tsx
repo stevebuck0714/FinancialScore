@@ -554,8 +554,8 @@ const KPI_FORMULAS: Record<string, { formula: string; period: string; descriptio
     description: 'Average number of days a company takes to pay its suppliers. Also known as Days Payable Outstanding (DPO).'
   },
   'Sales/Working Capital': {
-    formula: 'Revenue (LTM) ÷ (Current Assets - Current Liabilities)',
-    period: 'Last Twelve Months (LTM)',
+    formula: 'Monthly Revenue ÷ Average Working Capital (Current + Prior Month)',
+    period: 'Monthly',
     description: 'Measures how efficiently a company uses working capital to generate sales. Higher values indicate more efficient use of working capital.'
   },
   'Interest Coverage': {
@@ -3677,7 +3677,13 @@ export default function FinancialScorePage() {
       const daysAP = apTurnover > 0 ? 365 / apTurnover : 0;
       
       const workingCap = currentAssets - currentLiab;
-      const salesWC = workingCap !== 0 ? ltmSales / workingCap : 0;
+      
+      // Sales/Working Capital: Monthly revenue / Average WC (current + prior month)
+      const priorMonthCurrentAssets = i > 0 ? (priorMonth.tca || ((priorMonth.cash || 0) + (priorMonth.ar || 0) + (priorMonth.inventory || 0) + (priorMonth.otherCA || 0))) : currentAssets;
+      const priorMonthCurrentLiab = i > 0 ? (priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.otherCL || 0))) : currentLiab;
+      const priorWorkingCap = priorMonthCurrentAssets - priorMonthCurrentLiab;
+      const avgWorkingCap = (workingCap + priorWorkingCap) / 2;
+      const salesWC = avgWorkingCap !== 0 ? (cur.revenue || 0) / avgWorkingCap : 0;
       
       const ltmInterest = ltmE * 0.05;
       const ltmEBIT = ltmR - ltmE;
