@@ -604,14 +604,14 @@ const KPI_FORMULAS: Record<string, { formula: string; period: string; descriptio
     description: 'Measures how profitable a company is relative to its total assets. Indicates how efficiently management uses assets to generate earnings.'
   },
   'EBITDA Margin': {
-    formula: 'EBITDA (LTM) ÷ Revenue (LTM)',
-    period: 'Last Twelve Months (LTM)',
-    description: 'Measures operating profitability before interest, taxes, depreciation, and amortization. Shows pure operational efficiency.'
+    formula: 'EBITDA (Current Month) ÷ Revenue (Current Month)',
+    period: 'Current Month',
+    description: 'Measures operating profitability before interest, taxes, depreciation, and amortization. EBITDA = Revenue - COGS - Operating Expenses + Interest Expense + Depreciation & Amortization.'
   },
   'EBIT Margin': {
-    formula: 'EBIT (LTM) ÷ Revenue (LTM)',
-    period: 'Last Twelve Months (LTM)',
-    description: 'Measures operating profitability before interest and taxes. Also known as Operating Profit Margin.'
+    formula: 'EBIT (Current Month) ÷ Revenue (Current Month)',
+    period: 'Current Month',
+    description: 'Measures operating profitability before interest and taxes. EBIT = Revenue - COGS - Operating Expenses + Interest Expense.'
   }
 };
 
@@ -3800,8 +3800,13 @@ export default function FinancialScorePage() {
       const totalAssetTO = avgTotalAssets > 0 ? ((cur.revenue || 0) * 12) / avgTotalAssets : 0;
       const roe = avgTotalEquity > 0 ? annualizedNetIncome / avgTotalEquity : 0;
       const roa = avgTotalAssets > 0 ? annualizedNetIncome / avgTotalAssets : 0;
-      const ebitdaMargin = ltmR > 0 ? (ltmEBIT + ltmE * 0.05) / ltmR : 0;
-      const ebitMargin = ltmR > 0 ? ltmEBIT / ltmR : 0;
+      
+      // EBIT and EBITDA Margins: Income statement / Income statement = use current month values
+      // EBIT = Earnings Before Interest and Taxes, so add back interest expense
+      const currentMonthEBIT = (cur.revenue || 0) - (cur.cogsTotal || 0) - (cur.expense || 0) + (cur.interestExpense || 0);
+      const currentMonthEBITDA = currentMonthEBIT + (cur.depreciationExpense || 0);
+      const ebitMargin = (cur.revenue || 0) > 0 ? currentMonthEBIT / cur.revenue : 0;
+      const ebitdaMargin = (cur.revenue || 0) > 0 ? currentMonthEBITDA / cur.revenue : 0;
       
       trends.push({
         month: cur.month,
@@ -12156,10 +12161,12 @@ export default function FinancialScorePage() {
                   return <LineChart key={widget} title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'EBITDA Margin') {
-                  return <LineChart key={widget} title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBITDA/Revenue')} formatter={(v) => v.toFixed(1)} />;
+                  const ebitdaBM = getBenchmarkValue(benchmarks, 'EBITDA/Revenue');
+                  return <LineChart key={widget} title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact yMax={0.5} benchmarkValue={ebitdaBM !== null ? ebitdaBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 if (widget === 'EBIT Margin') {
-                  return <LineChart key={widget} title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBIT/Revenue')} formatter={(v) => v.toFixed(1)} />;
+                  const ebitBM = getBenchmarkValue(benchmarks, 'EBIT/Revenue');
+                  return <LineChart key={widget} title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact yMax={0.5} benchmarkValue={ebitBM !== null ? ebitBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 // Note: Revenue Trend, Expense Trend, Net Profit Trend, and Gross Margin Trend widgets
                 // have been replaced with the Trend Analysis dropdown selections
@@ -12460,8 +12467,8 @@ export default function FinancialScorePage() {
                   <LineChart title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Total Asset Turnover')} />
                   <LineChart title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Return on Equity (ROE)')} />
                   <LineChart title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Return on Assets (ROA)')} />
-                  <LineChart title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBITDA/Revenue')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBITDA Margin')} />
-                  <LineChart title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact benchmarkValue={getBenchmarkValue(benchmarks, 'EBIT/Revenue')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBIT Margin')} />
+                  <LineChart title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact yMax={0.5} benchmarkValue={(() => { const bm = getBenchmarkValue(benchmarks, 'EBITDA/Revenue'); return bm !== null ? bm / 100 : null; })()} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBITDA Margin')} />
+                  <LineChart title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact yMax={0.5} benchmarkValue={(() => { const bm = getBenchmarkValue(benchmarks, 'EBIT/Revenue'); return bm !== null ? bm / 100 : null; })()} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBIT Margin')} />
                 </div>
               </div>
             </>
