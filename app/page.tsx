@@ -1713,7 +1713,7 @@ export default function FinancialScorePage() {
   const [selectedLineOfBusiness, setSelectedLineOfBusiness] = useState<string>('all');
   const [statementDisplay, setStatementDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
   const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
-  
+
   // State - MD&A Tabs
   const [mdaTab, setMdaTab] = useState<'executive-summary' | 'strengths-insights' | 'key-metrics'>('executive-summary');
   
@@ -1755,6 +1755,53 @@ export default function FinancialScorePage() {
     balanceSheet3YearsAnnual: false,
     profile: false
   });
+
+  const handleExportMdaToWord = async () => {
+    try {
+      let executiveSummaryText = '';
+      if (typeof document !== 'undefined') {
+        const container = document.getElementById('mda-executive-summary-container');
+        if (container) {
+          executiveSummaryText = container.innerText || '';
+        }
+      }
+
+      const response = await fetch('/api/mda/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          companyName,
+          executiveSummary: executiveSummaryText,
+          strengths: mdaAnalysis.strengths,
+          weaknesses: mdaAnalysis.weaknesses,
+          insights: mdaAnalysis.insights,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('Failed to export MD&A:', await response.text());
+        alert('Unable to export MD&A to Word. Please try again.');
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeCompanyName =
+        (companyName || 'Company').toString().replace(/[^a-zA-Z0-9 \-_.]/g, '').trim() || 'Company';
+      link.download = `MDA - ${safeCompanyName}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting MD&A:', error);
+      alert('An unexpected error occurred while exporting MD&A.');
+    }
+  };
 
 
   // Reload companies data when accessing payments tab to get fresh pricing
@@ -12908,6 +12955,23 @@ export default function FinancialScorePage() {
               >
                 🔄 Refresh Analysis
               </button>
+              <button
+                className="no-print"
+                onClick={handleExportMdaToWord}
+                style={{
+                  padding: '12px 24px',
+                  background: '#0ea5e9',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)',
+                }}
+              >
+                💾 Export to Word
+              </button>
               <button 
                 className="no-print"
                 onClick={() => window.print()} 
@@ -13026,7 +13090,10 @@ export default function FinancialScorePage() {
 
           {/* Executive Summary Tab */}
           {mdaTab === 'executive-summary' && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div
+            id="mda-executive-summary-container"
+            style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
+          >
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>Executive Summary</h2>
 
             {/* Comprehensive Analysis Narrative */}
