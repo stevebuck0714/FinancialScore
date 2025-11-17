@@ -1432,7 +1432,9 @@ export default function FinancialScorePage() {
             ...user,
             role: user.role.toLowerCase(),
             userType: user.userType?.toLowerCase(),
-            consultantType: user.consultantType // Preserve consultantType
+            consultantType: user.consultantType, // Preserve consultantType
+            consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
+            consultantId: user.consultantId // Preserve consultant ID
           };
           
           setCurrentUser(normalizedUser);
@@ -2859,7 +2861,10 @@ export default function FinancialScorePage() {
       const normalizedUser = {
         ...user,
         role: user.role.toLowerCase(),
-        userType: user.userType?.toLowerCase()
+        userType: user.userType?.toLowerCase(),
+        consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
+        consultantType: user.consultantType, // Preserve consultant type
+        consultantId: user.consultantId // Preserve consultant ID
       };
       
       setCurrentUser(normalizedUser);
@@ -2975,7 +2980,10 @@ export default function FinancialScorePage() {
       const normalizedUser = {
         ...user,
         role: user.role.toLowerCase(),
-        userType: user.userType?.toLowerCase()
+        userType: user.userType?.toLowerCase(),
+        consultantType: user.consultantType, // Preserve consultant type
+        consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
+        consultantId: user.consultantId // Preserve consultant ID
       };
       
       setCurrentUser(normalizedUser);
