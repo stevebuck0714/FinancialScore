@@ -1518,6 +1518,8 @@ export default function FinancialScorePage() {
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
   const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
   const [expandedConsultantInfo, setExpandedConsultantInfo] = useState<Set<string>>(new Set());
+  const [companyToDelete, setCompanyToDelete] = useState<{companyId: string, businessId: string, companyName: string} | null>(null);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
   const [showAddConsultantForm, setShowAddConsultantForm] = useState(false);
   
@@ -1909,6 +1911,52 @@ export default function FinancialScorePage() {
       alert('❌ An error occurred while updating your payment method. Please try again.');
     } finally {
       setUpdatingPayment(false);
+    }
+  };
+
+  // Delete company handler
+  const handleDeleteCompany = async () => {
+    if (!companyToDelete) return;
+
+    console.log('Attempting to delete company:', companyToDelete);
+
+    try {
+      const response = await fetch(`/api/companies/${companyToDelete.companyId}`, {
+        method: 'DELETE',
+      });
+
+      console.log('Delete response status:', response.status);
+      const result = await response.json();
+      console.log('Delete result:', result);
+
+      // Handle both success and 404 (company already deleted)
+      if (result.success || response.status === 404) {
+        const message = result.success 
+          ? `✅ Company "${companyToDelete.companyName}" has been deleted successfully.`
+          : `✅ Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
+        
+        alert(message);
+        
+        console.log('Before delete - companies:', companies.length, 'consultants:', consultants.length);
+        
+        // Remove the company from the companies list
+        setCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
+        
+        // Remove the business/consultant from the consultants list
+        setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
+        
+        console.log('After delete - filtered companies:', companies.filter(c => c.id !== companyToDelete.companyId).length);
+        console.log('After delete - filtered consultants:', consultants.filter(c => c.id !== companyToDelete.businessId).length);
+        
+        // Close the confirmation dialog
+        setShowDeleteConfirmation(false);
+        setCompanyToDelete(null);
+      } else {
+        alert(result.error || '❌ Failed to delete company');
+      }
+    } catch (error) {
+      console.error('Error deleting company:', error);
+      alert('❌ An error occurred while deleting the company');
     }
   };
 
@@ -6231,8 +6279,36 @@ export default function FinancialScorePage() {
               {siteAdminTab === 'businesses' && (
                 <div>
                   {/* Businesses List */}
-                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '10px' }}>
-                    Total Businesses: {consultants.filter(c => c.type === 'business').length}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
+                      Total Businesses: {consultants.filter(c => c.type === 'business').length}
+                    </div>
+                    <button
+                      onClick={() => {
+                        // Clean up orphaned records: remove consultants that don't have a matching company
+                        const validConsultants = consultants.filter(consultant => {
+                          if (consultant.type !== 'business') return true; // Keep non-business consultants
+                          return companies.some(comp => comp.consultantId === consultant.id); // Only keep businesses with companies
+                        });
+                        setConsultants(validConsultants);
+                        alert('✅ Cleaned up orphaned business records');
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        background: '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      🔄 Clean Up Orphaned Records
+                    </button>
                   </div>
 
                   {consultants.filter(c => c.type === 'business').length === 0 ? (
@@ -6282,22 +6358,58 @@ export default function FinancialScorePage() {
                                   </h3>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => {
-                                  setExpandedBusinessIds(prev => {
-                                    const newSet = new Set(prev);
-                                    if (newSet.has(business.id)) {
-                                      newSet.delete(business.id);
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                  onClick={() => {
+                                    setExpandedBusinessIds(prev => {
+                                      const newSet = new Set(prev);
+                                      if (newSet.has(business.id)) {
+                                        newSet.delete(business.id);
+                                      } else {
+                                        newSet.add(business.id);
+                                      }
+                                      return newSet;
+                                    });
+                                  }}
+                                  style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                >
+                                  {isExpanded ? 'Collapse' : 'Expand'}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    console.log('Delete button clicked', { businessCompany, business });
+                                    if (businessCompany) {
+                                      console.log('Setting company to delete:', businessCompany.name);
+                                      setCompanyToDelete({
+                                        companyId: businessCompany.id,
+                                        businessId: business.id,
+                                        companyName: businessCompany.name
+                                      });
+                                      setShowDeleteConfirmation(true);
                                     } else {
-                                      newSet.add(business.id);
+                                      console.log('No company found - showing alert');
+                                      alert('No company found for this business');
                                     }
-                                    return newSet;
-                                  });
-                                }}
-                                style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                              >
-                                {isExpanded ? 'Collapse' : 'Expand'}
-                              </button>
+                                  }}
+                                  style={{ 
+                                    padding: '6px 12px', 
+                                    background: '#ef4444', 
+                                    color: 'white', 
+                                    border: 'none', 
+                                    borderRadius: '6px', 
+                                    fontSize: '12px', 
+                                    fontWeight: '600', 
+                                    cursor: 'pointer',
+                                    transition: 'background 0.2s'
+                                  }}
+                                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+                                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </div>
 
                             {/* Expanded Details */}
@@ -8992,6 +9104,7 @@ export default function FinancialScorePage() {
               </div>
             );
           })()}
+
 
           {/* Update Payment Method Modal */}
           {showUpdatePaymentModal && (
@@ -24795,6 +24908,66 @@ export default function FinancialScorePage() {
       )}
         </main>
       </div>
+
+      {/* Delete Company Confirmation Modal - Global (accessible from all views) */}
+      {showDeleteConfirmation && companyToDelete && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Delete Company</h2>
+              <p style={{ fontSize: '16px', color: '#64748b', lineHeight: '1.6' }}>
+                Are you sure you want to delete <strong style={{ color: '#ef4444' }}>"{companyToDelete.companyName}"</strong>?
+              </p>
+              <p style={{ fontSize: '14px', color: '#ef4444', marginTop: '12px', fontWeight: '600' }}>
+                This action cannot be undone. All data associated with this company will be permanently deleted.
+              </p>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={() => {
+                  setShowDeleteConfirmation(false);
+                  setCompanyToDelete(null);
+                }}
+                style={{
+                  padding: '12px 24px',
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#e2e8f0'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#f1f5f9'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteCompany}
+                style={{
+                  padding: '12px 24px',
+                  background: '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+              >
+                Delete Company
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
