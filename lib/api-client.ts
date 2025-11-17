@@ -163,6 +163,13 @@ export const consultantsApi = {
     address?: string;
     phone?: string;
     type?: string;
+    companyName?: string;
+    companyAddress1?: string;
+    companyAddress2?: string;
+    companyCity?: string;
+    companyState?: string;
+    companyZip?: string;
+    companyWebsite?: string;
   }) {
     return fetchApi('/api/consultants', {
       method: 'POST',

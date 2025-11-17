@@ -58,7 +58,10 @@ export async function GET(request: NextRequest) {
 // POST create new consultant
 export async function POST(request: NextRequest) {
   try {
-    const { fullName, email, password, address, phone, type } = await request.json();
+    const { 
+      fullName, email, password, address, phone, type,
+      companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite
+    } = await request.json();
 
     if (!fullName || !email || !password) {
       return NextResponse.json(
@@ -97,7 +100,14 @@ export async function POST(request: NextRequest) {
           fullName,
           address: address || '',
           phone: phone || '',
-          type: type || ''
+          type: type || '',
+          companyName: companyName || '',
+          companyAddress1: companyAddress1 || '',
+          companyAddress2: companyAddress2 || '',
+          companyCity: companyCity || '',
+          companyState: companyState || '',
+          companyZip: companyZip || '',
+          companyWebsite: companyWebsite || ''
         }
       });
 
@@ -111,7 +121,14 @@ export async function POST(request: NextRequest) {
         email: result.user.email,
         phone: result.consultant.phone,
         address: result.consultant.address,
-        type: result.consultant.type
+        type: result.consultant.type,
+        companyName: result.consultant.companyName,
+        companyAddress1: result.consultant.companyAddress1,
+        companyAddress2: result.consultant.companyAddress2,
+        companyCity: result.consultant.companyCity,
+        companyState: result.consultant.companyState,
+        companyZip: result.consultant.companyZip,
+        companyWebsite: result.consultant.companyWebsite
       }
     }, { status: 201 });
   } catch (error) {

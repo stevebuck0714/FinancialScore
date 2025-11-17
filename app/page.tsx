@@ -1263,6 +1263,13 @@ export default function FinancialScorePage() {
   const [newConsultantEmail, setNewConsultantEmail] = useState('');
   const [newConsultantPhone, setNewConsultantPhone] = useState('');
   const [newConsultantPassword, setNewConsultantPassword] = useState('');
+  const [newConsultantCompanyName, setNewConsultantCompanyName] = useState('');
+  const [newConsultantCompanyAddress1, setNewConsultantCompanyAddress1] = useState('');
+  const [newConsultantCompanyAddress2, setNewConsultantCompanyAddress2] = useState('');
+  const [newConsultantCompanyCity, setNewConsultantCompanyCity] = useState('');
+  const [newConsultantCompanyState, setNewConsultantCompanyState] = useState('');
+  const [newConsultantCompanyZip, setNewConsultantCompanyZip] = useState('');
+  const [newConsultantCompanyWebsite, setNewConsultantCompanyWebsite] = useState('');
   const [selectedConsultantId, setSelectedConsultantId] = useState('');
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
   
@@ -3375,8 +3382,8 @@ export default function FinancialScorePage() {
 
   // Consultant CRUD functions
   const addConsultant = async () => {
-    if (!newConsultantType || !newConsultantFullName || !newConsultantAddress || !newConsultantEmail || !newConsultantPhone || !newConsultantPassword) {
-      alert('Please fill all consultant fields');
+    if (!newConsultantType || !newConsultantFullName || !newConsultantEmail || !newConsultantPhone || !newConsultantPassword) {
+      alert('Please fill all required fields (Type, Contact Person, Email, Phone, Password)');
       return;
     }
     setIsLoading(true);
@@ -3387,7 +3394,14 @@ export default function FinancialScorePage() {
         password: newConsultantPassword,
         address: newConsultantAddress,
         phone: newConsultantPhone,
-        type: newConsultantType
+        type: newConsultantType,
+        companyName: newConsultantCompanyName,
+        companyAddress1: newConsultantCompanyAddress1,
+        companyAddress2: newConsultantCompanyAddress2,
+        companyCity: newConsultantCompanyCity,
+        companyState: newConsultantCompanyState,
+        companyZip: newConsultantCompanyZip,
+        companyWebsite: newConsultantCompanyWebsite
       });
       
       // Add to local state (will be refreshed on next load)
@@ -3398,7 +3412,14 @@ export default function FinancialScorePage() {
         address: consultant.address || newConsultantAddress,
         email: consultant.email,
         phone: consultant.phone || newConsultantPhone,
-        password: '' // Don't store password in state
+        password: '', // Don't store password in state
+        companyName: consultant.companyName || newConsultantCompanyName,
+        companyAddress1: consultant.companyAddress1 || newConsultantCompanyAddress1,
+        companyAddress2: consultant.companyAddress2 || newConsultantCompanyAddress2,
+        companyCity: consultant.companyCity || newConsultantCompanyCity,
+        companyState: consultant.companyState || newConsultantCompanyState,
+        companyZip: consultant.companyZip || newConsultantCompanyZip,
+        companyWebsite: consultant.companyWebsite || newConsultantCompanyWebsite
       };
       setConsultants([...consultants, newConsultant]);
       
@@ -3409,6 +3430,13 @@ export default function FinancialScorePage() {
       setNewConsultantEmail('');
       setNewConsultantPhone('');
       setNewConsultantPassword('');
+      setNewConsultantCompanyName('');
+      setNewConsultantCompanyAddress1('');
+      setNewConsultantCompanyAddress2('');
+      setNewConsultantCompanyCity('');
+      setNewConsultantCompanyState('');
+      setNewConsultantCompanyZip('');
+      setNewConsultantCompanyWebsite('');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
     } finally {
@@ -5737,55 +5765,125 @@ export default function FinancialScorePage() {
                 </div>
                 {showAddConsultantForm && (
                   <>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
-                      <input
-                        type="text"
-                        placeholder="Type"
-                        value={newConsultantType}
-                        onChange={(e) => setNewConsultantType(e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Full Name"
-                        value={newConsultantFullName}
-                        onChange={(e) => setNewConsultantFullName(e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Address"
-                        value={newConsultantAddress}
-                        onChange={(e) => setNewConsultantAddress(e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                      <input
-                        type="email"
-                        placeholder="Email"
-                        value={newConsultantEmail}
-                        onChange={(e) => setNewConsultantEmail(e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                      <input
-                        type="tel"
-                        placeholder="Phone"
-                        value={newConsultantPhone}
-                        onChange={(e) => setNewConsultantPhone(e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
-                      <input
-                        type="password"
-                        placeholder="Password"
-                        value={newConsultantPassword}
-                        onChange={(e) => setNewConsultantPassword(e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                      />
+                    {/* Personal Information Section */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Contact Person Information</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                        <input
+                          type="text"
+                          placeholder="Type *"
+                          value={newConsultantType}
+                          onChange={(e) => setNewConsultantType(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Contact Person *"
+                          value={newConsultantFullName}
+                          onChange={(e) => setNewConsultantFullName(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="email"
+                          placeholder="Email *"
+                          value={newConsultantEmail}
+                          onChange={(e) => setNewConsultantEmail(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="tel"
+                          placeholder="Phone *"
+                          value={newConsultantPhone}
+                          onChange={(e) => setNewConsultantPhone(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="password"
+                          placeholder="Password *"
+                          value={newConsultantPassword}
+                          onChange={(e) => setNewConsultantPassword(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                      </div>
                     </div>
+
+                    {/* Company Information Section */}
+                    <div style={{ marginBottom: '12px' }}>
+                      <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Company Information (Optional)</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <input
+                          type="text"
+                          placeholder="Company Name"
+                          value={newConsultantCompanyName}
+                          onChange={(e) => setNewConsultantCompanyName(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Company Address Line 1"
+                          value={newConsultantCompanyAddress1}
+                          onChange={(e) => setNewConsultantCompanyAddress1(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Company Address Line 2"
+                          value={newConsultantCompanyAddress2}
+                          onChange={(e) => setNewConsultantCompanyAddress2(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px' }}>
+                          <input
+                            type="text"
+                            placeholder="City"
+                            value={newConsultantCompanyCity}
+                            onChange={(e) => setNewConsultantCompanyCity(e.target.value)}
+                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                          />
+                          <select
+                            value={newConsultantCompanyState}
+                            onChange={(e) => setNewConsultantCompanyState(e.target.value)}
+                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: 'white' }}
+                          >
+                            {US_STATES.map(state => (
+                              <option key={state.code} value={state.code}>{state.code || 'State'}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="ZIP"
+                            value={newConsultantCompanyZip}
+                            onChange={(e) => setNewConsultantCompanyZip(e.target.value)}
+                            maxLength={10}
+                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                          />
+                        </div>
+                        <input
+                          type="url"
+                          placeholder="Company Website"
+                          value={newConsultantCompanyWebsite}
+                          onChange={(e) => setNewConsultantCompanyWebsite(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                      </div>
+                    </div>
+
                     <button
                       onClick={addConsultant}
-                      style={{ padding: '8px 20px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                      disabled={isLoading}
+                      style={{ 
+                        padding: '8px 20px', 
+                        background: isLoading ? '#94a3b8' : '#10b981', 
+                        color: 'white', 
+                        border: 'none', 
+                        borderRadius: '6px', 
+                        fontSize: '13px', 
+                        fontWeight: '600', 
+                        cursor: isLoading ? 'not-allowed' : 'pointer',
+                        opacity: isLoading ? 0.6 : 1
+                      }}
                     >
-                      Add Consultant
+                      {isLoading ? 'Adding...' : 'Add Consultant'}
                     </button>
                   </>
                 )}
@@ -5813,32 +5911,39 @@ export default function FinancialScorePage() {
                         {/* Consultant Header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ flex: 1 }}>
-                            <h3 
-                              onClick={() => {
-                                // Save current admin user
-                                setSiteAdminViewingAs(currentUser);
-                                // Switch to viewing this consultant's dashboard
-                                setCurrentUser({
-                                  ...consultant.user,
-                                  role: 'consultant',
-                                  consultantId: consultant.id,
-                                  consultantType: consultant.type
-                                });
-                                setCurrentView('admin');
-                              }}
-                              style={{ 
-                                fontSize: '15px', 
-                                fontWeight: '600', 
-                                color: '#667eea', 
-                                marginBottom: '0',
-                                cursor: 'pointer',
-                                textDecoration: 'underline'
-                              }}
-                              onMouseEnter={(e) => e.currentTarget.style.color = '#5568d3'}
-                              onMouseLeave={(e) => e.currentTarget.style.color = '#667eea'}
-                            >
-                              {consultant.fullName}
-                            </h3>
+                            <div>
+                              <h3 
+                                onClick={() => {
+                                  // Save current admin user
+                                  setSiteAdminViewingAs(currentUser);
+                                  // Switch to viewing this consultant's dashboard
+                                  setCurrentUser({
+                                    ...consultant.user,
+                                    role: 'consultant',
+                                    consultantId: consultant.id,
+                                    consultantType: consultant.type
+                                  });
+                                  setCurrentView('admin');
+                                }}
+                                style={{ 
+                                  fontSize: '15px', 
+                                  fontWeight: '600', 
+                                  color: '#667eea', 
+                                  marginBottom: '2px',
+                                  cursor: 'pointer',
+                                  textDecoration: 'underline'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.color = '#5568d3'}
+                                onMouseLeave={(e) => e.currentTarget.style.color = '#667eea'}
+                              >
+                                {consultant.companyName || consultant.fullName}
+                              </h3>
+                              {consultant.companyName && (
+                                <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                                  Contact: {consultant.fullName}
+                                </p>
+                              )}
+                            </div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button
@@ -5849,7 +5954,8 @@ export default function FinancialScorePage() {
                             </button>
                             <button
                               onClick={() => {
-                                if (window.confirm(`Are you sure you want to delete ${consultant.fullName}? This action cannot be undone.`)) {
+                                const displayName = consultant.companyName || consultant.fullName;
+                                if (window.confirm(`Are you sure you want to delete ${displayName}? This action cannot be undone.`)) {
                                   deleteConsultant(consultant.id);
                                 }
                               }}
@@ -5899,7 +6005,7 @@ export default function FinancialScorePage() {
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
                                     <div>
-                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Full Name</label>
+                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Contact Person</label>
                                       <input
                                         type="text"
                                         value={editingConsultantInfo[consultant.id].fullName}
@@ -6281,37 +6387,77 @@ export default function FinancialScorePage() {
                   {/* Businesses List */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                      Total Businesses: {consultants.filter(c => c.type === 'business').length}
+                      Total Businesses: {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).length}
                     </div>
                     <button
-                      onClick={() => {
-                        // Clean up orphaned records: remove consultants that don't have a matching company
-                        const validConsultants = consultants.filter(consultant => {
-                          if (consultant.type !== 'business') return true; // Keep non-business consultants
-                          return companies.some(comp => comp.consultantId === consultant.id); // Only keep businesses with companies
+                      onClick={async () => {
+                        // Identify orphaned business records (businesses without matching companies)
+                        const orphanedBusinesses = consultants.filter(consultant => {
+                          if (consultant.type !== 'business') return false; // Only check business-type consultants
+                          return !companies.some(comp => comp.consultantId === consultant.id); // Orphaned if no company
                         });
-                        setConsultants(validConsultants);
-                        alert('✅ Cleaned up orphaned business records');
+
+                        if (orphanedBusinesses.length === 0) {
+                          alert('✅ No orphaned business records found!');
+                          return;
+                        }
+
+                        // Confirm deletion
+                        if (!confirm(`Found ${orphanedBusinesses.length} orphaned business record(s).\n\nThese are business registrations without company data.\n\nDelete them permanently from the database?`)) {
+                          return;
+                        }
+
+                        setIsLoading(true);
+                        let deletedCount = 0;
+                        const errors: string[] = [];
+
+                        try {
+                          // Delete each orphaned business from the database
+                          for (const orphaned of orphanedBusinesses) {
+                            try {
+                              await consultantsApi.delete(orphaned.id);
+                              deletedCount++;
+                            } catch (error) {
+                              errors.push(`${orphaned.fullName}: ${error instanceof ApiError ? error.message : 'Failed to delete'}`);
+                            }
+                          }
+
+                          // Update local state to remove deleted consultants
+                          setConsultants(consultants.filter(c => !orphanedBusinesses.find(o => o.id === c.id)));
+
+                          // Show results
+                          if (errors.length === 0) {
+                            alert(`✅ Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
+                          } else {
+                            alert(`⚠️ Deleted ${deletedCount} of ${orphanedBusinesses.length} records.\n\nErrors:\n${errors.join('\n')}`);
+                          }
+                        } catch (error) {
+                          alert(`❌ Error during cleanup: ${error instanceof ApiError ? error.message : 'Unknown error'}`);
+                        } finally {
+                          setIsLoading(false);
+                        }
                       }}
+                      disabled={isLoading}
                       style={{
                         padding: '6px 12px',
-                        background: '#3b82f6',
+                        background: isLoading ? '#94a3b8' : '#3b82f6',
                         color: 'white',
                         border: 'none',
                         borderRadius: '6px',
                         fontSize: '12px',
                         fontWeight: '600',
-                        cursor: 'pointer',
+                        cursor: isLoading ? 'not-allowed' : 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px'
+                        gap: '6px',
+                        opacity: isLoading ? 0.6 : 1
                       }}
                     >
-                      🔄 Clean Up Orphaned Records
+                      {isLoading ? '⏳ Cleaning...' : '🔄 Clean Up Orphaned Records'}
                     </button>
                   </div>
 
-                  {consultants.filter(c => c.type === 'business').length === 0 ? (
+                  {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses registered yet</h3>
@@ -6319,7 +6465,7 @@ export default function FinancialScorePage() {
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gap: '12px' }}>
-                      {consultants.filter(c => c.type === 'business').map((business) => {
+                      {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).map((business) => {
                         const businessCompany = Array.isArray(companies) ? companies.find(comp => comp.consultantId === business.id) : undefined;
                         const isExpanded = expandedBusinessIds.has(business.id);
                         const editing = editingPricing[business.id];
