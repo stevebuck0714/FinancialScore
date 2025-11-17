@@ -5204,7 +5204,7 @@ export default function FinancialScorePage() {
                   }}
                   onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'admin' ? '#667eea' : '#1e293b'}
                 >
-                  {currentUser.consultantType === 'business' ? 'Business Dashboard' : (currentUser.consultantCompanyName || 'Consultant Dashboard')}
+                  {currentUser.consultantType === 'business' ? 'Business Dashboard' : (currentUser.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard')}
                 </h3>
                 
                 {/* Selected Company Name Display for Business Users */}
@@ -7516,7 +7516,7 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              {currentUser.consultantType === 'business' ? 'Business Dashboard' : (currentUser.consultantCompanyName || 'Consultant Dashboard')}
+              {currentUser.consultantType === 'business' ? 'Business Dashboard' : (currentUser.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard')}
             </h1>
             {siteAdminViewingAs && (
               <button
@@ -9653,9 +9653,9 @@ export default function FinancialScorePage() {
       {!selectedCompanyId && currentView !== 'admin' && currentView !== 'siteadmin' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
-          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the {currentUser?.consultantCompanyName || 'Consultant Dashboard'} to continue.</p>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'} to continue.</p>
           {currentUser?.role === 'consultant' && (
-            <button onClick={() => setCurrentView('admin')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to {currentUser?.consultantCompanyName || 'Consultant Dashboard'}</button>
+            <button onClick={() => setCurrentView('admin')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'}</button>
           )}
         </div>
       )}
