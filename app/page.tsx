@@ -4207,14 +4207,21 @@ export default function FinancialScorePage() {
   const projections = useMemo(() => {
     if (monthly.length < 24) return { mostLikely: [], bestCase: [], worstCase: [] };
     
-    const last12 = monthly.slice(-12);
-    const prev12 = monthly.slice(-24, -12);
+    // Add computed netIncome field to monthly data
+    const monthlyWithNetIncome = monthly.map(m => ({
+      ...m,
+      netIncome: m.revenue - (m.cogsTotal || 0) - m.expense
+    }));
+    
+    const last12 = monthlyWithNetIncome.slice(-12);
+    const prev12 = monthlyWithNetIncome.slice(-24, -12);
     const avgRevGrowth = ((last12.reduce((s, m) => s + m.revenue, 0) - prev12.reduce((s, m) => s + m.revenue, 0)) / prev12.reduce((s, m) => s + m.revenue, 0)) / 12;
+    const avgCogsGrowth = ((last12.reduce((s, m) => s + (m.cogsTotal || 0), 0) - prev12.reduce((s, m) => s + (m.cogsTotal || 0), 0)) / prev12.reduce((s, m) => s + (m.cogsTotal || 0), 0)) / 12;
     const avgExpGrowth = ((last12.reduce((s, m) => s + m.expense, 0) - prev12.reduce((s, m) => s + m.expense, 0)) / prev12.reduce((s, m) => s + m.expense, 0)) / 12;
     const avgAssetGrowth = ((last12[last12.length - 1].totalAssets - prev12[prev12.length - 1].totalAssets) / prev12[prev12.length - 1].totalAssets) / 12;
     const avgLiabGrowth = ((last12[last12.length - 1].totalLiab - prev12[prev12.length - 1].totalLiab) / prev12[prev12.length - 1].totalLiab) / 12;
     
-    const lastMonth = monthly[monthly.length - 1];
+    const lastMonth = monthlyWithNetIncome[monthlyWithNetIncome.length - 1];
     const mostLikely: any[] = [];
     const bestCase: any[] = [];
     const worstCase: any[] = [];
@@ -4223,6 +4230,7 @@ export default function FinancialScorePage() {
       const monthName = `+${i}mo`;
       
       const mlRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth, i);
+      const mlCogs = (lastMonth.cogsTotal || 0) * Math.pow(1 + avgCogsGrowth, i);
       const mlExp = lastMonth.expense * Math.pow(1 + avgExpGrowth, i);
       const mlAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth, i);
       const mlLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth, i);
@@ -4232,13 +4240,14 @@ export default function FinancialScorePage() {
         month: monthName,
         revenue: mlRev,
         expense: mlExp,
-        netIncome: mlRev - mlExp,
+        netIncome: mlRev - mlCogs - mlExp,
         totalAssets: mlAssets,
         totalLiab: mlLiab,
-        equity: mlEquity
+        totalEquity: mlEquity
       });
       
       const bcRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth * bestCaseRevMultiplier, i);
+      const bcCogs = (lastMonth.cogsTotal || 0) * Math.pow(1 + avgCogsGrowth * bestCaseExpMultiplier, i);
       const bcExp = lastMonth.expense * Math.pow(1 + avgExpGrowth * bestCaseExpMultiplier, i);
       const bcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 1.2, i);
       const bcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 0.8, i);
@@ -4248,13 +4257,14 @@ export default function FinancialScorePage() {
         month: monthName,
         revenue: bcRev,
         expense: bcExp,
-        netIncome: bcRev - bcExp,
+        netIncome: bcRev - bcCogs - bcExp,
         totalAssets: bcAssets,
         totalLiab: bcLiab,
-        equity: bcEquity
+        totalEquity: bcEquity
       });
       
       const wcRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth * worstCaseRevMultiplier, i);
+      const wcCogs = (lastMonth.cogsTotal || 0) * Math.pow(1 + avgCogsGrowth * worstCaseExpMultiplier, i);
       const wcExp = lastMonth.expense * Math.pow(1 + avgExpGrowth * worstCaseExpMultiplier, i);
       const wcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 0.8, i);
       const wcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 1.2, i);
@@ -4264,14 +4274,14 @@ export default function FinancialScorePage() {
         month: monthName,
         revenue: wcRev,
         expense: wcExp,
-        netIncome: wcRev - wcExp,
+        netIncome: wcRev - wcCogs - wcExp,
         totalAssets: wcAssets,
         totalLiab: wcLiab,
-        equity: wcEquity
+        totalEquity: wcEquity
       });
     }
     
-    return { mostLikely, bestCase, worstCase };
+    return { mostLikely, bestCase, worstCase, monthlyWithNetIncome };
   }, [monthly, bestCaseRevMultiplier, bestCaseExpMultiplier, worstCaseRevMultiplier, worstCaseExpMultiplier]);
 
   const renderColumnSelector = (label: string, mappingKey: keyof Mappings) => (
@@ -15180,12 +15190,12 @@ export default function FinancialScorePage() {
           </div>
 
           <div style={{ display: 'grid', gap: '32px' }}>
-            <ProjectionChart title="Revenue Projection" historicalData={monthly} projectedData={projections} valueKey="revenue" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Expense Projection" historicalData={monthly} projectedData={projections} valueKey="expense" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Net Income Projection" historicalData={monthly} projectedData={projections} valueKey="netIncome" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
+            <ProjectionChart title="Revenue Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="revenue" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
+            <ProjectionChart title="Expense Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="expense" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
+            <ProjectionChart title="Net Income Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="netIncome" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
             <ProjectionChart title="Total Assets Projection" historicalData={monthly} projectedData={projections} valueKey="totalAssets" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
             <ProjectionChart title="Total Liabilities Projection" historicalData={monthly} projectedData={projections} valueKey="totalLiab" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Equity Projection" historicalData={monthly} projectedData={projections} valueKey="equity" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
+            <ProjectionChart title="Equity Projection" historicalData={monthly} projectedData={projections} valueKey="totalEquity" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
           </div>
         </div>
       )}
