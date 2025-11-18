@@ -15267,45 +15267,6 @@ export default function FinancialScorePage() {
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Projections</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
-          
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>Scenario Assumptions</h2>
-              <button onClick={() => setShowDefaultSettings(!showDefaultSettings)} style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
-                {showDefaultSettings ? 'Hide Settings' : 'Adjust Scenarios'}
-              </button>
-            </div>
-            
-            {showDefaultSettings && (
-              <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '20px', marginTop: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '20px' }}>
-                  <div>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#10b981', marginBottom: '12px' }}>Best Case Scenario</h3>
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Revenue Multiplier: {bestCaseRevMultiplier}x</label>
-                      <input type="range" min="1" max="3" step="0.1" value={bestCaseRevMultiplier} onChange={(e) => setBestCaseRevMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Expense Multiplier: {bestCaseExpMultiplier}x</label>
-                      <input type="range" min="0.3" max="1" step="0.05" value={bestCaseExpMultiplier} onChange={(e) => setBestCaseExpMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
-                    </div>
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#ef4444', marginBottom: '12px' }}>Worst Case Scenario</h3>
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Revenue Multiplier: {worstCaseRevMultiplier}x</label>
-                      <input type="range" min="0" max="1" step="0.05" value={worstCaseRevMultiplier} onChange={(e) => setWorstCaseRevMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#475569', marginBottom: '4px' }}>Expense Multiplier: {worstCaseExpMultiplier}x</label>
-                      <input type="range" min="1" max="2" step="0.05" value={worstCaseExpMultiplier} onChange={(e) => setWorstCaseExpMultiplier(parseFloat(e.target.value))} style={{ width: '100%' }} />
-                    </div>
-                  </div>
-                </div>
-                <button onClick={saveProjectionDefaults} style={{ padding: '10px 20px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Save as Defaults</button>
-              </div>
-            )}
-          </div>
 
           <div style={{ display: 'grid', gap: '32px' }}>
             <ProjectionChart title="Revenue Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="revenue" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
