@@ -4213,11 +4213,67 @@ export default function FinancialScorePage() {
       netIncome: m.revenue - (m.cogsTotal || 0) - m.expense
     }));
     
+    // Holt-Winters Triple Exponential Smoothing
+    const holtWinters = (data: number[], seasonalPeriod: number = 12, alpha: number = 0.2, beta: number = 0.1, gamma: number = 0.1) => {
+      const n = data.length;
+      if (n < seasonalPeriod * 2) return null;
+      
+      // Initialize components
+      const level: number[] = [];
+      const trend: number[] = [];
+      const seasonal: number[] = new Array(n).fill(1);
+      
+      // Calculate initial seasonal indices (average of first two complete seasons)
+      for (let i = 0; i < seasonalPeriod; i++) {
+        let sum = 0;
+        let count = 0;
+        for (let j = i; j < n; j += seasonalPeriod) {
+          if (j < seasonalPeriod * 2) {
+            sum += data[j];
+            count++;
+          }
+        }
+        const avg = sum / count;
+        const overallAvg = data.slice(0, seasonalPeriod * 2).reduce((a, b) => a + b, 0) / (seasonalPeriod * 2);
+        seasonal[i] = avg / overallAvg;
+      }
+      
+      // Initialize level and trend
+      level[0] = data[0] / seasonal[0];
+      trend[0] = (data[seasonalPeriod] - data[0]) / seasonalPeriod;
+      
+      // Apply Holt-Winters equations
+      for (let t = 1; t < n; t++) {
+        const prevLevel = level[t - 1];
+        const prevTrend = trend[t - 1];
+        const seasonalIdx = t % seasonalPeriod;
+        const prevSeasonal = seasonal[seasonalIdx];
+        
+        // Update level
+        level[t] = alpha * (data[t] / prevSeasonal) + (1 - alpha) * (prevLevel + prevTrend);
+        
+        // Update trend
+        trend[t] = beta * (level[t] - prevLevel) + (1 - beta) * prevTrend;
+        
+        // Update seasonal
+        seasonal[t] = gamma * (data[t] / level[t]) + (1 - gamma) * prevSeasonal;
+      }
+      
+      return { level: level[n - 1], trend: trend[n - 1], seasonal };
+    };
+    
+    // Apply Holt-Winters to each metric
+    const revData = monthlyWithNetIncome.map(m => m.revenue);
+    const cogsData = monthlyWithNetIncome.map(m => m.cogsTotal || 0);
+    const expData = monthlyWithNetIncome.map(m => m.expense);
+    
+    const revHW = holtWinters(revData);
+    const cogsHW = holtWinters(cogsData);
+    const expHW = holtWinters(expData);
+    
+    // For assets and liabilities, use simple growth
     const last12 = monthlyWithNetIncome.slice(-12);
     const prev12 = monthlyWithNetIncome.slice(-24, -12);
-    const avgRevGrowth = ((last12.reduce((s, m) => s + m.revenue, 0) - prev12.reduce((s, m) => s + m.revenue, 0)) / prev12.reduce((s, m) => s + m.revenue, 0)) / 12;
-    const avgCogsGrowth = ((last12.reduce((s, m) => s + (m.cogsTotal || 0), 0) - prev12.reduce((s, m) => s + (m.cogsTotal || 0), 0)) / prev12.reduce((s, m) => s + (m.cogsTotal || 0), 0)) / 12;
-    const avgExpGrowth = ((last12.reduce((s, m) => s + m.expense, 0) - prev12.reduce((s, m) => s + m.expense, 0)) / prev12.reduce((s, m) => s + m.expense, 0)) / 12;
     const avgAssetGrowth = ((last12[last12.length - 1].totalAssets - prev12[prev12.length - 1].totalAssets) / prev12[prev12.length - 1].totalAssets) / 12;
     const avgLiabGrowth = ((last12[last12.length - 1].totalLiab - prev12[prev12.length - 1].totalLiab) / prev12[prev12.length - 1].totalLiab) / 12;
     
@@ -4226,63 +4282,125 @@ export default function FinancialScorePage() {
     const bestCase: any[] = [];
     const worstCase: any[] = [];
     
-    for (let i = 1; i <= 12; i++) {
-      const monthName = `+${i}mo`;
+    // Check if Holt-Winters is available (need 24+ months)
+    if (revHW && cogsHW && expHW) {
+      const seasonalPeriod = 12;
+      const n = monthlyWithNetIncome.length;
       
-      const mlRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth, i);
-      const mlCogs = (lastMonth.cogsTotal || 0) * Math.pow(1 + avgCogsGrowth, i);
-      const mlExp = lastMonth.expense * Math.pow(1 + avgExpGrowth, i);
-      const mlAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth, i);
-      const mlLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth, i);
-      const mlEquity = mlAssets - mlLiab;
+      for (let i = 1; i <= 12; i++) {
+        const monthName = `+${i}mo`;
+        const seasonalIdx = (n + i - 1) % seasonalPeriod;
+        
+        // Most Likely: Standard Holt-Winters forecast
+        const mlRev = Math.max(0, (revHW.level + i * revHW.trend) * revHW.seasonal[seasonalIdx]);
+        const mlCogs = Math.max(0, (cogsHW.level + i * cogsHW.trend) * cogsHW.seasonal[seasonalIdx]);
+        const mlExp = Math.max(0, (expHW.level + i * expHW.trend) * expHW.seasonal[seasonalIdx]);
+        const mlAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth, i);
+        const mlLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth, i);
+        const mlEquity = mlAssets - mlLiab;
+        
+        mostLikely.push({
+          month: monthName,
+          revenue: mlRev,
+          expense: mlExp,
+          netIncome: mlRev - mlCogs - mlExp,
+          totalAssets: mlAssets,
+          totalLiab: mlLiab,
+          totalEquity: mlEquity
+        });
+        
+        // Best Case: Amplify trend by 50%
+        const bcRev = Math.max(0, (revHW.level + i * revHW.trend * 1.5) * revHW.seasonal[seasonalIdx]);
+        const bcCogs = Math.max(0, (cogsHW.level + i * cogsHW.trend * 0.5) * cogsHW.seasonal[seasonalIdx]); // Lower trend is better
+        const bcExp = Math.max(0, (expHW.level + i * expHW.trend * 0.5) * expHW.seasonal[seasonalIdx]); // Lower trend is better
+        const bcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 1.2, i);
+        const bcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 0.8, i);
+        const bcEquity = bcAssets - bcLiab;
+        
+        bestCase.push({
+          month: monthName,
+          revenue: bcRev,
+          expense: bcExp,
+          netIncome: bcRev - bcCogs - bcExp,
+          totalAssets: bcAssets,
+          totalLiab: bcLiab,
+          totalEquity: bcEquity
+        });
+        
+        // Worst Case: Reduce trend by 50%
+        const wcRev = Math.max(0, (revHW.level + i * revHW.trend * 0.5) * revHW.seasonal[seasonalIdx]);
+        const wcCogs = Math.max(0, (cogsHW.level + i * cogsHW.trend * 1.5) * cogsHW.seasonal[seasonalIdx]); // Higher trend is worse
+        const wcExp = Math.max(0, (expHW.level + i * expHW.trend * 1.5) * expHW.seasonal[seasonalIdx]); // Higher trend is worse
+        const wcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 0.8, i);
+        const wcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 1.2, i);
+        const wcEquity = wcAssets - wcLiab;
+        
+        worstCase.push({
+          month: monthName,
+          revenue: wcRev,
+          expense: wcExp,
+          netIncome: wcRev - wcCogs - wcExp,
+          totalAssets: wcAssets,
+          totalLiab: wcLiab,
+          totalEquity: wcEquity
+        });
+      }
+    } else {
+      // Fallback to simple projection if not enough data
+      const avgRevGrowth = monthlyWithNetIncome.length >= 2 
+        ? (lastMonth.revenue - monthlyWithNetIncome[0].revenue) / monthlyWithNetIncome[0].revenue / monthlyWithNetIncome.length
+        : 0;
+      const avgCogsGrowth = monthlyWithNetIncome.length >= 2 
+        ? ((lastMonth.cogsTotal || 0) - (monthlyWithNetIncome[0].cogsTotal || 0)) / (monthlyWithNetIncome[0].cogsTotal || 1) / monthlyWithNetIncome.length
+        : 0;
+      const avgExpGrowth = monthlyWithNetIncome.length >= 2 
+        ? (lastMonth.expense - monthlyWithNetIncome[0].expense) / monthlyWithNetIncome[0].expense / monthlyWithNetIncome.length
+        : 0;
       
-      mostLikely.push({
-        month: monthName,
-        revenue: mlRev,
-        expense: mlExp,
-        netIncome: mlRev - mlCogs - mlExp,
-        totalAssets: mlAssets,
-        totalLiab: mlLiab,
-        totalEquity: mlEquity
-      });
-      
-      const bcRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth * bestCaseRevMultiplier, i);
-      const bcCogs = (lastMonth.cogsTotal || 0) * Math.pow(1 + avgCogsGrowth * bestCaseExpMultiplier, i);
-      const bcExp = lastMonth.expense * Math.pow(1 + avgExpGrowth * bestCaseExpMultiplier, i);
-      const bcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 1.2, i);
-      const bcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 0.8, i);
-      const bcEquity = bcAssets - bcLiab;
-      
-      bestCase.push({
-        month: monthName,
-        revenue: bcRev,
-        expense: bcExp,
-        netIncome: bcRev - bcCogs - bcExp,
-        totalAssets: bcAssets,
-        totalLiab: bcLiab,
-        totalEquity: bcEquity
-      });
-      
-      const wcRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth * worstCaseRevMultiplier, i);
-      const wcCogs = (lastMonth.cogsTotal || 0) * Math.pow(1 + avgCogsGrowth * worstCaseExpMultiplier, i);
-      const wcExp = lastMonth.expense * Math.pow(1 + avgExpGrowth * worstCaseExpMultiplier, i);
-      const wcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 0.8, i);
-      const wcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 1.2, i);
-      const wcEquity = wcAssets - wcLiab;
-      
-      worstCase.push({
-        month: monthName,
-        revenue: wcRev,
-        expense: wcExp,
-        netIncome: wcRev - wcCogs - wcExp,
-        totalAssets: wcAssets,
-        totalLiab: wcLiab,
-        totalEquity: wcEquity
-      });
+      for (let i = 1; i <= 12; i++) {
+        const monthName = `+${i}mo`;
+        
+        const mlRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth, i);
+        const mlCogs = (lastMonth.cogsTotal || 0) * Math.pow(1 + avgCogsGrowth, i);
+        const mlExp = lastMonth.expense * Math.pow(1 + avgExpGrowth, i);
+        const mlAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth, i);
+        const mlLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth, i);
+        const mlEquity = mlAssets - mlLiab;
+        
+        mostLikely.push({
+          month: monthName,
+          revenue: mlRev,
+          expense: mlExp,
+          netIncome: mlRev - mlCogs - mlExp,
+          totalAssets: mlAssets,
+          totalLiab: mlLiab,
+          totalEquity: mlEquity
+        });
+        
+        bestCase.push({
+          month: monthName,
+          revenue: mlRev * 1.1,
+          expense: mlExp * 0.9,
+          netIncome: (mlRev * 1.1) - (mlCogs * 0.9) - (mlExp * 0.9),
+          totalAssets: mlAssets,
+          totalLiab: mlLiab,
+          totalEquity: mlEquity
+        });
+        
+        worstCase.push({
+          month: monthName,
+          revenue: mlRev * 0.9,
+          expense: mlExp * 1.1,
+          netIncome: (mlRev * 0.9) - (mlCogs * 1.1) - (mlExp * 1.1),
+          totalAssets: mlAssets,
+          totalLiab: mlLiab,
+          totalEquity: mlEquity
+        });
+      }
     }
     
     return { mostLikely, bestCase, worstCase, monthlyWithNetIncome };
-  }, [monthly, bestCaseRevMultiplier, bestCaseExpMultiplier, worstCaseRevMultiplier, worstCaseExpMultiplier]);
+  }, [monthly]);
 
   const renderColumnSelector = (label: string, mappingKey: keyof Mappings) => (
     <div style={{ marginBottom: '15px' }}>
