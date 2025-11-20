@@ -24,7 +24,8 @@ model Consultant {
   companyWebsite  String?
   companyZip      String?
   companies       Company[]
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamMembers     User[]    @relation("ConsultantTeamMembers")
+  user            User      @relation("PrimaryConsultant", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -73,6 +74,8 @@ model User {
   role                 UserRole
   userType             UserType?
   companyId            String?
+  consultantId         String?
+  isPrimaryContact     Boolean            @default(false)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   passwordResetExpires DateTime?
@@ -81,12 +84,14 @@ model User {
   mfaEnabled           Boolean            @default(false)
   mfaSecret            String?
   assessmentRecords    AssessmentRecord[]
-  consultant           Consultant?
+  primaryConsultant    Consultant?        @relation("PrimaryConsultant")
+  consultantFirm       Consultant?        @relation("ConsultantTeamMembers", fields: [consultantId], references: [id], onDelete: Cascade)
   financialRecords     FinancialRecord[]
   company              Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([email])
   @@index([companyId])
+  @@index([consultantId])
   @@index([passwordResetToken])
 }
 

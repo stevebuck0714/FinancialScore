@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
       where: { email },
       include: {
         company: true,
-        consultant: true
+        primaryConsultant: true,
+        consultantFirm: true
       }
     });
     console.log('✅ User found:', user ? 'YES' : 'NO');
@@ -65,6 +66,11 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('✅ Login successful');
+    
+    // Get consultant info - either from primaryConsultant relation or consultantFirm relation
+    const consultant = user.primaryConsultant || user.consultantFirm;
+    const consultantId = consultant?.id || user.consultantId;
+    
     // Return user data (password hash excluded)
     return NextResponse.json({
       user: {
@@ -74,9 +80,10 @@ export async function POST(request: NextRequest) {
         role: user.role,
         userType: user.userType,
         companyId: user.companyId,
-        consultantId: user.consultant?.id,
-        consultantType: user.consultant?.type,
-        consultantCompanyName: user.consultant?.companyName
+        consultantId: consultantId,
+        isPrimaryContact: user.isPrimaryContact,
+        consultantType: consultant?.type,
+        consultantCompanyName: consultant?.companyName
       }
     });
   } catch (error) {

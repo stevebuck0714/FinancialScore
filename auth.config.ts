@@ -23,7 +23,7 @@ export const authConfig: NextAuthConfig = {
           where: { email: credentials.email as string },
           include: {
             company: true,
-            consultant: true
+            primaryConsultant: true
           }
         });
 
@@ -40,6 +40,11 @@ export const authConfig: NextAuthConfig = {
           return null;
         }
 
+        // For consultant users, get consultantId from either:
+        // 1. primaryConsultant relation (if they're the primary contact)
+        // 2. consultantId field (if they're a team member)
+        const consultantId = user.primaryConsultant?.id || user.consultantId;
+
         return {
           id: user.id,
           email: user.email,
@@ -47,7 +52,8 @@ export const authConfig: NextAuthConfig = {
           role: user.role,
           userType: user.userType,
           companyId: user.companyId,
-          consultantId: user.consultant?.id
+          consultantId: consultantId,
+          isPrimaryContact: user.isPrimaryContact
         };
       },
     }),
@@ -60,6 +66,7 @@ export const authConfig: NextAuthConfig = {
         token.userType = user.userType;
         token.companyId = user.companyId;
         token.consultantId = user.consultantId;
+        token.isPrimaryContact = user.isPrimaryContact;
       }
       return token;
     },
@@ -70,6 +77,7 @@ export const authConfig: NextAuthConfig = {
         session.user.userType = token.userType as string | undefined;
         session.user.companyId = token.companyId as string | undefined;
         session.user.consultantId = token.consultantId as string | undefined;
+        session.user.isPrimaryContact = token.isPrimaryContact as boolean | undefined;
       }
       return session;
     },

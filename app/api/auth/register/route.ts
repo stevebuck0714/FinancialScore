@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
           name,
           passwordHash,
           role: 'CONSULTANT',
-          phone: phone || undefined
+          phone: phone || undefined,
+          isPrimaryContact: true // New consultants are primary contacts
         }
       });
 
@@ -102,6 +103,12 @@ export async function POST(request: NextRequest) {
           companyZip: companyZip || undefined,
           companyWebsite: companyWebsite || undefined
         }
+      });
+
+      // Update user to link to consultant firm for team member queries
+      await tx.user.update({
+        where: { id: user.id },
+        data: { consultantId: consultant.id }
       });
 
       // Automatically create a company for business users

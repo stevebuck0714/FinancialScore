@@ -1521,7 +1521,7 @@ export default function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'profile'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'profile' | 'team-management'>('company-management');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -1538,6 +1538,11 @@ export default function FinancialScorePage() {
   const [showAddAffiliateForm, setShowAddAffiliateForm] = useState(false);
   const [expandedAffiliateId, setExpandedAffiliateId] = useState<string | null>(null);
   const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
+  
+  // Team management state
+  const [consultantTeamMembers, setConsultantTeamMembers] = useState<any[]>([]);
+  const [showAddTeamMemberForm, setShowAddTeamMemberForm] = useState(false);
+  const [newTeamMember, setNewTeamMember] = useState({name: '', email: '', phone: '', title: '', password: ''});
   
   const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios' | 'monthly-ratios'>('all-ratios');
   const [priorityRatios, setPriorityRatios] = useState<string[]>([
@@ -2051,6 +2056,13 @@ export default function FinancialScorePage() {
   useEffect(() => { if (assessmentRecords.length > 0) localStorage.setItem('fs_assessmentRecords', JSON.stringify(assessmentRecords)); }, [assessmentRecords]);
   useEffect(() => { if (companyProfiles.length > 0) localStorage.setItem('fs_companyProfiles', JSON.stringify(companyProfiles)); }, [companyProfiles]);
   useEffect(() => { if (priorityRatios.length > 0) localStorage.setItem('fs_priorityRatios', JSON.stringify(priorityRatios)); }, [priorityRatios]);
+  
+  // Fetch team members when viewing team management tab
+  useEffect(() => {
+    if (currentUser?.role === 'consultant' && currentUser?.consultantId && adminDashboardTab === 'team-management') {
+      fetchTeamMembers();
+    }
+  }, [currentUser, adminDashboardTab]);
 
   useEffect(() => {
     if (selectedCompanyId) {
@@ -3078,6 +3090,87 @@ export default function FinancialScorePage() {
       if (selectedCompanyId === companyId) setSelectedCompanyId('');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to delete company');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Team Management Functions
+  const fetchTeamMembers = async () => {
+    if (!currentUser?.consultantId) return;
+    try {
+      const response = await fetch(`/api/consultants/team?consultantId=${currentUser.consultantId}`);
+      const data = await response.json();
+      if (response.ok) {
+        setConsultantTeamMembers(data.teamMembers || []);
+      } else {
+        console.error('Failed to fetch team members:', data.error);
+      }
+    } catch (error) {
+      console.error('Error fetching team members:', error);
+    }
+  };
+
+  const addTeamMember = async () => {
+    if (!newTeamMember.name || !newTeamMember.email || !newTeamMember.password) {
+      alert('Please fill in name, email, and password');
+      return;
+    }
+    if (!currentUser?.consultantId) {
+      alert('Error: No consultant ID found');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/consultants/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          consultantId: currentUser.consultantId,
+          ...newTeamMember
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setConsultantTeamMembers([...consultantTeamMembers, data.teamMember]);
+        setNewTeamMember({name: '', email: '', phone: '', title: '', password: ''});
+        setShowAddTeamMemberForm(false);
+        alert('Team member added successfully!');
+      } else {
+        alert(data.error || 'Failed to add team member');
+      }
+    } catch (error) {
+      console.error('Error adding team member:', error);
+      alert('Failed to add team member');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const removeTeamMember = async (userId: string, userName: string) => {
+    if (!confirm(`Remove ${userName} from your team?`)) return;
+    if (!currentUser?.consultantId) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/consultants/team?userId=${userId}&consultantId=${currentUser.consultantId}`, {
+        method: 'DELETE'
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setConsultantTeamMembers(consultantTeamMembers.filter(m => m.id !== userId));
+        alert('Team member removed successfully');
+      } else {
+        alert(data.error || 'Failed to remove team member');
+      }
+    } catch (error) {
+      console.error('Error removing team member:', error);
+      alert('Failed to remove team member');
     } finally {
       setIsLoading(false);
     }
@@ -7794,6 +7887,25 @@ export default function FinancialScorePage() {
             >
               Profile
             </button>
+            {currentUser?.role === 'consultant' && currentUser?.isPrimaryContact && (
+              <button
+                onClick={() => handleAdminTabNavigation('team-management')}
+                style={{
+                  padding: '12px 24px',
+                  background: adminDashboardTab === 'team-management' ? '#667eea' : 'transparent',
+                  color: adminDashboardTab === 'team-management' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: adminDashboardTab === 'team-management' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Team Management
+              </button>
+            )}
           </div>
           
           {/* Company Management Tab */}
@@ -9603,6 +9715,171 @@ export default function FinancialScorePage() {
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to view and edit company profile.</p>
+            </div>
+          )}
+
+          {/* Team Management Tab */}
+          {adminDashboardTab === 'team-management' && currentUser?.role === 'consultant' && currentUser?.isPrimaryContact && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Team Management</h2>
+                <button
+                  onClick={() => setShowAddTeamMemberForm(!showAddTeamMemberForm)}
+                  style={{
+                    padding: '10px 20px',
+                    background: '#667eea',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {showAddTeamMemberForm ? 'Cancel' : '+ Add Team Member'}
+                </button>
+              </div>
+
+              {showAddTeamMemberForm && (
+                <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '20px', marginBottom: '24px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#334155', marginBottom: '16px' }}>Add New Team Member</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <input
+                      type="text"
+                      placeholder="Full Name *"
+                      value={newTeamMember.name}
+                      onChange={(e) => setNewTeamMember({...newTeamMember, name: e.target.value})}
+                      style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    />
+                    <input
+                      type="email"
+                      placeholder="Email *"
+                      value={newTeamMember.email}
+                      onChange={(e) => setNewTeamMember({...newTeamMember, email: e.target.value})}
+                      style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Phone"
+                      value={newTeamMember.phone}
+                      onChange={(e) => setNewTeamMember({...newTeamMember, phone: e.target.value})}
+                      style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Title/Role"
+                      value={newTeamMember.title}
+                      onChange={(e) => setNewTeamMember({...newTeamMember, title: e.target.value})}
+                      style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password *"
+                      value={newTeamMember.password}
+                      onChange={(e) => setNewTeamMember({...newTeamMember, password: e.target.value})}
+                      style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    />
+                  </div>
+                  <button
+                    onClick={addTeamMember}
+                    disabled={isLoading}
+                    style={{
+                      padding: '12px 24px',
+                      background: isLoading ? '#94a3b8' : '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: isLoading ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isLoading ? 'Adding...' : 'Add Team Member'}
+                  </button>
+                </div>
+              )}
+
+              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                Manage users who can access your consultant dashboard and all client companies.
+              </div>
+
+              {consultantTeamMembers.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>No Team Members Yet</div>
+                  <div style={{ fontSize: '14px' }}>Add team members to give them access to all your client companies</div>
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Name</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Email</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Phone</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Title</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Role</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {consultantTeamMembers.map((member) => (
+                        <tr key={member.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b' }}>{member.name}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>{member.email}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>{member.phone || '-'}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>{member.title || '-'}</td>
+                          <td style={{ padding: '12px' }}>
+                            {member.isPrimaryContact ? (
+                              <span style={{ 
+                                padding: '4px 12px', 
+                                background: '#fef3c7', 
+                                color: '#92400e', 
+                                borderRadius: '12px', 
+                                fontSize: '12px', 
+                                fontWeight: '600' 
+                              }}>
+                                Primary Contact
+                              </span>
+                            ) : (
+                              <span style={{ 
+                                padding: '4px 12px', 
+                                background: '#e0e7ff', 
+                                color: '#3730a3', 
+                                borderRadius: '12px', 
+                                fontSize: '12px', 
+                                fontWeight: '600' 
+                              }}>
+                                Team Member
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            {!member.isPrimaryContact && (
+                              <button
+                                onClick={() => removeTeamMember(member.id, member.name)}
+                                disabled={isLoading}
+                                style={{
+                                  padding: '6px 12px',
+                                  background: '#fee2e2',
+                                  color: '#991b1b',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  fontWeight: '600',
+                                  cursor: isLoading ? 'not-allowed' : 'pointer'
+                                }}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

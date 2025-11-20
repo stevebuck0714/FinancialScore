@@ -8,6 +8,7 @@ declare module 'next-auth' {
       userType?: string;
       companyId?: string;
       consultantId?: string;
+      isPrimaryContact?: boolean;
     } & DefaultSession['user'];
   }
 
@@ -19,6 +20,7 @@ declare module 'next-auth' {
     userType?: string;
     companyId?: string;
     consultantId?: string;
+    isPrimaryContact?: boolean;
   }
 }
 
@@ -29,6 +31,7 @@ declare module 'next-auth/jwt' {
     userType?: string;
     companyId?: string;
     consultantId?: string;
+    isPrimaryContact?: boolean;
   }
 }
 
