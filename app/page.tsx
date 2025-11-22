@@ -2418,10 +2418,14 @@ export default function FinancialScorePage() {
         try {
           const mappingsResponse = await fetch(`/api/account-mappings?companyId=${selectedCompanyId}`);
           if (mappingsResponse.ok) {
-            const { mappings } = await mappingsResponse.json();
+            const { mappings, linesOfBusiness: savedLobs } = await mappingsResponse.json();
             if (mappings && mappings.length > 0) {
               console.log('Loaded saved account mappings:', mappings);
               setAiMappings(mappings);
+              if (savedLobs && savedLobs.length > 0) {
+                console.log('Loaded saved Lines of Business:', savedLobs);
+                setLinesOfBusiness(savedLobs);
+              }
               setShowMappingSection(true);
             }
           }
@@ -17875,7 +17879,8 @@ export default function FinancialScorePage() {
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
                                     companyId: selectedCompanyId,
-                                    mappings: uniqueMappings
+                                    mappings: uniqueMappings,
+                                    linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== '')
                                   })
                                 });
 
