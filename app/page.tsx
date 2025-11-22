@@ -17391,9 +17391,17 @@ export default function FinancialScorePage() {
                         const accountClassifications: Record<string, string> = {};
                         const chartOfAccounts = qbRawData?.chartOfAccounts?.QueryResponse?.Account || [];
                         
+                        console.log('🔍 Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
+                        console.log('🔍 Total accounts in chart:', chartOfAccounts.length);
+                        
                         chartOfAccounts.forEach((account: any) => {
                           const accountName = account.Name;
                           const accountType = account.AccountType || '';
+                          
+                          // DEBUG: Log first 10 accounts to see the data structure
+                          if (chartOfAccounts.indexOf(account) < 10) {
+                            console.log(`Account: "${accountName}" | Type: "${accountType}" | Full:`, account);
+                          }
                           
                           // Map QB AccountType to our simplified classifications
                           let classification = '';
@@ -17480,10 +17488,47 @@ export default function FinancialScorePage() {
                         });
                         
                         // Add BS individual items
-                        bsDataRows.forEach(row => {
-                          const classification = accountClassifications[row.name] || 'Asset';
+                        let assetCount = 0, liabilityCount = 0, equityCount = 0;
+                        bsDataRows.forEach((row, idx) => {
+                          // Try to get classification from Chart of Accounts first
+                          let classification = accountClassifications[row.name];
+                          
+                          // If not found, determine from Balance Sheet section
+                          if (!classification && row.section) {
+                            const section = row.section.toLowerCase();
+                            if (section.includes('asset')) {
+                              classification = 'Asset';
+                              assetCount++;
+                            } else if (section.includes('liabilit')) {
+                              classification = 'Liability';
+                              liabilityCount++;
+                            } else if (section.includes('equity')) {
+                              classification = 'Equity';
+                              equityCount++;
+                            } else {
+                              // Default to Asset only if we really can't determine
+                              classification = 'Asset';
+                              assetCount++;
+                            }
+                            
+                            // Debug first 5 accounts
+                            if (idx < 5) {
+                              console.log(`BS Account ${idx}: "${row.name}" | Section: "${row.section}" → ${classification}`);
+                            }
+                          } else if (!classification) {
+                            classification = 'Asset'; // Last resort default
+                            assetCount++;
+                          } else {
+                            // Count from Chart of Accounts lookup
+                            if (classification === 'Asset') assetCount++;
+                            else if (classification === 'Liability') liabilityCount++;
+                            else if (classification === 'Equity') equityCount++;
+                          }
+                          
                           qbAccountsWithClass.push({ name: row.name, classification });
                         });
+                        
+                        console.log(`📊 BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
                         
                         console.log('🔍 TOTAL accounts to map:', qbAccountsWithClass.length);
                         console.log('🔍 First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
