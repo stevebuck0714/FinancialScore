@@ -169,5 +169,56 @@
 
 ---
 
-## Phase 2.4: Extract Dashboard Sections (PENDING)
+## Phase 2.4: Extract Utility Functions & Constants ✅ COMPLETED
+
+**Date:** Current session
+**Status:** Ready for testing
+
+### Changes Made:
+
+1. **Created:** `app/utils/scoring.ts`
+   - Revenue growth scoring functions (33 lines)
+   - `clamp`, `revenueGrowthScore_24mo`, `rgsAdjustmentFrom6mo`
+   
+2. **Created:** `app/utils/data-processing.ts`
+   - Data transformation utilities (114 lines)
+   - `getBenchmarkValue`, `sixMonthGrowthFromMonthly`, `normalizeRows`, `ltmVsPrior`
+   
+3. **Created:** `app/utils/excel-export.ts`
+   - Excel export functions (72 lines)
+   - `exportDataReviewToExcel`, `exportMonthlyRatiosToExcel`
+   
+4. **Created:** `app/constants/kpi-formulas.ts`
+   - KPI formula definitions (103 lines)
+   - Comprehensive formulas for all 20 KPIs with descriptions
+
+5. **Modified:** `app/page.tsx`
+   - Added imports from new utility files
+   - Removed lines 29-333 (305 lines of function definitions and constants)
+   - Now imports: scoring, data-processing, excel-export, kpi-formulas
+
+### File Size Impact:
+- **Before:** ~24,290 lines
+- **After:** ~23,990 lines  
+- **Reduction:** ~300 lines
+
+### Files Created in Phase 2.4:
+- 4 new utility/constant files
+- Total: 322 lines across new files (cleaner than inline)
+
+### Testing Status:
+- ✅ No linter errors
+- ⏳ Dev server restart needed
+- ⏳ Awaiting user testing
+
+### Test Checklist:
+- [ ] Financial scoring calculations work
+- [ ] Benchmark lookups function correctly
+- [ ] Data normalization processes properly
+- [ ] Excel exports generate files
+- [ ] KPI formulas display in modals
+
+---
+
+## Phase 2.5: Next Steps (PENDING)
 
