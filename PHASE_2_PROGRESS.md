@@ -69,6 +69,54 @@
 
 ---
 
-## Phase 2.2: Extract Chart Components (PENDING)
+## Phase 2.2: Extract Chart Components ✅ COMPLETED
+
+**Date:** Current session
+**Status:** Ready for testing
+
+### Changes Made:
+
+1. **Created:** `app/components/charts/Charts.tsx`
+   - Extracted 2 chart components (458 total lines)
+   - Components:
+     - `LineChart`: Primary trend visualization for KPIs
+       - Configurable axis ranges, colors, formatters
+       - Supports goal lines and industry benchmarks
+       - Quarterly table display option
+       - 362 lines
+     - `ProjectionChart`: Financial projections with scenarios
+       - Historical vs projected data visualization
+       - Best/Most Likely/Worst case scenarios
+       - 6-month projection table
+       - 179 lines
+   
+2. **Modified:** `app/page.tsx`
+   - Added import: `import { LineChart, ProjectionChart } from './components/charts/Charts';`
+   - Removed lines 330-875 (both chart component definitions)
+   - Charts now imported and used throughout the app
+
+### File Size Impact:
+- **Before:** ~24,956 lines
+- **After:** ~24,410 lines
+- **Reduction:** ~546 lines
+
+### Dependencies:
+- Both charts import `sum` function from `app/utils/financial`
+- Pure presentation components - no state management
+
+### Testing Status:
+- ✅ No linter errors
+- ⏳ Dev server restart needed
+- ⏳ Awaiting user testing
+
+### Test Checklist:
+- [ ] LineChart displays in consultant dashboard
+- [ ] LineChart displays in financial statements
+- [ ] ProjectionChart displays correctly
+- [ ] Goal lines and benchmarks render
+- [ ] Charts are responsive
+
+---
+
 ## Phase 2.3: Extract Dashboard Sections (PENDING)
 
