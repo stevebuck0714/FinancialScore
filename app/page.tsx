@@ -17403,9 +17403,22 @@ export default function FinancialScorePage() {
                             classification = 'Cost of Goods Sold';
                           } else if (accountType === 'Expense' || accountType === 'Other Expense') {
                             classification = 'Expense';
-                          } else if (accountType.includes('Asset')) {
+                          } else if (
+                            accountType === 'Bank' || 
+                            accountType === 'Accounts Receivable' || 
+                            accountType === 'Other Current Asset' || 
+                            accountType === 'Fixed Asset' || 
+                            accountType === 'Other Asset' ||
+                            accountType.includes('Asset')
+                          ) {
                             classification = 'Asset';
-                          } else if (accountType.includes('Liability')) {
+                          } else if (
+                            accountType === 'Accounts Payable' || 
+                            accountType === 'Credit Card' || 
+                            accountType === 'Other Current Liability' || 
+                            accountType === 'Long Term Liability' ||
+                            accountType.includes('Liability')
+                          ) {
                             classification = 'Liability';
                           } else if (accountType === 'Equity') {
                             classification = 'Equity';
