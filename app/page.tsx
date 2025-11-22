@@ -20,7 +20,10 @@ import CompanyDetailsModal from './components/modals/CompanyDetailsModal';
 import DataReviewTab from './components/dashboard/DataReviewTab';
 import TeamManagementTab from './components/dashboard/TeamManagementTab';
 import PaymentsTab from './components/dashboard/PaymentsTab';
-import ProfileTab from './components/dashboard/ProfileTab';
+import MAWelcomeView from './components/assessment/MAWelcomeView';
+import MAScoringGuideView from './components/assessment/MAScoringGuideView';
+import MAScoresSummaryView from './components/assessment/MAScoresSummaryView';
+import MAYourResultsView from './components/assessment/MAYourResultsView';
 
 // Constants (now imported from ./constants)
 
@@ -3321,52 +3324,6 @@ export default function FinancialScorePage() {
     setShowDefaultSettings(false);
   };
 
-  // LOGIN VIEW
-  if (!isLoggedIn) {
-    return (
-      <LoginView
-        loginEmail={loginEmail}
-        setLoginEmail={setLoginEmail}
-        loginPassword={loginPassword}
-        setLoginPassword={setLoginPassword}
-        loginName={loginName}
-        setLoginName={setLoginName}
-        loginPhone={loginPhone}
-        setLoginPhone={setLoginPhone}
-        loginCompanyName={loginCompanyName}
-        setLoginCompanyName={setLoginCompanyName}
-        loginCompanyAddress1={loginCompanyAddress1}
-        setLoginCompanyAddress1={setLoginCompanyAddress1}
-        loginCompanyAddress2={loginCompanyAddress2}
-        setLoginCompanyAddress2={setLoginCompanyAddress2}
-        loginCompanyCity={loginCompanyCity}
-        setLoginCompanyCity={setLoginCompanyCity}
-        loginCompanyState={loginCompanyState}
-        setLoginCompanyState={setLoginCompanyState}
-        loginCompanyZip={loginCompanyZip}
-        setLoginCompanyZip={setLoginCompanyZip}
-        loginCompanyWebsite={loginCompanyWebsite}
-        setLoginCompanyWebsite={setLoginCompanyWebsite}
-        isRegistering={isRegistering}
-        setIsRegistering={setIsRegistering}
-        loginError={loginError}
-        setLoginError={setLoginError}
-        showPassword={showPassword}
-        setShowPassword={setShowPassword}
-        showForgotPassword={showForgotPassword}
-        setShowForgotPassword={setShowForgotPassword}
-        resetEmail={resetEmail}
-        setResetEmail={setResetEmail}
-        resetSuccess={resetSuccess}
-        setResetSuccess={setResetSuccess}
-        isLoading={isLoading}
-        setIsLoading={setIsLoading}
-        handleLogin={handleLogin}
-        handleRegisterConsultant={handleRegisterConsultant}
-      />
-    );
-  }
-
   // Main Logged-In View with Header
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
@@ -3381,7 +3338,7 @@ export default function FinancialScorePage() {
     }
 
     // Build array of print instructions
-    const printQueue = [];
+    const printQueue: any[] = [];
     
     if (printPackageSelections.mda) {
       printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)' });
@@ -3487,6 +3444,52 @@ export default function FinancialScorePage() {
 
     printNext();
   };
+
+  // LOGIN VIEW
+  if (!isLoggedIn) {
+    return (
+      <LoginView
+        loginEmail={loginEmail}
+        setLoginEmail={setLoginEmail}
+        loginPassword={loginPassword}
+        setLoginPassword={setLoginPassword}
+        loginName={loginName}
+        setLoginName={setLoginName}
+        loginPhone={loginPhone}
+        setLoginPhone={setLoginPhone}
+        loginCompanyName={loginCompanyName}
+        setLoginCompanyName={setLoginCompanyName}
+        loginCompanyAddress1={loginCompanyAddress1}
+        setLoginCompanyAddress1={setLoginCompanyAddress1}
+        loginCompanyAddress2={loginCompanyAddress2}
+        setLoginCompanyAddress2={setLoginCompanyAddress2}
+        loginCompanyCity={loginCompanyCity}
+        setLoginCompanyCity={setLoginCompanyCity}
+        loginCompanyState={loginCompanyState}
+        setLoginCompanyState={setLoginCompanyState}
+        loginCompanyZip={loginCompanyZip}
+        setLoginCompanyZip={setLoginCompanyZip}
+        loginCompanyWebsite={loginCompanyWebsite}
+        setLoginCompanyWebsite={setLoginCompanyWebsite}
+        isRegistering={isRegistering}
+        setIsRegistering={setIsRegistering}
+        loginError={loginError}
+        setLoginError={setLoginError}
+        showPassword={showPassword}
+        setShowPassword={setShowPassword}
+        showForgotPassword={showForgotPassword}
+        setShowForgotPassword={setShowForgotPassword}
+        resetEmail={resetEmail}
+        setResetEmail={setResetEmail}
+        resetSuccess={resetSuccess}
+        setResetSuccess={setResetSuccess}
+        isLoading={isLoading}
+        setIsLoading={setIsLoading}
+        handleLogin={handleLogin}
+        handleRegisterConsultant={handleRegisterConsultant}
+      />
+    );
+  }
 
   console.log('🎨 RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
 
@@ -22145,205 +22148,44 @@ export default function FinancialScorePage() {
           </div>
         </div>
       )}
-
-      {/* Management Assessment - Your Results View */}
-      {currentView === 'ma-your-results' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              {currentUser?.role === 'consultant' ? 'Assessment Results - All Participants' : 'Your Assessment Results'}
-            </h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-          
-          {currentUser?.role === 'consultant' ? (
-            // Show all participants' results for consultants
-            <>
-              {assessmentRecords.filter(r => r.companyId === selectedCompanyId).length === 0 ? (
-                <div style={{ background: 'white', borderRadius: '12px', padding: '60px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
-                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Assessments Yet</h3>
-                  <p style={{ fontSize: '14px', color: '#94a3b8' }}>No users have completed assessments for this company</p>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: '24px' }}>
-                  {assessmentRecords.filter(r => r.companyId === selectedCompanyId).map((record) => (
-                    <div key={record.id} style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <div>
-                          <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{record.user?.name || record.userName || 'Unknown User'}</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>
-                            Completed: {new Date(record.completedAt || record.completedDate || '').toLocaleDateString()} | 
-                            <span style={{ fontWeight: '600', color: '#667eea', marginLeft: '8px' }}>Overall Score: {record.overallScore.toFixed(2)}/5.0</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>Scores by Category</h3>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                        {assessmentData.map((category) => {
-                          const categoryQuestions = category.questions.map(q => q.id);
-                          const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
-                          const avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                          
-                          return (
-                            <div key={category.id} style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>{category.name}</div>
-                              <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>{avgScore.toFixed(2)}</div>
-                              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>out of 5.0</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            // Show individual results for users
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Score by Category</h2>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '12px' }}>
-                {assessmentData.map((category) => {
-                  const categoryQuestions = category.questions.map(q => q.id);
-                  const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
-                  const avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                  
-                  return (
-                    <div key={category.id} style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>{category.name}</div>
-                      <div style={{ fontSize: '32px', fontWeight: '700', color: '#667eea' }}>{avgScore.toFixed(2)}</div>
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>out of 5.0</div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button 
-                  onClick={() => setCurrentView('ma-questionnaire')}
-                  style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
-                >
-                  Edit Assessment
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
           </>
           )}
 
-          {/* Management Assessment Views - Available to all users including assessment users */}
+      {/* Management Assessment - Your Results View */}
+      {currentView === 'ma-your-results' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+        <MAYourResultsView
+          selectedCompanyId={selectedCompanyId}
+          currentUser={currentUser}
+          companyName={companyName}
+          assessmentRecords={assessmentRecords}
+          assessmentData={assessmentData}
+          assessmentResponses={assessmentResponses}
+          setCurrentView={setCurrentView}
+        />
+      )}
+
+      {/* Management Assessment Views - Available to all users including assessment users */}
           {/* Management Assessment - Welcome View */}
       {currentView === 'ma-welcome' && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            {companyName && <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', textAlign: 'center', marginBottom: '12px' }}>{companyName}</div>}
-            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', textAlign: 'center' }}>Management Assessment Questionnaire</h1>
-            
-            <div style={{ fontSize: '16px', color: '#475569', lineHeight: '1.8', maxWidth: '900px', margin: '0 auto 32px', textAlign: 'left' }}>
-              <p style={{ marginBottom: '16px' }}>
-                Our Trademarked assessment tool is designed to facilitate the discovery of Management Maturity Level in small businesses. It has been developed to highlight areas under financial management that can be targeted for improvement.
-              </p>
-              
-              <p style={{ marginBottom: '16px' }}>
-                The tool is a questionnaire to be completed by the key employees in your company. It is designed as a tool for management to help you better understand the strengths and weaknesses of your processes and communications across teams in your company.
-              </p>
-              
-              <p style={{ marginBottom: '0' }}>
-                The Management Assessment service provides detailed evaluation of your company's management practices, leadership effectiveness, and organizational structure to help you optimize performance and drive growth.
-              </p>
-            </div>
-            
-            <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '32px', marginTop: '32px', textAlign: 'left' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Topics Covered</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', fontSize: '14px', color: '#475569' }}>
-                {assessmentData.map((cat) => (
-                  <div key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#10b981', fontSize: '18px' }}>✓</span>
-                    <span>{cat.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <button 
-              onClick={() => setCurrentView('ma-questionnaire')}
-              style={{ marginTop: '32px', padding: '16px 48px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: '600', cursor: 'pointer', boxShadow: '0 4px 12px rgba(102,126,234,0.3)' }}
-            >
-              Start Assessment
-            </button>
-          </div>
-        </div>
+        <MAWelcomeView
+          companyName={companyName}
+          assessmentData={assessmentData}
+          setCurrentView={setCurrentView}
+        />
       )}
 
       {/* Management Assessment - Scores Summary View */}
       {currentView === 'ma-scores-summary' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Scores Summary - All Participants</h1>
-          
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Average Scores Across All Participants</h2>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-              {assessmentData.map((category) => {
-                const companyRecords = assessmentRecords.filter(r => r.companyId === selectedCompanyId);
-                const allCategoryScores = companyRecords.map(record => {
-                  const categoryQuestions = category.questions.map(q => q.id);
-                  const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
-                  return categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                }).filter(s => s > 0);
-                
-                const avgScore = allCategoryScores.length > 0 ? allCategoryScores.reduce((sum, val) => sum + val, 0) / allCategoryScores.length : 0;
-                
-                return (
-                  <div key={category.id} style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>{category.name}</div>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#667eea' }}>{avgScore.toFixed(2)}</div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>avg across {allCategoryScores.length} participant(s)</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <MAScoresSummaryView
+          selectedCompanyId={selectedCompanyId}
+          assessmentData={assessmentData}
+          assessmentRecords={assessmentRecords}
+        />
       )}
 
       {/* Management Assessment - Scoring Guide View */}
       {currentView === 'ma-scoring-guide' && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Scoring Guide</h1>
-          
-          <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Rating Scale Descriptions</h2>
-            
-            <div style={{ display: 'grid', gap: '16px' }}>
-              <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: '#991b1b', marginBottom: '8px' }}>1 - No Evidence</div>
-                <p style={{ fontSize: '14px', color: '#7f1d1d', margin: 0 }}>No evidence to support practices or any knowledge of subject</p>
-              </div>
-              <div style={{ background: '#fed7aa', borderRadius: '8px', padding: '20px', border: '2px solid #f97316' }}>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: '#9a3412', marginBottom: '8px' }}>2 - Limited</div>
-                <p style={{ fontSize: '14px', color: '#7c2d12', margin: 0 }}>Limited practices in place, limited knowledge of subject</p>
-              </div>
-              <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: '#92400e', marginBottom: '8px' }}>3 - Basic</div>
-                <p style={{ fontSize: '14px', color: '#78350f', margin: 0 }}>Basic practices in place, basic awareness of subject</p>
-              </div>
-              <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e40af', marginBottom: '8px' }}>4 - Clear Practices</div>
-                <p style={{ fontSize: '14px', color: '#1e3a8a', margin: 0 }}>Clear practices in place, above average knowledge of subject</p>
-              </div>
-              <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: '#065f46', marginBottom: '8px' }}>5 - Extensive</div>
-                <p style={{ fontSize: '14px', color: '#064e3b', margin: 0 }}>Extensive practices in place, extensive knowledge of subject</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <MAScoringGuideView />
       )}
 
       {/* Management Assessment - Charts View */}
