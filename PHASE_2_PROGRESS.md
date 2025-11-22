@@ -118,5 +118,56 @@
 
 ---
 
-## Phase 2.3: Extract Dashboard Sections (PENDING)
+## Phase 2.3: Extract Modal Components ✅ COMPLETED
+
+**Date:** Current session
+**Status:** Ready for testing
+
+### Changes Made:
+
+1. **Created:** `app/components/modals/CompanyDetailsModal.tsx`
+   - Company address editing modal (135 lines)
+   - Features:
+     - Street address, city, state, ZIP, country inputs
+     - US state selector (using US_STATES constant)
+     - Industry sector dropdown with grouped NAICS codes
+     - Selected industry description preview
+     - Save/Cancel buttons
+   
+2. **Modified:** `app/page.tsx`
+   - Added import: `import CompanyDetailsModal from './components/modals/CompanyDetailsModal';`
+   - Replaced lines 8776-8911 (136 lines of modal JSX) with `<CompanyDetailsModal />` component
+   - Passes 16 props (address fields, industry sector, handlers)
+
+### File Size Impact:
+- **Before:** ~24,410 lines
+- **After:** ~24,290 lines
+- **Reduction:** ~120 lines
+
+### Component Props:
+- `show`, `onClose`
+- Address: `companyAddressStreet`, `companyAddressCity`, `companyAddressState`, `companyAddressZip`, `companyAddressCountry`
+- Industry: `companyIndustrySector`
+- Handlers: `onSave`
+
+### Dependencies:
+- Imports `INDUSTRY_SECTORS`, `SECTOR_CATEGORIES` from industry data
+- Imports `US_STATES` from constants
+
+### Testing Status:
+- ✅ No linter errors
+- ⏳ Dev server restart needed
+- ⏳ Awaiting user testing
+
+### Test Checklist:
+- [ ] Modal opens when clicking "Edit Details" in Company Management
+- [ ] Address fields can be edited
+- [ ] State dropdown populated with all US states
+- [ ] Industry selector shows grouped NAICS codes
+- [ ] Save button updates company details
+- [ ] Cancel button closes modal without saving
+
+---
+
+## Phase 2.4: Extract Dashboard Sections (PENDING)
 
