@@ -18742,7 +18742,33 @@ export default function FinancialScorePage() {
                   </p>
                   
                   {/* Line of Business Selector */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '12px' }}>
+                    {/* Type of Statement */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                        Type of Statement
+                      </label>
+                      <select 
+                        value={statementType}
+                        onChange={(e) => setStatementType(e.target.value as any)}
+                        style={{ 
+                          width: '100%', 
+                          padding: '10px 12px', 
+                          border: '1px solid #cbd5e1', 
+                          borderRadius: '6px', 
+                          fontSize: '14px',
+                          color: '#1e293b',
+                          background: 'white',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="income-statement">Income Statement</option>
+                        <option value="income-statement-percent">Income Stmt as % of Revenue</option>
+                        <option value="balance-sheet">Balance Sheet</option>
+                      </select>
+                    </div>
+
+                    {/* Line of Business */}
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                         Line of Business
@@ -18762,19 +18788,18 @@ export default function FinancialScorePage() {
                         }}
                       >
                         <option value="all">All Lines of Business (Side by Side)</option>
-                        {qbRawData?.profitAndLoss?.Columns?.Column && Array.isArray(qbRawData.profitAndLoss.Columns.Column) 
-                          ? qbRawData.profitAndLoss.Columns.Column
-                              .filter((col: any) => col.ColType !== 'Total')
-                              .map((col: any, idx: number) => (
-                                <option key={idx} value={col.ColTitle || `Column ${idx + 1}`}>
-                                  {col.ColTitle || `Column ${idx + 1}`}
-                                </option>
-                              ))
-                          : null
+                        {linesOfBusiness
+                          .filter(lob => lob.trim() !== '')
+                          .map((lob, idx) => (
+                            <option key={idx} value={lob}>
+                              {lob}
+                            </option>
+                          ))
                         }
                       </select>
                     </div>
 
+                    {/* Period */}
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                         Period
@@ -18802,6 +18827,7 @@ export default function FinancialScorePage() {
                       </select>
                     </div>
 
+                    {/* Display As */}
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                         Display As
@@ -18828,17 +18854,586 @@ export default function FinancialScorePage() {
                   </div>
                 </div>
 
-                {/* Coming Soon Message */}
-                <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                  <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                    Line of Business Reporting
-                  </div>
-                  <p style={{ fontSize: '14px', color: '#64748b', maxWidth: '500px', margin: '0 auto' }}>
-                    This feature will display Income Statement data broken down by line of business from your QuickBooks class tracking. 
-                    You'll be able to compare performance across different business lines side by side for the selected period.
-                  </p>
-                </div>
+                {/* LOB Financial Statements */}
+                {(() => {
+                  // Only show if we have a selected LOB (not "all")
+                  // Income Statement - All Periods
+                  if (statementType === 'income-statement') {
+                    if (!qbRawData || !qbRawData.profitAndLoss) {
+                      return <div style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No QuickBooks data available for LOB reporting</div>;
+                    }
+
+                    // Check if we're doing side-by-side LOB comparison
+                    const isSideBySide = selectedLineOfBusiness === 'all';
+                    const lobsToCompare = isSideBySide 
+                      ? linesOfBusiness.filter(lob => lob.trim() !== '') 
+                      : [selectedLineOfBusiness];
+                    
+                    console.log('LOB Debug:', { 
+                      selectedLineOfBusiness, 
+                      isSideBySide, 
+                      lobsToCompare,
+                      linesOfBusiness 
+                    });
+
+                    // Determine how many periods to show based on period + display settings
+                    const columns = qbRawData.profitAndLoss.Columns?.Column || [];
+                    const isMultiPeriod = (statementPeriod === 'last-12-months' || statementPeriod === 'current-quarter' || statementPeriod === 'ytd' || statementPeriod === 'last-year' || statementPeriod === 'last-3-years') && statementDisplay === 'monthly';
+                    
+                    let periodLabel = '';
+                    let columnsToShow: number[] = [];
+                    
+                    if (statementPeriod === 'current-month') {
+                      // Single month - second to last column
+                      periodLabel = 'Current Month';
+                      columnsToShow = [columns.length - 2];
+                    } else if (statementPeriod === 'current-quarter') {
+                      if (statementDisplay === 'monthly') {
+                        // Show last 3 months
+                        periodLabel = 'Current Quarter - Monthly';
+                        const totalColumns = columns.length - 1;
+                        const startCol = Math.max(1, totalColumns - 2);
+                        for (let i = startCol; i < totalColumns; i++) {
+                          columnsToShow.push(i);
+                        }
+                      } else {
+                        // Show total for last 3 months
+                        periodLabel = 'Current Quarter';
+                        columnsToShow = [columns.length - 1];
+                      }
+                    } else if (statementPeriod === 'last-12-months') {
+                      if (statementDisplay === 'monthly') {
+                        // Show 12 monthly columns
+                        periodLabel = 'Last 12 Months - Monthly';
+                        const totalColumns = columns.length - 1;
+                        const startCol = Math.max(1, totalColumns - 11);
+                        for (let i = startCol; i < totalColumns; i++) {
+                          columnsToShow.push(i);
+                        }
+                      } else {
+                        // Show total
+                        periodLabel = 'Last 12 Months';
+                        columnsToShow = [columns.length - 1];
+                      }
+                    } else if (statementPeriod === 'ytd') {
+                      if (statementDisplay === 'monthly') {
+                        // Show all months YTD
+                        periodLabel = 'Year to Date - Monthly';
+                        const totalColumns = columns.length - 1;
+                        // Assume we have 12 months of data, show up to current month
+                        const currentMonthInYear = new Date().getMonth() + 1; // 1-12
+                        const startCol = Math.max(1, totalColumns - currentMonthInYear + 1);
+                        for (let i = startCol; i < totalColumns; i++) {
+                          columnsToShow.push(i);
+                        }
+                      } else {
+                        // Show YTD total
+                        periodLabel = 'Year to Date';
+                        columnsToShow = [columns.length - 1];
+                      }
+                    } else if (statementPeriod === 'last-year') {
+                      if (statementDisplay === 'monthly') {
+                        // Show 12 months from last year
+                        periodLabel = 'Last Year - Monthly';
+                        const totalColumns = columns.length - 1;
+                        const startCol = Math.max(1, totalColumns - 23); // Go back 12-23 months
+                        const endCol = Math.max(1, totalColumns - 11); // End at 12 months ago
+                        for (let i = startCol; i < endCol; i++) {
+                          columnsToShow.push(i);
+                        }
+                      } else {
+                        // Show last year total
+                        periodLabel = 'Last Year';
+                        columnsToShow = [columns.length - 1];
+                      }
+                    } else if (statementPeriod === 'last-3-years') {
+                      if (statementDisplay === 'monthly') {
+                        // Show 36 months
+                        periodLabel = 'Last 3 Years - Monthly';
+                        const totalColumns = columns.length - 1;
+                        const startCol = Math.max(1, totalColumns - 35);
+                        for (let i = startCol; i < totalColumns; i++) {
+                          columnsToShow.push(i);
+                        }
+                      } else {
+                        // Show 3 year total
+                        periodLabel = 'Last 3 Years';
+                        columnsToShow = [columns.length - 1];
+                      }
+                    } else {
+                      // Default fallback
+                      periodLabel = 'Selected Period';
+                      columnsToShow = [columns.length - 1];
+                    }
+                    
+                    // Extract all QB accounts with their values for the selected columns
+                    const extractRows = (reportData: any) => {
+                      const result: any[] = [];
+                      if (!reportData || !reportData.Rows || !reportData.Rows.Row) return result;
+                      
+                      const processRow = (row: any) => {
+                        if (row.type === 'Data' && row.ColData) {
+                          const name = row.ColData[0]?.value || '';
+                          if (name) {
+                            // Get values from all requested columns
+                            const values = columnsToShow.map(colIdx => {
+                              if (colIdx >= 1 && row.ColData[colIdx]) {
+                                const colValue = row.ColData[colIdx]?.value;
+                                if (colValue !== undefined && colValue !== '' && !isNaN(parseFloat(colValue))) {
+                                  return parseFloat(colValue);
+                                }
+                              }
+                              return 0;
+                            });
+                            result.push({ name, values });
+                          }
+                        }
+                        if (row.Rows && row.Rows.Row) {
+                          const subRows = Array.isArray(row.Rows.Row) ? row.Rows.Row : [row.Rows.Row];
+                          subRows.forEach((r: any) => processRow(r));
+                        }
+                      };
+                      const rows = Array.isArray(reportData.Rows.Row) ? reportData.Rows.Row : [reportData.Rows.Row];
+                      rows.forEach((r: any) => processRow(r));
+                      return result;
+                    };
+                    
+                    const plRows = extractRows(qbRawData.profitAndLoss);
+                    
+                    // Calculate LOB-specific values for a target field across all periods
+                    // Returns an array of values (one per period)
+                    const calculateLOBValues = (targetField: string): number[] => {
+                      const fieldMappings = aiMappings.filter(m => m.targetField === targetField);
+                      
+                      // Initialize totals array for each period
+                      const totals = new Array(columnsToShow.length).fill(0);
+                      
+                      for (const mapping of fieldMappings) {
+                        const qbAccount = plRows.find(row => row.name === mapping.qbAccount);
+                        
+                        if (qbAccount) {
+                          const lobPercent = mapping.lobAllocations?.[selectedLineOfBusiness] || 0;
+                          
+                          // Add LOB-allocated portion for each period
+                          qbAccount.values.forEach((value: number, idx: number) => {
+                            totals[idx] += (value * lobPercent) / 100;
+                          });
+                        }
+                      }
+                      
+                      return totals;
+                    };
+                    
+                    // Get column headers (month names)
+                    const monthHeaders = columnsToShow.map(colIdx => {
+                      const col = columns[colIdx];
+                      return col?.ColTitle || col?.value || `Month ${colIdx}`;
+                    });
+                    
+                    // Revenue
+                    const revenueValues = calculateLOBValues('revenue');
+                    
+                    // Cost of Goods Sold
+                    const cogsPayrollValues = calculateLOBValues('cogsPayroll');
+                    const cogsOwnerPayValues = calculateLOBValues('cogsOwnerPay');
+                    const cogsContractorsValues = calculateLOBValues('cogsContractors');
+                    const cogsMaterialsValues = calculateLOBValues('cogsMaterials');
+                    const cogsCommissionsValues = calculateLOBValues('cogsCommissions');
+                    const cogsOtherValues = calculateLOBValues('cogsOther');
+                    const cogsValues = revenueValues.map((_, idx) => 
+                      cogsPayrollValues[idx] + cogsOwnerPayValues[idx] + cogsContractorsValues[idx] + 
+                      cogsMaterialsValues[idx] + cogsCommissionsValues[idx] + cogsOtherValues[idx]
+                    );
+                    
+                    const grossProfitValues = revenueValues.map((rev, idx) => rev - cogsValues[idx]);
+                    const grossMarginValues = revenueValues.map((rev, idx) => rev > 0 ? (grossProfitValues[idx] / rev) * 100 : 0);
+                    
+                    // Operating Expenses (using aiMappings targetField names)
+                    const opexPayrollValues = calculateLOBValues('payroll');
+                    const ownersBasePayValues = calculateLOBValues('ownerBasePay');
+                    const ownersRetirementValues = calculateLOBValues('ownerRetirement');
+                    const professionalServicesValues = calculateLOBValues('professionalFees');
+                    const rentLeaseValues = calculateLOBValues('rent');
+                    const utilitiesValues = calculateLOBValues('infrastructure');
+                    const equipmentValues = calculateLOBValues('equipment');
+                    const travelValues = calculateLOBValues('autoTravel');
+                    const insuranceValues = calculateLOBValues('insurance');
+                    const opexSalesMarketingValues = calculateLOBValues('salesExpense');
+                    const contractorsDistributionValues = calculateLOBValues('subcontractors');
+                    const depreciationExpenseValues = calculateLOBValues('depreciationAmortization');
+                    const opexOtherValues = calculateLOBValues('otherExpense');
+                    
+                    const totalOpexValues = revenueValues.map((_, idx) => 
+                      opexPayrollValues[idx] + ownersBasePayValues[idx] + ownersRetirementValues[idx] + 
+                      professionalServicesValues[idx] + rentLeaseValues[idx] + utilitiesValues[idx] + 
+                      equipmentValues[idx] + travelValues[idx] + insuranceValues[idx] + 
+                      opexSalesMarketingValues[idx] + contractorsDistributionValues[idx] + 
+                      depreciationExpenseValues[idx] + opexOtherValues[idx]
+                    );
+                    
+                    const operatingIncomeValues = grossProfitValues.map((gp, idx) => gp - totalOpexValues[idx]);
+                    const operatingMarginValues = revenueValues.map((rev, idx) => rev > 0 ? (operatingIncomeValues[idx] / rev) * 100 : 0);
+                    
+                    // Other Income/Expense
+                    const interestExpenseValues = calculateLOBValues('interestExpense');
+                    const nonOperatingIncomeValues = calculateLOBValues('nonOperatingIncome');
+                    const extraordinaryItemsValues = calculateLOBValues('extraordinaryItems');
+                    
+                    const netIncomeValues = operatingIncomeValues.map((opInc, idx) => 
+                      opInc - interestExpenseValues[idx] + nonOperatingIncomeValues[idx] + extraordinaryItemsValues[idx]
+                    );
+                    const netMarginValues = revenueValues.map((rev, idx) => rev > 0 ? (netIncomeValues[idx] / rev) * 100 : 0);
+                    
+                    // Helper to render a row with multiple values
+                    const renderRow = (label: string, values: number[], isHeader = false, isSubtotal = false, isTotal = false, indented = false, isNegative = false) => {
+                      // Skip row if all values are zero (unless it's a total/subtotal/header)
+                      if (values.every(v => v === 0) && !isTotal && !isSubtotal && !isHeader) return null;
+                      
+                      const bgColor = isTotal ? (values[0] >= 0 ? '#d1fae5' : '#fee2e2') :
+                                     isSubtotal ? (values[0] >= 0 ? '#dbeafe' : '#fee2e2') :
+                                     isHeader ? '#f8fafc' : 'transparent';
+                      const fontWeight = isHeader || isSubtotal || isTotal ? '700' : '500';
+                      const borderTop = (isSubtotal || isTotal) ? '2px solid #e2e8f0' : 'none';
+                      const paddingLeft = indented ? '24px' : '8px';
+                      
+                      return (
+                        <tr key={label} style={{ background: bgColor, borderTop }}>
+                          <td style={{ padding: `8px ${paddingLeft}`, fontWeight, color: '#1e293b', position: 'sticky', left: 0, background: bgColor, zIndex: 1, borderRight: '2px solid #e2e8f0', minWidth: '200px' }}>
+                            {label}
+                          </td>
+                          {values.map((val, idx) => {
+                            // For section headers, show empty cells
+                            if (isHeader) {
+                              return (
+                                <td key={idx} style={{ padding: '8px 12px', textAlign: 'right', fontWeight, position: 'relative', zIndex: 0 }}>
+                                  {/* Empty cell for header rows */}
+                                </td>
+                              );
+                            }
+                            
+                            // Determine text color based on value
+                            let textColor = '#1e293b';
+                            if (isTotal || isSubtotal) {
+                              textColor = val >= 0 ? '#065f46' : '#991b1b';
+                            }
+                            
+                            // Format negative values
+                            let displayValue = '';
+                            if (isNegative && val > 0) {
+                              // Interest Expense: show positive values in parentheses
+                              displayValue = `($${val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`;
+                            } else if (val < 0) {
+                              // Negative values: show in parentheses
+                              displayValue = `($${Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`;
+                            } else {
+                              // Positive values: normal format
+                              displayValue = `$${val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                            }
+                            
+                            return (
+                              <td key={idx} style={{ padding: '8px 12px', textAlign: 'right', fontWeight, color: textColor, whiteSpace: 'nowrap', position: 'relative', zIndex: 0 }}>
+                                {displayValue}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    };
+                    
+                    // SIDE-BY-SIDE LOB COMPARISON
+                    if (isSideBySide) {
+                      // Calculate values for ALL LOBs
+                      const calculateLOBValueForAllLOBs = (targetField: string): number[][] => {
+                        return lobsToCompare.map(lob => {
+                          const fieldMappings = aiMappings.filter(m => m.targetField === targetField);
+                          const totals = new Array(columnsToShow.length).fill(0);
+                          
+                          for (const mapping of fieldMappings) {
+                            const qbAccount = plRows.find(row => row.name === mapping.qbAccount);
+                            if (qbAccount) {
+                              const lobPercent = mapping.lobAllocations?.[lob] || 0;
+                              qbAccount.values.forEach((value: number, idx: number) => {
+                                totals[idx] += (value * lobPercent) / 100;
+                              });
+                            }
+                          }
+                          return totals;
+                        });
+                      };
+
+                      // If displaying as "Total", sum all periods for each LOB
+                      const sumPeriods = (lobValues: number[][]): number[] => {
+                        return lobValues.map(values => values.reduce((sum, val) => sum + val, 0));
+                      };
+
+                      const displayAsTotal = statementDisplay === 'total';
+                      
+                      // Calculate for all fields across all LOBs
+                      const revenueAllLOBs = calculateLOBValueForAllLOBs('revenue');
+                      const revenueDisplay = displayAsTotal ? sumPeriods(revenueAllLOBs) : revenueAllLOBs.map(vals => vals[vals.length - 1] || 0);
+
+                      // COGS
+                      const cogsPayrollAllLOBs = calculateLOBValueForAllLOBs('cogsPayroll');
+                      const cogsOwnerPayAllLOBs = calculateLOBValueForAllLOBs('cogsOwnerPay');
+                      const cogsContractorsAllLOBs = calculateLOBValueForAllLOBs('cogsContractors');
+                      const cogsMaterialsAllLOBs = calculateLOBValueForAllLOBs('cogsMaterials');
+                      const cogsCommissionsAllLOBs = calculateLOBValueForAllLOBs('cogsCommissions');
+                      const cogsOtherAllLOBs = calculateLOBValueForAllLOBs('cogsOther');
+
+                      const cogsDisplay = lobsToCompare.map((_, lobIdx) => {
+                        const vals = displayAsTotal ? [
+                          sumPeriods([cogsPayrollAllLOBs[lobIdx]])[0],
+                          sumPeriods([cogsOwnerPayAllLOBs[lobIdx]])[0],
+                          sumPeriods([cogsContractorsAllLOBs[lobIdx]])[0],
+                          sumPeriods([cogsMaterialsAllLOBs[lobIdx]])[0],
+                          sumPeriods([cogsCommissionsAllLOBs[lobIdx]])[0],
+                          sumPeriods([cogsOtherAllLOBs[lobIdx]])[0]
+                        ] : [
+                          cogsPayrollAllLOBs[lobIdx][cogsPayrollAllLOBs[lobIdx].length - 1] || 0,
+                          cogsOwnerPayAllLOBs[lobIdx][cogsOwnerPayAllLOBs[lobIdx].length - 1] || 0,
+                          cogsContractorsAllLOBs[lobIdx][cogsContractorsAllLOBs[lobIdx].length - 1] || 0,
+                          cogsMaterialsAllLOBs[lobIdx][cogsMaterialsAllLOBs[lobIdx].length - 1] || 0,
+                          cogsCommissionsAllLOBs[lobIdx][cogsCommissionsAllLOBs[lobIdx].length - 1] || 0,
+                          cogsOtherAllLOBs[lobIdx][cogsOtherAllLOBs[lobIdx].length - 1] || 0
+                        ];
+                        return vals.reduce((sum, v) => sum + v, 0);
+                      });
+
+                      const grossProfitDisplay = revenueDisplay.map((rev, idx) => rev - cogsDisplay[idx]);
+
+                      // OPEX
+                      const payrollDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('payroll')) : calculateLOBValueForAllLOBs('payroll').map(vals => vals[vals.length - 1] || 0);
+                      const ownerBasePayDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('ownerBasePay')) : calculateLOBValueForAllLOBs('ownerBasePay').map(vals => vals[vals.length - 1] || 0);
+                      const ownerRetirementDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('ownerRetirement')) : calculateLOBValueForAllLOBs('ownerRetirement').map(vals => vals[vals.length - 1] || 0);
+                      const professionalFeesDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('professionalFees')) : calculateLOBValueForAllLOBs('professionalFees').map(vals => vals[vals.length - 1] || 0);
+                      const rentDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('rent')) : calculateLOBValueForAllLOBs('rent').map(vals => vals[vals.length - 1] || 0);
+                      const infrastructureDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('infrastructure')) : calculateLOBValueForAllLOBs('infrastructure').map(vals => vals[vals.length - 1] || 0);
+                      const equipmentDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('equipment')) : calculateLOBValueForAllLOBs('equipment').map(vals => vals[vals.length - 1] || 0);
+                      const autoTravelDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('autoTravel')) : calculateLOBValueForAllLOBs('autoTravel').map(vals => vals[vals.length - 1] || 0);
+                      const insuranceDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('insurance')) : calculateLOBValueForAllLOBs('insurance').map(vals => vals[vals.length - 1] || 0);
+                      const salesExpenseDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('salesExpense')) : calculateLOBValueForAllLOBs('salesExpense').map(vals => vals[vals.length - 1] || 0);
+                      const subcontractorsDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('subcontractors')) : calculateLOBValueForAllLOBs('subcontractors').map(vals => vals[vals.length - 1] || 0);
+                      const depreciationAmortizationDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('depreciationAmortization')) : calculateLOBValueForAllLOBs('depreciationAmortization').map(vals => vals[vals.length - 1] || 0);
+                      const otherExpenseDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('otherExpense')) : calculateLOBValueForAllLOBs('otherExpense').map(vals => vals[vals.length - 1] || 0);
+
+                      const totalOpexDisplay = lobsToCompare.map((_, idx) => 
+                        payrollDisplay[idx] + ownerBasePayDisplay[idx] + ownerRetirementDisplay[idx] + 
+                        professionalFeesDisplay[idx] + rentDisplay[idx] + infrastructureDisplay[idx] + 
+                        equipmentDisplay[idx] + autoTravelDisplay[idx] + insuranceDisplay[idx] + 
+                        salesExpenseDisplay[idx] + subcontractorsDisplay[idx] + 
+                        depreciationAmortizationDisplay[idx] + otherExpenseDisplay[idx]
+                      );
+
+                      const operatingIncomeDisplay = grossProfitDisplay.map((gp, idx) => gp - totalOpexDisplay[idx]);
+
+                      // Other Income/Expense
+                      const interestExpenseDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('interestExpense')) : calculateLOBValueForAllLOBs('interestExpense').map(vals => vals[vals.length - 1] || 0);
+                      const nonOperatingIncomeDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('nonOperatingIncome')) : calculateLOBValueForAllLOBs('nonOperatingIncome').map(vals => vals[vals.length - 1] || 0);
+                      const extraordinaryItemsDisplay = displayAsTotal ? sumPeriods(calculateLOBValueForAllLOBs('extraordinaryItems')) : calculateLOBValueForAllLOBs('extraordinaryItems').map(vals => vals[vals.length - 1] || 0);
+
+                      const netIncomeDisplay = operatingIncomeDisplay.map((opInc, idx) => 
+                        opInc - interestExpenseDisplay[idx] + nonOperatingIncomeDisplay[idx] + extraordinaryItemsDisplay[idx]
+                      );
+
+                      // Render function for side-by-side view
+                      const renderSideBySideRow = (label: string, values: number[], isHeader = false, isSubtotal = false, isTotal = false, indented = false, isNegative = false) => {
+                        if (values.every(v => v === 0) && !isTotal && !isSubtotal && !isHeader) return null;
+                        
+                        const bgColor = isTotal ? (values[0] >= 0 ? '#d1fae5' : '#fee2e2') :
+                                       isSubtotal ? (values[0] >= 0 ? '#dbeafe' : '#fee2e2') :
+                                       isHeader ? '#f8fafc' : 'transparent';
+                        const fontWeight = isHeader || isSubtotal || isTotal ? '700' : '500';
+                        const borderTop = (isSubtotal || isTotal) ? '2px solid #e2e8f0' : 'none';
+                        const paddingLeft = indented ? '24px' : '8px';
+                        
+                        return (
+                          <tr key={label} style={{ background: bgColor, borderTop }}>
+                            <td style={{ padding: `8px ${paddingLeft}`, fontWeight, color: '#1e293b', position: 'sticky', left: 0, background: bgColor, zIndex: 1, borderRight: '2px solid #e2e8f0', minWidth: '200px' }}>
+                              {label}
+                            </td>
+                            {values.map((val, idx) => {
+                              if (isHeader) {
+                                return <td key={idx} style={{ padding: '8px 12px', textAlign: 'right', fontWeight }}></td>;
+                              }
+                              
+                              let textColor = '#1e293b';
+                              if (isTotal || isSubtotal) {
+                                textColor = val >= 0 ? '#065f46' : '#991b1b';
+                              }
+                              
+                              let displayValue = '';
+                              if (isNegative && val > 0) {
+                                displayValue = `($${val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`;
+                              } else if (val < 0) {
+                                displayValue = `($${Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`;
+                              } else {
+                                displayValue = `$${val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                              }
+                              
+                              return (
+                                <td key={idx} style={{ padding: '8px 12px', textAlign: 'right', fontWeight, color: textColor, whiteSpace: 'nowrap', minWidth: '120px' }}>
+                                  {displayValue}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      };
+
+                      return (
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+                          <div style={{ marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
+                            <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - All Lines of Business</h2>
+                            <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel}</div>
+                          </div>
+
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                            <thead>
+                              <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                                <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: '700', color: '#475569', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 2, borderRight: '2px solid #e2e8f0' }}>
+                                  Account
+                                </th>
+                                {lobsToCompare.map((lob, idx) => (
+                                  <th key={idx} style={{ padding: '12px', textAlign: 'right', fontWeight: '700', color: '#475569', whiteSpace: 'nowrap', minWidth: '120px' }}>
+                                    {lob}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {renderSideBySideRow('Revenue', revenueDisplay, true)}
+                              
+                              <tr style={{ height: '8px' }}><td colSpan={lobsToCompare.length + 1}></td></tr>
+                              {renderSideBySideRow('Cost of Goods Sold', cogsDisplay.map(() => 0), true)}
+                              {renderSideBySideRow('COGS - Payroll', displayAsTotal ? sumPeriods(cogsPayrollAllLOBs) : cogsPayrollAllLOBs.map(v => v[v.length-1]||0), false, false, false, true)}
+                              {renderSideBySideRow('COGS - Owner Pay', displayAsTotal ? sumPeriods(cogsOwnerPayAllLOBs) : cogsOwnerPayAllLOBs.map(v => v[v.length-1]||0), false, false, false, true)}
+                              {renderSideBySideRow('COGS - Contractors', displayAsTotal ? sumPeriods(cogsContractorsAllLOBs) : cogsContractorsAllLOBs.map(v => v[v.length-1]||0), false, false, false, true)}
+                              {renderSideBySideRow('COGS - Materials', displayAsTotal ? sumPeriods(cogsMaterialsAllLOBs) : cogsMaterialsAllLOBs.map(v => v[v.length-1]||0), false, false, false, true)}
+                              {renderSideBySideRow('COGS - Commissions', displayAsTotal ? sumPeriods(cogsCommissionsAllLOBs) : cogsCommissionsAllLOBs.map(v => v[v.length-1]||0), false, false, false, true)}
+                              {renderSideBySideRow('COGS - Other', displayAsTotal ? sumPeriods(cogsOtherAllLOBs) : cogsOtherAllLOBs.map(v => v[v.length-1]||0), false, false, false, true)}
+                              {renderSideBySideRow('Total COGS', cogsDisplay, false, true)}
+                              {renderSideBySideRow('Gross Profit', grossProfitDisplay, false, true)}
+                              
+                              <tr style={{ height: '8px' }}><td colSpan={lobsToCompare.length + 1}></td></tr>
+                              {renderSideBySideRow('Operating Expenses', totalOpexDisplay.map(() => 0), true)}
+                              {renderSideBySideRow('Payroll', payrollDisplay, false, false, false, true)}
+                              {renderSideBySideRow("Owner's Base Pay", ownerBasePayDisplay, false, false, false, true)}
+                              {renderSideBySideRow("Owner's Retirement", ownerRetirementDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Professional Services', professionalFeesDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Rent / Lease', rentDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Utilities', infrastructureDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Equipment', equipmentDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Travel', autoTravelDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Insurance', insuranceDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Sales & Marketing', salesExpenseDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Contractors - Distribution', subcontractorsDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Depreciation', depreciationAmortizationDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Other Expenses', otherExpenseDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Total Operating Expenses', totalOpexDisplay, false, true)}
+                              
+                              {renderSideBySideRow('Operating Income', operatingIncomeDisplay, false, true)}
+                              
+                              <tr style={{ height: '8px' }}><td colSpan={lobsToCompare.length + 1}></td></tr>
+                              {renderSideBySideRow('Other Income / (Expense)', interestExpenseDisplay.map(() => 0), true)}
+                              {renderSideBySideRow('Interest Expense', interestExpenseDisplay, false, false, false, true, true)}
+                              {renderSideBySideRow('Non-Operating Income', nonOperatingIncomeDisplay, false, false, false, true)}
+                              {renderSideBySideRow('Extraordinary Items', extraordinaryItemsDisplay, false, false, false, true)}
+                              
+                              {renderSideBySideRow('Net Income', netIncomeDisplay, false, false, true)}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    }
+                    
+                    // SINGLE LOB VIEW
+                    return (
+                      <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+                        <div style={{ marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
+                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - {selectedLineOfBusiness}</h2>
+                          <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel}</div>
+                        </div>
+
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                          <thead>
+                            <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                              <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: '700', color: '#475569', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 2 }}>
+                                Account
+                              </th>
+                              {monthHeaders.map((header, idx) => (
+                                <th key={idx} style={{ padding: '12px', textAlign: 'right', fontWeight: '700', color: '#475569', whiteSpace: 'nowrap', minWidth: '120px' }}>
+                                  {header}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {/* Revenue Section */}
+                            {renderRow('Revenue', revenueValues, true)}
+                            
+                            {/* COGS Section */}
+                            <tr style={{ height: '8px' }}><td colSpan={columnsToShow.length + 1}></td></tr>
+                            {renderRow('Cost of Goods Sold', cogsPayrollValues.map(() => 0), true)} {/* Section header */}
+                            {renderRow('COGS - Payroll', cogsPayrollValues, false, false, false, true)}
+                            {renderRow('COGS - Owner Pay', cogsOwnerPayValues, false, false, false, true)}
+                            {renderRow('COGS - Contractors', cogsContractorsValues, false, false, false, true)}
+                            {renderRow('COGS - Materials', cogsMaterialsValues, false, false, false, true)}
+                            {renderRow('COGS - Commissions', cogsCommissionsValues, false, false, false, true)}
+                            {renderRow('COGS - Other', cogsOtherValues, false, false, false, true)}
+                            {renderRow('Total COGS', cogsValues, false, true)}
+                            
+                            {/* Gross Profit */}
+                            {renderRow('Gross Profit', grossProfitValues, false, true)}
+                            
+                            {/* Operating Expenses */}
+                            <tr style={{ height: '8px' }}><td colSpan={columnsToShow.length + 1}></td></tr>
+                            {renderRow('Operating Expenses', opexPayrollValues.map(() => 0), true)} {/* Section header */}
+                            {renderRow('Payroll', opexPayrollValues, false, false, false, true)}
+                            {renderRow("Owner's Base Pay", ownersBasePayValues, false, false, false, true)}
+                            {renderRow("Owner's Retirement", ownersRetirementValues, false, false, false, true)}
+                            {renderRow('Professional Services', professionalServicesValues, false, false, false, true)}
+                            {renderRow('Rent / Lease', rentLeaseValues, false, false, false, true)}
+                            {renderRow('Utilities', utilitiesValues, false, false, false, true)}
+                            {renderRow('Equipment', equipmentValues, false, false, false, true)}
+                            {renderRow('Travel', travelValues, false, false, false, true)}
+                            {renderRow('Insurance', insuranceValues, false, false, false, true)}
+                            {renderRow('Sales & Marketing', opexSalesMarketingValues, false, false, false, true)}
+                            {renderRow('Contractors - Distribution', contractorsDistributionValues, false, false, false, true)}
+                            {renderRow('Depreciation', depreciationExpenseValues, false, false, false, true)}
+                            {renderRow('Other Expenses', opexOtherValues, false, false, false, true)}
+                            {renderRow('Total Operating Expenses', totalOpexValues, false, true)}
+                            
+                            {/* Operating Income */}
+                            {renderRow('Operating Income', operatingIncomeValues, false, true)}
+                            
+                            {/* Other Income/Expense */}
+                            <tr style={{ height: '8px' }}><td colSpan={columnsToShow.length + 1}></td></tr>
+                            {renderRow('Other Income / (Expense)', interestExpenseValues.map(() => 0), true)} {/* Section header */}
+                            {renderRow('Interest Expense', interestExpenseValues, false, false, false, true, true)}
+                            {renderRow('Non-Operating Income', nonOperatingIncomeValues, false, false, false, true)}
+                            {renderRow('Extraordinary Items', extraordinaryItemsValues, false, false, false, true)}
+                            
+                            {/* Net Income */}
+                            {renderRow('Net Income', netIncomeValues, false, false, true)}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  }
+                  
+                  // Default message for other combinations
+                  return (
+                    <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+                      <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                        Coming Soon
+                      </div>
+                      <p style={{ fontSize: '14px', color: '#64748b', maxWidth: '500px', margin: '0 auto' }}>
+                        This combination of statement type and period is not yet available for LOB reporting.
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
