@@ -21349,4 +21349,4 @@ export default function FinancialScorePage() {
           isLoading={isLoading}
           setIsLoading={setIsLoading}
         />
-
+      )}
