@@ -1,14 +1,14 @@
 'use client';
 
 import React from 'react';
-import { CompanyProfile, Company, MonthlyDataRow, User, Consultant } from '../../types';
-import { profilesApi, ApiError } from '../../api/client';
-import { INDUSTRY_SECTORS } from '../../lib/industry-sectors';
+import { INDUSTRY_SECTORS } from '../../../data/industrySectors';
+import { profilesApi, ApiError } from '@/lib/api-client';
+import type { Company, CompanyProfile, MonthlyDataRow, User } from '../../types';
 
 interface ProfileTabProps {
-  selectedCompanyId: number;
-  currentUser: User | Consultant | null;
-  company: Company | undefined;
+  selectedCompanyId: string;
+  currentUser: User | null;
+  company: Company | null;
   companyProfiles: CompanyProfile[];
   setCompanyProfiles: (profiles: CompanyProfile[]) => void;
   monthly: MonthlyDataRow[];
@@ -667,4 +667,3 @@ export default function ProfileTab({
     </div>
   );
 }
-
