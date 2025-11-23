@@ -119,8 +119,9 @@ model MonthlyFinancial {
   financialRecordId        String
   monthDate                DateTime
   revenue                  Float           @default(0)
-  revenueBreakdown         Json?
+  revenueBreakdown         Json?           // LOB breakdown: { "LOB Name": amount, ... }
   expense                  Float           @default(0)
+  expenseBreakdown         Json?           // LOB breakdown for total expenses
   cogsPayroll              Float           @default(0)
   cogsOwnerPay             Float           @default(0)
   cogsContractors          Float           @default(0)
@@ -128,6 +129,7 @@ model MonthlyFinancial {
   cogsCommissions          Float           @default(0)
   cogsOther                Float           @default(0)
   cogsTotal                Float           @default(0)
+  cogsBreakdown            Json?           // LOB breakdown for total COGS
   payroll                  Float           @default(0)
   ownerBasePay             Float           @default(0)
   benefits                 Float           @default(0)
@@ -148,6 +150,7 @@ model MonthlyFinancial {
   otherExpense             Float           @default(0)
   nonOperatingIncome       Float           @default(0)
   extraordinaryItems       Float           @default(0)
+  lobBreakdowns            Json?           // Comprehensive LOB breakdowns for all fields
   cash                     Float           @default(0)
   ar                       Float           @default(0)
   inventory                Float           @default(0)

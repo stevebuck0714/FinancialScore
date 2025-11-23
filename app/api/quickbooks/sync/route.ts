@@ -365,6 +365,19 @@ export async function POST(request: NextRequest) {
       console.warn('Failed to fetch Chart of Accounts, continuing without account codes');
     }
 
+    // Fetch account mappings for LOB allocation
+    console.log('📋 Fetching account mappings for LOB allocation...');
+    const accountMappings = await prisma.accountMapping.findMany({
+      where: { companyId },
+      select: {
+        qbAccount: true,
+        qbAccountId: true,
+        targetField: true,
+        lobAllocations: true,
+      },
+    });
+    console.log(`✅ Found ${accountMappings.length} account mappings (${accountMappings.filter(m => m.lobAllocations).length} with LOB allocations)`);
+
     // Create a financial record
     const financialRecord = await prisma.financialRecord.create({
       data: {
@@ -385,8 +398,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Parse and create monthly financial records
-    const parsedRecords = createMonthlyRecords(plData, bsData, financialRecord.id, 36);
+    // Parse and create monthly financial records with LOB allocations
+    const parsedRecords = createMonthlyRecords(plData, bsData, financialRecord.id, 36, accountMappings as any);
     
     if (parsedRecords.length > 0) {
       const monthlyRecords = parsedRecords.map(record => ({
@@ -394,8 +407,12 @@ export async function POST(request: NextRequest) {
         financialRecordId: financialRecord.id,
         monthDate: record.monthDate,
         revenue: record.revenue,
+        revenueBreakdown: record.revenueBreakdown,
         expense: record.expense,
+        expenseBreakdown: record.expenseBreakdown,
         cogsTotal: record.cogsTotal,
+        cogsBreakdown: record.cogsBreakdown,
+        lobBreakdowns: record.lobBreakdowns,
         cash: record.cash,
         ar: record.ar,
         inventory: record.inventory,

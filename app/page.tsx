@@ -21,6 +21,7 @@ import DataReviewTab from './components/dashboard/DataReviewTab';
 import TeamManagementTab from './components/dashboard/TeamManagementTab';
 import PaymentsTab from './components/dashboard/PaymentsTab';
 import ProfileTab from './components/dashboard/ProfileTab';
+import LOBReportingTab from './components/dashboard/LOBReportingTab';
 import MAWelcomeView from './components/assessment/MAWelcomeView';
 import MAScoringGuideView from './components/assessment/MAScoringGuideView';
 import MAScoresSummaryView from './components/assessment/MAScoresSummaryView';
@@ -1184,7 +1185,12 @@ export default function FinancialScorePage() {
               additionalPaidInCapital: m.additionalPaidInCapital || 0,
               treasuryStock: m.treasuryStock || 0,
               totalEquity: m.totalEquity || 0,
-              totalLAndE: m.totalLAndE || 0
+              totalLAndE: m.totalLAndE || 0,
+              // LOB Breakdown fields
+              revenueBreakdown: m.revenueBreakdown || null,
+              expenseBreakdown: m.expenseBreakdown || null,
+              cogsBreakdown: m.cogsBreakdown || null,
+              lobBreakdowns: m.lobBreakdowns || null
             }));
             setLoadedMonthlyData(convertedMonthly);
           } else {
@@ -18736,112 +18742,20 @@ export default function FinancialScorePage() {
 
             {/* Line of Business Reporting Tab */}
             {financialStatementsTab === 'line-of-business' && (
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <div style={{ marginBottom: '12px' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Line of Business Reporting</h2>
-                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    View financial performance by line of business. Select a specific business line or view all lines side by side.
-                  </p>
-                  
-                  {/* Line of Business Selector */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                        Line of Business
-                      </label>
-                      <select 
-                        value={selectedLineOfBusiness}
-                        onChange={(e) => setSelectedLineOfBusiness(e.target.value)}
-                        style={{ 
-                          width: '100%', 
-                          padding: '10px 12px', 
-                          border: '1px solid #cbd5e1', 
-                          borderRadius: '6px', 
-                          fontSize: '14px',
-                          color: '#1e293b',
-                          background: 'white',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="all">All Lines of Business (Side by Side)</option>
-                        {qbRawData?.profitAndLoss?.Columns?.Column && Array.isArray(qbRawData.profitAndLoss.Columns.Column) 
-                          ? qbRawData.profitAndLoss.Columns.Column
-                              .filter((col: any) => col.ColType !== 'Total')
-                              .map((col: any, idx: number) => (
-                                <option key={idx} value={col.ColTitle || `Column ${idx + 1}`}>
-                                  {col.ColTitle || `Column ${idx + 1}`}
-                                </option>
-                              ))
-                          : null
-                        }
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                        Period
-                      </label>
-                      <select 
-                        value={statementPeriod}
-                        onChange={(e) => setStatementPeriod(e.target.value as any)}
-                        style={{ 
-                          width: '100%', 
-                          padding: '10px 12px', 
-                          border: '1px solid #cbd5e1', 
-                          borderRadius: '6px', 
-                          fontSize: '14px',
-                          color: '#1e293b',
-                          background: 'white',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="current-month">Current Month</option>
-                        <option value="current-quarter">Current Quarter</option>
-                        <option value="last-12-months">Last 12 months</option>
-                        <option value="ytd">YTD</option>
-                        <option value="last-year">Last Year</option>
-                        <option value="last-3-years">Last 3 Years</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                        Display As
-                      </label>
-                      <select 
-                        value={statementDisplay}
-                        onChange={(e) => setStatementDisplay(e.target.value as 'monthly' | 'quarterly' | 'annual')}
-                        style={{ 
-                          width: '100%', 
-                          padding: '10px 12px', 
-                          border: '1px solid #cbd5e1', 
-                          borderRadius: '6px', 
-                          fontSize: '14px',
-                          color: '#1e293b',
-                          background: 'white',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="annual">Annual</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Coming Soon Message */}
-                <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                  <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                    Line of Business Reporting
-                  </div>
-                  <p style={{ fontSize: '14px', color: '#64748b', maxWidth: '500px', margin: '0 auto' }}>
-                    This feature will display Income Statement data broken down by line of business from your QuickBooks class tracking. 
-                    You'll be able to compare performance across different business lines side by side for the selected period.
-                  </p>
-                </div>
-              </div>
+              <LOBReportingTab
+                company={company}
+                monthly={monthly}
+                qbRawData={qbRawData}
+                accountMappings={aiMappings}
+                statementType={statementType}
+                selectedLineOfBusiness={selectedLineOfBusiness}
+                statementPeriod={statementPeriod}
+                statementDisplay={statementDisplay}
+                onStatementTypeChange={setStatementType}
+                onLineOfBusinessChange={setSelectedLineOfBusiness}
+                onPeriodChange={setStatementPeriod}
+                onDisplayChange={setStatementDisplay}
+              />
             )}
           </div>
         );
@@ -21302,24 +21216,20 @@ export default function FinancialScorePage() {
 
           {/* Line of Business Reporting Tab */}
           {financialStatementsTab === 'line-of-business' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div style={{ marginBottom: '12px' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Line of Business Reporting</h2>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                  Line of Business reporting is currently only available for QuickBooks data with class tracking enabled.
-                </p>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                  QuickBooks Data Required
-                </div>
-                <p style={{ fontSize: '14px', color: '#64748b', maxWidth: '500px', margin: '0 auto' }}>
-                  To use Line of Business reporting, please connect your QuickBooks account and ensure class tracking is enabled for your company.
-                </p>
-              </div>
-            </div>
+            <LOBReportingTab
+              company={company}
+              monthly={monthly}
+              qbRawData={qbRawData}
+              accountMappings={aiMappings}
+              statementType={statementType}
+              selectedLineOfBusiness={selectedLineOfBusiness}
+              statementPeriod={statementPeriod}
+              statementDisplay={statementDisplay}
+              onStatementTypeChange={setStatementType}
+              onLineOfBusinessChange={setSelectedLineOfBusiness}
+              onPeriodChange={setStatementPeriod}
+              onDisplayChange={setStatementDisplay}
+            />
           )}
         </div>
       )}

@@ -1,6 +1,8 @@
 // QuickBooks Report Parser
 // Extracts financial data from QuickBooks P&L and Balance Sheet reports
 
+import { applyLOBAllocations, AccountValue, AccountMapping, roundAllBreakdowns, MonthlyLOBData } from './lob-allocator';
+
 export interface ParsedFinancialData {
   monthDate: Date;
   revenue: number;
@@ -21,6 +23,11 @@ export interface ParsedFinancialData {
   totalLiab: number;
   totalEquity: number;
   totalLAndE: number;
+  // LOB breakdowns
+  revenueBreakdown?: any;
+  expenseBreakdown?: any;
+  cogsBreakdown?: any;
+  lobBreakdowns?: any;
 }
 
 /**
@@ -173,6 +180,68 @@ export function parseBalanceSheet(bsData: any): {
 }
 
 /**
+ * Extract all Data rows (individual accounts) from a QB report recursively
+ */
+function extractAccountRows(rows: any[]): any[] {
+  const accountRows: any[] = [];
+  
+  if (!rows || !Array.isArray(rows)) {
+    return accountRows;
+  }
+  
+  for (const row of rows) {
+    if (row.type === 'Data') {
+      // This is an account row
+      accountRows.push(row);
+    } else if (row.type === 'Section' && row.Rows) {
+      // Recursively extract from nested rows
+      const nestedRows = Array.isArray(row.Rows) ? row.Rows : (row.Rows.Row || []);
+      const nestedAccounts = extractAccountRows(Array.isArray(nestedRows) ? nestedRows : [nestedRows]);
+      accountRows.push(...nestedAccounts);
+    }
+  }
+  
+  return accountRows;
+}
+
+/**
+ * Extract account values for a specific month column
+ */
+function extractAccountValuesForMonth(
+  accountRows: any[],
+  columnIndex: number
+): AccountValue[] {
+  const accountValues: AccountValue[] = [];
+  
+  for (const row of accountRows) {
+    if (row.ColData && row.ColData.length > columnIndex) {
+      const accountName = row.ColData[0]?.value || '';
+      const accountId = row.ColData[0]?.id || '';
+      const valueStr = row.ColData[columnIndex]?.value || '';
+      
+      // Parse the value (could be empty string, number, or formatted string)
+      let value = 0;
+      if (valueStr && valueStr !== '') {
+        value = parseFloat(valueStr.replace(/,/g, ''));
+        if (isNaN(value)) {
+          value = 0;
+        }
+      }
+      
+      if (accountName && value !== 0) {
+        accountValues.push({
+          accountName,
+          accountId,
+          value: Math.abs(value) // Use absolute value
+        });
+      }
+    }
+  }
+  
+  return accountValues;
+}
+
+/**
  * Combine P&L and Balance Sheet data into monthly financial records
  * Extracts actual monthly column data from QuickBooks reports
  */
@@ -180,7 +249,8 @@ export function createMonthlyRecords(
   plData: any,
   bsData: any,
   financialRecordId: string,
-  monthsCount: number = 36
+  monthsCount: number = 36,
+  accountMappings?: AccountMapping[]
 ): ParsedFinancialData[] {
   const records: ParsedFinancialData[] = [];
   
@@ -231,6 +301,12 @@ export function createMonthlyRecords(
   const plRows = Array.isArray(plData?.Rows) ? plData.Rows : (plData?.Rows?.Row || []);
   const bsRows = Array.isArray(bsData?.Rows) ? bsData.Rows : (bsData?.Rows?.Row || []);
   
+  // Extract all account-level data rows for LOB allocation
+  const plAccountRows = extractAccountRows(plRows);
+  const bsAccountRows = extractAccountRows(bsRows);
+  
+  console.log(`📊 Extracted ${plAccountRows.length} P&L accounts and ${bsAccountRows.length} BS accounts`);
+  
   // Process each monthly column
   for (let colIndex = 1; colIndex < monthlyColumns.length + 1; colIndex++) {
     // Parse month date from column header
@@ -280,6 +356,27 @@ export function createMonthlyRecords(
     
     console.log(`Month ${colIndex}: ${colHeader} - Rev: ${revenue}, Exp: ${expense}, Assets: ${totalAssets}`);
     
+    // Apply LOB allocations if account mappings are provided
+    let lobData: MonthlyLOBData | null = null;
+    if (accountMappings && accountMappings.length > 0) {
+      // Extract account values for this month from both P&L and Balance Sheet
+      const plAccountValues = extractAccountValuesForMonth(plAccountRows, colIndex);
+      const bsAccountValues = extractAccountValuesForMonth(bsAccountRows, colIndex);
+      const allAccountValues = [...plAccountValues, ...bsAccountValues];
+      
+      // Apply LOB allocations
+      lobData = applyLOBAllocations(allAccountValues, accountMappings);
+      
+      if (colIndex === 1) {
+        console.log(`📊 LOB Allocation sample for first month:`);
+        console.log(`  Total accounts processed: ${allAccountValues.length}`);
+        console.log(`  Fields with breakdowns: ${Object.keys(lobData.breakdowns).length}`);
+        if (lobData.revenueBreakdown) {
+          console.log(`  Revenue breakdown:`, lobData.revenueBreakdown);
+        }
+      }
+    }
+    
     records.push({
       monthDate,
       revenue,
@@ -300,6 +397,11 @@ export function createMonthlyRecords(
       totalLiab: totalLiabilities,
       totalEquity: equity,
       totalLAndE: totalAssets, // Should equal totalLiabilities + equity
+      // Add LOB breakdowns if available
+      revenueBreakdown: lobData?.revenueBreakdown || null,
+      expenseBreakdown: lobData?.expenseBreakdown || null,
+      cogsBreakdown: lobData?.cogsBreakdown || null,
+      lobBreakdowns: lobData ? roundAllBreakdowns(lobData.breakdowns) : null,
     });
   }
 
