@@ -71,6 +71,14 @@ export default function FinancialScorePage() {
   const [newConsultantCompanyState, setNewConsultantCompanyState] = useState('');
   const [newConsultantCompanyZip, setNewConsultantCompanyZip] = useState('');
   const [newConsultantCompanyWebsite, setNewConsultantCompanyWebsite] = useState('');
+  
+  // State - Site Administrators
+  const [siteAdmins, setSiteAdmins] = useState<any[]>([]);
+  const [newSiteAdminFirstName, setNewSiteAdminFirstName] = useState('');
+  const [newSiteAdminLastName, setNewSiteAdminLastName] = useState('');
+  const [newSiteAdminEmail, setNewSiteAdminEmail] = useState('');
+  const [newSiteAdminPassword, setNewSiteAdminPassword] = useState('');
+  const [showAddSiteAdminForm, setShowAddSiteAdminForm] = useState(false);
   const [selectedConsultantId, setSelectedConsultantId] = useState('');
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
   
@@ -323,7 +331,7 @@ export default function FinancialScorePage() {
     }
   };
   const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'profile' | 'team-management'>('company-management');
-  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing'>('consultants');
+  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
   const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
@@ -988,6 +996,21 @@ export default function FinancialScorePage() {
           }
         })
         .catch(err => console.error('Error loading affiliates:', err));
+    }
+  }, [siteAdminTab]);
+
+  // Load site administrators when tab is opened
+  useEffect(() => {
+    if (siteAdminTab === 'siteadmins') {
+      fetch('/api/siteadmins')
+        .then(res => res.json())
+        .then(data => {
+          setSiteAdmins(data || []);
+        })
+        .catch(error => {
+          console.error('Error loading site administrators:', error);
+          setSiteAdmins([]);
+        });
     }
   }, [siteAdminTab]);
 
@@ -4535,6 +4558,23 @@ export default function FinancialScorePage() {
                 >
                   Default Pricing
                 </button>
+                <button
+                  onClick={() => setSiteAdminTab('siteadmins')}
+                  style={{
+                    padding: '8px 16px',
+                    background: siteAdminTab === 'siteadmins' ? '#667eea' : 'transparent',
+                    color: siteAdminTab === 'siteadmins' ? 'white' : '#64748b',
+                    border: 'none',
+                    borderBottom: siteAdminTab === 'siteadmins' ? '3px solid #667eea' : '3px solid transparent',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    borderRadius: '6px 6px 0 0',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Site Administrators
+                </button>
               </div>
 
               {/* Consultants Tab */}
@@ -6296,6 +6336,201 @@ export default function FinancialScorePage() {
                     </ul>
                   </div>
                 </div>
+              )}
+
+              {/* Site Administrators Tab */}
+              {siteAdminTab === 'siteadmins' && (
+              <>
+              {/* Add Site Admin Form */}
+              <div style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showAddSiteAdminForm ? '12px' : '0' }}>
+                  <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Add New Site Administrator</h2>
+                  <button
+                    onClick={() => setShowAddSiteAdminForm(!showAddSiteAdminForm)}
+                    style={{ 
+                      padding: '4px 12px', 
+                      background: showAddSiteAdminForm ? '#f1f5f9' : '#667eea', 
+                      color: showAddSiteAdminForm ? '#475569' : 'white', 
+                      border: 'none', 
+                      borderRadius: '6px', 
+                      fontSize: '12px', 
+                      fontWeight: '600', 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    {showAddSiteAdminForm ? '▲' : '▼'}
+                  </button>
+                </div>
+                {showAddSiteAdminForm && (
+                  <>
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                        <input
+                          type="text"
+                          placeholder="First Name *"
+                          value={newSiteAdminFirstName}
+                          onChange={(e) => setNewSiteAdminFirstName(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Last Name *"
+                          value={newSiteAdminLastName}
+                          onChange={(e) => setNewSiteAdminLastName(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="email"
+                          placeholder="Email *"
+                          value={newSiteAdminEmail}
+                          onChange={(e) => setNewSiteAdminEmail(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="password"
+                          placeholder="Password *"
+                          value={newSiteAdminPassword}
+                          onChange={(e) => setNewSiteAdminPassword(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        if (!newSiteAdminFirstName || !newSiteAdminLastName || !newSiteAdminEmail || !newSiteAdminPassword) {
+                          alert('Please fill in all required fields');
+                          return;
+                        }
+                        
+                        setIsLoading(true);
+                        try {
+                          const response = await fetch('/api/siteadmins', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              firstName: newSiteAdminFirstName,
+                              lastName: newSiteAdminLastName,
+                              email: newSiteAdminEmail,
+                              password: newSiteAdminPassword,
+                            }),
+                          });
+
+                          if (response.ok) {
+                            const newAdmin = await response.json();
+                            setSiteAdmins([...siteAdmins, newAdmin]);
+                            setNewSiteAdminFirstName('');
+                            setNewSiteAdminLastName('');
+                            setNewSiteAdminEmail('');
+                            setNewSiteAdminPassword('');
+                            setShowAddSiteAdminForm(false);
+                            alert('✅ Site administrator added successfully!');
+                          } else {
+                            const error = await response.json();
+                            alert(`❌ Failed to add site administrator: ${error.error || 'Unknown error'}`);
+                          }
+                        } catch (error) {
+                          console.error('Error adding site administrator:', error);
+                          alert('❌ Error adding site administrator. Please try again.');
+                        } finally {
+                          setIsLoading(false);
+                        }
+                      }}
+                      disabled={isLoading}
+                      style={{ 
+                        padding: '8px 20px', 
+                        background: isLoading ? '#94a3b8' : '#10b981', 
+                        color: 'white', 
+                        border: 'none', 
+                        borderRadius: '6px', 
+                        fontSize: '13px', 
+                        fontWeight: '600', 
+                        cursor: isLoading ? 'not-allowed' : 'pointer',
+                        opacity: isLoading ? 0.6 : 1
+                      }}
+                    >
+                      {isLoading ? 'Adding...' : 'Add Site Administrator'}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Site Admins List */}
+              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Site Administrators ({siteAdmins.length})</h2>
+                
+                {siteAdmins.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>👥</div>
+                    <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>No site administrators yet</p>
+                    <p style={{ fontSize: '14px' }}>Add a new site administrator to get started</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '12px' }}>
+                    {siteAdmins.map((admin: any) => (
+                      <div
+                        key={admin.id}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '8px',
+                          padding: '16px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+                            {admin.name}
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#64748b' }}>
+                            {admin.email}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Are you sure you want to delete site administrator "${admin.name}"?`)) {
+                                return;
+                              }
+                              
+                              try {
+                                const response = await fetch(`/api/siteadmins?id=${admin.id}`, {
+                                  method: 'DELETE',
+                                });
+
+                                if (response.ok) {
+                                  setSiteAdmins(siteAdmins.filter((a: any) => a.id !== admin.id));
+                                  alert('✅ Site administrator deleted successfully!');
+                                } else {
+                                  alert('❌ Failed to delete site administrator');
+                                }
+                              } catch (error) {
+                                console.error('Error deleting site administrator:', error);
+                                alert('❌ Error deleting site administrator');
+                              }
+                            }}
+                            style={{
+                              padding: '6px 12px',
+                              background: '#ef4444',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              </>
               )}
             </div>
           )}
