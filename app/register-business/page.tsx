@@ -93,10 +93,8 @@ export default function RegisterBusinessWelcome() {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
+    // Password validation is now handled by the backend
+    // The backend will return detailed error messages for password requirements
 
     // If affiliate is selected, code must be validated
     if (selectedAffiliateId && !validatedAffiliate) {
@@ -131,7 +129,11 @@ export default function RegisterBusinessWelcome() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error || 'Registration failed');
+        if (data.error && data.error.includes('Password does not meet requirements')) {
+          setError('Password does not meet requirements:\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)');
+        } else {
+          setError(data.error || 'Registration failed');
+        }
         setIsNavigating(false);
         return;
       }
@@ -341,7 +343,7 @@ export default function RegisterBusinessWelcome() {
                     name="password"
                     value={formData.password}
                     onChange={handleInputChange}
-                    placeholder="Create a password (min. 6 characters)"
+                    placeholder="Create a secure password"
                     disabled={isNavigating}
                     autoComplete="new-password"
                     style={{
@@ -370,6 +372,14 @@ export default function RegisterBusinessWelcome() {
                   >
                     {showPassword ? '👁️' : '👁️‍🗨️'}
                   </button>
+                </div>
+                <div style={{ 
+                  fontSize: '12px', 
+                  color: '#64748b', 
+                  marginTop: '6px', 
+                  lineHeight: '1.5' 
+                }}>
+                  Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
                 </div>
               </div>
 

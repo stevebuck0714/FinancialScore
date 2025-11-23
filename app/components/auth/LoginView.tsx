@@ -272,7 +272,7 @@ export default function LoginView(props: LoginViewProps) {
             />
             
             {/* Password field with toggle */}
-            <div style={{ position: 'relative', marginBottom: '12px' }}>
+            <div style={{ position: 'relative', marginBottom: '4px' }}>
               <input 
                 type={showPassword ? "text" : "password"} 
                 name={`password_${Date.now()}`}
@@ -291,6 +291,9 @@ export default function LoginView(props: LoginViewProps) {
               >
                 {showPassword ? '👁️' : '👁️‍🗨️'}
               </button>
+            </div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px', lineHeight: '1.5' }}>
+              Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
             </div>
             
             <button type="submit" disabled={isLoading} style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1 }}>

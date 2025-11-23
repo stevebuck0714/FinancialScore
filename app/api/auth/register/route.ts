@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
+import { validatePassword } from '@/lib/password-validator';
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,9 +18,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return NextResponse.json(
+        { 
+          error: 'Password does not meet requirements',
+          details: passwordValidation.errors
+        },
+        { status: 400 }
+      );
+    }
+
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = email.toLowerCase().trim();
+
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
-      where: { email }
+      where: { email: normalizedEmail }
     });
 
     if (existingUser) {
@@ -79,7 +95,7 @@ export async function POST(request: NextRequest) {
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
-          email,
+          email: normalizedEmail,
           name,
           passwordHash,
           role: 'CONSULTANT',

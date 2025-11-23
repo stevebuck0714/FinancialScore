@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
+import { validatePassword } from '@/lib/password-validator';
 
 // GET all team members for a consultant
 export async function GET(request: NextRequest) {
@@ -56,6 +57,18 @@ export async function POST(request: NextRequest) {
     if (!consultantId || !name || !email || !password) {
       return NextResponse.json(
         { error: 'Consultant ID, name, email, and password are required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return NextResponse.json(
+        { 
+          error: 'Password does not meet requirements',
+          details: passwordValidation.errors
+        },
         { status: 400 }
       );
     }

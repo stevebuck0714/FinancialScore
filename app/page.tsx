@@ -2290,6 +2290,8 @@ export default function FinancialScorePage() {
       if (error instanceof ApiError) {
         if (error.message.includes('already registered')) {
           alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+        } else if (error.message.includes('Password does not meet requirements')) {
+          alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -2372,7 +2374,11 @@ export default function FinancialScorePage() {
       setNewConsultantCompanyZip('');
       setNewConsultantCompanyWebsite('');
     } catch (error) {
-      alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
+      if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
+        alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+      } else {
+        alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -4634,13 +4640,18 @@ export default function FinancialScorePage() {
                           onChange={(e) => setNewConsultantPhone(e.target.value)}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
-                        <input
-                          type="password"
-                          placeholder="Password *"
-                          value={newConsultantPassword}
-                          onChange={(e) => setNewConsultantPassword(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <input
+                            type="password"
+                            placeholder="Password *"
+                            value={newConsultantPassword}
+                            onChange={(e) => setNewConsultantPassword(e.target.value)}
+                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', width: '100%' }}
+                          />
+                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', lineHeight: '1.4' }}>
+                            Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -6386,13 +6397,18 @@ export default function FinancialScorePage() {
                           onChange={(e) => setNewSiteAdminEmail(e.target.value)}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
-                        <input
-                          type="password"
-                          placeholder="Password *"
-                          value={newSiteAdminPassword}
-                          onChange={(e) => setNewSiteAdminPassword(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
+                        <div>
+                          <input
+                            type="password"
+                            placeholder="Password *"
+                            value={newSiteAdminPassword}
+                            onChange={(e) => setNewSiteAdminPassword(e.target.value)}
+                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', width: '100%' }}
+                          />
+                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', lineHeight: '1.4' }}>
+                            Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -6427,7 +6443,11 @@ export default function FinancialScorePage() {
                             alert('✅ Site administrator added successfully!');
                           } else {
                             const error = await response.json();
-                            alert(`❌ Failed to add site administrator: ${error.error || 'Unknown error'}`);
+                            if (error.error && error.error.includes('Password does not meet requirements')) {
+                              alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+                            } else {
+                              alert(`❌ Failed to add site administrator: ${error.error || 'Unknown error'}`);
+                            }
                           }
                         } catch (error) {
                           console.error('Error adding site administrator:', error);
@@ -6905,15 +6925,20 @@ export default function FinancialScorePage() {
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                           </div>
-                          <input 
-                            type="password" 
-                            name={`company_user_password_${Date.now()}`}
-                            placeholder="Password" 
-                            value={newCompanyUserPassword} 
-                            onChange={(e) => setNewCompanyUserPassword(e.target.value)} 
-                            autoComplete="new-password"
-                            style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
-                          />
+                          <div style={{ gridColumn: 'span 2' }}>
+                            <input 
+                              type="password" 
+                              name={`company_user_password_${Date.now()}`}
+                              placeholder="Password" 
+                              value={newCompanyUserPassword} 
+                              onChange={(e) => setNewCompanyUserPassword(e.target.value)} 
+                              autoComplete="new-password"
+                              style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', width: '100%' }} 
+                            />
+                            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', lineHeight: '1.3' }}>
+                              8+ chars with uppercase, lowercase, number, and special character
+                            </div>
+                          </div>
                           <button onClick={() => addUser(comp.id, 'company')} style={{ padding: '8px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Company User</button>
                         </div>
                       </div>
@@ -6992,15 +7017,20 @@ export default function FinancialScorePage() {
                               autoComplete="off"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
-                            <input 
-                              type="password" 
-                              name={`assessment_user_password_${Date.now()}`}
-                              placeholder="Password" 
-                              value={newAssessmentUserPassword} 
-                              onChange={(e) => setNewAssessmentUserPassword(e.target.value)} 
-                              autoComplete="new-password"
-                              style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
-                            />
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <input 
+                                type="password" 
+                                name={`assessment_user_password_${Date.now()}`}
+                                placeholder="Password" 
+                                value={newAssessmentUserPassword} 
+                                onChange={(e) => setNewAssessmentUserPassword(e.target.value)} 
+                                autoComplete="new-password"
+                                style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', width: '100%' }} 
+                              />
+                              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', lineHeight: '1.3' }}>
+                                8+ chars with uppercase, lowercase, number, and special character
+                              </div>
+                            </div>
                             <button onClick={() => addUser(comp.id, 'assessment')} style={{ padding: '8px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Assessment User</button>
                           </div>
                         </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
+import { validatePassword } from '@/lib/password-validator';
 
 // GET all consultants (site admin only)
 export async function GET(request: NextRequest) {
@@ -70,9 +71,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return NextResponse.json(
+        { 
+          error: 'Password does not meet requirements',
+          details: passwordValidation.errors
+        },
+        { status: 400 }
+      );
+    }
+
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = email.toLowerCase().trim();
+
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
-      where: { email }
+      where: { email: normalizedEmail }
     });
 
     if (existingUser) {
@@ -87,7 +103,7 @@ export async function POST(request: NextRequest) {
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
-          email,
+          email: normalizedEmail,
           name: fullName,
           passwordHash,
           role: 'CONSULTANT'
@@ -168,10 +184,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Normalize email to lowercase if provided
+    const normalizedEmail = email ? email.toLowerCase().trim() : undefined;
+
     // Check if email is being changed and if it's already taken by another user
-    if (email && email !== consultant.user.email) {
+    if (normalizedEmail && normalizedEmail !== consultant.user.email) {
       const existingUser = await prisma.user.findUnique({
-        where: { email }
+        where: { email: normalizedEmail }
       });
 
       if (existingUser && existingUser.id !== consultant.userId) {
@@ -186,7 +205,7 @@ export async function PUT(request: NextRequest) {
     const result = await prisma.$transaction(async (tx) => {
       // Update user email, name, and phone if provided
       const updateData: any = {};
-      if (email) updateData.email = email;
+      if (normalizedEmail) updateData.email = normalizedEmail;
       if (fullName) updateData.name = fullName;
       if (phone !== undefined) updateData.phone = phone;
 

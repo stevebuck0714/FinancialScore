@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { validatePassword } from '@/lib/password-validator';
 
 const prisma = new PrismaClient();
 
@@ -42,9 +43,24 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return NextResponse.json(
+        { 
+          error: 'Password does not meet requirements',
+          details: passwordValidation.errors
+        },
+        { status: 400 }
+      );
+    }
+
+    // Normalize email to lowercase for consistency
+    const normalizedEmail = email.toLowerCase().trim();
+
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
-      where: { email }
+      where: { email: normalizedEmail }
     });
 
     if (existingUser) {
@@ -61,7 +77,7 @@ export async function POST(request: Request) {
     const newAdmin = await prisma.user.create({
       data: {
         name: `${firstName} ${lastName}`,
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
         role: 'siteadmin',
       },
