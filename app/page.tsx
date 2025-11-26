@@ -10538,15 +10538,96 @@ export default function FinancialScorePage() {
                   return <LineChart key={widget} title="Cash Position" data={monthly} valueKey="cash" color="#f59e0b" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
                 }
                 if (widget === 'Working Capital Trend') {
-                  const wcTrendData = monthly.map(m => {
+                  // Holt-Winters Exponential Smoothing with Seasonality
+                  const holtWintersProjection = (data: number[], seasons: number = 12, periods: number = 12) => {
+                    if (data.length < seasons * 2) return [];
+                    
+                    // Initialize parameters
+                    const alpha = 0.3; // Level smoothing
+                    const beta = 0.1;  // Trend smoothing
+                    const gamma = 0.3; // Seasonal smoothing
+                    
+                    // Initial values
+                    let level = data.slice(0, seasons).reduce((a, b) => a + b) / seasons;
+                    let trend = 0;
+                    const seasonal: number[] = [];
+                    
+                    // Initialize seasonal factors
+                    for (let i = 0; i < seasons; i++) {
+                      seasonal[i] = data[i] / level;
+                    }
+                    
+                    // Fit the model
+                    for (let i = seasons; i < data.length; i++) {
+                      const oldLevel = level;
+                      const seasonalIndex = i % seasons;
+                      
+                      level = alpha * (data[i] / seasonal[seasonalIndex]) + (1 - alpha) * (oldLevel + trend);
+                      trend = beta * (level - oldLevel) + (1 - beta) * trend;
+                      seasonal[seasonalIndex] = gamma * (data[i] / level) + (1 - gamma) * seasonal[seasonalIndex];
+                    }
+                    
+                    // Generate forecasts
+                    const forecasts: number[] = [];
+                    for (let i = 0; i < periods; i++) {
+                      const seasonalIndex = (data.length + i) % seasons;
+                      forecasts.push((level + (i + 1) * trend) * seasonal[seasonalIndex]);
+                    }
+                    
+                    return forecasts;
+                  };
+                  
+                  // Calculate historical working capital
+                  const wcHistorical = monthly.map(m => {
                     const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
                     const cl = m.tcl || ((m.ap || 0) + (m.otherCL || 0));
                     return {
                       month: m.month,
-                      value: ca - cl
+                      value: ca - cl,
+                      tca: ca,
+                      tcl: cl
                     };
                   });
-                  return <LineChart key={widget} title="Working Capital Trend" data={wcTrendData} color="#667eea" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
+                  
+                  // Use last 36 months (3 years) for projection if available
+                  const historicalData = wcHistorical.slice(-36);
+                  
+                  // Extract TCA and TCL arrays
+                  const tcaValues = historicalData.map(d => d.tca);
+                  const tclValues = historicalData.map(d => d.tcl);
+                  
+                  // Project TCA and TCL separately
+                  const tcaProjections = holtWintersProjection(tcaValues, 12, 12);
+                  const tclProjections = holtWintersProjection(tclValues, 12, 12);
+                  
+                  // Calculate projected working capital
+                  const wcProjections = tcaProjections.map((tca, i) => tca - tclProjections[i]);
+                  
+                  // Generate month labels for projections
+                  const lastMonth = new Date(historicalData[historicalData.length - 1].month);
+                  const projectedMonths = Array.from({ length: 12 }, (_, i) => {
+                    const date = new Date(lastMonth);
+                    date.setMonth(date.getMonth() + i + 1);
+                    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+                  });
+                  
+                  const projectedData = projectedMonths.map((month, i) => ({
+                    month,
+                    value: wcProjections[i]
+                  }));
+                  
+                  return <ProjectionChart 
+                    key={widget} 
+                    title="Working Capital Trend & 12-Month Projection" 
+                    historicalData={wcHistorical}
+                    projectedData={{
+                      mostLikely: projectedData,
+                      bestCase: projectedData.map(d => ({ ...d, value: d.value * 1.1 })),
+                      worstCase: projectedData.map(d => ({ ...d, value: d.value * 0.9 }))
+                    }}
+                    valueKey="value"
+                    formatValue={(v) => '$' + (v / 1000).toFixed(0) + 'k'}
+                  />;
                 }
                 
                 return null;
