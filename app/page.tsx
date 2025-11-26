@@ -485,6 +485,8 @@ export default function FinancialScorePage() {
       'nonOperatingIncome': 'Non-Operating Income',
       'extraordinaryItems': 'Extraordinary Items',
       'netProfit': 'Net Profit',
+      'ebitda': 'EBITDA',
+      'ebit': 'EBIT',
       // Balance Sheet - Assets
       'totalAssets': 'Total Assets',
       'cash': 'Cash',
@@ -2854,7 +2856,9 @@ export default function FinancialScorePage() {
         roe,
         roa,
         ebitdaMargin,
-        ebitMargin
+        ebitMargin,
+        ebitda: currentMonthEBITDA,
+        ebit: currentMonthEBIT
       });
     }
     
@@ -8356,6 +8360,8 @@ export default function FinancialScorePage() {
                     {mapping.nonOperatingIncome && <option value="nonOperatingIncome">Non-Operating Income</option>}
                     {mapping.extraordinaryItems && <option value="extraordinaryItems">Extraordinary Items</option>}
                     {mapping.netProfit && <option value="netProfit">Net Profit</option>}
+                    <option value="ebitda">EBITDA</option>
+                    <option value="ebit">EBIT</option>
                   </optgroup>
                   <optgroup label="Balance Sheet - Assets">
                     <option value="totalAssets">Total Assets</option>
@@ -8463,7 +8469,9 @@ export default function FinancialScorePage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <LineChart 
                         title={`${getTrendItemDisplayName(item)} Trend`}
-                        data={monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
+                        data={item === 'ebitda' || item === 'ebit' 
+                          ? trendData.map(t => ({ month: t.month, value: t[item as keyof typeof t] as number }))
+                          : monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
                     color="#667eea"
                     showTable={true}
                     labelFormat="quarterly"
@@ -8516,16 +8524,20 @@ export default function FinancialScorePage() {
                       <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Last Year</div>
                       <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 24 ? 
                         (() => {
-                              const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                              const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const dataSource = (item === 'ebitda' || item === 'ebit') ? trendData : monthly;
+                          if (dataSource.length < 24) return '#64748b';
+                          const last12 = dataSource.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev12 = dataSource.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
                           return growthRate >= 0 ? '#10b981' : '#ef4444';
                         })()
                         : '#64748b'
                       }}>
                         {monthly.length >= 24 ? (() => {
-                              const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                              const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const dataSource = (item === 'ebitda' || item === 'ebit') ? trendData : monthly;
+                          if (dataSource.length < 24) return 'N/A';
+                          const last12 = dataSource.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev12 = dataSource.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
                           return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
                         })() : 'N/A'}
@@ -8537,16 +8549,20 @@ export default function FinancialScorePage() {
                       <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Previous Year</div>
                       <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 36 ? 
                         (() => {
-                              const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                              const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const dataSource = (item === 'ebitda' || item === 'ebit') ? trendData : monthly;
+                          if (dataSource.length < 36) return '#64748b';
+                          const prev12 = dataSource.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev24 = dataSource.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
                           return growthRate >= 0 ? '#10b981' : '#ef4444';
                         })()
                         : '#64748b'
                       }}>
                         {monthly.length >= 36 ? (() => {
-                              const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                              const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const dataSource = (item === 'ebitda' || item === 'ebit') ? trendData : monthly;
+                          if (dataSource.length < 36) return 'N/A';
+                          const prev12 = dataSource.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev24 = dataSource.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
                           return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
                         })() : 'N/A'}
@@ -14319,7 +14335,7 @@ export default function FinancialScorePage() {
                 transition: 'all 0.2s'
               }}
             >
-              Last 12 Months
+              Monthly
             </button>
             <button
               onClick={() => setCashFlowDisplay('quarterly')}
@@ -14357,16 +14373,293 @@ export default function FinancialScorePage() {
             </button>
           </div>
 
+          {/* Cash Flow Metrics Definitions */}
+          <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
+            <details>
+              <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
+                📚 Cash Flow Metrics - Definitions & Examples
+              </summary>
+              
+              <div style={{ display: 'grid', gap: '20px', marginTop: '16px' }}>
+                {/* Operating Cash Flow */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#10b981', fontSize: '14px', fontWeight: '700' }}>Operating Cash Flow (OCF)</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Cash generated from normal business operations. Shows the company's ability to generate cash from its core activities.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> Net Income + Depreciation + Change in Working Capital
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If Net Income = $50,000, Depreciation = $5,000, and Working Capital decreased by $3,000 (a source of cash), then OCF = $50,000 + $5,000 + $3,000 = <strong>$58,000</strong>
+                  </p>
+                </div>
+
+                {/* Investing Cash Flow */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #ef4444' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#ef4444', fontSize: '14px', fontWeight: '700' }}>Investing Cash Flow</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Cash used for investments in long-term assets like equipment, property, and other capital expenditures. Typically negative as it represents cash outflows.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> -(Capital Expenditures)
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If the company purchased $15,000 in new equipment, then Investing Cash Flow = <strong>-$15,000</strong>
+                  </p>
+                </div>
+
+                {/* Financing Cash Flow */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #3b82f6' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#3b82f6', fontSize: '14px', fontWeight: '700' }}>Financing Cash Flow</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Cash from financing activities including debt changes, equity changes, and owner distributions. Shows how the company finances its operations.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> Change in Long-Term Debt + Change in Total Equity
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If debt decreased by $3,000 (payment) and equity increased by $2,000 (owner contribution), then Financing Cash Flow = -$3,000 + $2,000 = <strong>-$1,000</strong>
+                  </p>
+                </div>
+
+                {/* Free Cash Flow */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #667eea' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#667eea', fontSize: '14px', fontWeight: '700' }}>Free Cash Flow (FCF)</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Cash available after maintaining/expanding the asset base. This is cash available for distributions, debt repayment, or growth initiatives.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> Operating Cash Flow - Capital Expenditures
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If OCF = $58,000 and CapEx = $15,000, then FCF = $58,000 - $15,000 = <strong>$43,000</strong>
+                  </p>
+                </div>
+
+                {/* Cash Flow Margin */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#f59e0b', fontSize: '14px', fontWeight: '700' }}>Cash Flow Margin</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Percentage of revenue converted to operating cash flow. Higher percentages indicate better cash generation efficiency.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> (Operating Cash Flow ÷ Revenue) × 100
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 ÷ $250,000) × 100 = <strong>23.2%</strong>
+                  </p>
+                </div>
+
+                {/* Days Cash On Hand */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #8b5cf6' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#8b5cf6', fontSize: '14px', fontWeight: '700' }}>Days Cash On Hand</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Number of days the company can operate with its current cash balance at the current cash flow rate. Indicates financial runway.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> Ending Cash ÷ (Operating Cash Flow ÷ 30)
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 ÷ ($58,000 ÷ 30) = <strong>38.8 days</strong>
+                  </p>
+                </div>
+
+                {/* DIO */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #06b6d4' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#06b6d4', fontSize: '14px', fontWeight: '700' }}>DIO (Days Inventory Outstanding)</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Average number of days inventory is held before being sold. Lower values indicate faster inventory turnover and better working capital management.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> 365 ÷ Inventory Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS ÷ Avg Inventory</span>
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 ÷ 12 = <strong>30.4 days</strong>
+                  </p>
+                </div>
+
+                {/* DSO */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #14b8a6' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#14b8a6', fontSize: '14px', fontWeight: '700' }}>DSO (Days Sales Outstanding)</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Average number of days to collect payment from customers after a sale. Lower values indicate faster cash collection and better receivables management.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> 365 ÷ Receivables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue ÷ Avg A/R</span>
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 ÷ 12 = <strong>30.4 days</strong>
+                  </p>
+                </div>
+
+                {/* DPO */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #ec4899' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#ec4899', fontSize: '14px', fontWeight: '700' }}>DPO (Days Payables Outstanding)</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Average number of days the company takes to pay its suppliers. Higher values can indicate better use of supplier credit, but be careful not to damage supplier relationships.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> 365 ÷ Payables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS ÷ Avg A/P</span>
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 ÷ 8 = <strong>45.6 days</strong>
+                  </p>
+                </div>
+
+                {/* Cash Conversion Cycle */}
+                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #f97316' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#f97316', fontSize: '14px', fontWeight: '700' }}>Cash Conversion Cycle (CCC)</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    <strong>Definition:</strong> Number of days between paying suppliers and collecting cash from customers. Shows how efficiently the company manages working capital. Lower (or negative) values are better.
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
+                    <strong>Formula:</strong> DIO + DSO - DPO
+                  </p>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                    <strong>Example:</strong> If DIO = 30.4 days, DSO = 30.4 days, and DPO = 45.6 days, then CCC = 30.4 + 30.4 - 45.6 = <strong>15.2 days</strong>. This means cash is tied up for about 15 days.
+                  </p>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          {/* Cash Flow Management Article */}
+          <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
+            <details>
+              <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
+                📖 Why Cash Flow Management is Critical for your Business
+              </summary>
+              
+              <div style={{ marginTop: '16px', fontSize: '14px', lineHeight: '1.8', color: '#475569' }}>
+                <p style={{ marginBottom: '16px' }}>
+                  Liquidity fuels a business's ability to adapt. Whether it's covering payroll, meeting supplier deadlines, or investing in expansion, cash flow keeps the engine running. Without careful cash flow management, even profitable businesses can face serious challenges due to gaps between inflows and outflows.
+                </p>
+                
+                <p style={{ marginBottom: '16px' }}>
+                  Small businesses are especially vulnerable because they often lack the financial buffers that larger companies enjoy. Missed payments from clients, unexpected expenses, or seasonal slowdowns can quickly destabilize operations. By proactively managing cash flow, you create the flexibility needed to navigate these hurdles and achieve sustainable growth.
+                </p>
+
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginTop: '24px', marginBottom: '12px' }}>
+                  Proven Strategies to Strengthen Cash Flow
+                </h3>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  1. Build Accurate Cash Flow Forecasts
+                </h4>
+                <p style={{ marginBottom: '12px' }}>
+                  Forecasting cash flow is the cornerstone of liquidity management. By analyzing expected inflows and outflows over time, businesses can identify potential shortfalls and act early to prevent disruptions.
+                </p>
+                <p style={{ marginBottom: '8px', fontWeight: '600' }}>A robust forecast should:</p>
+                <ul style={{ marginLeft: '20px', marginBottom: '16px' }}>
+                  <li>Include all revenue sources, such as customer payments, loans, or grants.</li>
+                  <li>Account for fixed expenses like rent and payroll, as well as variable costs like inventory purchases.</li>
+                  <li>Be updated regularly to reflect current business conditions.</li>
+                </ul>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  2. Streamline Accounts Receivable
+                </h4>
+                <p style={{ marginBottom: '12px' }}>
+                  Late payments can cripple your cash flow. Implement these strategies to speed up receivables:
+                </p>
+                <ul style={{ marginLeft: '20px', marginBottom: '16px' }}>
+                  <li><strong>Set clear payment terms:</strong> Clearly outline due dates and penalties for late payments in contracts.</li>
+                  <li><strong>Send invoices promptly:</strong> The faster you send invoices, the sooner you'll get paid.</li>
+                  <li><strong>Offer incentives:</strong> Discounts for early payments encourage timely cash inflows.</li>
+                  <li><strong>Follow up persistently:</strong> Don't hesitate to send polite reminders for overdue payments.</li>
+                </ul>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  3. Optimize Accounts Payable
+                </h4>
+                <p style={{ marginBottom: '12px' }}>
+                  Balancing outgoing payments is just as important as collecting receivables. Avoid paying too early, which could leave your business cash-strapped. On the other hand, paying too late may harm vendor relationships. Use these best practices:
+                </p>
+                <ul style={{ marginLeft: '20px', marginBottom: '16px' }}>
+                  <li>Take advantage of the full payment terms offered by suppliers.</li>
+                  <li>Negotiate favorable terms, such as discounts for bulk orders or extended deadlines.</li>
+                  <li>Schedule payments strategically to align with cash flow peaks.</li>
+                </ul>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  4. Control Operational Expenses
+                </h4>
+                <p style={{ marginBottom: '16px' }}>
+                  Every dollar saved is a dollar added to your liquidity. Regularly audit your operational expenses and look for areas where you can cut costs without sacrificing quality. Consider adopting zero-based budgeting, where all expenses must be justified rather than relying on past budgets.
+                </p>
+                <p style={{ marginBottom: '16px' }}>
+                  Focus on reducing discretionary spending, renegotiating supplier contracts, and switching to cost-efficient alternatives. Even small adjustments can have a significant impact on your overall cash flow.
+                </p>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  5. Improve Inventory Management
+                </h4>
+                <p style={{ marginBottom: '16px' }}>
+                  Inventory ties up cash, especially when stock levels are too high. Use data to forecast demand accurately and implement just-in-time (JIT) inventory systems to minimize overstocking. Regularly review inventory levels to ensure that slow-moving or obsolete stock isn't draining your resources.
+                </p>
+                <p style={{ marginBottom: '16px' }}>
+                  Efficient inventory management not only frees up cash but also reduces storage and insurance costs.
+                </p>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  6. Establish a Cash Reserve
+                </h4>
+                <p style={{ marginBottom: '16px' }}>
+                  A strong cash reserve acts as a buffer during challenging times. Set aside a portion of profits regularly to build an emergency fund that can cover at least three to six months of operating expenses. This reserve will protect your business from unexpected events like economic downturns, supply chain disruptions, or market fluctuations.
+                </p>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  7. Use Short-Term Financing Wisely
+                </h4>
+                <p style={{ marginBottom: '16px' }}>
+                  Short-term financing options, such as lines of credit or invoice financing, can help bridge gaps when cash flow is tight. However, it's essential to use these options strategically. Only borrow what you can comfortably repay, and ensure that repayment terms align with your cash flow forecast to avoid over-leveraging.
+                </p>
+                <p style={{ marginBottom: '16px' }}>
+                  Short-term loans can be particularly helpful during seasonal slowdowns or when expanding inventory to meet rising demand.
+                </p>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  8. Automate Financial Processes
+                </h4>
+                <p style={{ marginBottom: '16px' }}>
+                  Manual financial tracking is time-consuming and prone to errors. Adopting tools for automating cash flow forecasting, invoice management, and financial reporting saves time and improves accuracy. Automation ensures you always have a clear view of your business's financial health.
+                </p>
+
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
+                  9. Monitor and Adjust Frequently
+                </h4>
+                <p style={{ marginBottom: '16px' }}>
+                  The financial landscape is ever-changing, and your cash flow strategy should adapt to it. Regularly review your cash flow reports, identify trends, and adjust your plans as needed. This proactive approach helps you avoid surprises and ensures your business stays on solid financial footing.
+                </p>
+                <p style={{ marginBottom: '16px' }}>
+                  Tracking key performance indicators (KPIs), such as days sales outstanding (DSO) and current ratio, can provide deeper insights into your financial health.
+                </p>
+
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginTop: '24px', marginBottom: '12px' }}>
+                  Conclusion: Liquidity is the Key to Resilience
+                </h3>
+                <p style={{ marginBottom: '0' }}>
+                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters most—growing your business.
+                </p>
+              </div>
+            </details>
+          </div>
+
           {(() => {
             // Calculate cash flow data based on view
             const dataMonths = cashFlowDisplay === 'quarterly' ? 12 : (cashFlowDisplay === 'annual' ? 36 : 12);
             const dataSet = monthly.slice(-dataMonths);
             
+            
             const cashFlowData = dataSet.map((curr, idx) => {
               const prev = idx === 0 && monthly.length > dataMonths ? monthly[monthly.length - dataMonths - 1] : (idx > 0 ? dataSet[idx - 1] : curr);
               
               // Operating Activities
-              const netIncome = curr.revenue - curr.expense;
+              const netIncome = curr.revenue - curr.cogsTotal - curr.expense;
               const depreciation = curr.depreciationExpense || 0; // Depreciation and amortization expense
               const changeInAR = curr.ar - prev.ar;
               const changeInInventory = curr.inventory - prev.inventory;
@@ -14381,7 +14674,7 @@ export default function FinancialScorePage() {
               
               // Financing Activities
               const changeInDebt = curr.ltd - prev.ltd;
-              const changeInEquity = curr.totalEquity - prev.totalEquity - netIncome; // Equity change excluding net income
+              const changeInEquity = curr.totalEquity - prev.totalEquity; // Total equity change (net income already in retained earnings)
               const financingCashFlow = changeInDebt + changeInEquity;
               
               // Net Change and Free Cash Flow
@@ -14391,6 +14684,29 @@ export default function FinancialScorePage() {
               // Metrics
               const cashFlowMargin = curr.revenue > 0 ? (operatingCashFlow / curr.revenue) * 100 : 0;
               const daysCashOnHand = operatingCashFlow > 0 ? (curr.cash / (operatingCashFlow / 30)) : 0;
+              
+              // Working Capital Metrics - using LTM for stability
+              // Calculate LTM revenue and COGS for this month
+              const monthIndex = monthly.findIndex(m => m.month === curr.month);
+              const last12Months = monthIndex >= 11 ? monthly.slice(monthIndex - 11, monthIndex + 1) : monthly.slice(0, monthIndex + 1);
+              const ltmRevenue = last12Months.reduce((sum, m) => sum + (m.revenue || 0), 0);
+              const ltmCOGS = last12Months.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
+              
+              // Average balances (current + prior month / 2)
+              const avgInventory = (curr.inventory + prev.inventory) / 2;
+              const avgAR = (curr.ar + prev.ar) / 2;
+              const avgAP = (curr.ap + prev.ap) / 2;
+              
+              // Turnover ratios
+              const inventoryTurnover = avgInventory > 0 ? ltmCOGS / avgInventory : 0;
+              const receivablesTurnover = avgAR > 0 ? ltmRevenue / avgAR : 0;
+              const payablesTurnover = avgAP > 0 ? ltmCOGS / avgAP : 0;
+              
+              // Days metrics
+              const DIO = inventoryTurnover > 0 ? 365 / inventoryTurnover : 0; // Days Inventory Outstanding
+              const DSO = receivablesTurnover > 0 ? 365 / receivablesTurnover : 0; // Days Sales Outstanding
+              const DPO = payablesTurnover > 0 ? 365 / payablesTurnover : 0; // Days Payables Outstanding
+              const CCC = DIO + DSO - DPO; // Cash Conversion Cycle
               
               return {
                 month: curr.month,
@@ -14407,7 +14723,11 @@ export default function FinancialScorePage() {
                 freeCashFlow,
                 cashFlowMargin,
                 daysCashOnHand,
-                endingCash: curr.cash
+                endingCash: curr.cash,
+                DIO,
+                DSO,
+                DPO,
+                CCC
               };
             });
 
@@ -14434,7 +14754,11 @@ export default function FinancialScorePage() {
                   freeCashFlow: quarter.reduce((sum, d) => sum + d.freeCashFlow, 0),
                   cashFlowMargin: quarter.reduce((sum, d) => sum + d.cashFlowMargin, 0) / quarter.length,
                   daysCashOnHand: quarter[quarter.length - 1].daysCashOnHand,
-                  endingCash: quarter[quarter.length - 1].endingCash
+                  endingCash: quarter[quarter.length - 1].endingCash,
+                  DIO: quarter[quarter.length - 1].DIO,
+                  DSO: quarter[quarter.length - 1].DSO,
+                  DPO: quarter[quarter.length - 1].DPO,
+                  CCC: quarter[quarter.length - 1].CCC
                 };
                 displayData.push(aggregated);
               }
@@ -14466,7 +14790,11 @@ export default function FinancialScorePage() {
                     freeCashFlow: yearData.reduce((sum, d) => sum + d.freeCashFlow, 0),
                     cashFlowMargin: yearData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / yearData.length,
                     daysCashOnHand: yearData[yearData.length - 1].daysCashOnHand,
-                    endingCash: yearData[yearData.length - 1].endingCash
+                    endingCash: yearData[yearData.length - 1].endingCash,
+                    DIO: yearData[yearData.length - 1].DIO,
+                    DSO: yearData[yearData.length - 1].DSO,
+                    DPO: yearData[yearData.length - 1].DPO,
+                    CCC: yearData[yearData.length - 1].CCC
                   });
                 }
               }
@@ -14475,7 +14803,7 @@ export default function FinancialScorePage() {
             // Summary metrics - always use last 12 months for consistency
             const last12MonthsData = monthly.slice(-12).map((curr, idx) => {
               const prev = idx === 0 && monthly.length > 12 ? monthly[monthly.length - 13] : (idx > 0 ? monthly.slice(-12)[idx - 1] : curr);
-              const netIncome = curr.revenue - curr.expense;
+              const netIncome = curr.revenue - curr.cogsTotal - curr.expense;
               const depreciation = curr.depreciationExpense || 0;
               const changeInAR = curr.ar - prev.ar;
               const changeInInventory = curr.inventory - prev.inventory;
@@ -14486,7 +14814,7 @@ export default function FinancialScorePage() {
               const capitalExpenditures = changeInFixedAssets + depreciation;
               const investingCashFlow = -capitalExpenditures;
               const changeInDebt = curr.ltd - prev.ltd;
-              const changeInEquity = curr.totalEquity - prev.totalEquity - netIncome;
+              const changeInEquity = curr.totalEquity - prev.totalEquity; // Total equity change (net income already in retained earnings)
               const financingCashFlow = changeInDebt + changeInEquity;
               const freeCashFlow = operatingCashFlow - Math.max(0, capitalExpenditures);
               const cashFlowMargin = curr.revenue > 0 ? (operatingCashFlow / curr.revenue) * 100 : 0;
@@ -14721,6 +15049,38 @@ export default function FinancialScorePage() {
                           {displayData.map((cf, i) => (
                             <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                               {cf.netIncome > 0 ? ((cf.operatingCashFlow / cf.netIncome) * 100).toFixed(0) : 'N/A'}%
+                            </td>
+                          ))}
+                        </tr>
+                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>DIO (Days Inventory Outstanding)</td>
+                          {displayData.map((cf, i) => (
+                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                              {cf.DIO ? cf.DIO.toFixed(0) : 'N/A'} days
+                            </td>
+                          ))}
+                        </tr>
+                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>DSO (Days Sales Outstanding)</td>
+                          {displayData.map((cf, i) => (
+                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                              {cf.DSO ? cf.DSO.toFixed(0) : 'N/A'} days
+                            </td>
+                          ))}
+                        </tr>
+                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>DPO (Days Payables Outstanding)</td>
+                          {displayData.map((cf, i) => (
+                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                              {cf.DPO ? cf.DPO.toFixed(0) : 'N/A'} days
+                            </td>
+                          ))}
+                        </tr>
+                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', fontWeight: '600' }}>Cash Conversion Cycle (CCC)</td>
+                          {displayData.map((cf, i) => (
+                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.CCC < 30 ? '#10b981' : (cf.CCC > 60 ? '#ef4444' : '#1e293b'), textAlign: 'right', fontWeight: '600' }}>
+                              {cf.CCC ? cf.CCC.toFixed(0) : 'N/A'} days
                             </td>
                           ))}
                         </tr>

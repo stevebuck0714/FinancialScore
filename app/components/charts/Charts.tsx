@@ -302,7 +302,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
                   }
                   return (
                     <td key={i} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '700', color: '#1e293b', fontSize: '11px' }}>
-                      {formatter ? formatter(d.value!) : d.value!.toLocaleString()}
+                      {formatter ? formatter(d.value!) : d.value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </td>
                   );
                 })}

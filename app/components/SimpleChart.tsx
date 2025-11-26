@@ -22,3 +22,4 @@ export default function SimpleChart({ data, title, color, formatter }: SimpleCha
   );
 }
 
+
