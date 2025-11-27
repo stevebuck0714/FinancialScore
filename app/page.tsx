@@ -13765,14 +13765,78 @@ export default function FinancialScorePage() {
                 
                 {/* Working Capital Trend Chart */}
                 <div className="page-break-after" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend</h2>
-                  <LineChart 
-                    title="" 
-                    data={wcData.map(d => ({ month: d.month, value: d.workingCapital }))} 
-                    color="#667eea"
-                    showTable={false}
-                    formatter={(val) => `$${Math.round(val).toLocaleString()}`}
-                  />
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend & 12-Month Projection</h2>
+                  {(() => {
+                    // Holt-Winters Exponential Smoothing with Seasonality
+                    const holtWintersProjection = (data: number[], seasons: number = 12, periods: number = 12) => {
+                      if (data.length < seasons * 2) return [];
+                      
+                      const alpha = 0.3; // Level smoothing
+                      const beta = 0.1;  // Trend smoothing
+                      const gamma = 0.3; // Seasonal smoothing
+                      
+                      let level = data.slice(0, seasons).reduce((a, b) => a + b) / seasons;
+                      let trend = 0;
+                      const seasonal: number[] = [];
+                      
+                      for (let i = 0; i < seasons; i++) {
+                        seasonal[i] = data[i] / level;
+                      }
+                      
+                      for (let i = seasons; i < data.length; i++) {
+                        const oldLevel = level;
+                        const seasonalIndex = i % seasons;
+                        
+                        level = alpha * (data[i] / seasonal[seasonalIndex]) + (1 - alpha) * (oldLevel + trend);
+                        trend = beta * (level - oldLevel) + (1 - beta) * trend;
+                        seasonal[seasonalIndex] = gamma * (data[i] / level) + (1 - gamma) * seasonal[seasonalIndex];
+                      }
+                      
+                      const forecasts: number[] = [];
+                      for (let i = 0; i < periods; i++) {
+                        const seasonalIndex = (data.length + i) % seasons;
+                        forecasts.push((level + (i + 1) * trend) * seasonal[seasonalIndex]);
+                      }
+                      
+                      return forecasts;
+                    };
+                    
+                    // Use last 36 months (3 years) for projection if available
+                    const historicalData = wcData.slice(-36);
+                    const tcaValues = historicalData.map(d => d.currentAssets);
+                    const tclValues = historicalData.map(d => d.currentLiabilities);
+                    
+                    // Project TCA and TCL separately
+                    const tcaProjections = holtWintersProjection(tcaValues, 12, 12);
+                    const tclProjections = holtWintersProjection(tclValues, 12, 12);
+                    const wcProjections = tcaProjections.map((tca, i) => tca - tclProjections[i]);
+                    
+                    // Generate month labels for projections
+                    const lastMonth = new Date(historicalData[historicalData.length - 1].month);
+                    const projectedMonths = Array.from({ length: 12 }, (_, i) => {
+                      const date = new Date(lastMonth);
+                      date.setMonth(date.getMonth() + i + 1);
+                      return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+                    });
+                    
+                    const projectedData = projectedMonths.map((month, i) => ({
+                      month,
+                      value: wcProjections[i]
+                    }));
+                    
+                    return <ProjectionChart 
+                      title="" 
+                      historicalData={wcData.map(d => ({ month: d.month, value: d.workingCapital }))}
+                      projectedData={{
+                        mostLikely: projectedData,
+                        bestCase: projectedData.map(d => ({ ...d, value: d.value * 1.1 })),
+                        worstCase: projectedData.map(d => ({ ...d, value: d.value * 0.9 }))
+                      }}
+                      valueKey="value"
+                      formatValue={(val) => `$${Math.round(val).toLocaleString()}`}
+                      showTable={false}
+                    />;
+                  })()}
                   
                   {/* Custom Quarterly Table */}
                   <div style={{ marginTop: '16px', overflowX: 'auto' }}>

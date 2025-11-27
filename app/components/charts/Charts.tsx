@@ -316,12 +316,13 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
 }
 
 // ProjectionChart Component  
-export function ProjectionChart({ title, historicalData, projectedData, valueKey, formatValue }: {
+export function ProjectionChart({ title, historicalData, projectedData, valueKey, formatValue, showTable }: {
   title: string;
   historicalData: any[];
   projectedData: { mostLikely: any[]; bestCase: any[]; worstCase: any[] };
   valueKey: string;
   formatValue?: (val: number) => string;
+  showTable?: boolean;
 }) {
   if (!historicalData || historicalData.length === 0) return null;
   
@@ -339,9 +340,9 @@ export function ProjectionChart({ title, historicalData, projectedData, valueKey
   const yMax = Math.ceil(maxValue * 1.1);
   const range = yMax - yMin;
   
-  const width = 580;
-  const height = 300;
-  const padding = { top: 20, right: 15, bottom: 50, left: 55 };
+  const width = 1100;
+  const height = 320;
+  const padding = { top: 20, right: 30, bottom: 50, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   
@@ -377,9 +378,9 @@ export function ProjectionChart({ title, historicalData, projectedData, valueKey
         </div>
       </div>
       
-      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1', minWidth: '400px', maxWidth: '580px' }}>
-          <svg width={width} height={height} style={{ width: '100%', height: 'auto' }}>
+      <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+        <div style={{ flex: '1', minWidth: '600px' }}>
+          <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: 'auto', maxWidth: '1100px' }}>
             {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => {
               const val = yMin + range * pct;
               const y = padding.top + chartHeight - (chartHeight * pct);
@@ -419,7 +420,7 @@ export function ProjectionChart({ title, historicalData, projectedData, valueKey
           </svg>
         </div>
         
-        <div style={{ width: '280px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+        <div style={{ width: '300px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div style={{ background: 'white', borderRadius: '8px', padding: '12px', border: '2px solid #1e293b', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             <div style={{ fontSize: '9px', fontWeight: '700', color: '#64748b', letterSpacing: '0.5px', marginBottom: '2px' }}>CURRENT</div>
             <div style={{ fontSize: '9px', color: '#64748b', marginBottom: '6px' }}>Now</div>
@@ -463,38 +464,40 @@ export function ProjectionChart({ title, historicalData, projectedData, valueKey
         </div>
       </div>
       
-      <div style={{ marginTop: '20px', overflowX: 'auto', maxWidth: '100%' }}>
-        <table style={{ fontSize: '10px', borderCollapse: 'collapse', width: '100%' }}>
-          <tbody>
-            <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-              <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 1, minWidth: '50px' }}>Month</td>
-              {hist.map((d, i) => (
-                <td key={`month-hist-${i}`} style={{ padding: '6px 4px', textAnchor: 'center', fontWeight: '600', color: '#64748b', background: 'white', minWidth: '60px' }}>
-                  {d.month}
-                </td>
-              ))}
-              {mostLikely.slice(0, 6).map((d, i) => (
-                <td key={`month-proj-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '600', color: '#667eea', background: '#ede9fe', minWidth: '60px' }}>
-                  {d.month}
-                </td>
-              ))}
-            </tr>
-            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-              <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 1, minWidth: '50px' }}>Value</td>
-              {hist.map((d, i) => (
-                <td key={`val-hist-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '700', color: '#1e293b', background: 'white', fontSize: '10px' }}>
-                  {formatter(d.value)}
-                </td>
-              ))}
-              {mostLikely.slice(0, 6).map((d, i) => (
-                <td key={`val-proj-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '700', color: '#667eea', background: '#ede9fe', fontSize: '10px' }}>
-                  {formatter(d.value)}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {showTable !== false && (
+        <div style={{ marginTop: '20px', overflowX: 'auto', maxWidth: '100%' }}>
+          <table style={{ fontSize: '10px', borderCollapse: 'collapse', width: '100%' }}>
+            <tbody>
+              <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 1, minWidth: '50px' }}>Month</td>
+                {hist.map((d, i) => (
+                  <td key={`month-hist-${i}`} style={{ padding: '6px 4px', textAnchor: 'center', fontWeight: '600', color: '#64748b', background: 'white', minWidth: '60px' }}>
+                    {d.month}
+                  </td>
+                ))}
+                {mostLikely.slice(0, 6).map((d, i) => (
+                  <td key={`month-proj-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '600', color: '#667eea', background: '#ede9fe', minWidth: '60px' }}>
+                    {d.month}
+                  </td>
+                ))}
+              </tr>
+              <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 1, minWidth: '50px' }}>Value</td>
+                {hist.map((d, i) => (
+                  <td key={`val-hist-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '700', color: '#1e293b', background: 'white', fontSize: '10px' }}>
+                    {formatter(d.value)}
+                  </td>
+                ))}
+                {mostLikely.slice(0, 6).map((d, i) => (
+                  <td key={`val-proj-${i}`} style={{ padding: '6px 4px', textAlign: 'center', fontWeight: '700', color: '#667eea', background: '#ede9fe', fontSize: '10px' }}>
+                    {formatter(d.value)}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
