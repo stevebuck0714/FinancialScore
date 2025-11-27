@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const siteAdmins = await prisma.user.findMany({
       where: {
-        role: 'siteadmin'
+        role: 'SITEADMIN'
       },
       select: {
         id: true,
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         name: `${firstName} ${lastName}`,
         email: normalizedEmail,
         password: hashedPassword,
-        role: 'siteadmin',
+        role: 'SITEADMIN',
       },
       select: {
         id: true,

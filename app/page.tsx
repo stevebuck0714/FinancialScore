@@ -1005,9 +1005,14 @@ export default function FinancialScorePage() {
   useEffect(() => {
     if (siteAdminTab === 'siteadmins') {
       fetch('/api/siteadmins')
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('Failed to fetch site administrators');
+          }
+          return res.json();
+        })
         .then(data => {
-          setSiteAdmins(data || []);
+          setSiteAdmins(Array.isArray(data) ? data : []);
         })
         .catch(error => {
           console.error('Error loading site administrators:', error);
