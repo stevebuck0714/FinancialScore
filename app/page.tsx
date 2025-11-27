@@ -485,6 +485,7 @@ export default function FinancialScorePage() {
       'nonOperatingIncome': 'Non-Operating Income',
       'extraordinaryItems': 'Extraordinary Items',
       'netProfit': 'Net Profit',
+      'grossProfit': 'Gross Profit',
       'ebitda': 'EBITDA',
       'ebit': 'EBIT',
       // Balance Sheet - Assets
@@ -2616,7 +2617,28 @@ export default function FinancialScorePage() {
       totalEquity: parseFloat(row[mapping.totalEquity!]) || 0,
       totalLAndE: parseFloat(row[mapping.totalLAndE!]) || 0
     }));
-  }, [rawRows, mapping, loadedMonthlyData]);
+  }, [rawRows, mapping, loadedMonthlyData]).map(m => {
+    // Calculate Gross Profit, EBIT and EBITDA for each month
+    const revenue = m.revenue || 0;
+    const cogsTotal = m.cogsTotal || 0;
+    const expense = m.expense || 0;
+    const interestExpense = m.interestExpense || 0;
+    const depreciationExpense = m.depreciationExpense || 0;
+    
+    // Gross Profit = Revenue - COGS
+    const grossProfit = revenue - cogsTotal;
+    // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add back interest)
+    const ebit = revenue - cogsTotal - expense + interestExpense;
+    // EBITDA = EBIT + Depreciation
+    const ebitda = ebit + depreciationExpense;
+    
+    return {
+      ...m,
+      grossProfit,
+      ebit,
+      ebitda
+    };
+  });
 
   const ltmRev = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + m.revenue, 0) : 0;
   const ltmExp = monthly.length >= 12 ? monthly.slice(-12).reduce((sum, m) => sum + m.expense, 0) : 0;
@@ -8347,6 +8369,7 @@ export default function FinancialScorePage() {
                     {mapping.cogsMaterials && <option value="cogsMaterials">COGS Materials</option>}
                     {mapping.cogsCommissions && <option value="cogsCommissions">COGS Commissions</option>}
                     {mapping.cogsOther && <option value="cogsOther">COGS Other</option>}
+                    <option value="grossProfit">Gross Profit</option>
                     {mapping.opexSalesMarketing && <option value="opexSalesMarketing">Sales & Marketing</option>}
                     {mapping.rentLease && <option value="rentLease">Rent/Lease</option>}
                     {mapping.utilities && <option value="utilities">Utilities</option>}
@@ -8474,9 +8497,7 @@ export default function FinancialScorePage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <LineChart 
                         title={`${getTrendItemDisplayName(item)} Trend`}
-                        data={item === 'ebitda' || item === 'ebit' 
-                          ? trendData.map(t => ({ month: t.month, value: t[item as keyof typeof t] as number }))
-                          : monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
+                        data={monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
                     color="#667eea"
                     showTable={true}
                     labelFormat="quarterly"
@@ -8526,23 +8547,21 @@ export default function FinancialScorePage() {
                     
                     <div style={{ marginBottom: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
                       <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
-                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Last Year</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Current Year</div>
                       <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 24 ? 
                         (() => {
-                          const dataSource = (item === 'ebitda' || item === 'ebit') ? trendData : monthly;
-                          if (dataSource.length < 24) return '#64748b';
-                          const last12 = dataSource.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev12 = dataSource.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          if (monthly.length < 24) return '#64748b';
+                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
                           return growthRate >= 0 ? '#10b981' : '#ef4444';
                         })()
                         : '#64748b'
                       }}>
                         {monthly.length >= 24 ? (() => {
-                          const dataSource = (item === 'ebitda' || item === 'ebit') ? trendData : monthly;
-                          if (dataSource.length < 24) return 'N/A';
-                          const last12 = dataSource.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev12 = dataSource.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          if (monthly.length < 24) return 'N/A';
+                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
                           return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
                         })() : 'N/A'}
@@ -8554,20 +8573,18 @@ export default function FinancialScorePage() {
                       <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Previous Year</div>
                       <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 36 ? 
                         (() => {
-                          const dataSource = (item === 'ebitda' || item === 'ebit') ? trendData : monthly;
-                          if (dataSource.length < 36) return '#64748b';
-                          const prev12 = dataSource.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev24 = dataSource.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          if (monthly.length < 36) return '#64748b';
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
                           return growthRate >= 0 ? '#10b981' : '#ef4444';
                         })()
                         : '#64748b'
                       }}>
                         {monthly.length >= 36 ? (() => {
-                          const dataSource = (item === 'ebitda' || item === 'ebit') ? trendData : monthly;
-                          if (dataSource.length < 36) return 'N/A';
-                          const prev12 = dataSource.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev24 = dataSource.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          if (monthly.length < 36) return 'N/A';
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
                           const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
                           return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
                         })() : 'N/A'}
