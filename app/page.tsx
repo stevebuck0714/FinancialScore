@@ -1792,24 +1792,17 @@ export default function FinancialScorePage() {
           setCompanies(data.companies);
         }
         
-        // Load consultant data to show consultant's name in header
+        // Load consultant data to show consultant's company name in header
         if (normalizedUser.consultantId) {
           try {
-            console.log('🔍 LOGIN: Fetching consultant data for ID:', normalizedUser.consultantId);
             const consultantResponse = await fetch(`/api/consultants?id=${normalizedUser.consultantId}`);
             const consultantData = await consultantResponse.json();
-            console.log('📊 LOGIN: Consultant data received:', consultantData);
             if (consultantData && consultantData.id) {
               setConsultants([consultantData]);
-              console.log('✅ LOGIN: Consultant set:', consultantData.fullName);
-            } else {
-              console.error('❌ LOGIN: Invalid consultant data received');
             }
           } catch (error) {
-            console.error('❌ LOGIN: Failed to load consultant data:', error);
+            console.error('Failed to load consultant data:', error);
           }
-        } else {
-          console.log('⚠️ LOGIN: No consultantId in user object');
         }
       }
       
@@ -4083,11 +4076,11 @@ export default function FinancialScorePage() {
                     if (currentUser.consultantType === 'business') {
                       return 'Business Dashboard';
                     }
-                    // For company users, show their consultant's name
+                    // For company users, show their consultant's company name
                     if (currentUser.role === 'user' && currentUser.userType === 'company' && currentUser.consultantId) {
                       const consultant = consultants.find(c => c.id === currentUser.consultantId);
-                      if (consultant && consultant.fullName) {
-                        return `Advisor: ${consultant.fullName}`;
+                      if (consultant && consultant.companyName) {
+                        return `Advisor: ${consultant.companyName}`;
                       }
                       return 'Dashboard';
                     }
@@ -6632,24 +6625,22 @@ export default function FinancialScorePage() {
           <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
               {(() => {
-                console.log('🎯 HEADER RENDER - currentUser:', currentUser);
-                console.log('📋 HEADER RENDER - consultants:', consultants);
-                
                 if (currentUser.consultantType === 'business') {
                   return 'Business Dashboard';
                 }
-                // For company users, show their consultant's name
+                // For company users, show their consultant's company name
                 if (currentUser.role === 'user' && currentUser.userType === 'company' && currentUser.consultantId) {
-                  console.log('👤 Company user - looking for consultant:', currentUser.consultantId);
                   const consultant = consultants.find(c => c.id === currentUser.consultantId);
-                  console.log('✅ Found consultant:', consultant);
-                  if (consultant && consultant.fullName) {
-                    return `Advisor: ${consultant.fullName}`;
+                  if (consultant && consultant.companyName) {
+                    return `Advisor: ${consultant.companyName}`;
                   }
                   // Fallback while loading
                   return `Advisor: ${currentUser.name}`;
                 }
-                // For consultants, show their own name
+                // For consultants, show their company name or personal name
+                if (currentUser.consultantCompanyName) {
+                  return `Advisor: ${currentUser.consultantCompanyName}`;
+                }
                 return `Advisor: ${currentUser.name}`;
               })()}
             </h1>

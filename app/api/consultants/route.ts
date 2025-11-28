@@ -35,11 +35,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         id: consultant.id,
         fullName: consultant.fullName,
+        companyName: consultant.companyName,
         email: consultant.user.email,
         phone: consultant.phone,
         address: consultant.address,
         type: consultant.type,
-        companyName: consultant.companyName,
         userId: consultant.userId
       });
     }
