@@ -106,6 +106,12 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = await hashPassword(password);
 
+    // Get company's consultantId to link the user
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { consultantId: true }
+    });
+
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
@@ -115,7 +121,8 @@ export async function POST(request: NextRequest) {
         passwordHash,
         role: 'USER',
         userType,
-        companyId
+        companyId,
+        consultantId: company?.consultantId || null
       },
       select: {
         id: true,
@@ -126,6 +133,7 @@ export async function POST(request: NextRequest) {
         userType: true,
         role: true,
         companyId: true,
+        consultantId: true,
         createdAt: true
       }
     });

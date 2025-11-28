@@ -3,9 +3,48 @@ import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
 
-// GET all consultants (site admin only)
+// GET all consultants (site admin only) or single consultant by ID
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const consultantId = searchParams.get('id');
+
+    // If ID is provided, fetch single consultant
+    if (consultantId) {
+      const consultant = await prisma.consultant.findUnique({
+        where: { id: consultantId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true
+            }
+          }
+        }
+      });
+
+      if (!consultant) {
+        return NextResponse.json(
+          { error: 'Consultant not found' },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        id: consultant.id,
+        fullName: consultant.fullName,
+        email: consultant.user.email,
+        phone: consultant.phone,
+        address: consultant.address,
+        type: consultant.type,
+        companyName: consultant.companyName,
+        userId: consultant.userId
+      });
+    }
+
+    // Otherwise, fetch all consultants
     const consultants = await prisma.consultant.findMany({
       include: {
         user: {

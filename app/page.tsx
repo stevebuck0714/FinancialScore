@@ -210,7 +210,7 @@ export default function FinancialScorePage() {
   };
 
   // Handle admin dashboard tab navigation with payment gate
-  const handleAdminTabNavigation = (tab: 'company-management' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'profile') => {
+  const handleAdminTabNavigation = (tab: 'company-management' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'team-management') => {
     // Always allow payments tab
     if (tab === 'payments') {
       setAdminDashboardTab(tab);
@@ -222,6 +222,11 @@ export default function FinancialScorePage() {
       alert('⚠️ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
       setAdminDashboardTab('payments');
       return;
+    }
+    
+    // Reset company management sub-tab when switching to company-management
+    if (tab === 'company-management') {
+      setCompanyManagementSubTab('details');
     }
     
     setAdminDashboardTab(tab);
@@ -275,8 +280,8 @@ export default function FinancialScorePage() {
                   needsPayment = !firstCompany.selectedSubscriptionPlan;
                 }
                 
-                // Direct to payments if not paid, otherwise company management
-                setAdminDashboardTab(needsPayment ? 'payments' : 'company-management');
+                // Always direct to company management on login
+                setAdminDashboardTab('company-management');
               });
             }
           } else if (normalizedUser.role === 'siteadmin') {
@@ -330,7 +335,8 @@ export default function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'profile' | 'team-management'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'team-management'>('company-management');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -1774,8 +1780,8 @@ export default function FinancialScorePage() {
           needsPayment = !firstCompany.selectedSubscriptionPlan;
         }
         
-        // Direct to payments if not paid, otherwise company management
-        setAdminDashboardTab(needsPayment ? 'payments' : 'company-management');
+        // Always direct to company management on login
+        setAdminDashboardTab('company-management');
       }
       
       // Load company data for company users
@@ -1784,6 +1790,26 @@ export default function FinancialScorePage() {
         const data = await response.json();
         if (data.companies && data.companies.length > 0) {
           setCompanies(data.companies);
+        }
+        
+        // Load consultant data to show consultant's name in header
+        if (normalizedUser.consultantId) {
+          try {
+            console.log('🔍 LOGIN: Fetching consultant data for ID:', normalizedUser.consultantId);
+            const consultantResponse = await fetch(`/api/consultants?id=${normalizedUser.consultantId}`);
+            const consultantData = await consultantResponse.json();
+            console.log('📊 LOGIN: Consultant data received:', consultantData);
+            if (consultantData && consultantData.id) {
+              setConsultants([consultantData]);
+              console.log('✅ LOGIN: Consultant set:', consultantData.fullName);
+            } else {
+              console.error('❌ LOGIN: Invalid consultant data received');
+            }
+          } catch (error) {
+            console.error('❌ LOGIN: Failed to load consultant data:', error);
+          }
+        } else {
+          console.log('⚠️ LOGIN: No consultantId in user object');
         }
       }
       
@@ -3603,9 +3629,9 @@ export default function FinancialScorePage() {
               <button onClick={() => handleNavigation('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>Trend Analysis</button>
               <button onClick={() => handleNavigation('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>Projections</button>
               <button onClick={() => handleNavigation('goals')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'goals' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'goals' ? '3px solid #667eea' : '3px solid transparent' }}>Goals</button>
+              <button onClick={() => handleNavigation('cash-flow')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'cash-flow' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'cash-flow' ? '3px solid #667eea' : '3px solid transparent' }}>Cash Flow</button>
               <button onClick={() => handleNavigation('working-capital')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'working-capital' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'working-capital' ? '3px solid #667eea' : '3px solid transparent' }}>Working Capital</button>
               <button onClick={() => handleNavigation('valuation')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'valuation' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'valuation' ? '3px solid #667eea' : '3px solid transparent' }}>Valuation</button>
-              <button onClick={() => handleNavigation('cash-flow')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'cash-flow' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'cash-flow' ? '3px solid #667eea' : '3px solid transparent' }}>Cash Flow</button>
               <button onClick={() => handleNavigation('financial-statements')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'financial-statements' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'financial-statements' ? '3px solid #667eea' : '3px solid transparent' }}>Financial Statements</button>
             </nav>
           </div>
@@ -4053,7 +4079,21 @@ export default function FinancialScorePage() {
                   }}
                   onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'admin' ? '#667eea' : '#1e293b'}
                 >
-                  {currentUser.consultantType === 'business' ? 'Business Dashboard' : (currentUser.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard')}
+                  {(() => {
+                    if (currentUser.consultantType === 'business') {
+                      return 'Business Dashboard';
+                    }
+                    // For company users, show their consultant's name
+                    if (currentUser.role === 'user' && currentUser.userType === 'company' && currentUser.consultantId) {
+                      const consultant = consultants.find(c => c.id === currentUser.consultantId);
+                      if (consultant && consultant.fullName) {
+                        return `Advisor: ${consultant.fullName}`;
+                      }
+                      return 'Dashboard';
+                    }
+                    // For consultants, show company name or default
+                    return currentUser.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard';
+                  })()}
                 </h3>
                 
                 {/* Selected Company Name Display for Business Users */}
@@ -6591,7 +6631,27 @@ export default function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              {currentUser.consultantType === 'business' ? 'Business Dashboard' : (currentUser.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard')}
+              {(() => {
+                console.log('🎯 HEADER RENDER - currentUser:', currentUser);
+                console.log('📋 HEADER RENDER - consultants:', consultants);
+                
+                if (currentUser.consultantType === 'business') {
+                  return 'Business Dashboard';
+                }
+                // For company users, show their consultant's name
+                if (currentUser.role === 'user' && currentUser.userType === 'company' && currentUser.consultantId) {
+                  console.log('👤 Company user - looking for consultant:', currentUser.consultantId);
+                  const consultant = consultants.find(c => c.id === currentUser.consultantId);
+                  console.log('✅ Found consultant:', consultant);
+                  if (consultant && consultant.fullName) {
+                    return `Advisor: ${consultant.fullName}`;
+                  }
+                  // Fallback while loading
+                  return `Advisor: ${currentUser.name}`;
+                }
+                // For consultants, show their own name
+                return `Advisor: ${currentUser.name}`;
+              })()}
             </h1>
             {siteAdminViewingAs && (
               <button
@@ -6724,23 +6784,6 @@ export default function FinancialScorePage() {
             >
               Data Mapping
             </button>
-            <button
-              onClick={() => handleAdminTabNavigation('profile')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'profile' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'profile' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'profile' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Profile
-            </button>
             {currentUser?.role === 'consultant' && currentUser?.isPrimaryContact && (
               <button
                 onClick={() => handleAdminTabNavigation('team-management')}
@@ -6764,9 +6807,50 @@ export default function FinancialScorePage() {
           
           {/* Company Management Tab */}
           {adminDashboardTab === 'company-management' && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Company Management</h2>
+          <div className="company-management-container" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h2 className="no-print" style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Company Management</h2>
             
+            {/* Sub-tab Navigation */}
+            <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+              <button
+                onClick={() => setCompanyManagementSubTab('details')}
+                style={{
+                  padding: '10px 20px',
+                  background: companyManagementSubTab === 'details' ? '#667eea' : 'transparent',
+                  color: companyManagementSubTab === 'details' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: companyManagementSubTab === 'details' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '6px 6px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Company Details
+              </button>
+              <button
+                onClick={() => setCompanyManagementSubTab('profile')}
+                style={{
+                  padding: '10px 20px',
+                  background: companyManagementSubTab === 'profile' ? '#667eea' : 'transparent',
+                  color: companyManagementSubTab === 'profile' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: companyManagementSubTab === 'profile' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '6px 6px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Profile
+              </button>
+            </div>
+            
+            {/* Company Details Sub-tab */}
+            {companyManagementSubTab === 'details' && (
+            <>
             {/* Show selected company or add new company option */}
             {(() => {
               // For business users, auto-select their company if not already selected
@@ -7077,6 +7161,32 @@ export default function FinancialScorePage() {
               </>
               );
             })()}
+            </>
+            )}
+            
+            {/* Profile Sub-tab */}
+            {companyManagementSubTab === 'profile' && (
+              <div id="profile-print-wrapper">
+                {!selectedCompanyId ? (
+                  <div className="no-print" style={{ background: '#f8fafc', borderRadius: '8px', padding: '48px 24px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
+                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+                    <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to view and edit company profile.</p>
+                  </div>
+                ) : (
+                  <ProfileTab
+                    selectedCompanyId={selectedCompanyId}
+                    currentUser={currentUser}
+                    company={company}
+                    companyProfiles={companyProfiles}
+                    setCompanyProfiles={setCompanyProfiles}
+                    monthly={monthly}
+                    trendData={trendData}
+                    isLoading={isLoading}
+                    setIsLoading={setIsLoading}
+                  />
+                )}
+              </div>
+            )}
           </div>
           )}
           
@@ -8204,14 +8314,6 @@ export default function FinancialScorePage() {
                   </div>
                 </form>
               </div>
-            </div>
-          )}
-
-          {/* Profile Tab - No Company Selected */}
-          {!selectedCompanyId && adminDashboardTab === 'profile' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to view and edit company profile.</p>
             </div>
           )}
 
@@ -22042,21 +22144,6 @@ export default function FinancialScorePage() {
             </p>
           </div>
         </div>
-      )}
-
-      {/* Profile View */}
-      {currentView === 'admin' && adminDashboardTab === 'profile' && selectedCompanyId && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-        <ProfileTab
-          selectedCompanyId={selectedCompanyId}
-          currentUser={currentUser}
-          company={company}
-          companyProfiles={companyProfiles}
-          setCompanyProfiles={setCompanyProfiles}
-          monthly={monthly}
-          trendData={trendData}
-          isLoading={isLoading}
-          setIsLoading={setIsLoading}
-        />
       )}
 
       {/* Management Assessment - Questionnaire View */}

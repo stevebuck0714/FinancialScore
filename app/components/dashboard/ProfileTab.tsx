@@ -114,14 +114,47 @@ export default function ProfileTab({
             margin: 0.75in 0.75in 0.75in 0.75in;
           }
           
-          body, main, main * {
-            margin-top: 0 !important;
+          /* Hide non-print elements */
+          aside, header, .no-print, .dashboard-header-print-hide, .dashboard-tabs-print-hide {
+            display: none !important;
           }
           
+          /* Reset body and main */
+          body {
+            background: white !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+          }
+          
+          main {
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+          }
+          
+          /* Reset all parent containers that might constrain the profile */
+          body *, main *, main > div, main > div > div, 
+          .company-management-container, #profile-print-wrapper {
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            max-width: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+          }
+          
+          /* Profile sections */
           #first-profile-section {
             padding: 0 32px 32px 32px !important;
             margin-top: 0 !important;
             margin-bottom: 0 !important;
+            background: white !important;
           }
           
           .page-break {
@@ -129,36 +162,11 @@ export default function ProfileTab({
             break-after: page;
             padding: 32px !important;
             margin: 0 !important;
+            background: white !important;
           }
           
           .print-page-header {
-            display: none !important;
-          }
-          
-          aside, header, .no-print, .dashboard-header-print-hide, .dashboard-tabs-print-hide {
-            display: none !important;
-          }
-          
-          body {
-            background: white !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          
-          main {
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          
-          main > div {
-            padding: 0 !important;
-            margin: 0 !important;
-            max-width: none !important;
-          }
-          
-          * {
-            box-shadow: none !important;
-            border-radius: 0 !important;
+            display: block !important;
           }
         }
         
