@@ -270,28 +270,127 @@ export default function LOBReportingTab({
       for (const colIdx of columnIndicesToSum) {
         const monthLabel = plColumns[colIdx]?.ColTitle || '';
         
+        // Find matching BS column for this P&L month
+        let matchingBsColIdx = bsColumnIndex; // default to latest
+        for (let i = 1; i < bsColumns.length - 1; i++) {
+          if (bsColumns[i]?.ColTitle === monthLabel) {
+            matchingBsColIdx = i;
+            break;
+          }
+        }
+        
         // Extract values for THIS MONTH ONLY
         const monthPlValues = extractAccountValues(plRows, [colIdx]);
-        const monthBsValues = extractAccountValues(bsRows, [bsColumnIndex]); // BS is always latest
+        const monthBsValues = extractAccountValues(bsRows, [matchingBsColIdx]);
         const monthAllValues = [...monthPlValues, ...monthBsValues];
         const monthLobData = applyLOBAllocations(monthAllValues, accountMappings);
         
         if (selectedLineOfBusiness === 'all') {
+          const cash = monthLobData.totals?.cash || 0;
+          const ar = monthLobData.totals?.ar || 0;
+          const inventory = monthLobData.totals?.inventory || 0;
+          const otherCA = monthLobData.totals?.otherCA || 0;
+          const tca = cash + ar + inventory + otherCA;
+          const fixedAssets = monthLobData.totals?.fixedAssets || 0;
+          const otherAssets = monthLobData.totals?.otherAssets || 0;
+          const totalAssets = tca + fixedAssets + otherAssets;
+          
+          const ap = monthLobData.totals?.ap || 0;
+          const otherCL = monthLobData.totals?.otherCL || 0;
+          const tcl = ap + otherCL;
+          const ltd = monthLobData.totals?.ltd || 0;
+          const totalLiab = tcl + ltd;
+          
+          const ownersCapital = monthLobData.totals?.ownersCapital || 0;
+          const ownersDraw = monthLobData.totals?.ownersDraw || 0;
+          const commonStock = monthLobData.totals?.commonStock || 0;
+          const preferredStock = monthLobData.totals?.preferredStock || 0;
+          const retainedEarnings = monthLobData.totals?.retainedEarnings || 0;
+          const additionalPaidInCapital = monthLobData.totals?.additionalPaidInCapital || 0;
+          const treasuryStock = monthLobData.totals?.treasuryStock || 0;
+          const equity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
+          
           allMonthlyData.push({
             month: monthLabel,
             colIdx: colIdx,
             revenue: monthLobData.totals?.revenue || 0,
             expense: monthLobData.totals?.expense || 0,
             cogs: monthLobData.totals?.cogs || 0,
+            cash,
+            ar,
+            inventory,
+            otherCA,
+            tca,
+            fixedAssets,
+            otherAssets,
+            totalAssets,
+            ap,
+            otherCL,
+            tcl,
+            ltd,
+            totalLiab,
+            ownersCapital,
+            ownersDraw,
+            commonStock,
+            preferredStock,
+            retainedEarnings,
+            additionalPaidInCapital,
+            treasuryStock,
+            equity,
             breakdowns: monthLobData.breakdowns || {}
           });
         } else {
+          const cash = monthLobData.breakdowns?.cash?.[selectedLineOfBusiness] || 0;
+          const ar = monthLobData.breakdowns?.ar?.[selectedLineOfBusiness] || 0;
+          const inventory = monthLobData.breakdowns?.inventory?.[selectedLineOfBusiness] || 0;
+          const otherCA = monthLobData.breakdowns?.otherCA?.[selectedLineOfBusiness] || 0;
+          const tca = cash + ar + inventory + otherCA;
+          const fixedAssets = monthLobData.breakdowns?.fixedAssets?.[selectedLineOfBusiness] || 0;
+          const otherAssets = monthLobData.breakdowns?.otherAssets?.[selectedLineOfBusiness] || 0;
+          const totalAssets = tca + fixedAssets + otherAssets;
+          
+          const ap = monthLobData.breakdowns?.ap?.[selectedLineOfBusiness] || 0;
+          const otherCL = monthLobData.breakdowns?.otherCL?.[selectedLineOfBusiness] || 0;
+          const tcl = ap + otherCL;
+          const ltd = monthLobData.breakdowns?.ltd?.[selectedLineOfBusiness] || 0;
+          const totalLiab = tcl + ltd;
+          
+          const ownersCapital = monthLobData.breakdowns?.ownersCapital?.[selectedLineOfBusiness] || 0;
+          const ownersDraw = monthLobData.breakdowns?.ownersDraw?.[selectedLineOfBusiness] || 0;
+          const commonStock = monthLobData.breakdowns?.commonStock?.[selectedLineOfBusiness] || 0;
+          const preferredStock = monthLobData.breakdowns?.preferredStock?.[selectedLineOfBusiness] || 0;
+          const retainedEarnings = monthLobData.breakdowns?.retainedEarnings?.[selectedLineOfBusiness] || 0;
+          const additionalPaidInCapital = monthLobData.breakdowns?.additionalPaidInCapital?.[selectedLineOfBusiness] || 0;
+          const treasuryStock = monthLobData.breakdowns?.treasuryStock?.[selectedLineOfBusiness] || 0;
+          const equity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
+          
           allMonthlyData.push({
             month: monthLabel,
             colIdx: colIdx,
             revenue: monthLobData.revenueBreakdown?.[selectedLineOfBusiness] || 0,
             expense: monthLobData.expenseBreakdown?.[selectedLineOfBusiness] || 0,
             cogs: monthLobData.cogsBreakdown?.[selectedLineOfBusiness] || 0,
+            cash,
+            ar,
+            inventory,
+            otherCA,
+            tca,
+            fixedAssets,
+            otherAssets,
+            totalAssets,
+            ap,
+            otherCL,
+            tcl,
+            ltd,
+            totalLiab,
+            ownersCapital,
+            ownersDraw,
+            commonStock,
+            preferredStock,
+            retainedEarnings,
+            additionalPaidInCapital,
+            treasuryStock,
+            equity,
             breakdowns: monthLobData.breakdowns || {}
           });
         }
@@ -336,6 +435,30 @@ export default function LOBReportingTab({
           const qExpense = months.reduce((sum, m) => sum + m.expense, 0);
           const qCOGS = months.reduce((sum, m) => sum + m.cogs, 0);
           
+          // For BS values, take the LAST month in the quarter (BS is a point in time)
+          const lastMonth = months[months.length - 1];
+          const qCash = lastMonth?.cash || 0;
+          const qAR = lastMonth?.ar || 0;
+          const qInventory = lastMonth?.inventory || 0;
+          const qOtherCA = lastMonth?.otherCA || 0;
+          const qTCA = lastMonth?.tca || 0;
+          const qFixedAssets = lastMonth?.fixedAssets || 0;
+          const qOtherAssets = lastMonth?.otherAssets || 0;
+          const qTotalAssets = lastMonth?.totalAssets || 0;
+          const qAP = lastMonth?.ap || 0;
+          const qOtherCL = lastMonth?.otherCL || 0;
+          const qTCL = lastMonth?.tcl || 0;
+          const qLTD = lastMonth?.ltd || 0;
+          const qTotalLiab = lastMonth?.totalLiab || 0;
+          const qOwnersCapital = lastMonth?.ownersCapital || 0;
+          const qOwnersDraw = lastMonth?.ownersDraw || 0;
+          const qCommonStock = lastMonth?.commonStock || 0;
+          const qPreferredStock = lastMonth?.preferredStock || 0;
+          const qRetainedEarnings = lastMonth?.retainedEarnings || 0;
+          const qAdditionalPaidInCapital = lastMonth?.additionalPaidInCapital || 0;
+          const qTreasuryStock = lastMonth?.treasuryStock || 0;
+          const qEquity = lastMonth?.equity || 0;
+          
           // Merge breakdowns
           const mergedBreakdowns: any = {};
           months.forEach(m => {
@@ -357,6 +480,27 @@ export default function LOBReportingTab({
             revenue: qRevenue,
             expense: qExpense,
             cogs: qCOGS,
+            cash: qCash,
+            ar: qAR,
+            inventory: qInventory,
+            otherCA: qOtherCA,
+            tca: qTCA,
+            fixedAssets: qFixedAssets,
+            otherAssets: qOtherAssets,
+            totalAssets: qTotalAssets,
+            ap: qAP,
+            otherCL: qOtherCL,
+            tcl: qTCL,
+            ltd: qLTD,
+            totalLiab: qTotalLiab,
+            ownersCapital: qOwnersCapital,
+            ownersDraw: qOwnersDraw,
+            commonStock: qCommonStock,
+            preferredStock: qPreferredStock,
+            retainedEarnings: qRetainedEarnings,
+            additionalPaidInCapital: qAdditionalPaidInCapital,
+            treasuryStock: qTreasuryStock,
+            equity: qEquity,
             breakdowns: mergedBreakdowns
           });
           monthLabels.push(quarter);
@@ -380,6 +524,30 @@ export default function LOBReportingTab({
           const yExpense = months.reduce((sum, m) => sum + m.expense, 0);
           const yCOGS = months.reduce((sum, m) => sum + m.cogs, 0);
           
+          // For BS values, take the LAST month in the year (BS is a point in time)
+          const lastMonth = months[months.length - 1];
+          const yCash = lastMonth?.cash || 0;
+          const yAR = lastMonth?.ar || 0;
+          const yInventory = lastMonth?.inventory || 0;
+          const yOtherCA = lastMonth?.otherCA || 0;
+          const yTCA = lastMonth?.tca || 0;
+          const yFixedAssets = lastMonth?.fixedAssets || 0;
+          const yOtherAssets = lastMonth?.otherAssets || 0;
+          const yTotalAssets = lastMonth?.totalAssets || 0;
+          const yAP = lastMonth?.ap || 0;
+          const yOtherCL = lastMonth?.otherCL || 0;
+          const yTCL = lastMonth?.tcl || 0;
+          const yLTD = lastMonth?.ltd || 0;
+          const yTotalLiab = lastMonth?.totalLiab || 0;
+          const yOwnersCapital = lastMonth?.ownersCapital || 0;
+          const yOwnersDraw = lastMonth?.ownersDraw || 0;
+          const yCommonStock = lastMonth?.commonStock || 0;
+          const yPreferredStock = lastMonth?.preferredStock || 0;
+          const yRetainedEarnings = lastMonth?.retainedEarnings || 0;
+          const yAdditionalPaidInCapital = lastMonth?.additionalPaidInCapital || 0;
+          const yTreasuryStock = lastMonth?.treasuryStock || 0;
+          const yEquity = lastMonth?.equity || 0;
+          
           // Merge breakdowns
           const mergedBreakdowns: any = {};
           months.forEach(m => {
@@ -401,6 +569,27 @@ export default function LOBReportingTab({
             revenue: yRevenue,
             expense: yExpense,
             cogs: yCOGS,
+            cash: yCash,
+            ar: yAR,
+            inventory: yInventory,
+            otherCA: yOtherCA,
+            tca: yTCA,
+            fixedAssets: yFixedAssets,
+            otherAssets: yOtherAssets,
+            totalAssets: yTotalAssets,
+            ap: yAP,
+            otherCL: yOtherCL,
+            tcl: yTCL,
+            ltd: yLTD,
+            totalLiab: yTotalLiab,
+            ownersCapital: yOwnersCapital,
+            ownersDraw: yOwnersDraw,
+            commonStock: yCommonStock,
+            preferredStock: yPreferredStock,
+            retainedEarnings: yRetainedEarnings,
+            additionalPaidInCapital: yAdditionalPaidInCapital,
+            treasuryStock: yTreasuryStock,
+            equity: yEquity,
             breakdowns: mergedBreakdowns
           });
           monthLabels.push(year);
@@ -1638,9 +1827,11 @@ export default function LOBReportingTab({
                         {month}
                       </th>
                     ))}
-                    <th style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: '#1e293b', minWidth: '100px', background: '#e2e8f0' }}>
-                      TOTAL
-                    </th>
+                    {statementDisplay !== 'annual' && (
+                      <th style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: '#1e293b', minWidth: '100px', background: '#e2e8f0' }}>
+                        TOTAL
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -1679,9 +1870,11 @@ export default function LOBReportingTab({
                                 </td>
                               );
                             })}
-                            <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                              {fmt(getLOBValue(`revenue.${revType}`) || 0)}
-                            </td>
+                            {statementDisplay !== 'annual' && (
+                              <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                                {fmt(getLOBValue(`revenue.${revType}`) || 0)}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -1696,9 +1889,11 @@ export default function LOBReportingTab({
                         {fmt(m.revenue)}
                       </td>
                     ))}
-                    <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#059669', background: '#e2e8f0' }}>
-                      {fmt(lobRevenue)}
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#059669', background: '#e2e8f0' }}>
+                        {fmt(lobRevenue)}
+                      </td>
+                    )}
                   </tr>
                   
                   {/* COGS Header */}
@@ -1727,9 +1922,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('cogsContractors'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('cogsContractors'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1752,9 +1949,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('cogsPayroll'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('cogsPayroll'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1777,9 +1976,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('cogsMaterials'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('cogsMaterials'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1791,9 +1992,11 @@ export default function LOBReportingTab({
                         {fmt(m.cogs)}
                       </td>
                     ))}
-                    <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#dc2626', background: '#e2e8f0' }}>
-                      {fmt(lobCOGS)}
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#dc2626', background: '#e2e8f0' }}>
+                        {fmt(lobCOGS)}
+                      </td>
+                    )}
                   </tr>
                   
                   {/* Gross Profit Row */}
@@ -1807,9 +2010,11 @@ export default function LOBReportingTab({
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: grossProfit >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
-                      {fmt(grossProfit)}
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: grossProfit >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
+                        {fmt(grossProfit)}
+                      </td>
+                    )}
                   </tr>
                   
                   {/* Operating Expenses Header */}
@@ -1838,9 +2043,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('payroll'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('payroll'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1863,9 +2070,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('rent'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('rent'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1888,9 +2097,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('utilities'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('utilities'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1913,9 +2124,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('insurance'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('insurance'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1938,9 +2151,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('professionalFees'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('professionalFees'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1963,9 +2178,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('marketing'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('marketing'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -1988,9 +2205,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('autoTravel'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('autoTravel'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -2013,9 +2232,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('taxLicense'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('taxLicense'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -2038,9 +2259,11 @@ export default function LOBReportingTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {fmt(getLOBValue('otherExpense'))}
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('otherExpense'))}
+                        </td>
+                      )}
                     </tr>
                   )}
                   
@@ -2052,9 +2275,11 @@ export default function LOBReportingTab({
                         {fmt(m.expense)}
                       </td>
                     ))}
-                    <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#dc2626', background: '#e2e8f0' }}>
-                      {fmt(lobExpense)}
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#dc2626', background: '#e2e8f0' }}>
+                        {fmt(lobExpense)}
+                      </td>
+                    )}
                   </tr>
                   
                   {/* Net Income Row */}
@@ -2068,30 +2293,14 @@ export default function LOBReportingTab({
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', fontSize: '15px', color: netIncome >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
-                      {fmt(netIncome)}
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', fontSize: '15px', color: netIncome >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
+                        {fmt(netIncome)}
+                      </td>
+                    )}
                   </tr>
                 </tbody>
               </table>
-              
-              {/* Margin Summary */}
-              <div style={{ marginTop: '20px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-                  <div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Gross Margin</div>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: grossMargin >= 0 ? '#059669' : '#dc2626' }}>
-                      {grossMargin.toFixed(1)}%
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Net Margin</div>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: netMargin >= 0 ? '#059669' : '#dc2626' }}>
-                      {netMargin.toFixed(1)}%
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
           
@@ -2114,9 +2323,11 @@ export default function LOBReportingTab({
                         {month}
                       </th>
                     ))}
-                    <th colSpan={2} style={{ textAlign: 'center', padding: '12px 8px', fontWeight: '700', color: '#1e293b', minWidth: '160px', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                      TOTAL
-                    </th>
+                    {statementDisplay !== 'annual' && (
+                      <th colSpan={2} style={{ textAlign: 'center', padding: '12px 8px', fontWeight: '700', color: '#1e293b', minWidth: '160px', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                        TOTAL
+                      </th>
+                    )}
                   </tr>
                   <tr style={{ borderBottom: '2px solid #cbd5e1', background: '#f8fafc' }}>
                     <th></th>
@@ -2126,14 +2337,18 @@ export default function LOBReportingTab({
                         <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '600', color: '#64748b' }}>%</th>
                       </React.Fragment>
                     ))}
-                    <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '700', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>$</th>
-                    <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '700', color: '#64748b', background: '#e2e8f0' }}>%</th>
+                    {statementDisplay !== 'annual' && (
+                      <>
+                        <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '700', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>$</th>
+                        <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '700', color: '#64748b', background: '#e2e8f0' }}>%</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {/* Revenue Section */}
                   <tr style={{ background: '#f8fafc' }}>
-                    <td colSpan={monthlyLOBData.length * 2 + 3} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
+                    <td colSpan={statementDisplay !== 'annual' ? monthlyLOBData.length * 2 + 3 : monthlyLOBData.length * 2 + 1} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
                       REVENUE
                     </td>
                   </tr>
@@ -2151,17 +2366,21 @@ export default function LOBReportingTab({
                         </td>
                       </React.Fragment>
                     ))}
-                    <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#059669', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                      {fmt(lobRevenue)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#059669', background: '#e2e8f0' }}>
-                      100.0%
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <>
+                        <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#059669', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                          {fmt(lobRevenue)}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#059669', background: '#e2e8f0' }}>
+                          100.0%
+                        </td>
+                      </>
+                    )}
                   </tr>
                   
                   {/* COGS Section */}
                   <tr style={{ background: '#f8fafc' }}>
-                    <td colSpan={monthlyLOBData.length * 2 + 3} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
+                    <td colSpan={statementDisplay !== 'annual' ? monthlyLOBData.length * 2 + 3 : monthlyLOBData.length * 2 + 1} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
                       COST OF GOODS SOLD
                     </td>
                   </tr>
@@ -2191,12 +2410,16 @@ export default function LOBReportingTab({
                           </React.Fragment>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                        {fmt(getLOBValue('cogsContractors'))}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {lobRevenue > 0 ? ((getLOBValue('cogsContractors') / lobRevenue) * 100).toFixed(1) : '0.0'}%
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('cogsContractors'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('cogsContractors') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )}
                   
@@ -2225,12 +2448,16 @@ export default function LOBReportingTab({
                           </React.Fragment>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                        {fmt(getLOBValue('cogsPayroll'))}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {lobRevenue > 0 ? ((getLOBValue('cogsPayroll') / lobRevenue) * 100).toFixed(1) : '0.0'}%
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('cogsPayroll'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('cogsPayroll') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )}
                   
@@ -2259,12 +2486,16 @@ export default function LOBReportingTab({
                           </React.Fragment>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                        {fmt(getLOBValue('cogsMaterials'))}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {lobRevenue > 0 ? ((getLOBValue('cogsMaterials') / lobRevenue) * 100).toFixed(1) : '0.0'}%
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('cogsMaterials'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('cogsMaterials') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )}
                   
@@ -2284,12 +2515,16 @@ export default function LOBReportingTab({
                         </React.Fragment>
                       );
                     })}
-                    <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#dc2626', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                      {fmt(lobCOGS)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#64748b', background: '#e2e8f0' }}>
-                      {lobRevenue > 0 ? ((lobCOGS / lobRevenue) * 100).toFixed(1) : '0.0'}%
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <>
+                        <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#dc2626', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                          {fmt(lobCOGS)}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#64748b', background: '#e2e8f0' }}>
+                          {lobRevenue > 0 ? ((lobCOGS / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                        </td>
+                      </>
+                    )}
                   </tr>
                   
                   {/* Gross Profit */}
@@ -2309,17 +2544,21 @@ export default function LOBReportingTab({
                         </React.Fragment>
                       );
                     })}
-                    <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: grossProfit >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1', borderLeft: '2px solid #94a3b8' }}>
-                      {fmt(grossProfit)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: grossMargin >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
-                      {grossMargin.toFixed(1)}%
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <>
+                        <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: grossProfit >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1', borderLeft: '2px solid #94a3b8' }}>
+                          {fmt(grossProfit)}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: grossMargin >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
+                          {grossMargin.toFixed(1)}%
+                        </td>
+                      </>
+                    )}
                   </tr>
                   
                   {/* Operating Expenses Section */}
                   <tr style={{ background: '#f8fafc' }}>
-                    <td colSpan={monthlyLOBData.length * 2 + 3} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
+                    <td colSpan={statementDisplay !== 'annual' ? monthlyLOBData.length * 2 + 3 : monthlyLOBData.length * 2 + 1} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
                       OPERATING EXPENSES
                     </td>
                   </tr>
@@ -2349,12 +2588,16 @@ export default function LOBReportingTab({
                           </React.Fragment>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                        {fmt(getLOBValue('payroll'))}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {lobRevenue > 0 ? ((getLOBValue('payroll') / lobRevenue) * 100).toFixed(1) : '0.0'}%
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('payroll'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('payroll') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )}
                   
@@ -2383,12 +2626,16 @@ export default function LOBReportingTab({
                           </React.Fragment>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                        {fmt(getLOBValue('taxLicense'))}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {lobRevenue > 0 ? ((getLOBValue('taxLicense') / lobRevenue) * 100).toFixed(1) : '0.0'}%
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('taxLicense'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('taxLicense') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )}
                   
@@ -2417,12 +2664,16 @@ export default function LOBReportingTab({
                           </React.Fragment>
                         );
                       })}
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                        {fmt(getLOBValue('otherExpense'))}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
-                        {lobRevenue > 0 ? ((getLOBValue('otherExpense') / lobRevenue) * 100).toFixed(1) : '0.0'}%
-                      </td>
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('otherExpense'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('otherExpense') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )}
                   
@@ -2442,12 +2693,16 @@ export default function LOBReportingTab({
                         </React.Fragment>
                       );
                     })}
-                    <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#dc2626', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
-                      {fmt(lobExpense)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#64748b', background: '#e2e8f0' }}>
-                      {lobRevenue > 0 ? ((lobExpense / lobRevenue) * 100).toFixed(1) : '0.0'}%
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <>
+                        <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#dc2626', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                          {fmt(lobExpense)}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#64748b', background: '#e2e8f0' }}>
+                          {lobRevenue > 0 ? ((lobExpense / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                        </td>
+                      </>
+                    )}
                   </tr>
                   
                   {/* Net Income */}
@@ -2467,33 +2722,19 @@ export default function LOBReportingTab({
                         </React.Fragment>
                       );
                     })}
-                    <td style={{ textAlign: 'right', padding: '12px 4px', fontWeight: '700', fontSize: '15px', color: netIncome >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1', borderLeft: '2px solid #94a3b8' }}>
-                      {fmt(netIncome)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '12px 4px', fontWeight: '700', fontSize: '15px', color: netMargin >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
-                      {netMargin.toFixed(1)}%
-                    </td>
+                    {statementDisplay !== 'annual' && (
+                      <>
+                        <td style={{ textAlign: 'right', padding: '12px 4px', fontWeight: '700', fontSize: '15px', color: netIncome >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1', borderLeft: '2px solid #94a3b8' }}>
+                          {fmt(netIncome)}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '12px 4px', fontWeight: '700', fontSize: '15px', color: netMargin >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
+                          {netMargin.toFixed(1)}%
+                        </td>
+                      </>
+                    )}
                   </tr>
                 </tbody>
               </table>
-              
-              {/* Margin Summary */}
-              <div style={{ marginTop: '20px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-                  <div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Gross Margin</div>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: grossMargin >= 0 ? '#059669' : '#dc2626' }}>
-                      {grossMargin.toFixed(1)}%
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Net Margin</div>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: netMargin >= 0 ? '#059669' : '#dc2626' }}>
-                      {netMargin.toFixed(1)}%
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
           
@@ -2636,61 +2877,399 @@ export default function LOBReportingTab({
             </div>
           )}
           
-          {/* Balance Sheet */}
-          {statementType === 'balance-sheet' && (
-            <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '24px' }}>
+          {/* Balance Sheet - TABLE VIEW (Monthly/Quarterly/Annual) */}
+          {statementType === 'balance-sheet' && (statementDisplay === 'monthly' || statementDisplay === 'quarterly' || statementDisplay === 'annual') && monthlyLOBData.length > 0 && (
+            <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '24px', overflowX: 'auto' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-                Balance Sheet - {selectedLineOfBusiness === 'all' ? 'All Lines of Business' : selectedLineOfBusiness}
+                Balance Sheet - {selectedLineOfBusiness === 'all' ? 'All Lines of Business' : selectedLineOfBusiness} ({statementDisplay.charAt(0).toUpperCase() + statementDisplay.slice(1)})
               </h3>
               
-              <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px', fontStyle: 'italic' }}>
-                As of {filteredMonthly[filteredMonthly.length - 1]?.month || 'Latest Period'}
-              </p>
-              
-              {/* Assets */}
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                  ASSETS
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 16px' }}>
-                  <span style={{ color: '#475569' }}>Cash</span>
-                  <span style={{ color: '#475569' }}>{fmt(lobCash)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 16px' }}>
-                  <span style={{ color: '#475569' }}>Accounts Receivable</span>
-                  <span style={{ color: '#475569' }}>{fmt(lobAR)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #cbd5e1', marginTop: '8px' }}>
-                  <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Assets</span>
-                  <span style={{ fontWeight: '600', color: '#1e293b' }}>{fmt(lobCash + lobAR)}</span>
-                </div>
-              </div>
-              
-              {/* Liabilities */}
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                  LIABILITIES
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 16px' }}>
-                  <span style={{ color: '#475569' }}>Accounts Payable</span>
-                  <span style={{ color: '#475569' }}>{fmt(lobAP)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #cbd5e1', marginTop: '8px' }}>
-                  <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Liabilities</span>
-                  <span style={{ fontWeight: '600', color: '#1e293b' }}>{fmt(lobAP)}</span>
-                </div>
-              </div>
-              
-              {/* Equity */}
-              <div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                  EQUITY
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #cbd5e1' }}>
-                  <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Equity</span>
-                  <span style={{ fontWeight: '600', color: '#1e293b' }}>{fmt(lobEquity)}</span>
-                </div>
-              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '800px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #cbd5e1' }}>
+                    <th style={{ textAlign: 'left', padding: '12px 8px', fontWeight: '600', color: '#1e293b' }}>Line Item</th>
+                    {monthLabels.map((month, idx) => (
+                      <th key={idx} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '600', color: '#1e293b', minWidth: '90px' }}>
+                        {month}
+                      </th>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <th style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: '#1e293b', minWidth: '100px', background: '#e2e8f0' }}>
+                        TOTAL
+                      </th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Assets Header */}
+                  <tr style={{ background: '#f8fafc' }}>
+                    <td colSpan={statementDisplay !== 'annual' ? monthlyLOBData.length + 2 : monthlyLOBData.length + 1} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
+                      ASSETS
+                    </td>
+                  </tr>
+                  
+                  {/* Current Assets Subheader */}
+                  <tr style={{ background: '#f1f5f9' }}>
+                    <td colSpan={statementDisplay !== 'annual' ? monthlyLOBData.length + 2 : monthlyLOBData.length + 1} style={{ padding: '6px 8px', paddingLeft: '16px', fontSize: '11px', fontWeight: '600', color: '#64748b' }}>
+                      Current Assets
+                    </td>
+                  </tr>
+                  
+                  {/* Cash */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '32px', fontSize: '12px', color: '#64748b' }}>Cash</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.cash || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.cash || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Accounts Receivable */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '32px', fontSize: '12px', color: '#64748b' }}>Accounts Receivable</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.ar || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.ar || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Inventory */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '32px', fontSize: '12px', color: '#64748b' }}>Inventory</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.inventory || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.inventory || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Other Current Assets */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '32px', fontSize: '12px', color: '#64748b' }}>Other Current Assets</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.otherCA || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.otherCA || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Total Current Assets */}
+                  <tr style={{ borderBottom: '1px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
+                    <td style={{ padding: '8px', paddingLeft: '24px', fontWeight: '600', color: '#1e293b', fontSize: '12px' }}>Total Current Assets</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#1e293b', fontSize: '12px' }}>
+                        {fmt(m.tca || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#1e293b', background: '#e2e8f0', fontSize: '12px' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.tca || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Fixed Assets */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Fixed Assets</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.fixedAssets || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.fixedAssets || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Other Assets */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Other Assets</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.otherAssets || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.otherAssets || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Total Assets */}
+                  <tr style={{ borderBottom: '2px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Assets</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>
+                        {fmt(m.totalAssets || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#1e293b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.totalAssets || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Liabilities Header */}
+                  <tr style={{ background: '#f8fafc' }}>
+                    <td colSpan={statementDisplay !== 'annual' ? monthlyLOBData.length + 2 : monthlyLOBData.length + 1} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
+                      LIABILITIES
+                    </td>
+                  </tr>
+                  
+                  {/* Current Liabilities Subheader */}
+                  <tr style={{ background: '#f1f5f9' }}>
+                    <td colSpan={statementDisplay !== 'annual' ? monthlyLOBData.length + 2 : monthlyLOBData.length + 1} style={{ padding: '6px 8px', paddingLeft: '16px', fontSize: '11px', fontWeight: '600', color: '#64748b' }}>
+                      Current Liabilities
+                    </td>
+                  </tr>
+                  
+                  {/* Accounts Payable */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '32px', fontSize: '12px', color: '#64748b' }}>Accounts Payable</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.ap || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.ap || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Other Current Liabilities */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '32px', fontSize: '12px', color: '#64748b' }}>Other Current Liabilities</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.otherCL || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.otherCL || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Total Current Liabilities */}
+                  <tr style={{ borderBottom: '1px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
+                    <td style={{ padding: '8px', paddingLeft: '24px', fontWeight: '600', color: '#1e293b', fontSize: '12px' }}>Total Current Liabilities</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#1e293b', fontSize: '12px' }}>
+                        {fmt(m.tcl || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#1e293b', background: '#e2e8f0', fontSize: '12px' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.tcl || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Long Term Debt */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Long Term Debt</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.ltd || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.ltd || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Total Liabilities */}
+                  <tr style={{ borderBottom: '2px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Liabilities</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>
+                        {fmt(m.totalLiab || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#1e293b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.totalLiab || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Equity Header */}
+                  <tr style={{ background: '#f8fafc' }}>
+                    <td colSpan={statementDisplay !== 'annual' ? monthlyLOBData.length + 2 : monthlyLOBData.length + 1} style={{ padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>
+                      EQUITY
+                    </td>
+                  </tr>
+                  
+                  {/* Owners Capital */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Owner's Capital</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.ownersCapital || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.ownersCapital || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Owners Draw */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Owner's Draw</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.ownersDraw || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.ownersDraw || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Common Stock */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Common Stock</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.commonStock || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.commonStock || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Preferred Stock */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Preferred Stock</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.preferredStock || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.preferredStock || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Retained Earnings */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Retained Earnings</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.retainedEarnings || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.retainedEarnings || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Additional Paid-In Capital */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Additional Paid-In Capital</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.additionalPaidInCapital || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.additionalPaidInCapital || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Treasury Stock */}
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Treasury Stock</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                        {fmt(m.treasuryStock || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.treasuryStock || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Total Equity */}
+                  <tr style={{ borderBottom: '2px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Equity</td>
+                    {monthlyLOBData.map((m, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>
+                        {fmt(m.equity || 0)}
+                      </td>
+                    ))}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#1e293b', background: '#e2e8f0' }}>
+                        {fmt(monthlyLOBData[monthlyLOBData.length - 1]?.equity || 0)}
+                      </td>
+                    )}
+                  </tr>
+                  
+                  {/* Total Liabilities and Equity */}
+                  <tr style={{ borderTop: '2px solid #475569', background: '#f1f5f9' }}>
+                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>Total Liabilities and Equity</td>
+                    {monthlyLOBData.map((m, idx) => {
+                      const totalLiabAndEquity = (m.totalLiab || 0) + (m.equity || 0);
+                      return (
+                        <td key={idx} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>
+                          {fmt(totalLiabAndEquity)}
+                        </td>
+                      );
+                    })}
+                    {statementDisplay !== 'annual' && (
+                      <td style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: '#1e293b', background: '#e2e8f0' }}>
+                        {fmt((monthlyLOBData[monthlyLOBData.length - 1]?.totalLiab || 0) + (monthlyLOBData[monthlyLOBData.length - 1]?.equity || 0))}
+                      </td>
+                    )}
+                  </tr>
+                </tbody>
+              </table>
             </div>
           )}
         </>
