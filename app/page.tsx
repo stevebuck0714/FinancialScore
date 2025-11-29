@@ -3598,9 +3598,26 @@ export default function FinancialScorePage() {
             </div>
             <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>Site Administration</h2>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '14px', color: '#64748b' }}>{currentUser?.name}</span>
-            <button onClick={handleLogout} style={{ padding: '8px 16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Logout</button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+            <span style={{ fontSize: '16px', fontWeight: '700', color: '#475569' }}>{currentUser?.name}</span>
+            <button 
+              onClick={handleLogout} 
+              style={{ 
+                padding: '8px 16px', 
+                background: '#ef4444', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '8px', 
+                fontSize: '14px', 
+                fontWeight: '600', 
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+            >
+              Logout
+            </button>
           </div>
         </header>
       ) : (
@@ -3628,6 +3645,27 @@ export default function FinancialScorePage() {
               <button onClick={() => handleNavigation('financial-statements')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'financial-statements' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'financial-statements' ? '3px solid #667eea' : '3px solid transparent' }}>Financial Statements</button>
             </nav>
           </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+            <span style={{ fontSize: '16px', fontWeight: '700', color: '#475569' }}>{currentUser?.name}</span>
+            <button 
+              onClick={handleLogout} 
+              style={{ 
+                padding: '8px 16px', 
+                background: '#ef4444', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '8px', 
+                fontSize: '14px', 
+                fontWeight: '600', 
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+            >
+              Logout
+            </button>
+          </div>
         </header>
         )}
         
@@ -3637,9 +3675,26 @@ export default function FinancialScorePage() {
           <div style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', letterSpacing: '-0.5px' }}>
             Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup> - Management Assessment
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '14px', color: '#64748b' }}>{currentUser?.name}</span>
-            <button onClick={handleLogout} style={{ padding: '8px 16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Logout</button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+            <span style={{ fontSize: '16px', fontWeight: '700', color: '#475569' }}>{currentUser?.name}</span>
+            <button 
+              onClick={handleLogout} 
+              style={{ 
+                padding: '8px 16px', 
+                background: '#ef4444', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '8px', 
+                fontSize: '14px', 
+                fontWeight: '600', 
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+            >
+              Logout
+            </button>
           </div>
         </header>
         )}
@@ -3661,41 +3716,15 @@ export default function FinancialScorePage() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          {/* User Info and Logout at Top */}
-          <div style={{ padding: '0 24px 24px', borderBottom: '2px solid #e2e8f0' }}>
-            {companyName && (
-              <div style={{ marginBottom: '12px', padding: '12px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+          {/* Active Company Info at Top */}
+          {companyName && (
+            <div style={{ padding: '0 24px 24px', borderBottom: '2px solid #e2e8f0' }}>
+              <div style={{ padding: '12px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
                 <div style={{ fontSize: '11px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Company</div>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e40af' }}>{companyName}</div>
               </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Logged In As</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569' }}>{currentUser?.name}</div>
-                <div style={{ fontSize: '12px', color: '#94a3b8' }}>{currentUser?.email}</div>
-              </div>
-              <button 
-                onClick={handleLogout} 
-                style={{ 
-                  padding: '8px 16px', 
-                  background: '#ef4444', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '6px', 
-                  fontSize: '13px', 
-                  fontWeight: '600', 
-                  cursor: 'pointer',
-                  transition: 'background 0.2s',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
-              >
-                Logout
-              </button>
             </div>
-          </div>
+          )}
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {/* Financial Score Section */}
@@ -6799,8 +6828,6 @@ export default function FinancialScorePage() {
           {/* Company Management Tab */}
           {adminDashboardTab === 'company-management' && (
           <div className="company-management-container" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 className="no-print" style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Company Management</h2>
-            
             {/* Sub-tab Navigation */}
             <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
               <button

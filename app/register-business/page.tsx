@@ -202,22 +202,9 @@ export default function RegisterBusinessWelcome() {
           textAlign: 'center',
           color: 'white'
         }}>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center'
-          }}>
-            <Image 
-              src="/corelytics-logo.jpg" 
-              alt="Corelytics Logo" 
-              width={200} 
-              height={50}
-              style={{ marginRight: '15px' }}
-            />
-            <h1 style={{ fontSize: '32px', fontWeight: '700', margin: 0 }}>
-              Welcome to Corelytics
-            </h1>
-          </div>
+          <h1 style={{ fontSize: '32px', fontWeight: '700', margin: 0 }}>
+            Welcome to Corelytics
+          </h1>
         </div>
 
         {/* Content */}
