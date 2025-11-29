@@ -164,7 +164,7 @@ export default function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -210,7 +210,7 @@ export default function FinancialScorePage() {
   };
 
   // Handle admin dashboard tab navigation with payment gate
-  const handleAdminTabNavigation = (tab: 'company-management' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'team-management') => {
+  const handleAdminTabNavigation = (tab: 'company-management' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping') => {
     // Always allow payments tab
     if (tab === 'payments') {
       setAdminDashboardTab(tab);
@@ -256,7 +256,7 @@ export default function FinancialScorePage() {
           
           // Set appropriate view for business users (consultants)
           if (normalizedUser.role === 'consultant') {
-            setCurrentView('admin');
+            setCurrentView('consultant-dashboard');
             // Load companies for the consultant
             if (user.consultantId) {
               companiesApi.getAll(user.consultantId).then(({ companies: loadedCompanies }) => {
@@ -335,8 +335,9 @@ export default function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'team-management'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
+  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('team-management');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -856,7 +857,7 @@ export default function FinancialScorePage() {
       if (user.role === 'siteadmin') {
         setCurrentView('siteadmin');
       } else if (user.role === 'consultant') {
-        setCurrentView('admin');
+        setCurrentView('consultant-dashboard');
       } else {
         setCurrentView('upload');
       }
@@ -877,10 +878,10 @@ export default function FinancialScorePage() {
   
   // Fetch team members when viewing team management tab
   useEffect(() => {
-    if (currentUser?.role === 'consultant' && currentUser?.consultantId && adminDashboardTab === 'team-management') {
+    if (currentUser?.role === 'consultant' && currentUser?.consultantId && currentView === 'consultant-dashboard') {
       fetchTeamMembers();
     }
-  }, [currentUser, adminDashboardTab]);
+  }, [currentUser, currentView]);
 
   useEffect(() => {
     if (selectedCompanyId) {
@@ -1939,21 +1940,6 @@ export default function FinancialScorePage() {
     }
   };
 
-  const deleteCompany = async (companyId: string) => {
-    if (!confirm('Delete this company and all its users?')) return;
-    setIsLoading(true);
-    try {
-      await companiesApi.delete(companyId);
-      setCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyId) : []);
-      setUsers(users.filter(u => u.companyId !== companyId));
-      setFinancialDataRecords(financialDataRecords.filter(r => r.companyId !== companyId));
-      if (selectedCompanyId === companyId) setSelectedCompanyId('');
-    } catch (error) {
-      alert(error instanceof ApiError ? error.message : 'Failed to delete company');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // Team Management Functions
   const fetchTeamMembers = async () => {
@@ -3628,7 +3614,7 @@ export default function FinancialScorePage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '80px' }}>
             <div 
               style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', cursor: 'pointer', letterSpacing: '-0.5px' }} 
-              onClick={() => currentUser?.role === 'consultant' ? setCurrentView('admin') : setCurrentView('fs-score')}
+              onClick={() => currentUser?.role === 'consultant' ? setCurrentView('consultant-dashboard') : setCurrentView('fs-score')}
             >
               Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
             </div>
@@ -4082,24 +4068,24 @@ export default function FinancialScorePage() {
             {currentUser?.role === 'consultant' && (
               <div style={{ marginBottom: '12px' }}>
                 <h3 
-                  onClick={() => setCurrentView('admin')}
+                  onClick={() => currentUser.role === 'consultant' ? setCurrentView('consultant-dashboard') : setCurrentView('admin')}
                   style={{ 
                     fontSize: '14px', 
                     fontWeight: '700', 
-                    color: currentView === 'admin' ? '#667eea' : '#1e293b',
+                    color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b',
                     textTransform: 'uppercase', 
                     letterSpacing: '0.5px',
                     padding: '8px 24px',
                     marginBottom: '8px',
                     cursor: 'pointer',
                     transition: 'color 0.2s',
-                    borderLeft: currentView === 'admin' ? '4px solid #667eea' : '4px solid transparent'
+                    borderLeft: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '4px solid #667eea' : '4px solid transparent'
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.color = '#667eea';
                     e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
                   }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'admin' ? '#667eea' : '#1e293b'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b'}
                 >
                   {(() => {
                     if (currentUser.consultantType === 'business') {
@@ -6648,6 +6634,174 @@ export default function FinancialScorePage() {
             </div>
           )}
 
+          {/* Consultant Dashboard */}
+          {currentView === 'consultant-dashboard' && currentUser?.role === 'consultant' && (
+            <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+                <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                  Consultant Dashboard
+                </h1>
+              </div>
+
+              {/* Tab Navigation */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
+                {currentUser?.isPrimaryContact && (
+                  <button
+                    onClick={() => setConsultantDashboardTab('team-management')}
+                    style={{
+                      padding: '12px 24px',
+                      background: consultantDashboardTab === 'team-management' ? '#667eea' : 'transparent',
+                      color: consultantDashboardTab === 'team-management' ? 'white' : '#64748b',
+                      border: 'none',
+                      borderBottom: consultantDashboardTab === 'team-management' ? '3px solid #667eea' : '3px solid transparent',
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      borderRadius: '8px 8px 0 0',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    Team Management
+                  </button>
+                )}
+                <button
+                  onClick={() => setConsultantDashboardTab('company-list')}
+                  style={{
+                    padding: '12px 24px',
+                    background: consultantDashboardTab === 'company-list' ? '#667eea' : 'transparent',
+                    color: consultantDashboardTab === 'company-list' ? 'white' : '#64748b',
+                    border: 'none',
+                    borderBottom: consultantDashboardTab === 'company-list' ? '3px solid #667eea' : '3px solid transparent',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    borderRadius: '8px 8px 0 0',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Company List
+                </button>
+              </div>
+
+              {/* Team Management Tab */}
+              {consultantDashboardTab === 'team-management' && currentUser?.isPrimaryContact && (
+                <TeamManagementTab
+                  consultantTeamMembers={consultantTeamMembers}
+                  showAddTeamMemberForm={showAddTeamMemberForm}
+                  setShowAddTeamMemberForm={setShowAddTeamMemberForm}
+                  newTeamMember={newTeamMember}
+                  setNewTeamMember={setNewTeamMember}
+                  addTeamMember={addTeamMember}
+                  removeTeamMember={removeTeamMember}
+                  isLoading={isLoading}
+                />
+              )}
+
+              {/* Company List Tab */}
+              {consultantDashboardTab === 'company-list' && (
+                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+                    Your Companies ({companies.length})
+                  </h2>
+                  
+                  {companies.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
+                      <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>No companies yet</div>
+                      <div style={{ fontSize: '14px' }}>Companies will appear here once they are added to your account.</div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: '16px' }}>
+                      {[...companies]
+                        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                        .map((company) => (
+                          <div
+                            key={company.id}
+                            style={{
+                              background: '#f8fafc',
+                              border: '2px solid #e2e8f0',
+                              borderRadius: '8px',
+                              padding: '20px',
+                              transition: 'all 0.2s',
+                              position: 'relative'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px' }}>
+                              <div 
+                                style={{ flex: 1, cursor: 'pointer' }}
+                                onClick={() => {
+                                  setSelectedCompanyId(company.id);
+                                  setCurrentView('admin');
+                                  setAdminDashboardTab('company-management');
+                                }}
+                              >
+                                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                                  {company.name}
+                                </h3>
+                                {company.industry && (
+                                  <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>
+                                    Industry: {company.industry}
+                                  </div>
+                                )}
+                                {company.city && company.state && (
+                                  <div style={{ fontSize: '13px', color: '#64748b' }}>
+                                    Location: {company.city}, {company.state}
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                                {company.subscriptionStatus && (
+                                  <div style={{
+                                    padding: '4px 12px',
+                                    background: company.subscriptionStatus === 'active' ? '#10b981' : 
+                                               company.subscriptionStatus === 'trial' ? '#f59e0b' : '#ef4444',
+                                    color: 'white',
+                                    borderRadius: '12px',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    textTransform: 'uppercase'
+                                  }}>
+                                    {company.subscriptionStatus}
+                                  </div>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const businessId = company.businessId || company.id;
+                                    setCompanyToDelete({
+                                      companyId: company.id,
+                                      businessId: businessId,
+                                      companyName: company.name || 'this company'
+                                    });
+                                    setShowDeleteConfirmation(true);
+                                  }}
+                                  style={{
+                                    padding: '8px 16px',
+                                    background: '#ef4444',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    cursor: 'pointer',
+                                    transition: 'background 0.2s'
+                                  }}
+                                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+                                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Admin Dashboard */}
           {currentView === 'admin' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
@@ -6804,25 +6958,6 @@ export default function FinancialScorePage() {
             >
               Data Mapping
             </button>
-            {currentUser?.role === 'consultant' && currentUser?.isPrimaryContact && (
-              <button
-                onClick={() => handleAdminTabNavigation('team-management')}
-                style={{
-                  padding: '12px 24px',
-                  background: adminDashboardTab === 'team-management' ? '#667eea' : 'transparent',
-                  color: adminDashboardTab === 'team-management' ? 'white' : '#64748b',
-                  border: 'none',
-                  borderBottom: adminDashboardTab === 'team-management' ? '3px solid #667eea' : '3px solid transparent',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  borderRadius: '8px 8px 0 0',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Team Management
-              </button>
-            )}
           </div>
           
           {/* Company Management Tab */}
@@ -6929,15 +7064,9 @@ export default function FinancialScorePage() {
                 {/* Only show the selected company - always expanded */}
                 {Array.isArray(companies) && companies.filter(c => c.id === selectedCompanyId).map(comp => (
                 <div key={comp.id} style={{ background: '#f8fafc', borderRadius: '8px', padding: '24px', border: '2px solid #667eea' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <div>
-                      <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{comp.name}</h3>
-                      <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>✓ Active Company</div>
-                    </div>
-                    {/* Only show Delete button for regular consultants, not business users */}
-                    {currentUser.consultantType !== 'business' && (
-                      <button onClick={() => deleteCompany(comp.id)} style={{ padding: '8px 16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: '600' }}>Delete Company</button>
-                    )}
+                  <div style={{ marginBottom: '16px' }}>
+                    <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{comp.name}</h3>
+                    <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>✓ Active Company</div>
                   </div>
                   
                   {/* Company Information */}
@@ -8335,20 +8464,6 @@ export default function FinancialScorePage() {
             </div>
           )}
 
-          {/* Team Management Tab */}
-          {adminDashboardTab === 'team-management' && currentUser?.role === 'consultant' && currentUser?.isPrimaryContact && (
-            <TeamManagementTab
-              consultantTeamMembers={consultantTeamMembers}
-              showAddTeamMemberForm={showAddTeamMemberForm}
-              setShowAddTeamMemberForm={setShowAddTeamMemberForm}
-              newTeamMember={newTeamMember}
-              setNewTeamMember={setNewTeamMember}
-              addTeamMember={addTeamMember}
-              removeTeamMember={removeTeamMember}
-              isLoading={isLoading}
-            />
-          )}
-
           {/* Data Mapping Tab - Content rendered through Financial Statements conditional below */}
 
           {!selectedCompanyId && adminDashboardTab === 'data-mapping' && (
@@ -8402,12 +8517,12 @@ export default function FinancialScorePage() {
       />
 
       {/* Content Area - Requires Company Selection */}
-      {!selectedCompanyId && currentView !== 'admin' && currentView !== 'siteadmin' && (
+      {!selectedCompanyId && currentView !== 'admin' && currentView !== 'consultant-dashboard' && currentView !== 'siteadmin' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'} to continue.</p>
           {currentUser?.role === 'consultant' && (
-            <button onClick={() => setCurrentView('admin')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'}</button>
+            <button onClick={() => setCurrentView('consultant-dashboard')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'}</button>
           )}
         </div>
       )}
