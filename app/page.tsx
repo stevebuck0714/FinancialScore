@@ -364,7 +364,6 @@ export default function FinancialScorePage() {
   const [priorityRatios, setPriorityRatios] = useState<string[]>([
     'Current Ratio', 'Quick Ratio', 'ROE', 'ROA', 'Interest Coverage', 'Debt/Net Worth'
   ]);
-  const [isMyCompaniesExpanded, setIsMyCompaniesExpanded] = useState(true);
 
   // Available ratios by category for Priority Ratios tab
   const ratioCategories = {
@@ -4125,105 +4124,6 @@ export default function FinancialScorePage() {
                     </div>
                   </div>
                 )}
-                
-                {/* My Companies List - Only for Regular Consultants */}
-                {currentUser.consultantType !== 'business' && (
-                  <div style={{ marginBottom: '1px' }}>
-                    {/* List of Companies */}
-                    {Array.isArray(companies) && companies.filter(c => c.consultantId === currentUser.consultantId).length > 0 && (
-                      <>
-                        <h3 
-                          onClick={() => setIsMyCompaniesExpanded(!isMyCompaniesExpanded)}
-                          style={{ 
-                            fontSize: '14px', 
-                            fontWeight: '700', 
-                            color: '#1e293b', 
-                            textTransform: 'uppercase', 
-                            letterSpacing: '0.5px', 
-                            marginBottom: '1px', 
-                            padding: '4px 24px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            transition: 'color 0.2s'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
-                          onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
-                        >
-                          <span>My Companies</span>
-                          <span style={{ fontSize: '12px', color: '#667eea' }}>{isMyCompaniesExpanded ? '-' : '+'}</span>
-                        </h3>
-                        {isMyCompaniesExpanded && (
-                        <div style={{ paddingLeft: '28px' }}>
-                        {Array.isArray(companies) && companies.filter(c => c.consultantId === currentUser.consultantId).map(comp => (
-                          <div
-                            key={comp.id}
-                            onClick={() => handleSelectCompany(comp.id)}
-                            style={{
-                              fontSize: '14px',
-                              color: selectedCompanyId === comp.id ? '#667eea' : '#475569',
-                              padding: '4px 12px',
-                              cursor: 'pointer',
-                              borderRadius: '6px',
-                              marginBottom: '1px',
-                              background: selectedCompanyId === comp.id ? '#ede9fe' : 'transparent',
-                              fontWeight: selectedCompanyId === comp.id ? '600' : '400',
-                              transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={(e) => {
-                              if (selectedCompanyId !== comp.id) {
-                                e.currentTarget.style.background = '#f8fafc';
-                                e.currentTarget.style.color = '#667eea';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (selectedCompanyId !== comp.id) {
-                                e.currentTarget.style.background = 'transparent';
-                                e.currentTarget.style.color = '#475569';
-                              }
-                            }}
-                          >
-                            {selectedCompanyId === comp.id && '• '}{comp.name}
-                          </div>
-                        ))}
-                        </div>
-                        )}
-                      </>
-                    )}
-                    
-                    {/* Add Company Button */}
-                    <div style={{ paddingLeft: '28px', paddingTop: '12px' }}>
-                    <button
-                      onClick={() => {
-                        setCurrentView('admin');
-                        setSelectedCompanyId('');
-                        setAdminDashboardTab('company-management');
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        background: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
-                    >
-                      <span style={{ fontSize: '16px', fontWeight: '700' }}>+</span> Add Company
-                    </button>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -6700,9 +6600,36 @@ export default function FinancialScorePage() {
               {/* Company List Tab */}
               {consultantDashboardTab === 'company-list' && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-                    Your Companies ({companies.length})
-                  </h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                      Your Companies ({companies.length})
+                    </h2>
+                    <button
+                      onClick={() => {
+                        setCurrentView('admin');
+                        setSelectedCompanyId('');
+                        setAdminDashboardTab('company-management');
+                      }}
+                      style={{
+                        padding: '10px 20px',
+                        background: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
+                    >
+                      <span style={{ fontSize: '18px', fontWeight: '700' }}>+</span> Add Company
+                    </button>
+                  </div>
                   
                   {companies.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
@@ -6720,7 +6647,7 @@ export default function FinancialScorePage() {
                               background: '#f8fafc',
                               border: '2px solid #e2e8f0',
                               borderRadius: '8px',
-                              padding: '20px',
+                              padding: '10px',
                               transition: 'all 0.2s',
                               position: 'relative'
                             }}
