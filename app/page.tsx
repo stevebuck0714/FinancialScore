@@ -3704,7 +3704,28 @@ export default function FinancialScorePage() {
           {/* Active Company Info at Top */}
           {companyName && (
             <div style={{ padding: '0 24px 24px', borderBottom: '2px solid #e2e8f0' }}>
-              <div style={{ padding: '12px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+              <div 
+                onClick={() => {
+                  setCurrentView('admin');
+                  setAdminDashboardTab('company-management');
+                }}
+                style={{ 
+                  padding: '12px', 
+                  background: '#f0f9ff', 
+                  borderRadius: '8px', 
+                  border: '1px solid #bae6fd',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#e0f2fe';
+                  e.currentTarget.style.border = '1px solid #7dd3fc';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#f0f9ff';
+                  e.currentTarget.style.border = '1px solid #bae6fd';
+                }}
+              >
                 <div style={{ fontSize: '11px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Company</div>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e40af' }}>{companyName}</div>
               </div>
@@ -4111,15 +4132,31 @@ export default function FinancialScorePage() {
                     paddingBottom: '12px',
                     borderBottom: '2px solid #e2e8f0'
                   }}>
-                    <div style={{ 
-                      fontSize: '16px', 
-                      fontWeight: '600', 
-                      color: '#667eea',
-                      padding: '8px 12px',
-                      background: '#f0f9ff',
-                      borderRadius: '8px',
-                      border: '2px solid #bfdbfe'
-                    }}>
+                    <div 
+                      onClick={() => {
+                        setCurrentView('admin');
+                        setAdminDashboardTab('company-management');
+                      }}
+                      style={{ 
+                        fontSize: '16px', 
+                        fontWeight: '600', 
+                        color: '#667eea',
+                        padding: '8px 12px',
+                        background: '#f0f9ff',
+                        borderRadius: '8px',
+                        border: '2px solid #bfdbfe',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#e0f2fe';
+                        e.currentTarget.style.border = '2px solid #7dd3fc';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#f0f9ff';
+                        e.currentTarget.style.border = '2px solid #bfdbfe';
+                      }}
+                    >
                       {Array.isArray(companies) && companies.find(c => c.id === selectedCompanyId)?.name}
                     </div>
                   </div>
@@ -15941,7 +15978,7 @@ export default function FinancialScorePage() {
                                   </td>
                                   <td style={{ padding: '12px', color: '#475569' }}>{mapping.qbAccount}</td>
                                   <td style={{ padding: '12px', color: '#475569', textAlign: 'right', fontFamily: 'monospace' }}>
-                                    {amount !== null && amount !== undefined ? `$${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                                    {amount !== null && amount !== undefined ? `$${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-'}
                                   </td>
                                   <td style={{ padding: '12px' }}>
                                     <select
@@ -17110,7 +17147,7 @@ export default function FinancialScorePage() {
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
@@ -17120,42 +17157,42 @@ export default function FinancialScorePage() {
                         {cogsPayroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                            <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsOwnerPay > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                            <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsContractors > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                            <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsMaterials > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Materials</span>
-                            <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsCommissions > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                            <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsOther > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Other</span>
-                            <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
@@ -17163,7 +17200,7 @@ export default function FinancialScorePage() {
                       <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                          <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                         <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
                           {grossMargin.toFixed(1)}% margin
@@ -17176,84 +17213,84 @@ export default function FinancialScorePage() {
                         {opexPayroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Payroll</span>
-                            <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {ownersBasePay > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                            <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {ownersRetirement > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Owner's Retirement</span>
-                            <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {professionalServices > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Professional Services</span>
-                            <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {rentLease > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Rent/Lease</span>
-                            <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {utilities > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Utilities</span>
-                            <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {equipment > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Equipment</span>
-                            <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {travel > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Travel</span>
-                            <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {insurance > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Insurance</span>
-                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {opexSalesMarketing > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                            <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {contractorsDistribution > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Contractors Distribution</span>
-                            <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {depreciationExpense > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                            <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {opexOther > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                            <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
@@ -17261,7 +17298,7 @@ export default function FinancialScorePage() {
                       <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
-                          <span style={{ fontWeight: '700', color: '#166534' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '700', color: '#166534' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                         <div style={{ fontSize: '13px', color: '#166534', textAlign: 'right' }}>
                           {operatingMargin.toFixed(1)}% margin
@@ -17275,20 +17312,20 @@ export default function FinancialScorePage() {
                           {nonOperatingIncome > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Non-Operating Income</span>
-                              <span style={{ color: '#10b981' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#10b981' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {interestExpense > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Interest Expense</span>
-                              <span style={{ color: '#ef4444' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                              <span style={{ color: '#ef4444' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
                             </div>
                           )}
                           {extraordinaryItems !== 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Extraordinary Items</span>
                               <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444' }}>
-                                {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{extraordinaryItems < 0 ? ')' : ''}
+                                {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
                               </span>
                             </div>
                           )}
@@ -17300,7 +17337,7 @@ export default function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
                           <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                            ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
                         </div>
                         <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
@@ -17607,30 +17644,39 @@ export default function FinancialScorePage() {
                 const monthDate = new Date(currentMonth.date || currentMonth.month);
                 const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
                 
-                // Assets
+                // Assets - Use imported values directly (do not calculate)
                 const cash = currentMonth.cash || 0;
                 const ar = currentMonth.ar || 0;
                 const inventory = currentMonth.inventory || 0;
                 const otherCA = currentMonth.otherCA || 0;
-                const tca = cash + ar + inventory + otherCA;
+                const tca = currentMonth.tca || 0;
                 
                 const fixedAssets = currentMonth.fixedAssets || 0;
                 const otherAssets = currentMonth.otherAssets || 0;
-                const totalAssets = tca + fixedAssets + otherAssets;
+                const totalAssets = currentMonth.totalAssets || 0;
                 
-                // Liabilities
+                // Liabilities - Use imported values directly (do not calculate)
                 const ap = currentMonth.ap || 0;
                 const otherCL = currentMonth.otherCL || 0;
-                const tcl = ap + otherCL;
+                const tcl = currentMonth.tcl || 0;
                 
                 const ltd = currentMonth.ltd || 0;
-                const totalLiabilities = tcl + ltd;
+                const totalLiabilities = currentMonth.totalLiab || 0;
                 
-                // Equity
-                const totalEquity = currentMonth.totalEquity || 0;
+                // Equity - Get detail fields
+                const ownersCapital = currentMonth.ownersCapital || 0;
+                const ownersDraw = currentMonth.ownersDraw || 0;
+                const commonStock = currentMonth.commonStock || 0;
+                const preferredStock = currentMonth.preferredStock || 0;
+                const retainedEarnings = currentMonth.retainedEarnings || 0;
+                const additionalPaidInCapital = currentMonth.additionalPaidInCapital || 0;
+                const treasuryStock = currentMonth.treasuryStock || 0;
                 
-                // Total L&E
-                const totalLAndE = totalLiabilities + totalEquity;
+                // Calculate total equity from components or use imported value
+                const totalEquity = currentMonth.totalEquity || (ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock);
+                
+                // Total L&E - Use imported value if available, otherwise calculate
+                const totalLAndE = currentMonth.totalLAndE || (totalLiabilities + totalEquity);
                 
                 return (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -17646,53 +17692,53 @@ export default function FinancialScorePage() {
                       {/* Current Assets */}
                       <div style={{ marginBottom: '20px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Assets</div>
-                        {cash > 0 && (
+                        {cash !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Cash</span>
-                            <span style={{ color: '#475569' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {ar > 0 && (
+                        {ar !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Accounts Receivable</span>
-                            <span style={{ color: '#475569' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {inventory > 0 && (
+                        {inventory !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Inventory</span>
-                            <span style={{ color: '#475569' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {otherCA > 0 && (
+                        {otherCA !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Current Assets</span>
-                            <span style={{ color: '#475569' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 20px', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Current Assets</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
                       {/* Non-Current Assets */}
-                      {fixedAssets > 0 && (
+                      {fixedAssets !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Fixed Assets</span>
-                          <span style={{ color: '#475569' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
-                      {otherAssets > 0 && (
+                      {otherAssets !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Other Assets</span>
-                          <span style={{ color: '#475569' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #667eea', marginTop: '8px', background: '#f8fafc' }}>
                         <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL ASSETS</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     </div>
 
@@ -17703,35 +17749,35 @@ export default function FinancialScorePage() {
                       {/* Current Liabilities */}
                       <div style={{ marginBottom: '20px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Liabilities</div>
-                        {ap > 0 && (
+                        {ap !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Accounts Payable</span>
-                            <span style={{ color: '#475569' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {otherCL > 0 && (
+                        {otherCL !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Current Liabilities</span>
-                            <span style={{ color: '#475569' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 20px', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Current Liabilities</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${tcl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
                       {/* Long-term Debt */}
-                      {ltd > 0 && (
+                      {ltd !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Long-term Debt</span>
-                          <span style={{ color: '#475569' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #f59e0b', marginTop: '8px', background: '#fef3c7' }}>
                         <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL LIABILITIES</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     </div>
 
@@ -17739,9 +17785,53 @@ export default function FinancialScorePage() {
                     <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #10b981' }}>EQUITY</div>
                       
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', background: '#d1fae5' }}>
+                      {/* Equity Detail Fields */}
+                      {ownersCapital !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Owner's Capital</span>
+                          <span style={{ color: '#475569' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {ownersDraw !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Owner's Draw</span>
+                          <span style={{ color: '#475569' }}>${ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {commonStock !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Common Stock</span>
+                          <span style={{ color: '#475569' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {preferredStock !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Preferred Stock</span>
+                          <span style={{ color: '#475569' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {retainedEarnings !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Retained Earnings</span>
+                          <span style={{ color: '#475569' }}>${retainedEarnings.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {additionalPaidInCapital !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Additional Paid-In Capital</span>
+                          <span style={{ color: '#475569' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {treasuryStock !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Treasury Stock</span>
+                          <span style={{ color: '#475569' }}>${treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', marginTop: '4px', background: '#d1fae5' }}>
                         <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL EQUITY</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     </div>
 
@@ -17750,12 +17840,12 @@ export default function FinancialScorePage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</span>
                         <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>
-                          ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </span>
                       </div>
                       {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       )}
                     </div>
@@ -18043,7 +18133,7 @@ export default function FinancialScorePage() {
                         <div style={{ marginBottom: '12px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
                             <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         </div>
 
@@ -18053,42 +18143,42 @@ export default function FinancialScorePage() {
                           {cogsPayroll > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                              <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {cogsOwnerPay > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                              <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {cogsContractors > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                              <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {cogsMaterials > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>COGS - Materials</span>
-                              <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {cogsCommissions > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                              <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {cogsOther > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>COGS - Other</span>
-                              <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                             <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         </div>
 
@@ -18096,7 +18186,7 @@ export default function FinancialScorePage() {
                         <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                           <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
                             {grossMargin.toFixed(1)}% margin
@@ -18109,84 +18199,84 @@ export default function FinancialScorePage() {
                           {opexPayroll > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Payroll</span>
-                              <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {ownersBasePay > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                              <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {ownersRetirement > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Owner's Retirement</span>
-                              <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {professionalServices > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Professional Services</span>
-                              <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {rentLease > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Rent/Lease</span>
-                              <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {utilities > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Utilities</span>
-                              <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {equipment > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Equipment</span>
-                              <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {travel > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Travel</span>
-                              <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {insurance > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Insurance</span>
-                              <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {opexSalesMarketing > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                              <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {contractorsDistribution > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Contractors - Distribution</span>
-                              <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {depreciationExpense > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                              <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {opexOther > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                              <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                             <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         </div>
 
@@ -18194,7 +18284,7 @@ export default function FinancialScorePage() {
                         <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <span style={{ fontWeight: '700', color: '#1e40af' }}>Operating Income</span>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                           <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
                             {operatingMargin.toFixed(1)}% operating margin
@@ -18207,19 +18297,19 @@ export default function FinancialScorePage() {
                           {interestExpense > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Interest Expense</span>
-                              <span style={{ color: '#475569' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                              <span style={{ color: '#475569' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
                             </div>
                           )}
                           {nonOperatingIncome > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Non-Operating Income</span>
-                              <span style={{ color: '#475569' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#475569' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {extraordinaryItems !== 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Extraordinary Items</span>
-                              <span style={{ color: '#475569' }}>{extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{extraordinaryItems < 0 ? ')' : ''}</span>
+                              <span style={{ color: '#475569' }}>{extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}</span>
                             </div>
                           )}
                         </div>
@@ -18229,7 +18319,7 @@ export default function FinancialScorePage() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
                             <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                              {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{netIncome < 0 ? ')' : ''}
+                              {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
                             </span>
                           </div>
                           <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
@@ -18439,7 +18529,7 @@ export default function FinancialScorePage() {
                         {/* Revenue */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
                           <div style={{ color: '#1e293b' }}>Revenue</div>
-                          <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                           <div style={{ textAlign: 'right', color: '#1e293b' }}>100.0%</div>
                         </div>
 
@@ -18449,48 +18539,48 @@ export default function FinancialScorePage() {
                           {cogsPayroll > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Payroll</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsPayroll)}</div>
                             </div>
                           )}
                           {cogsOwnerPay > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Owner Pay</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOwnerPay)}</div>
                             </div>
                           )}
                           {cogsContractors > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Contractors</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsContractors)}</div>
                             </div>
                           )}
                           {cogsMaterials > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Materials</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsMaterials)}</div>
                             </div>
                           )}
                           {cogsCommissions > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Commissions</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsCommissions)}</div>
                             </div>
                           )}
                           {cogsOther > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>COGS - Other</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOther)}</div>
                             </div>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                             <div style={{ color: '#475569' }}>Total COGS</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(cogs)}</div>
                           </div>
                         </div>
@@ -18498,7 +18588,7 @@ export default function FinancialScorePage() {
                         {/* Gross Profit */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Gross Profit</div>
-                          <div style={{ textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <div style={{ textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                           <div style={{ textAlign: 'right' }}>{calcPercent(grossProfit)}</div>
                         </div>
 
@@ -18508,97 +18598,97 @@ export default function FinancialScorePage() {
                           {opexPayroll > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Payroll</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexPayroll)}</div>
                             </div>
                           )}
                           {ownersBasePay > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Owner's Base Pay</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersBasePay)}</div>
                             </div>
                           )}
                           {ownersRetirement > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Owner's Retirement</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersRetirement)}</div>
                             </div>
                           )}
                           {professionalServices > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Professional Services</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalServices)}</div>
                             </div>
                           )}
                           {rentLease > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Rent/Lease</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rentLease)}</div>
                             </div>
                           )}
                           {utilities > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Utilities</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(utilities)}</div>
                             </div>
                           )}
                           {equipment > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Equipment</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(equipment)}</div>
                             </div>
                           )}
                           {travel > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Travel</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(travel)}</div>
                             </div>
                           )}
                           {insurance > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Insurance</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(insurance)}</div>
                             </div>
                           )}
                           {opexSalesMarketing > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Sales & Marketing</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexSalesMarketing)}</div>
                             </div>
                           )}
                           {contractorsDistribution > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Contractors - Distribution</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(contractorsDistribution)}</div>
                             </div>
                           )}
                           {depreciationExpense > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Depreciation & Amortization</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationExpense)}</div>
                             </div>
                           )}
                           {opexOther > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Other Operating Expenses</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexOther)}</div>
                             </div>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                             <div style={{ color: '#475569' }}>Total Operating Expenses</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#475569' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(totalOpex)}</div>
                           </div>
                         </div>
@@ -18606,7 +18696,7 @@ export default function FinancialScorePage() {
                         {/* Operating Income */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Operating Income</div>
-                          <div style={{ textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <div style={{ textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                           <div style={{ textAlign: 'right' }}>{calcPercent(operatingIncome)}</div>
                         </div>
 
@@ -18617,14 +18707,14 @@ export default function FinancialScorePage() {
                             {interestExpense > 0 && (
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b' }}>Interest Expense</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</div>
+                                <div style={{ textAlign: 'right', color: '#64748b' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(interestExpense)})</div>
                               </div>
                             )}
                             {nonOperatingIncome > 0 && (
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b' }}>Non-Operating Income</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(nonOperatingIncome)}</div>
                               </div>
                             )}
@@ -18632,7 +18722,7 @@ export default function FinancialScorePage() {
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b' }}>Extraordinary Items</div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>
-                                  {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{extraordinaryItems < 0 ? ')' : ''}
+                                  {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
                                 </div>
                                 <div style={{ textAlign: 'right', color: '#64748b' }}>
                                   {extraordinaryItems >= 0 ? calcPercent(extraordinaryItems) : `(${calcPercent(Math.abs(extraordinaryItems))})`}
@@ -18646,7 +18736,7 @@ export default function FinancialScorePage() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
                           <div>Net Income</div>
                           <div style={{ textAlign: 'right' }}>
-                            {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{netIncome < 0 ? ')' : ''}
+                            {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
                           </div>
                           <div style={{ textAlign: 'right' }}>{calcPercent(netIncome)}</div>
                         </div>
@@ -18662,39 +18752,45 @@ export default function FinancialScorePage() {
                     const calculateBalanceData = (months: any[]) => {
                       // For balance sheet, use the latest month's values (point-in-time)
                       const latest = months[months.length - 1];
+                      // Assets - Use Data Review fields and imported totals
                       const cash = latest.cash || 0;
                       const ar = latest.ar || 0;
                       const inventory = latest.inventory || 0;
                       const otherCA = latest.otherCA || 0;
-                      const tca = cash + ar + inventory + otherCA;
+                      const tca = latest.tca || 0;  // Use imported total
                       
                       const fixedAssets = latest.fixedAssets || 0;
-                      const intangibleAssets = latest.intangibleAssets || 0;
-                      const otherNonCurrentAssets = latest.otherNonCurrentAssets || 0;
-                      const nonCurrentAssets = fixedAssets + intangibleAssets + otherNonCurrentAssets;
-                      const totalAssets = tca + nonCurrentAssets;
+                      const otherAssets = latest.otherAssets || 0;
+                      const totalAssets = latest.totalAssets || 0;  // Use imported total
                       
+                      // Liabilities - Use Data Review fields and imported totals
                       const ap = latest.ap || 0;
-                      const shortTermDebt = latest.shortTermDebt || 0;
-                      const currentPortionLTD = latest.currentPortionLTD || 0;
-                      const otherCurrentLiabilities = latest.otherCurrentLiabilities || 0;
-                      const totalCurrentLiabilities = ap + shortTermDebt + currentPortionLTD + otherCurrentLiabilities;
+                      const otherCL = latest.otherCL || 0;
+                      const tcl = latest.tcl || 0;  // Use imported total
                       
                       const ltd = latest.ltd || 0;
-                      const otherLongTermLiabilities = latest.otherLongTermLiabilities || 0;
-                      const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
-                      const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
+                      const totalLiabilities = latest.totalLiab || 0;  // Use imported total
                       
-                      const paidInCapital = latest.paidInCapital || 0;
+                      // All equity detail fields
+                      const ownersCapital = latest.ownersCapital || 0;
+                      const ownersDraw = latest.ownersDraw || 0;
+                      const commonStock = latest.commonStock || 0;
+                      const preferredStock = latest.preferredStock || 0;
                       const retainedEarnings = latest.retainedEarnings || 0;
-                      const totalEquity = paidInCapital + retainedEarnings;
+                      const additionalPaidInCapital = latest.additionalPaidInCapital || 0;
+                      const treasuryStock = latest.treasuryStock || 0;
+                      const paidInCapital = latest.paidInCapital || 0;
+                      const totalEquity = latest.totalEquity || (ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock + paidInCapital);
+                      
+                      const totalLAndE = latest.totalLAndE || (totalLiabilities + totalEquity);
                       
                       return {
                         cash, ar, inventory, otherCA, tca,
-                        fixedAssets, intangibleAssets, otherNonCurrentAssets, nonCurrentAssets, totalAssets,
-                        ap, shortTermDebt, currentPortionLTD, otherCurrentLiabilities, totalCurrentLiabilities,
-                        ltd, otherLongTermLiabilities, totalLongTermLiabilities, totalLiabilities,
-                        paidInCapital, retainedEarnings, totalEquity
+                        fixedAssets, otherAssets, totalAssets,
+                        ap, otherCL, tcl,
+                        ltd, totalLiabilities,
+                        ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity,
+                        totalLAndE
                       };
                     };
                     
@@ -18772,42 +18868,23 @@ export default function FinancialScorePage() {
                             ))}
                           </div>
                           
-                          {/* Non-Current Assets Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
-                            <div style={{ color: '#475569' }}>Non-Current Assets</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {balanceData.some(p => p.fixedAssets > 0) && (
+                          {/* Non-Current Assets */}
+                          {balanceData.some(p => p.fixedAssets !== 0) && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Property, Plant & Equipment</div>
+                              <div style={{ color: '#64748b' }}>Fixed Assets</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.intangibleAssets > 0) && (
+                          {balanceData.some(p => p.otherAssets !== 0) && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Intangible Assets</div>
+                              <div style={{ color: '#64748b' }}>Other Assets</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.intangibleAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.otherNonCurrentAssets > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Non-Current Assets</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherNonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
-                            <div style={{ color: '#475569' }}>Total Non-Current Assets</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.nonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
                           
                           {/* TOTAL ASSETS */}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
@@ -18829,7 +18906,7 @@ export default function FinancialScorePage() {
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
-                          {balanceData.some(p => p.ap > 0) && (
+                          {balanceData.some(p => p.ap !== 0) && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Payable</div>
                               {balanceData.map((p, i) => (
@@ -18837,65 +18914,30 @@ export default function FinancialScorePage() {
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.shortTermDebt > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Short-Term Debt</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.shortTermDebt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.currentPortionLTD > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Current Portion of LT Debt</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.currentPortionLTD.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.otherCurrentLiabilities > 0) && (
+                          {balanceData.some(p => p.otherCL !== 0) && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                               <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Liabilities</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                             <div style={{ color: '#475569' }}>Total Current Liabilities</div>
                             {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.totalCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                           
-                          {/* Long-Term Liabilities Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
-                            <div style={{ color: '#475569' }}>Long-Term Liabilities</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {balanceData.some(p => p.ltd > 0) && (
+                          {/* Long-Term Debt */}
+                          {balanceData.some(p => p.ltd !== 0) && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Long-Term Debt</div>
+                              <div style={{ color: '#64748b' }}>Long-Term Debt</div>
                               {balanceData.map((p, i) => (
                                 <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
-                          {balanceData.some(p => p.otherLongTermLiabilities > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Long-Term Liabilities</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
-                            <div style={{ color: '#475569' }}>Total Long-Term Liabilities</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.totalLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
                           
                           {/* TOTAL LIABILITIES */}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
@@ -18911,11 +18953,35 @@ export default function FinancialScorePage() {
                             {balanceData.map((p, i) => <div key={i}></div>)}
                           </div>
                           
-                          {balanceData.some(p => p.paidInCapital > 0) && (
+                          {balanceData.some(p => p.ownersCapital !== 0) && (
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Paid-in Capital</div>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Capital</div>
                               {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
+                          {balanceData.some(p => p.ownersDraw !== 0) && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Draw</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
+                          {balanceData.some(p => p.commonStock !== 0) && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Common Stock</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
+                          {balanceData.some(p => p.preferredStock !== 0) && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Preferred Stock</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               ))}
                             </div>
                           )}
@@ -18929,6 +18995,30 @@ export default function FinancialScorePage() {
                               ))}
                             </div>
                           )}
+                          {balanceData.some(p => p.additionalPaidInCapital !== 0) && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Additional Paid-In Capital</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
+                          {balanceData.some(p => p.treasuryStock !== 0) && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Treasury Stock</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
+                          {balanceData.some(p => p.paidInCapital !== 0) && (
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Paid-in Capital</div>
+                              {balanceData.map((p, i) => (
+                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.paidInCapital || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              ))}
+                            </div>
+                          )}
                           
                           {/* TOTAL EQUITY */}
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
@@ -18936,6 +19026,16 @@ export default function FinancialScorePage() {
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: p.totalEquity >= 0 ? '#166534' : '#991b1b' }}>
                                 {p.totalEquity >= 0 ? '$' : '($'}{Math.abs(p.totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.totalEquity < 0 ? ')' : ''}
+                              </div>
+                            ))}
+                          </div>
+                          
+                          {/* TOTAL LIABILITIES & EQUITY */}
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#f1f5f9', borderRadius: '4px', marginTop: '16px', fontWeight: '700' }}>
+                            <div style={{ color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</div>
+                            {balanceData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>
+                                ${p.totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </div>
                             ))}
                           </div>
@@ -18996,30 +19096,30 @@ export default function FinancialScorePage() {
                           {cash > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Cash & Cash Equivalents</span>
-                              <span style={{ color: '#64748b' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {ar > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Accounts Receivable</span>
-                              <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {inventory > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Inventory</span>
-                              <span style={{ color: '#64748b' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {otherCA > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Other Current Assets</span>
-                              <span style={{ color: '#64748b' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                             <span style={{ color: '#475569' }}>Total Current Assets</span>
-                            <span style={{ color: '#475569' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         </div>
 
@@ -19029,24 +19129,24 @@ export default function FinancialScorePage() {
                           {fixedAssets > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Property, Plant & Equipment</span>
-                              <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {intangibleAssets > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Intangible Assets</span>
-                              <span style={{ color: '#64748b' }}>${intangibleAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${intangibleAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {otherNonCurrentAssets > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Other Non-Current Assets</span>
-                              <span style={{ color: '#64748b' }}>${otherNonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${otherNonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                             <span style={{ color: '#475569' }}>Total Non-Current Assets</span>
-                            <span style={{ color: '#475569' }}>${nonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${nonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         </div>
 
@@ -19055,7 +19155,7 @@ export default function FinancialScorePage() {
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e40af' }}>TOTAL ASSETS</span>
                             <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e40af' }}>
-                              ${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -19071,30 +19171,30 @@ export default function FinancialScorePage() {
                           {ap > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Accounts Payable</span>
-                              <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {shortTermDebt > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Short-Term Debt</span>
-                              <span style={{ color: '#64748b' }}>${shortTermDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${shortTermDebt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {currentPortionLTD > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Current Portion of LT Debt</span>
-                              <span style={{ color: '#64748b' }}>${currentPortionLTD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${currentPortionLTD.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {otherCurrentLiabilities > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Other Current Liabilities</span>
-                              <span style={{ color: '#64748b' }}>${otherCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${otherCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                             <span style={{ color: '#475569' }}>Total Current Liabilities</span>
-                            <span style={{ color: '#475569' }}>${totalCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${totalCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         </div>
 
@@ -19104,18 +19204,18 @@ export default function FinancialScorePage() {
                           {ltd > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Long-Term Debt</span>
-                              <span style={{ color: '#64748b' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {otherLongTermLiabilities > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#64748b' }}>Other Long-Term Liabilities</span>
-                              <span style={{ color: '#64748b' }}>${otherLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#64748b' }}>${otherLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                             <span style={{ color: '#475569' }}>Total Long-Term Liabilities</span>
-                            <span style={{ color: '#475569' }}>${totalLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${totalLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         </div>
 
@@ -19124,7 +19224,7 @@ export default function FinancialScorePage() {
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span style={{ fontWeight: '700', fontSize: '16px', color: '#92400e' }}>TOTAL LIABILITIES</span>
                             <span style={{ fontWeight: '700', fontSize: '16px', color: '#92400e' }}>
-                              ${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -19136,14 +19236,14 @@ export default function FinancialScorePage() {
                         {paidInCapital > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Paid-in Capital</span>
-                            <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {retainedEarnings !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Retained Earnings</span>
                             <span style={{ color: '#64748b' }}>
-                              {retainedEarnings >= 0 ? '$' : '($'}{Math.abs(retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{retainedEarnings < 0 ? ')' : ''}
+                              {retainedEarnings >= 0 ? '$' : '($'}{Math.abs(retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{retainedEarnings < 0 ? ')' : ''}
                             </span>
                           </div>
                         )}
@@ -19153,7 +19253,7 @@ export default function FinancialScorePage() {
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>TOTAL EQUITY</span>
                             <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>
-                              {totalEquity >= 0 ? '$' : '($'}{Math.abs(totalEquity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{totalEquity < 0 ? ')' : ''}
+                              {totalEquity >= 0 ? '$' : '($'}{Math.abs(totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{totalEquity < 0 ? ')' : ''}
                             </span>
                           </div>
                         </div>
@@ -19164,12 +19264,12 @@ export default function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</span>
                           <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>
-                            ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
                         </div>
                         {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                           <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                            ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </div>
                         )}
                       </div>
@@ -19363,7 +19463,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19384,7 +19484,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19392,13 +19492,13 @@ export default function FinancialScorePage() {
                                 <div style={{ padding: '10px 16px', background: '#fee2e2', borderBottom: '2px solid #ef4444', display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
                                   <span style={{ color: '#991b1b' }}>Total COGS</span>
                                   <span style={{ color: '#991b1b', fontFamily: 'monospace' }}>
-                                    ${totalCOGS.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${totalCOGS.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                   </span>
                                 </div>
                                 <div style={{ padding: '10px 16px', background: '#dbeafe', borderBottom: '3px solid #3b82f6', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '4px' }}>
                                   <span style={{ color: '#1e40af' }}>GROSS PROFIT</span>
                                   <span style={{ color: '#1e40af', fontFamily: 'monospace' }}>
-                                    ${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                   </span>
                                 </div>
                               </>
@@ -19417,7 +19517,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19425,13 +19525,13 @@ export default function FinancialScorePage() {
                                 <div style={{ padding: '10px 16px', background: '#fef3c7', borderBottom: '2px solid #f59e0b', display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
                                   <span style={{ color: '#92400e' }}>Total Operating Expenses</span>
                                   <span style={{ color: '#92400e', fontFamily: 'monospace' }}>
-                                    ${totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                   </span>
                                 </div>
                                 <div style={{ padding: '12px 16px', background: '#dcfce7', borderBottom: '4px solid #10b981', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '4px' }}>
                                   <span style={{ color: '#166534', fontSize: '16px' }}>NET INCOME</span>
                                   <span style={{ color: '#166534', fontFamily: 'monospace', fontSize: '16px' }}>
-                                    ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                   </span>
                                 </div>
                               </>
@@ -19551,7 +19651,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19571,7 +19671,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19591,7 +19691,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19614,7 +19714,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19634,7 +19734,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19655,7 +19755,7 @@ export default function FinancialScorePage() {
                                         <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                     </div>
                                   );
@@ -19667,7 +19767,7 @@ export default function FinancialScorePage() {
                             <div style={{ padding: '12px 16px', background: '#8b5cf6', borderBottom: '4px solid #6b21a8', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '8px' }}>
                               <span style={{ color: 'white', fontSize: '16px' }}>TOTAL LIABILITIES & EQUITY</span>
                               <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '16px' }}>
-                                ${totalLiabAndEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ${totalLiabAndEquity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </span>
                             </div>
                             
@@ -20043,7 +20143,7 @@ export default function FinancialScorePage() {
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                      <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
                   </div>
 
@@ -20053,42 +20153,42 @@ export default function FinancialScorePage() {
                     {cogsPayroll > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                        <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {cogsOwnerPay > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                        <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {cogsContractors > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                        <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {cogsMaterials > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>COGS - Materials</span>
-                        <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {cogsCommissions > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                        <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {cogsOther > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>COGS - Other</span>
-                        <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
-                      <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
                   </div>
 
@@ -20096,7 +20196,7 @@ export default function FinancialScorePage() {
                   <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                      <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
                     <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
                       {grossMargin.toFixed(1)}% margin
@@ -20109,84 +20209,84 @@ export default function FinancialScorePage() {
                     {opexPayroll > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Payroll</span>
-                        <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {ownersBasePay > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                        <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {ownersRetirement > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Owner's Retirement</span>
-                        <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {professionalServices > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Professional Services</span>
-                        <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {rentLease > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Rent/Lease</span>
-                        <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {utilities > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Utilities</span>
-                        <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {equipment > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Equipment</span>
-                        <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {travel > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Travel</span>
-                        <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {insurance > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Insurance</span>
-                        <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {opexSalesMarketing > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                        <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {contractorsDistribution > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Contractors Distribution</span>
-                        <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {depreciationExpense > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                        <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {opexOther > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                        <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
-                      <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
                   </div>
 
@@ -20194,7 +20294,7 @@ export default function FinancialScorePage() {
                   <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
-                      <span style={{ fontWeight: '700', color: '#166534' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span style={{ fontWeight: '700', color: '#166534' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
                     <div style={{ fontSize: '13px', color: '#166534', textAlign: 'right' }}>
                       {operatingMargin.toFixed(1)}% margin
@@ -20208,20 +20308,20 @@ export default function FinancialScorePage() {
                       {nonOperatingIncome > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Non-Operating Income</span>
-                          <span style={{ color: '#10b981' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#10b981' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
                       {interestExpense > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Interest Expense</span>
-                          <span style={{ color: '#ef4444' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                          <span style={{ color: '#ef4444' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
                         </div>
                       )}
                       {extraordinaryItems !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Extraordinary Items</span>
                           <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444' }}>
-                            {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{extraordinaryItems < 0 ? ')' : ''}
+                            {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
                           </span>
                         </div>
                       )}
@@ -20233,7 +20333,7 @@ export default function FinancialScorePage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
                       <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                        ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </span>
                     </div>
                     <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
@@ -20541,30 +20641,39 @@ export default function FinancialScorePage() {
               const monthDate = new Date(currentMonth.date || currentMonth.month);
               const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
               
-              // Assets
-              const cash = currentMonth.cash || 0;
-              const ar = currentMonth.ar || 0;
-              const inventory = currentMonth.inventory || 0;
-              const otherCA = currentMonth.otherCA || 0;
-              const tca = cash + ar + inventory + otherCA;
+                // Assets - Use imported totals directly from CSV
+                const cash = currentMonth.cash || 0;
+                const ar = currentMonth.ar || 0;
+                const inventory = currentMonth.inventory || 0;
+                const otherCA = currentMonth.otherCA || 0;
+                const tca = currentMonth.tca || 0;  // Use imported total, don't calculate
+                
+                const fixedAssets = currentMonth.fixedAssets || 0;
+                const otherAssets = currentMonth.otherAssets || 0;
+                const totalAssets = currentMonth.totalAssets || 0;  // Use imported total, don't calculate
+                
+                // Liabilities - Use imported totals directly from CSV
+                const ap = currentMonth.ap || 0;
+                const otherCL = currentMonth.otherCL || 0;
+                const tcl = currentMonth.tcl || 0;  // Use imported total, don't calculate
+                
+                const ltd = currentMonth.ltd || 0;
+                const totalLiabilities = currentMonth.totalLiab || 0;  // Use imported total, don't calculate
               
-              const fixedAssets = currentMonth.fixedAssets || 0;
-              const otherAssets = currentMonth.otherAssets || 0;
-              const totalAssets = tca + fixedAssets + otherAssets;
+              // Equity - Get detail fields
+              const ownersCapital = currentMonth.ownersCapital || 0;
+              const ownersDraw = currentMonth.ownersDraw || 0;
+              const commonStock = currentMonth.commonStock || 0;
+              const preferredStock = currentMonth.preferredStock || 0;
+              const retainedEarnings = currentMonth.retainedEarnings || 0;
+              const additionalPaidInCapital = currentMonth.additionalPaidInCapital || 0;
+              const treasuryStock = currentMonth.treasuryStock || 0;
               
-              // Liabilities
-              const ap = currentMonth.ap || 0;
-              const otherCL = currentMonth.otherCL || 0;
-              const tcl = ap + otherCL;
+              // Calculate total equity from components or use imported value
+              const totalEquity = currentMonth.totalEquity || (ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock);
               
-              const ltd = currentMonth.ltd || 0;
-              const totalLiabilities = tcl + ltd;
-              
-              // Equity
-              const totalEquity = currentMonth.totalEquity || 0;
-              
-              // Total L&E
-              const totalLAndE = totalLiabilities + totalEquity;
+              // Total L&E - Use imported value if available, otherwise calculate
+              const totalLAndE = currentMonth.totalLAndE || (totalLiabilities + totalEquity);
               
               return (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -20580,53 +20689,53 @@ export default function FinancialScorePage() {
                     {/* Current Assets */}
                     <div style={{ marginBottom: '20px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Assets</div>
-                      {cash > 0 && (
+                      {cash !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Cash</span>
-                          <span style={{ color: '#475569' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
-                      {ar > 0 && (
+                      {ar !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Accounts Receivable</span>
-                          <span style={{ color: '#475569' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
-                      {inventory > 0 && (
+                      {inventory !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Inventory</span>
-                          <span style={{ color: '#475569' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
-                      {otherCA > 0 && (
+                      {otherCA !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Other Current Assets</span>
-                          <span style={{ color: '#475569' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 20px', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                         <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Current Assets</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ fontWeight: '600', color: '#1e293b' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     </div>
 
                     {/* Non-Current Assets */}
-                    {fixedAssets > 0 && (
+                    {fixedAssets !== 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Fixed Assets</span>
-                        <span style={{ color: '#475569' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {otherAssets > 0 && (
+                    {otherAssets !== 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Other Assets</span>
-                        <span style={{ color: '#475569' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #667eea', marginTop: '8px', background: '#f8fafc' }}>
                       <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL ASSETS</span>
-                      <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
                   </div>
 
@@ -20637,35 +20746,35 @@ export default function FinancialScorePage() {
                     {/* Current Liabilities */}
                     <div style={{ marginBottom: '20px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Liabilities</div>
-                      {ap > 0 && (
+                      {ap !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Accounts Payable</span>
-                          <span style={{ color: '#475569' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
-                      {otherCL > 0 && (
+                      {otherCL !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Other Current Liabilities</span>
-                          <span style={{ color: '#475569' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 20px', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                         <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Current Liabilities</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b' }}>${tcl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ fontWeight: '600', color: '#1e293b' }}>${tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     </div>
 
                     {/* Long-term Debt */}
-                    {ltd > 0 && (
+                    {ltd !== 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Long-term Debt</span>
-                        <span style={{ color: '#475569' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#475569' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #f59e0b', marginTop: '8px', background: '#fef3c7' }}>
                       <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL LIABILITIES</span>
-                      <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
                   </div>
 
@@ -20673,9 +20782,53 @@ export default function FinancialScorePage() {
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #10b981' }}>EQUITY</div>
                     
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', background: '#d1fae5' }}>
+                    {/* Equity Detail Fields */}
+                    {ownersCapital !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Owner's Capital</span>
+                        <span style={{ color: '#475569' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    )}
+                    {ownersDraw !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Owner's Draw</span>
+                        <span style={{ color: '#475569' }}>${ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    )}
+                    {commonStock !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Common Stock</span>
+                        <span style={{ color: '#475569' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    )}
+                    {preferredStock !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Preferred Stock</span>
+                        <span style={{ color: '#475569' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    )}
+                    {retainedEarnings !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Retained Earnings</span>
+                        <span style={{ color: '#475569' }}>${retainedEarnings.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    )}
+                    {additionalPaidInCapital !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Additional Paid-In Capital</span>
+                        <span style={{ color: '#475569' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    )}
+                    {treasuryStock !== 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Treasury Stock</span>
+                        <span style={{ color: '#475569' }}>${treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    )}
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', marginTop: '4px', background: '#d1fae5' }}>
                       <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL EQUITY</span>
-                      <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
                   </div>
 
@@ -20684,12 +20837,12 @@ export default function FinancialScorePage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</span>
                       <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>
-                        ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </span>
                     </div>
                     {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                       <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                        ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </div>
                     )}
                   </div>
@@ -21202,7 +21355,7 @@ export default function FinancialScorePage() {
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
@@ -21212,42 +21365,42 @@ export default function FinancialScorePage() {
                         {cogsPayroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                            <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsOwnerPay > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                            <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsContractors > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                            <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsMaterials > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Materials</span>
-                            <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsCommissions > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                            <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {cogsOther > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>COGS - Other</span>
-                            <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
@@ -21255,7 +21408,7 @@ export default function FinancialScorePage() {
                       <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                          <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                         <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
                           {grossMargin.toFixed(1)}% margin
@@ -21268,84 +21421,84 @@ export default function FinancialScorePage() {
                         {opexPayroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Payroll</span>
-                            <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {ownersBasePay > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                            <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {ownersRetirement > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Owner's Retirement</span>
-                            <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {professionalServices > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Professional Services</span>
-                            <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {rentLease > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Rent/Lease</span>
-                            <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {utilities > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Utilities</span>
-                            <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {equipment > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Equipment</span>
-                            <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {travel > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Travel</span>
-                            <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {insurance > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Insurance</span>
-                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {opexSalesMarketing > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                            <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {contractorsDistribution > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Contractors - Distribution</span>
-                            <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {depreciationExpense > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                            <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {opexOther > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                            <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
@@ -21353,7 +21506,7 @@ export default function FinancialScorePage() {
                       <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', color: '#1e40af' }}>Operating Income</span>
-                          <span style={{ fontWeight: '700', color: '#1e40af' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ fontWeight: '700', color: '#1e40af' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                         <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
                           {operatingMargin.toFixed(1)}% operating margin
@@ -21366,19 +21519,19 @@ export default function FinancialScorePage() {
                         {interestExpense > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Interest Expense</span>
-                            <span style={{ color: '#475569' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                            <span style={{ color: '#475569' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
                           </div>
                         )}
                         {nonOperatingIncome > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Non-Operating Income</span>
-                            <span style={{ color: '#475569' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#475569' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {extraordinaryItems !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Extraordinary Items</span>
-                            <span style={{ color: '#475569' }}>{extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{extraordinaryItems < 0 ? ')' : ''}</span>
+                            <span style={{ color: '#475569' }}>{extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}</span>
                           </div>
                         )}
                       </div>
@@ -21388,7 +21541,7 @@ export default function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
                           <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                            {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{netIncome < 0 ? ')' : ''}
+                            {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
                           </span>
                         </div>
                         <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
@@ -21598,7 +21751,7 @@ export default function FinancialScorePage() {
                       {/* Revenue */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
                         <div style={{ color: '#1e293b' }}>Revenue</div>
-                        <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                         <div style={{ textAlign: 'right', color: '#1e293b' }}>100.0%</div>
                       </div>
 
@@ -21608,48 +21761,48 @@ export default function FinancialScorePage() {
                         {cogsPayroll > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Payroll</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsPayroll)}</div>
                           </div>
                         )}
                         {cogsOwnerPay > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Owner Pay</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOwnerPay)}</div>
                           </div>
                         )}
                         {cogsContractors > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Contractors</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsContractors)}</div>
                           </div>
                         )}
                         {cogsMaterials > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Materials</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsMaterials)}</div>
                           </div>
                         )}
                         {cogsCommissions > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Commissions</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsCommissions)}</div>
                           </div>
                         )}
                         {cogsOther > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>COGS - Other</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOther)}</div>
                           </div>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <div style={{ color: '#475569' }}>Total COGS</div>
-                          <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                           <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(cogs)}</div>
                         </div>
                       </div>
@@ -21657,7 +21810,7 @@ export default function FinancialScorePage() {
                       {/* Gross Profit */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
                         <div>Gross Profit</div>
-                        <div style={{ textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        <div style={{ textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                         <div style={{ textAlign: 'right' }}>{calcPercent(grossProfit)}</div>
                       </div>
 
@@ -21667,97 +21820,97 @@ export default function FinancialScorePage() {
                         {opexPayroll > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Payroll</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexPayroll)}</div>
                           </div>
                         )}
                         {ownersBasePay > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Owner's Base Pay</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersBasePay)}</div>
                           </div>
                         )}
                         {ownersRetirement > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Owner's Retirement</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersRetirement)}</div>
                           </div>
                         )}
                         {professionalServices > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Professional Services</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalServices)}</div>
                           </div>
                         )}
                         {rentLease > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Rent/Lease</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rentLease)}</div>
                           </div>
                         )}
                         {utilities > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Utilities</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(utilities)}</div>
                           </div>
                         )}
                         {equipment > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Equipment</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(equipment)}</div>
                           </div>
                         )}
                         {travel > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Travel</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(travel)}</div>
                           </div>
                         )}
                         {insurance > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Insurance</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(insurance)}</div>
                           </div>
                         )}
                         {opexSalesMarketing > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Sales & Marketing</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexSalesMarketing)}</div>
                           </div>
                         )}
                         {contractorsDistribution > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Contractors - Distribution</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(contractorsDistribution)}</div>
                           </div>
                         )}
                         {depreciationExpense > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Depreciation & Amortization</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationExpense)}</div>
                           </div>
                         )}
                         {opexOther > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Other Operating Expenses</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexOther)}</div>
                           </div>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <div style={{ color: '#475569' }}>Total Operating Expenses</div>
-                          <div style={{ textAlign: 'right', color: '#475569' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <div style={{ textAlign: 'right', color: '#475569' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                           <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(totalOpex)}</div>
                         </div>
                       </div>
@@ -21765,7 +21918,7 @@ export default function FinancialScorePage() {
                       {/* Operating Income */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
                         <div>Operating Income</div>
-                        <div style={{ textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        <div style={{ textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                         <div style={{ textAlign: 'right' }}>{calcPercent(operatingIncome)}</div>
                       </div>
 
@@ -21776,14 +21929,14 @@ export default function FinancialScorePage() {
                           {interestExpense > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Interest Expense</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(interestExpense)})</div>
                             </div>
                           )}
                           {nonOperatingIncome > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Non-Operating Income</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(nonOperatingIncome)}</div>
                             </div>
                           )}
@@ -21791,7 +21944,7 @@ export default function FinancialScorePage() {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Extraordinary Items</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>
-                                {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{extraordinaryItems < 0 ? ')' : ''}
+                                {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
                               </div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>
                                 {extraordinaryItems >= 0 ? calcPercent(extraordinaryItems) : `(${calcPercent(Math.abs(extraordinaryItems))})`}
@@ -21805,7 +21958,7 @@ export default function FinancialScorePage() {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
                         <div>Net Income</div>
                         <div style={{ textAlign: 'right' }}>
-                          {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{netIncome < 0 ? ')' : ''}
+                          {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
                         </div>
                         <div style={{ textAlign: 'right' }}>{calcPercent(netIncome)}</div>
                       </div>
@@ -21819,35 +21972,46 @@ export default function FinancialScorePage() {
                 if (displayPeriods.length > 1) {
                   const balanceData = displayPeriods.map(p => {
                     const latest = p.months[p.months.length - 1];
+                    
+                    // Assets - Use Data Review fields and imported totals
                     const cash = latest.cash || 0;
                     const ar = latest.ar || 0;
                     const inventory = latest.inventory || 0;
                     const otherCA = latest.otherCA || 0;
-                    const tca = cash + ar + inventory + otherCA;
+                    const tca = latest.tca || 0;  // Use imported total
+                    
                     const fixedAssets = latest.fixedAssets || 0;
-                    const intangibleAssets = latest.intangibleAssets || 0;
-                    const otherNonCurrentAssets = latest.otherNonCurrentAssets || 0;
-                    const nonCurrentAssets = fixedAssets + intangibleAssets + otherNonCurrentAssets;
-                    const totalAssets = tca + nonCurrentAssets;
+                    const otherAssets = latest.otherAssets || 0;
+                    const totalAssets = latest.totalAssets || 0;  // Use imported total
+                    
+                    // Liabilities - Use Data Review fields and imported totals
                     const ap = latest.ap || 0;
-                    const shortTermDebt = latest.shortTermDebt || 0;
-                    const currentPortionLTD = latest.currentPortionLTD || 0;
-                    const otherCurrentLiabilities = latest.otherCurrentLiabilities || 0;
-                    const totalCurrentLiabilities = ap + shortTermDebt + currentPortionLTD + otherCurrentLiabilities;
+                    const otherCL = latest.otherCL || 0;
+                    const tcl = latest.tcl || 0;  // Use imported total
+                    
                     const ltd = latest.ltd || 0;
-                    const otherLongTermLiabilities = latest.otherLongTermLiabilities || 0;
-                    const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
-                    const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
-                    const paidInCapital = latest.paidInCapital || 0;
+                    const totalLiabilities = latest.totalLiab || 0;  // Use imported total
+                    
+                    // Equity - All detail fields
+                    const ownersCapital = latest.ownersCapital || 0;
+                    const ownersDraw = latest.ownersDraw || 0;
+                    const commonStock = latest.commonStock || 0;
+                    const preferredStock = latest.preferredStock || 0;
                     const retainedEarnings = latest.retainedEarnings || 0;
-                    const totalEquity = paidInCapital + retainedEarnings;
-                    return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, intangibleAssets, otherNonCurrentAssets, nonCurrentAssets, totalAssets, ap, shortTermDebt, currentPortionLTD, otherCurrentLiabilities, totalCurrentLiabilities, ltd, otherLongTermLiabilities, totalLongTermLiabilities, totalLiabilities, paidInCapital, retainedEarnings, totalEquity };
+                    const additionalPaidInCapital = latest.additionalPaidInCapital || 0;
+                    const treasuryStock = latest.treasuryStock || 0;
+                    const paidInCapital = latest.paidInCapital || 0;
+                    const totalEquity = latest.totalEquity || 0;  // Use imported total
+                    
+                    const totalLAndE = latest.totalLAndE || 0;  // Use imported total
+                    
+                    return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, otherAssets, totalAssets, ap, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
                   });
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                       <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
                       {values.map((v: number, i: number) => (
-                        <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                        <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${(v || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                       ))}
                     </div>
                   );
@@ -21864,37 +22028,32 @@ export default function FinancialScorePage() {
                         </div>
                         <div style={{ margin: '8px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>ASSETS</div>
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Assets</div>
-                        {balanceData.some(p => p.cash > 0) && <Row label="Cash & Cash Equivalents" values={balanceData.map(p => p.cash)} indent={20} />}
-                        {balanceData.some(p => p.ar > 0) && <Row label="Accounts Receivable" values={balanceData.map(p => p.ar)} indent={20} />}
-                        {balanceData.some(p => p.inventory > 0) && <Row label="Inventory" values={balanceData.map(p => p.inventory)} indent={20} />}
-                        {balanceData.some(p => p.otherCA > 0) && <Row label="Other Current Assets" values={balanceData.map(p => p.otherCA)} indent={20} />}
+                        {balanceData.some(p => p.cash !== 0) && <Row label="Cash" values={balanceData.map(p => p.cash)} indent={20} />}
+                        {balanceData.some(p => p.ar !== 0) && <Row label="Accounts Receivable" values={balanceData.map(p => p.ar)} indent={20} />}
+                        {balanceData.some(p => p.inventory !== 0) && <Row label="Inventory" values={balanceData.map(p => p.inventory)} indent={20} />}
+                        {balanceData.some(p => p.otherCA !== 0) && <Row label="Other Current Assets" values={balanceData.map(p => p.otherCA)} indent={20} />}
                         <Row label="Total Current Assets" values={balanceData.map(p => p.tca)} bold />
-                        <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Non-Current Assets</div>
-                        {balanceData.some(p => p.fixedAssets > 0) && <Row label="Property, Plant & Equipment" values={balanceData.map(p => p.fixedAssets)} indent={20} />}
-                        {balanceData.some(p => p.intangibleAssets > 0) && <Row label="Intangible Assets" values={balanceData.map(p => p.intangibleAssets)} indent={20} />}
-                        {balanceData.some(p => p.otherNonCurrentAssets > 0) && <Row label="Other Non-Current Assets" values={balanceData.map(p => p.otherNonCurrentAssets)} indent={20} />}
-                        <Row label="Total Non-Current Assets" values={balanceData.map(p => p.nonCurrentAssets)} bold />
+                        {balanceData.some(p => p.fixedAssets !== 0) && <Row label="Fixed Assets" values={balanceData.map(p => p.fixedAssets)} />}
+                        {balanceData.some(p => p.otherAssets !== 0) && <Row label="Other Assets" values={balanceData.map(p => p.otherAssets)} />}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>TOTAL ASSETS</div>
                           {balanceData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>LIABILITIES</div>
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Liabilities</div>
-                        {balanceData.some(p => p.ap > 0) && <Row label="Accounts Payable" values={balanceData.map(p => p.ap)} indent={20} />}
-                        {balanceData.some(p => p.shortTermDebt > 0) && <Row label="Short-Term Debt" values={balanceData.map(p => p.shortTermDebt)} indent={20} />}
-                        {balanceData.some(p => p.currentPortionLTD > 0) && <Row label="Current Portion of LT Debt" values={balanceData.map(p => p.currentPortionLTD)} indent={20} />}
-                        {balanceData.some(p => p.otherCurrentLiabilities > 0) && <Row label="Other Current Liabilities" values={balanceData.map(p => p.otherCurrentLiabilities)} indent={20} />}
-                        <Row label="Total Current Liabilities" values={balanceData.map(p => p.totalCurrentLiabilities)} bold />
-                        <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Long-Term Liabilities</div>
-                        {balanceData.some(p => p.ltd > 0) && <Row label="Long-Term Debt" values={balanceData.map(p => p.ltd)} indent={20} />}
-                        {balanceData.some(p => p.otherLongTermLiabilities > 0) && <Row label="Other Long-Term Liabilities" values={balanceData.map(p => p.otherLongTermLiabilities)} indent={20} />}
-                        <Row label="Total Long-Term Liabilities" values={balanceData.map(p => p.totalLongTermLiabilities)} bold />
+                        {balanceData.some(p => p.ap !== 0) && <Row label="Accounts Payable" values={balanceData.map(p => p.ap)} indent={20} />}
+                        {balanceData.some(p => p.otherCL !== 0) && <Row label="Other Current Liabilities" values={balanceData.map(p => p.otherCL)} indent={20} />}
+                        <Row label="Total Current Liabilities" values={balanceData.map(p => p.tcl)} bold />
+                        {balanceData.some(p => p.ltd !== 0) && <Row label="Long-Term Debt" values={balanceData.map(p => p.ltd)} />}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#92400e' }}>
                           <div>TOTAL LIABILITIES</div>
                           {balanceData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>EQUITY</div>
-                        {balanceData.some(p => p.paidInCapital > 0) && <Row label="Paid-in Capital" values={balanceData.map(p => p.paidInCapital)} indent={20} />}
+                        {balanceData.some(p => p.ownersCapital !== 0) && <Row label="Owner's Capital" values={balanceData.map(p => p.ownersCapital)} indent={20} />}
+                        {balanceData.some(p => p.ownersDraw !== 0) && <Row label="Owner's Draw" values={balanceData.map(p => p.ownersDraw)} indent={20} />}
+                        {balanceData.some(p => p.commonStock !== 0) && <Row label="Common Stock" values={balanceData.map(p => p.commonStock)} indent={20} />}
+                        {balanceData.some(p => p.preferredStock !== 0) && <Row label="Preferred Stock" values={balanceData.map(p => p.preferredStock)} indent={20} />}
                         {balanceData.some(p => p.retainedEarnings !== 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Retained Earnings</div>
@@ -21905,6 +22064,9 @@ export default function FinancialScorePage() {
                             ))}
                           </div>
                         )}
+                        {balanceData.some(p => p.additionalPaidInCapital !== 0) && <Row label="Additional Paid-In Capital" values={balanceData.map(p => p.additionalPaidInCapital)} indent={20} />}
+                        {balanceData.some(p => p.treasuryStock !== 0) && <Row label="Treasury Stock" values={balanceData.map(p => p.treasuryStock)} indent={20} />}
+                        {balanceData.some(p => p.paidInCapital !== 0) && <Row label="Paid-in Capital" values={balanceData.map(p => p.paidInCapital)} indent={20} />}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>TOTAL EQUITY</div>
                           {balanceData.map((p, i) => (
@@ -21913,42 +22075,50 @@ export default function FinancialScorePage() {
                             </div>
                           ))}
                         </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#f1f5f9', borderRadius: '4px', margin: '16px 0 0', fontWeight: '700', fontSize: '15px' }}>
+                          <div style={{ color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</div>
+                          {balanceData.map((p, i) => (
+                            <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>
+                              ${p.totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   );
                 }
                 
-                // For balance sheet, use the latest month's values
+                // For balance sheet, use Data Review fields and imported totals
                 const cash = latestMonth.cash || 0;
                 const ar = latestMonth.ar || 0;
                 const inventory = latestMonth.inventory || 0;
                 const otherCA = latestMonth.otherCA || 0;
-                const tca = cash + ar + inventory + otherCA;
+                const tca = latestMonth.tca || 0;  // Use imported total
                 
                 const fixedAssets = latestMonth.fixedAssets || 0;
-                const intangibleAssets = latestMonth.intangibleAssets || 0;
-                const otherNonCurrentAssets = latestMonth.otherNonCurrentAssets || 0;
-                const nonCurrentAssets = fixedAssets + intangibleAssets + otherNonCurrentAssets;
-                
-                const totalAssets = tca + nonCurrentAssets;
+                const otherAssets = latestMonth.otherAssets || 0;
+                const totalAssets = latestMonth.totalAssets || 0;  // Use imported total
                 
                 const ap = latestMonth.ap || 0;
-                const shortTermDebt = latestMonth.shortTermDebt || 0;
-                const currentPortionLTD = latestMonth.currentPortionLTD || 0;
-                const otherCurrentLiabilities = latestMonth.otherCurrentLiabilities || 0;
-                const totalCurrentLiabilities = ap + shortTermDebt + currentPortionLTD + otherCurrentLiabilities;
+                const otherCL = latestMonth.otherCL || 0;
+                const tcl = latestMonth.tcl || 0;  // Use imported total
                 
                 const ltd = latestMonth.ltd || 0;
-                const otherLongTermLiabilities = latestMonth.otherLongTermLiabilities || 0;
-                const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
+                const totalLiabilities = latestMonth.totalLiab || 0;  // Use imported total
                 
-                const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
-                
-                const paidInCapital = latestMonth.paidInCapital || 0;
+                // All equity detail fields
+                // Equity - Use imported total
+                const ownersCapital = latestMonth.ownersCapital || 0;
+                const ownersDraw = latestMonth.ownersDraw || 0;
+                const commonStock = latestMonth.commonStock || 0;
+                const preferredStock = latestMonth.preferredStock || 0;
                 const retainedEarnings = latestMonth.retainedEarnings || 0;
-                const totalEquity = paidInCapital + retainedEarnings;
+                const additionalPaidInCapital = latestMonth.additionalPaidInCapital || 0;
+                const treasuryStock = latestMonth.treasuryStock || 0;
+                const paidInCapital = latestMonth.paidInCapital || 0;
+                const totalEquity = latestMonth.totalEquity || 0;  // Use imported total
                 
-                const totalLAndE = totalLiabilities + totalEquity;
+                const totalLAndE = latestMonth.totalLAndE || 0;  // Use imported total
                 
                 const latestDate = new Date(latestMonth.date || latestMonth.month);
                 const asOfDate = latestDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -21967,69 +22137,56 @@ export default function FinancialScorePage() {
                       {/* Current Assets */}
                       <div style={{ marginBottom: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Assets</div>
-                        {cash > 0 && (
+                        {cash !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Cash & Cash Equivalents</span>
-                            <span style={{ color: '#64748b' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#64748b' }}>Cash</span>
+                            <span style={{ color: '#64748b' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {ar > 0 && (
+                        {ar !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Accounts Receivable</span>
-                            <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {inventory > 0 && (
+                        {inventory !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Inventory</span>
-                            <span style={{ color: '#64748b' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#64748b' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {otherCA > 0 && (
+                        {otherCA !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Other Current Assets</span>
-                            <span style={{ color: '#64748b' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#64748b' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <span style={{ color: '#475569' }}>Total Current Assets</span>
-                          <span style={{ color: '#475569' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
                       {/* Non-Current Assets */}
-                      <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Non-Current Assets</div>
-                        {fixedAssets > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Property, Plant & Equipment</span>
-                            <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {intangibleAssets > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Intangible Assets</span>
-                            <span style={{ color: '#64748b' }}>${intangibleAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {otherNonCurrentAssets > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Other Non-Current Assets</span>
-                            <span style={{ color: '#64748b' }}>${otherNonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                          <span style={{ color: '#475569' }}>Total Non-Current Assets</span>
-                          <span style={{ color: '#475569' }}>${nonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      {fixedAssets !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Fixed Assets</span>
+                          <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
-                      </div>
+                      )}
+                      {otherAssets !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Other Assets</span>
+                          <span style={{ color: '#64748b' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
 
                       {/* TOTAL ASSETS */}
                       <div style={{ background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e40af' }}>TOTAL ASSETS</span>
                           <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e40af' }}>
-                            ${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
                         </div>
                       </div>
@@ -22042,63 +22199,38 @@ export default function FinancialScorePage() {
                       {/* Current Liabilities */}
                       <div style={{ marginBottom: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Liabilities</div>
-                        {ap > 0 && (
+                        {ap !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Accounts Payable</span>
-                            <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {shortTermDebt > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Short-Term Debt</span>
-                            <span style={{ color: '#64748b' }}>${shortTermDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {currentPortionLTD > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Current Portion of LT Debt</span>
-                            <span style={{ color: '#64748b' }}>${currentPortionLTD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {otherCurrentLiabilities > 0 && (
+                        {otherCL !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Other Current Liabilities</span>
-                            <span style={{ color: '#64748b' }}>${otherCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#64748b' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <span style={{ color: '#475569' }}>Total Current Liabilities</span>
-                          <span style={{ color: '#475569' }}>${totalCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#475569' }}>${tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
-                      {/* Long-Term Liabilities */}
-                      <div style={{ marginBottom: '16px' }}>
-                        <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Long-Term Liabilities</div>
-                        {ltd > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Long-Term Debt</span>
-                            <span style={{ color: '#64748b' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {otherLongTermLiabilities > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Other Long-Term Liabilities</span>
-                            <span style={{ color: '#64748b' }}>${otherLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                          <span style={{ color: '#475569' }}>Total Long-Term Liabilities</span>
-                          <span style={{ color: '#475569' }}>${totalLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      {/* Long-Term Debt */}
+                      {ltd !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Long-Term Debt</span>
+                          <span style={{ color: '#64748b' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
-                      </div>
+                      )}
 
                       {/* TOTAL LIABILITIES */}
                       <div style={{ background: '#fef3c7', padding: '12px', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ fontWeight: '700', fontSize: '16px', color: '#92400e' }}>TOTAL LIABILITIES</span>
                           <span style={{ fontWeight: '700', fontSize: '16px', color: '#92400e' }}>
-                            ${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
                         </div>
                       </div>
@@ -22107,18 +22239,54 @@ export default function FinancialScorePage() {
                     {/* EQUITY */}
                     <div style={{ marginBottom: '32px' }}>
                       <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>EQUITY</div>
-                      {paidInCapital > 0 && (
+                      {ownersCapital !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#64748b' }}>Paid-in Capital</span>
-                          <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#64748b' }}>Owner's Capital</span>
+                          <span style={{ color: '#64748b' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {ownersDraw !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Owner's Draw</span>
+                          <span style={{ color: '#64748b' }}>${ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {commonStock !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Common Stock</span>
+                          <span style={{ color: '#64748b' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {preferredStock !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Preferred Stock</span>
+                          <span style={{ color: '#64748b' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
                       {retainedEarnings !== 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#64748b' }}>Retained Earnings</span>
                           <span style={{ color: '#64748b' }}>
-                            {retainedEarnings >= 0 ? '$' : '($'}{Math.abs(retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{retainedEarnings < 0 ? ')' : ''}
+                            {retainedEarnings >= 0 ? '$' : '($'}{Math.abs(retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{retainedEarnings < 0 ? ')' : ''}
                           </span>
+                        </div>
+                      )}
+                      {additionalPaidInCapital !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Additional Paid-In Capital</span>
+                          <span style={{ color: '#64748b' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {treasuryStock !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Treasury Stock</span>
+                          <span style={{ color: '#64748b' }}>${treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {paidInCapital > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#64748b' }}>Paid-in Capital</span>
+                          <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
 
@@ -22127,7 +22295,7 @@ export default function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>TOTAL EQUITY</span>
                           <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>
-                            {totalEquity >= 0 ? '$' : '($'}{Math.abs(totalEquity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{totalEquity < 0 ? ')' : ''}
+                            {totalEquity >= 0 ? '$' : '($'}{Math.abs(totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{totalEquity < 0 ? ')' : ''}
                           </span>
                         </div>
                       </div>
@@ -22138,12 +22306,12 @@ export default function FinancialScorePage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</span>
                         <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>
-                          ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </span>
                       </div>
                       {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       )}
                     </div>
@@ -22926,4 +23094,5 @@ export default function FinancialScorePage() {
     </div>
   );
 }
+
 
