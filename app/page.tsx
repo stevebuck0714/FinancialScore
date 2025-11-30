@@ -22003,7 +22003,7 @@ export default function FinancialScorePage() {
                     const paidInCapital = latest.paidInCapital || 0;
                     const totalEquity = latest.totalEquity || 0;  // Use imported total
                     
-                    const totalLAndE = latest.totalLAndE || 0;  // Use imported total
+                    const totalLAndE = latest.totalLAndE || (totalLiabilities + totalEquity);  // Calculate if not imported
                     
                     return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, otherAssets, totalAssets, ap, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
                   });
