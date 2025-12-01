@@ -19,6 +19,7 @@ export default function SiteAdminDashboard(props: any) {
     showAddAffiliateForm, setShowAddAffiliateForm,
     editingAffiliate, setEditingAffiliate,
     expandedAffiliateId, setExpandedAffiliateId,
+    newAffiliateCode, setNewAffiliateCode,
     editingConsultantInfo, setEditingConsultantInfo,
     users, getCompanyUsers,
     showAddConsultantForm, setShowAddConsultantForm,

@@ -4433,6 +4433,8 @@ export default function FinancialScorePage() {
               setEditingAffiliate={setEditingAffiliate}
               expandedAffiliateId={expandedAffiliateId}
               setExpandedAffiliateId={setExpandedAffiliateId}
+              newAffiliateCode={newAffiliateCode}
+              setNewAffiliateCode={setNewAffiliateCode}
               editingConsultantInfo={editingConsultantInfo}
               setEditingConsultantInfo={setEditingConsultantInfo}
               users={users}
