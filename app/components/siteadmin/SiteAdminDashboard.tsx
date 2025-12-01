@@ -1316,6 +1316,75 @@ export default function SiteAdminDashboard(props: any) {
                         </label>
                       </div>
 
+                      {/* Affiliate Codes Display */}
+                      {editingAffiliate?.id && editingAffiliate?.codes && editingAffiliate.codes.length > 0 && (
+                        <div style={{ marginBottom: '12px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                            Affiliate Codes ({editingAffiliate.codes.length})
+                          </label>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {editingAffiliate.codes.map((code: any) => (
+                              <div 
+                                key={code.id} 
+                                style={{ 
+                                  display: 'flex', 
+                                  justifyContent: 'space-between', 
+                                  alignItems: 'center',
+                                  padding: '8px 12px', 
+                                  background: code.isActive ? '#f0fdf4' : '#fef2f2', 
+                                  border: `1px solid ${code.isActive ? '#86efac' : '#fecaca'}`,
+                                  borderRadius: '6px',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                                  <span style={{ fontWeight: '600', color: '#1e293b', fontFamily: 'monospace' }}>
+                                    {code.code}
+                                  </span>
+                                  {code.description && (
+                                    <span style={{ color: '#64748b' }}>
+                                      {code.description}
+                                    </span>
+                                  )}
+                                  <span style={{ 
+                                    padding: '2px 6px', 
+                                    background: code.isActive ? '#dcfce7' : '#fee2e2',
+                                    color: code.isActive ? '#15803d' : '#991b1b',
+                                    borderRadius: '4px',
+                                    fontSize: '10px',
+                                    fontWeight: '600'
+                                  }}>
+                                    {code.isActive ? 'ACTIVE' : 'INACTIVE'}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', color: '#475569', fontSize: '11px' }}>
+                                  <span>${code.monthlyPrice}/mo</span>
+                                  <span>•</span>
+                                  <span>${code.quarterlyPrice}/qtr</span>
+                                  <span>•</span>
+                                  <span>${code.annualPrice}/yr</span>
+                                  {code.maxUses && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{code.currentUses || 0}/{code.maxUses} uses</span>
+                                    </>
+                                  )}
+                                  {code.expiresAt && (
+                                    <>
+                                      <span>•</span>
+                                      <span>Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <p style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', marginBottom: 0 }}>
+                            💡 To add or edit codes, use the "See Codes & Pricing" section below after saving this affiliate.
+                          </p>
+                        </div>
+                      )}
+
                       {/* Action Buttons */}
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
                         <button
