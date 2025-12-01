@@ -4,6 +4,7 @@ import React from 'react';
 import { US_STATES } from '@/app/constants';
 import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
+import BillingDashboard from '@/app/components/billing/BillingDashboard';
 
 export default function SiteAdminDashboard(props: any) {
   const {
@@ -39,7 +40,7 @@ export default function SiteAdminDashboard(props: any) {
     newConsultantCompanyState, setNewConsultantCompanyState,
     newConsultantCompanyZip, setNewConsultantCompanyZip,
     newConsultantCompanyWebsite, setNewConsultantCompanyWebsite,
-    addConsultant, deleteConsultant, getConsultantCompanies,
+    addConsultant, deleteConsultant, updateConsultantInfo, getConsultantCompanies,
     setCurrentUser, setSiteAdminViewingAs, setCurrentView, currentUser,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
@@ -121,6 +122,23 @@ export default function SiteAdminDashboard(props: any) {
                   }}
                 >
                   Default Pricing
+                </button>
+                <button
+                  onClick={() => setSiteAdminTab('billing')}
+                  style={{
+                    padding: '8px 16px',
+                    background: siteAdminTab === 'billing' ? '#667eea' : 'transparent',
+                    color: siteAdminTab === 'billing' ? 'white' : '#64748b',
+                    border: 'none',
+                    borderBottom: siteAdminTab === 'billing' ? '3px solid #667eea' : '3px solid transparent',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    borderRadius: '6px 6px 0 0',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  💰 Billing & Revenue
                 </button>
                 <button
                   onClick={() => setSiteAdminTab('siteadmins')}
@@ -400,7 +418,8 @@ export default function SiteAdminDashboard(props: any) {
                                           companyCity: consultant.companyCity || '',
                                           companyState: consultant.companyState || '',
                                           companyZip: consultant.companyZip || '',
-                                          companyWebsite: consultant.companyWebsite || ''
+                                          companyWebsite: consultant.companyWebsite || '',
+                                          revenueSharePercentage: consultant.revenueSharePercentage ?? 50
                                         }
                                       });
                                     }}
@@ -533,6 +552,30 @@ export default function SiteAdminDashboard(props: any) {
                                       style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                     />
                                   </div>
+                                  <div style={{ marginTop: '6px', padding: '10px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#92400e', display: 'block', marginBottom: '4px' }}>💰 Revenue Share Percentage</label>
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.1"
+                                        value={editingConsultantInfo[consultant.id].revenueSharePercentage ?? 50}
+                                        onChange={(e) => setEditingConsultantInfo({
+                                          ...editingConsultantInfo,
+                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], revenueSharePercentage: parseFloat(e.target.value) || 0 }
+                                        })}
+                                        style={{ width: '80px', padding: '4px 6px', border: '1px solid #fbbf24', borderRadius: '4px', fontSize: '11px' }}
+                                      />
+                                      <span style={{ fontSize: '11px', color: '#92400e' }}>%</span>
+                                      <span style={{ fontSize: '10px', color: '#92400e', marginLeft: '8px' }}>
+                                        (Platform: {(100 - (editingConsultantInfo[consultant.id].revenueSharePercentage ?? 50)).toFixed(1)}%)
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: '9px', color: '#92400e', marginTop: '4px' }}>
+                                      💡 This is the consultant's share of revenue from their companies. Default is 50%.
+                                    </div>
+                                  </div>
                                   <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                                     <button
                                       onClick={() => {
@@ -588,6 +631,12 @@ export default function SiteAdminDashboard(props: any) {
                                         {consultant.companyWebsite}
                                       </a>
                                     ) : 'N/A'}
+                                  </div>
+                                  <div style={{ gridColumn: '1 / -1', padding: '6px', background: '#fef3c7', borderRadius: '4px', marginTop: '4px' }}>
+                                    <span style={{ fontWeight: '600', color: '#92400e' }}>💰 Revenue Share:</span> 
+                                    <span style={{ color: '#92400e', marginLeft: '4px' }}>
+                                      {consultant.revenueSharePercentage ?? 50}% consultant / {100 - (consultant.revenueSharePercentage ?? 50)}% platform
+                                    </span>
                                   </div>
                                 </div>
                               )}
@@ -2327,6 +2376,11 @@ export default function SiteAdminDashboard(props: any) {
                 )}
               </div>
               </>
+              )}
+
+              {/* Billing & Revenue Tab */}
+              {siteAdminTab === 'billing' && (
+                <BillingDashboard />
               )}
             </div>
 

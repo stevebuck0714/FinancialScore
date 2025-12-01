@@ -345,7 +345,7 @@ export default function FinancialScorePage() {
   const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('team-management');
-  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'siteadmins'>('consultants');
+  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
   const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
@@ -2441,7 +2441,21 @@ export default function FinancialScorePage() {
     }
   };
 
-  const updateConsultantInfo = async (consultantId: string, info: { fullName: string; email: string; address: string; phone: string; type: string }) => {
+  const updateConsultantInfo = async (consultantId: string, info: { 
+    fullName: string; 
+    email: string; 
+    address: string; 
+    phone: string; 
+    type: string;
+    companyName?: string;
+    companyAddress1?: string;
+    companyAddress2?: string;
+    companyCity?: string;
+    companyState?: string;
+    companyZip?: string;
+    companyWebsite?: string;
+    revenueSharePercentage?: number;
+  }) => {
     try {
       const response = await consultantsApi.update(consultantId, info);
       
@@ -2454,7 +2468,15 @@ export default function FinancialScorePage() {
               email: info.email,
               address: info.address,
               phone: info.phone,
-              type: info.type
+              type: info.type,
+              companyName: info.companyName,
+              companyAddress1: info.companyAddress1,
+              companyAddress2: info.companyAddress2,
+              companyCity: info.companyCity,
+              companyState: info.companyState,
+              companyZip: info.companyZip,
+              companyWebsite: info.companyWebsite,
+              revenueSharePercentage: info.revenueSharePercentage ?? c.revenueSharePercentage
             } 
           : c
       ));
@@ -4476,6 +4498,7 @@ export default function FinancialScorePage() {
               setNewConsultantCompanyWebsite={setNewConsultantCompanyWebsite}
               addConsultant={addConsultant}
               deleteConsultant={deleteConsultant}
+              updateConsultantInfo={updateConsultantInfo}
               getConsultantCompanies={getConsultantCompanies}
               setCurrentUser={setCurrentUser}
               setSiteAdminViewingAs={setSiteAdminViewingAs}

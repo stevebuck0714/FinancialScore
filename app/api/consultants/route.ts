@@ -201,7 +201,8 @@ export async function PUT(request: NextRequest) {
   try {
     const { 
       id, fullName, email, address, phone, type,
-      companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite
+      companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite,
+      revenueSharePercentage
     } = await request.json();
 
     if (!id) {
@@ -269,6 +270,7 @@ export async function PUT(request: NextRequest) {
       if (companyState !== undefined) consultantUpdateData.companyState = companyState;
       if (companyZip !== undefined) consultantUpdateData.companyZip = companyZip;
       if (companyWebsite !== undefined) consultantUpdateData.companyWebsite = companyWebsite;
+      if (revenueSharePercentage !== undefined) consultantUpdateData.revenueSharePercentage = revenueSharePercentage;
 
       const updatedConsultant = await tx.consultant.update({
         where: { id },

@@ -8,24 +8,29 @@ datasource db {
 }
 
 model Consultant {
-  id              String    @id @default(cuid())
-  userId          String    @unique
-  type            String?
-  fullName        String
-  address         String?
-  phone           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  companyAddress1 String?
-  companyAddress2 String?
-  companyCity     String?
-  companyName     String?
-  companyState    String?
-  companyWebsite  String?
-  companyZip      String?
-  companies       Company[]
-  teamMembers     User[]    @relation("ConsultantTeamMembers")
-  user            User      @relation("PrimaryConsultant", fields: [userId], references: [id], onDelete: Cascade)
+  id                    String              @id @default(cuid())
+  userId                String              @unique
+  type                  String?
+  fullName              String
+  address               String?
+  phone                 String?
+  revenueSharePercentage Float              @default(50.0) // Consultant's share of revenue (50% default)
+  paymentMethod         String?             // check, ACH, wire, etc.
+  taxId                 String?             // For 1099 reporting
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  companyAddress1       String?
+  companyAddress2       String?
+  companyCity           String?
+  companyName           String?
+  companyState          String?
+  companyWebsite        String?
+  companyZip            String?
+  companies             Company[]
+  revenueRecords        RevenueRecord[]
+  payables              ConsultantPayable[]
+  teamMembers           User[]              @relation("ConsultantTeamMembers")
+  user                  User                @relation("PrimaryConsultant", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -48,11 +53,17 @@ model Company {
   selectedSubscriptionPlan   String?
   affiliateCode              String?
   affiliateId                String?
+  subscriptionStatus         String?                @default("active") // 'active', 'paused', 'cancelled'
+  subscriptionStartDate      DateTime?
+  nextBillingDate            DateTime?
+  lastBillingDate            DateTime?
   linesOfBusiness            Json?                  // Array of LOB names defined for this company
   accountMappings            AccountMapping[]
   accountingConnections      AccountingConnection[]
   apiSyncLogs                ApiSyncLog[]
   assessmentRecords          AssessmentRecord[]
+  revenueRecords             RevenueRecord[]
+  subscriptionEvents         SubscriptionEvent[]
   affiliate                  Affiliate?             @relation(fields: [affiliateId], references: [id])
   consultant                 Consultant             @relation(fields: [consultantId], references: [id], onDelete: Cascade)
   profile                    CompanyProfile?
@@ -444,6 +455,72 @@ model PaymentTransaction {
   @@index([companyId])
   @@index([status])
   @@index([createdAt])
+}
+
+model RevenueRecord {
+  id                    String   @id @default(cuid())
+  transactionId         String   @unique // USAePay or payment processor transaction ID
+  companyId             String
+  consultantId          String?  // NULL if direct business (no consultant)
+  amount                Float
+  paymentDate           DateTime
+  paymentStatus         String   @default("received") // 'received', 'failed', 'refunded', 'pending'
+  subscriptionPlan      String   // 'monthly', 'quarterly', 'annual'
+  billingPeriodStart    DateTime
+  billingPeriodEnd      DateTime
+  processorFee          Float?   // Payment processor fee (if tracked)
+  netAmount             Float?   // Amount after processor fee
+  notes                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  consultant            Consultant? @relation(fields: [consultantId], references: [id])
+
+  @@index([companyId])
+  @@index([consultantId])
+  @@index([paymentStatus])
+  @@index([paymentDate])
+  @@index([billingPeriodStart])
+}
+
+model SubscriptionEvent {
+  id            String   @id @default(cuid())
+  companyId     String
+  eventType     String   // 'created', 'plan_changed', 'price_changed', 'paused', 'cancelled', 'reactivated'
+  previousValue String?
+  newValue      String?
+  notes         String?
+  createdBy     String?  // User ID or email who made the change
+  createdAt     DateTime @default(now())
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model ConsultantPayable {
+  id                     String   @id @default(cuid())
+  consultantId           String
+  periodStart            DateTime
+  periodEnd              DateTime
+  totalCompanyRevenue    Float    // Sum of all revenue from consultant's companies
+  revenueSharePercentage Float    // Consultant's share % at time of calculation
+  payableAmount          Float    // Amount owed to consultant (totalRevenue * share%)
+  platformAmount         Float    // Amount kept by platform (totalRevenue * (100-share%))
+  status                 String   @default("pending") // 'pending', 'paid', 'on_hold', 'cancelled'
+  paidDate               DateTime?
+  paymentMethod          String?  // How consultant was paid (check, ACH, wire, etc.)
+  paymentReference       String?  // Check number, transaction ID, etc.
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  consultant             Consultant @relation(fields: [consultantId], references: [id])
+
+  @@index([consultantId])
+  @@index([status])
+  @@index([periodStart])
+  @@index([paidDate])
 }
 
 enum UserRole {

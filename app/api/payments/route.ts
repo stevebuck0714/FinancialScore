@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processPayment, PaymentDetails, addCustomerToVault, createRecurringBilling } from '@/lib/usaepay';
 import prisma from '@/lib/prisma';
+import { calculateBillingPeriod } from '@/lib/billing/invoiceGenerator';
 
 export async function POST(request: NextRequest) {
   try {
@@ -206,6 +207,31 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // Step 6b: Create revenue record for initial payment
+      const now = new Date();
+      const planType = billingPeriod as 'monthly' | 'quarterly' | 'annual';
+      const { start, end } = calculateBillingPeriod(now, planType);
+      
+      const companyDetails = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { consultantId: true, name: true }
+      });
+
+      await prisma.revenueRecord.create({
+        data: {
+          transactionId: paymentResult.transactionId!,
+          companyId,
+          consultantId: companyDetails?.consultantId || null,
+          amount: parseFloat(amount),
+          paymentDate: now,
+          paymentStatus: 'received',
+          subscriptionPlan: billingPeriod,
+          billingPeriodStart: start,
+          billingPeriodEnd: end,
+          notes: `Initial subscription payment - ${companyDetails?.name || 'Unknown company'}`
+        }
+      });
+
       // Step 7: Update company's selected plan
       await prisma.company.update({
         where: { id: companyId },
@@ -273,6 +299,31 @@ export async function POST(request: NextRequest) {
           description: `One-time ${billingPeriod} payment`,
           invoice: paymentDetails.invoice,
         },
+      });
+
+      // Create revenue record for one-time payment
+      const now = new Date();
+      const planType = billingPeriod as 'monthly' | 'quarterly' | 'annual';
+      const { start, end } = calculateBillingPeriod(now, planType);
+      
+      const companyDetails = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { consultantId: true, name: true }
+      });
+
+      await prisma.revenueRecord.create({
+        data: {
+          transactionId: paymentResult.transactionId!,
+          companyId,
+          consultantId: companyDetails?.consultantId || null,
+          amount: parseFloat(amount),
+          paymentDate: now,
+          paymentStatus: 'received',
+          subscriptionPlan: billingPeriod,
+          billingPeriodStart: start,
+          billingPeriodEnd: end,
+          notes: `One-time payment - ${companyDetails?.name || 'Unknown company'}`
+        }
       });
 
       await prisma.company.update({

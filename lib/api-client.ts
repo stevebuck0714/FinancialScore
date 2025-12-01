@@ -191,6 +191,7 @@ export const consultantsApi = {
     companyState?: string;
     companyZip?: string;
     companyWebsite?: string;
+    revenueSharePercentage?: number;
   }) {
     return fetchApi('/api/consultants', {
       method: 'PUT',

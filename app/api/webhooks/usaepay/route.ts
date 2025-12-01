@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { calculateBillingPeriod } from '@/lib/billing/invoiceGenerator';
+import { verifyWebhookSignature } from '@/lib/usaepay';
 
 /**
  * Webhook handler for USAePay notifications
@@ -16,6 +18,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     console.log('[USAePay Webhook] Received:', JSON.stringify(body, null, 2));
+
+    // Verify webhook signature for security
+    const signature = request.headers.get('x-usaepay-signature');
+    const webhookSecret = process.env.USAEPAY_WEBHOOK_SECRET;
+    
+    if (!verifyWebhookSignature(body, signature || undefined, webhookSecret)) {
+      console.error('[USAePay Webhook] ⚠️ Invalid signature - webhook rejected');
+      return NextResponse.json(
+        { error: 'Invalid signature' },
+        { status: 401 }
+      );
+    }
 
     // USAePay webhook data structure
     const {
@@ -75,6 +89,13 @@ export async function POST(request: NextRequest) {
           cardType: cardtype,
         });
       }
+    } else if (type === 'refund' || type === 'void') {
+      // Refund or void transaction
+      await handleRefund(subscription, {
+        transactionId: key || refnum,
+        amount: parseFloat(amount || '0'),
+        notes: result || error,
+      });
     }
 
     return NextResponse.json({ received: true });
@@ -97,6 +118,22 @@ async function handleSuccessfulPayment(
   }
 ) {
   try {
+    // Get company details to find consultant
+    const company = await prisma.company.findUnique({
+      where: { id: subscription.companyId },
+      select: {
+        id: true,
+        name: true,
+        consultantId: true,
+        selectedSubscriptionPlan: true
+      }
+    });
+
+    if (!company) {
+      console.error('[USAePay Webhook] Company not found:', subscription.companyId);
+      return;
+    }
+
     // Calculate next billing date
     const now = new Date();
     const nextBillingDate = new Date(now);
@@ -107,6 +144,10 @@ async function handleSuccessfulPayment(
     } else if (subscription.plan === 'annual') {
       nextBillingDate.setFullYear(now.getFullYear() + 1);
     }
+
+    // Calculate billing period
+    const planType = subscription.plan as 'monthly' | 'quarterly' | 'annual';
+    const { start, end } = calculateBillingPeriod(now, planType);
 
     // Update subscription
     await prisma.subscription.update({
@@ -137,7 +178,34 @@ async function handleSuccessfulPayment(
       },
     });
 
+    // 🆕 CREATE REVENUE RECORD for revenue tracking & consultant payables
+    await prisma.revenueRecord.create({
+      data: {
+        transactionId: paymentData.transactionId,
+        companyId: company.id,
+        consultantId: company.consultantId, // NULL for direct businesses
+        amount: paymentData.amount,
+        paymentDate: now,
+        paymentStatus: 'received',
+        subscriptionPlan: subscription.plan,
+        billingPeriodStart: start,
+        billingPeriodEnd: end,
+        notes: `Automatic payment via USAePay - ${company.name}`
+      }
+    });
+
+    // Log event
+    await prisma.subscriptionEvent.create({
+      data: {
+        companyId: company.id,
+        eventType: 'payment_received',
+        newValue: paymentData.transactionId,
+        notes: `Payment received: $${paymentData.amount} for ${subscription.plan} plan`
+      }
+    });
+
     console.log('[USAePay Webhook] ✅ Successful payment recorded for subscription:', subscription.id);
+    console.log('[USAePay Webhook] 💰 Revenue record created for', company.consultantId ? 'consultant company' : 'direct business');
   } catch (error) {
     console.error('[USAePay Webhook] Error recording successful payment:', error);
     throw error;
@@ -156,6 +224,21 @@ async function handleFailedPayment(
   }
 ) {
   try {
+    // Get company details
+    const company = await prisma.company.findUnique({
+      where: { id: subscription.companyId },
+      select: {
+        id: true,
+        name: true,
+        consultantId: true
+      }
+    });
+
+    if (!company) {
+      console.error('[USAePay Webhook] Company not found:', subscription.companyId);
+      return;
+    }
+
     const failedCount = subscription.failedPaymentCount + 1;
     
     // Determine subscription status based on failure count
@@ -163,6 +246,10 @@ async function handleFailedPayment(
     if (failedCount >= 3) {
       newStatus = 'SUSPENDED'; // Suspend after 3 failures
     }
+
+    const now = new Date();
+    const planType = subscription.plan as 'monthly' | 'quarterly' | 'annual';
+    const { start, end } = calculateBillingPeriod(now, planType);
 
     // Update subscription
     await prisma.subscription.update({
@@ -191,11 +278,115 @@ async function handleFailedPayment(
       },
     });
 
+    // 🆕 CREATE REVENUE RECORD with failed status for tracking
+    if (paymentData.transactionId) {
+      await prisma.revenueRecord.create({
+        data: {
+          transactionId: paymentData.transactionId,
+          companyId: company.id,
+          consultantId: company.consultantId,
+          amount: paymentData.amount,
+          paymentDate: now,
+          paymentStatus: 'failed',
+          subscriptionPlan: subscription.plan,
+          billingPeriodStart: start,
+          billingPeriodEnd: end,
+          notes: `Failed payment: ${paymentData.errorMessage || 'Payment declined'}`
+        }
+      });
+    }
+
+    // Log event
+    await prisma.subscriptionEvent.create({
+      data: {
+        companyId: company.id,
+        eventType: 'payment_failed',
+        newValue: paymentData.transactionId || 'unknown',
+        notes: `Payment failed (attempt ${failedCount}): ${paymentData.errorMessage || 'Payment declined'}`
+      }
+    });
+
     console.log('[USAePay Webhook] ❌ Failed payment recorded for subscription:', subscription.id, 'Failure count:', failedCount);
     
     // TODO: Send email notification to customer about failed payment
   } catch (error) {
     console.error('[USAePay Webhook] Error recording failed payment:', error);
+    throw error;
+  }
+}
+
+// Helper: Handle refund
+async function handleRefund(
+  subscription: any,
+  refundData: {
+    transactionId: string;
+    amount: number;
+    notes?: string;
+  }
+) {
+  try {
+    // Get company details
+    const company = await prisma.company.findUnique({
+      where: { id: subscription.companyId },
+      select: {
+        id: true,
+        name: true,
+        consultantId: true
+      }
+    });
+
+    if (!company) {
+      console.error('[USAePay Webhook] Company not found:', subscription.companyId);
+      return;
+    }
+
+    const now = new Date();
+    const planType = subscription.plan as 'monthly' | 'quarterly' | 'annual';
+    const { start, end } = calculateBillingPeriod(now, planType);
+
+    // Create refund transaction record
+    await prisma.paymentTransaction.create({
+      data: {
+        subscriptionId: subscription.id,
+        companyId: subscription.companyId,
+        amount: refundData.amount,
+        status: 'REFUNDED',
+        type: 'REFUND',
+        transactionId: refundData.transactionId,
+        description: `Refund for ${subscription.plan} payment`,
+        errorMessage: refundData.notes,
+      },
+    });
+
+    // Create revenue record with refunded status
+    await prisma.revenueRecord.create({
+      data: {
+        transactionId: `REFUND-${refundData.transactionId}`,
+        companyId: company.id,
+        consultantId: company.consultantId,
+        amount: -refundData.amount, // Negative amount for refund
+        paymentDate: now,
+        paymentStatus: 'refunded',
+        subscriptionPlan: subscription.plan,
+        billingPeriodStart: start,
+        billingPeriodEnd: end,
+        notes: `Refund: ${refundData.notes || 'Payment refunded'}`
+      }
+    });
+
+    // Log event
+    await prisma.subscriptionEvent.create({
+      data: {
+        companyId: company.id,
+        eventType: 'payment_refunded',
+        newValue: refundData.transactionId,
+        notes: `Payment refunded: $${refundData.amount}`
+      }
+    });
+
+    console.log('[USAePay Webhook] 💸 Refund recorded for subscription:', subscription.id);
+  } catch (error) {
+    console.error('[USAePay Webhook] Error recording refund:', error);
     throw error;
   }
 }

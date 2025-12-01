@@ -786,3 +786,42 @@ export function getUsaepayStatus() {
       : 'USAePay credentials not configured in environment variables',
   };
 }
+
+/**
+ * Verify USAePay webhook signature
+ * USAePay sends a signature in the webhook for security verification
+ */
+export function verifyWebhookSignature(
+  payload: any,
+  signature?: string,
+  webhookSecret?: string
+): boolean {
+  // If no signature provided, skip verification in development
+  if (!signature && USAEPAY_SANDBOX) {
+    console.warn('[USAePay] Webhook signature verification skipped (sandbox mode)');
+    return true;
+  }
+
+  // If no webhook secret configured, log warning
+  if (!webhookSecret) {
+    console.warn('[USAePay] No webhook secret configured - add USAEPAY_WEBHOOK_SECRET to .env');
+    return true; // Allow through but log warning
+  }
+
+  if (!signature) {
+    return false;
+  }
+
+  try {
+    // Create HMAC signature
+    const payloadString = JSON.stringify(payload);
+    const hmac = crypto.createHmac('sha256', webhookSecret);
+    hmac.update(payloadString);
+    const expectedSignature = hmac.digest('hex');
+
+    return signature === expectedSignature;
+  } catch (error) {
+    console.error('[USAePay] Webhook signature verification error:', error);
+    return false;
+  }
+}
