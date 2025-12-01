@@ -14,7 +14,6 @@ interface CompanyManagementTabProps {
   assessmentRecords: any[];
   isLoading: boolean;
   newCompanyName: string;
-  availableAffiliateCodes?: any[];
   selectedAffiliateCodeForNewCompany?: string;
   setSelectedAffiliateCodeForNewCompany?: (code: string) => void;
   setNewCompanyName: (name: string) => void;
@@ -108,7 +107,6 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           assessmentRecords={props.assessmentRecords}
           isLoading={props.isLoading}
           newCompanyName={props.newCompanyName}
-          availableAffiliateCodes={props.availableAffiliateCodes}
           selectedAffiliateCodeForNewCompany={props.selectedAffiliateCodeForNewCompany}
           setSelectedAffiliateCodeForNewCompany={props.setSelectedAffiliateCodeForNewCompany}
           setNewCompanyName={props.setNewCompanyName}

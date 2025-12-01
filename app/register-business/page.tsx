@@ -202,9 +202,9 @@ export default function RegisterBusinessWelcome() {
           textAlign: 'center',
           color: 'white'
         }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', margin: 0 }}>
-            Welcome to Corelytics
-          </h1>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', margin: 0 }}>
+              Welcome to Corelytics
+            </h1>
         </div>
 
         {/* Content */}

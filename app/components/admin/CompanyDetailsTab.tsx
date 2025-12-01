@@ -43,7 +43,6 @@ interface CompanyDetailsTabProps {
   assessmentRecords: AssessmentRecord[];
   isLoading: boolean;
   newCompanyName: string;
-  availableAffiliateCodes?: any[];
   selectedAffiliateCodeForNewCompany?: string;
   setSelectedAffiliateCodeForNewCompany?: (code: string) => void;
   setNewCompanyName: (name: string) => void;
@@ -87,7 +86,6 @@ export default function CompanyDetailsTab({
   assessmentRecords,
   isLoading,
   newCompanyName,
-  availableAffiliateCodes,
   selectedAffiliateCodeForNewCompany,
   setSelectedAffiliateCodeForNewCompany,
   setNewCompanyName,
@@ -153,60 +151,29 @@ export default function CompanyDetailsTab({
                 style={{ flex: 1, padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
               
-              {/* Affiliate Code Selection */}
-              {availableAffiliateCodes && availableAffiliateCodes.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
-                    Affiliate Code (Optional)
-                  </label>
-                  <select
-                    value={selectedAffiliateCodeForNewCompany || ''}
-                    onChange={(e) => setSelectedAffiliateCodeForNewCompany && setSelectedAffiliateCodeForNewCompany(e.target.value)}
-                    disabled={isLoading}
-                    style={{ 
-                      padding: '12px 16px', 
-                      borderRadius: '8px', 
-                      border: '1px solid #cbd5e1', 
-                      fontSize: '14px',
-                      background: 'white',
-                      cursor: isLoading ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    <option value="">No Affiliate Code (Use Default Pricing)</option>
-                    {availableAffiliateCodes.map((code) => {
-                      const selectedCode = availableAffiliateCodes.find(c => c.code === selectedAffiliateCodeForNewCompany);
-                      return (
-                        <option key={code.id} value={code.code}>
-                          {code.code} - {code.affiliateName} 
-                          {code.description ? ` (${code.description})` : ''}
-                          {' - '}
-                          ${code.monthlyPrice}/mo, ${code.quarterlyPrice}/qtr, ${code.annualPrice}/yr
-                        </option>
-                      );
-                    })}
-                  </select>
-                  
-                  {/* Show pricing preview if code is selected */}
-                  {selectedAffiliateCodeForNewCompany && (
-                    (() => {
-                      const selectedCode = availableAffiliateCodes.find(c => c.code === selectedAffiliateCodeForNewCompany);
-                      return selectedCode ? (
-                        <div style={{ 
-                          padding: '12px', 
-                          background: '#f0fdf4', 
-                          border: '1px solid #86efac', 
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          color: '#166534'
-                        }}>
-                          <div style={{ fontWeight: '600', marginBottom: '4px' }}>✓ Pricing from {selectedCode.affiliateName}</div>
-                          <div>Monthly: ${selectedCode.monthlyPrice} | Quarterly: ${selectedCode.quarterlyPrice} | Annual: ${selectedCode.annualPrice}</div>
-                        </div>
-                      ) : null;
-                    })()
-                  )}
-                </div>
-              )}
+              {/* Affiliate Code Input */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
+                  Affiliate Code (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter affiliate code (optional)"
+                  value={selectedAffiliateCodeForNewCompany || ''}
+                  onChange={(e) => setSelectedAffiliateCodeForNewCompany && setSelectedAffiliateCodeForNewCompany(e.target.value.toUpperCase())}
+                  disabled={isLoading}
+                  style={{ 
+                    padding: '12px 16px', 
+                    borderRadius: '8px', 
+                    border: '1px solid #cbd5e1', 
+                    fontSize: '14px',
+                    textTransform: 'uppercase'
+                  }}
+                />
+                <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                  If provided, the code will be validated and applied to determine pricing
+                </p>
+              </div>
               
               <button 
                 onClick={addCompany} 

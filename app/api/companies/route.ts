@@ -124,37 +124,37 @@ export async function POST(request: NextRequest) {
         data: { currentUses: affiliateCodeRecord.currentUses + 1 }
       });
     } else {
-      // Fetch default pricing from SystemSettings
-      let defaultPricing = await prisma.systemSettings.findUnique({
-        where: { key: 'default_pricing' }
+    // Fetch default pricing from SystemSettings
+    let defaultPricing = await prisma.systemSettings.findUnique({
+      where: { key: 'default_pricing' }
+    });
+
+    // If no settings exist, create with defaults
+    if (!defaultPricing) {
+      defaultPricing = await prisma.systemSettings.create({
+        data: {
+          key: 'default_pricing',
+          businessMonthlyPrice: 195,
+          businessQuarterlyPrice: 500,
+          businessAnnualPrice: 1750,
+          consultantMonthlyPrice: 195,
+          consultantQuarterlyPrice: 500,
+          consultantAnnualPrice: 1750
+        }
       });
+    }
 
-      // If no settings exist, create with defaults
-      if (!defaultPricing) {
-        defaultPricing = await prisma.systemSettings.create({
-          data: {
-            key: 'default_pricing',
-            businessMonthlyPrice: 195,
-            businessQuarterlyPrice: 500,
-            businessAnnualPrice: 1750,
-            consultantMonthlyPrice: 195,
-            consultantQuarterlyPrice: 500,
-            consultantAnnualPrice: 1750
-          }
-        });
-      }
-
-      // Use consultant pricing for regular consultants, business pricing for business consultants
-      const isBusinessConsultant = consultant?.type === 'business';
+    // Use consultant pricing for regular consultants, business pricing for business consultants
+    const isBusinessConsultant = consultant?.type === 'business';
       monthlyPrice = isBusinessConsultant 
-        ? (defaultPricing.businessMonthlyPrice ?? 195)
-        : (defaultPricing.consultantMonthlyPrice ?? 195);
+      ? (defaultPricing.businessMonthlyPrice ?? 195)
+      : (defaultPricing.consultantMonthlyPrice ?? 195);
       quarterlyPrice = isBusinessConsultant
-        ? (defaultPricing.businessQuarterlyPrice ?? 500)
-        : (defaultPricing.consultantQuarterlyPrice ?? 500);
+      ? (defaultPricing.businessQuarterlyPrice ?? 500)
+      : (defaultPricing.consultantQuarterlyPrice ?? 500);
       annualPrice = isBusinessConsultant
-        ? (defaultPricing.businessAnnualPrice ?? 1750)
-        : (defaultPricing.consultantAnnualPrice ?? 1750);
+      ? (defaultPricing.businessAnnualPrice ?? 1750)
+      : (defaultPricing.consultantAnnualPrice ?? 1750);
     }
 
     const company = await prisma.company.create({

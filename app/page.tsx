@@ -95,7 +95,6 @@ export default function FinancialScorePage() {
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
-  const [availableAffiliateCodes, setAvailableAffiliateCodes] = useState<any[]>([]);
   const [selectedAffiliateCodeForNewCompany, setSelectedAffiliateCodeForNewCompany] = useState('');
   
   // State - Subscription Selection
@@ -1016,33 +1015,6 @@ export default function FinancialScorePage() {
     }
   }, [siteAdminTab]);
 
-  // Load affiliate codes when consultant is on company management
-  useEffect(() => {
-    if (currentUser?.role === 'consultant' && adminDashboardTab === 'company-management') {
-      fetch('/api/affiliates')
-        .then(res => res.json())
-        .then(data => {
-          if (data.affiliates) {
-            // Flatten all codes from all affiliates into a single array
-            const allCodes: any[] = [];
-            data.affiliates.forEach((affiliate: any) => {
-              if (affiliate.codes && affiliate.isActive) {
-                affiliate.codes.forEach((code: any) => {
-                  if (code.isActive && (!code.expiresAt || new Date(code.expiresAt) > new Date())) {
-                    allCodes.push({
-                      ...code,
-                      affiliateName: affiliate.name
-                    });
-                  }
-                });
-              }
-            });
-            setAvailableAffiliateCodes(allCodes);
-          }
-        })
-        .catch(err => console.error('Error loading affiliate codes:', err));
-    }
-  }, [currentUser?.role, adminDashboardTab]);
 
   // Load site administrators when tab is opened
   useEffect(() => {
@@ -4717,7 +4689,6 @@ export default function FinancialScorePage() {
               setCompanyAddressCity={setCompanyAddressCity}
               setCompanyAddressState={setCompanyAddressState}
               setCompanyAddressZip={setCompanyAddressZip}
-              availableAffiliateCodes={availableAffiliateCodes}
               selectedAffiliateCodeForNewCompany={selectedAffiliateCodeForNewCompany}
               setSelectedAffiliateCodeForNewCompany={setSelectedAffiliateCodeForNewCompany}
               setCompanyAddressCountry={setCompanyAddressCountry}
