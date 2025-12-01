@@ -326,6 +326,11 @@ export default function SiteAdminDashboard(props: any) {
                                     consultantType: consultant.type
                                   });
                                   setCurrentView('admin');
+                                  // Scroll main content to top
+                                  setTimeout(() => {
+                                    const mainElement = document.querySelector('main');
+                                    if (mainElement) mainElement.scrollTop = 0;
+                                  }, 0);
                                 }}
                                 style={{ 
                                   fontSize: '15px', 
@@ -636,7 +641,7 @@ export default function SiteAdminDashboard(props: any) {
                                               cursor: 'pointer' 
                                             }}
                                           >
-                                            {isCompanyExpanded ? 'â–²' : 'â–¼'}
+                                            {isCompanyExpanded ? '▲' : '▼'}
                                           </button>
                                         </div>
                                       </div>
