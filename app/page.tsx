@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import * as XLSX from 'xlsx';
@@ -25,6 +25,7 @@ import LOBReportingTab from './components/dashboard/LOBReportingTab';
 import ConsultantDashboard from './components/consultant/ConsultantDashboard';
 import CompanyManagementTab from './components/admin/CompanyManagementTab';
 import Header from './components/layout/Header';
+import SiteAdminDashboard from './components/siteadmin/SiteAdminDashboard';
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
 import { saveProjectionDefaults as saveProjectionDefaultsUtil } from './utils/projection-helpers';
 import MAWelcomeView from './components/assessment/MAWelcomeView';
@@ -206,7 +207,7 @@ export default function FinancialScorePage() {
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
     if (isPaymentRequired()) {
-      alert('⚠️ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
+      alert('âš ï¸ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
       setAdminDashboardTab('payments');
       setCurrentView('admin');
       return;
@@ -224,7 +225,7 @@ export default function FinancialScorePage() {
     
     // Block other tabs if payment is required
     if (isPaymentRequired()) {
-      alert('⚠️ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
+      alert('âš ï¸ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
       setAdminDashboardTab('payments');
       return;
     }
@@ -324,19 +325,19 @@ export default function FinancialScorePage() {
 
   useEffect(() => {
     if (currentUser?.userType === 'assessment' && isLoggedIn && currentView !== 'login' && !isAssessmentUserViewAllowed(currentView)) {
-      console.log('🚫 useEffect redirecting from', currentView, 'to ma-welcome');
+      console.log('ðŸš« useEffect redirecting from', currentView, 'to ma-welcome');
       setCurrentView('ma-welcome');
     }
   }, [currentView, currentUser, isLoggedIn]);
 
   // Helper function to handle view changes for assessment users
   const handleViewChange = (newView: string) => {
-    console.log('🔄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
+    console.log('ðŸ”„ handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
     if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
-      console.log('❌ View not allowed, redirecting to ma-welcome');
+      console.log('âŒ View not allowed, redirecting to ma-welcome');
       setCurrentView('ma-welcome');
     } else {
-      console.log('✅ Setting view to:', newView);
+      console.log('âœ… Setting view to:', newView);
       setCurrentView(newView as any);
     }
   };
@@ -720,7 +721,7 @@ export default function FinancialScorePage() {
       const result = await response.json();
       
       if (result.success) {
-        alert('✅ Payment method updated successfully!');
+        alert('âœ… Payment method updated successfully!');
         setShowUpdatePaymentModal(false);
         // Reset form
         setUpdatePaymentData({
@@ -741,11 +742,11 @@ export default function FinancialScorePage() {
           setActiveSubscription(subData.subscription);
         }
       } else {
-        alert(`❌ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
+        alert(`âŒ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
       }
     } catch (error) {
       console.error('Update payment method error:', error);
-      alert('❌ An error occurred while updating your payment method. Please try again.');
+      alert('âŒ An error occurred while updating your payment method. Please try again.');
     } finally {
       setUpdatingPayment(false);
     }
@@ -769,8 +770,8 @@ export default function FinancialScorePage() {
       // Handle both success and 404 (company already deleted)
       if (result.success || response.status === 404) {
         const message = result.success 
-          ? `✅ Company "${companyToDelete.companyName}" has been deleted successfully.`
-          : `✅ Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
+          ? `âœ… Company "${companyToDelete.companyName}" has been deleted successfully.`
+          : `âœ… Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
         
         alert(message);
         
@@ -789,11 +790,11 @@ export default function FinancialScorePage() {
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       } else {
-        alert(result.error || '❌ Failed to delete company');
+        alert(result.error || 'âŒ Failed to delete company');
       }
     } catch (error) {
       console.error('Error deleting company:', error);
-      alert('❌ An error occurred while deleting the company');
+      alert('âŒ An error occurred while deleting the company');
     }
   };
 
@@ -910,14 +911,14 @@ export default function FinancialScorePage() {
   // Load expense goals when Goals, Trend Analysis, or MD&A view is accessed
   useEffect(() => {
     if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis' || currentView === 'mda')) {
-      console.log('📊 Loading expense goals for company:', selectedCompanyId);
+      console.log('ðŸ“Š Loading expense goals for company:', selectedCompanyId);
       // Reset to empty first, so fields are blank while loading
       setExpenseGoals({});
       
       fetch(`/api/expense-goals?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
-          console.log('📊 Expense goals loaded:', data);
+          console.log('ðŸ“Š Expense goals loaded:', data);
           if (data.success && data.goals) {
             // Filter out any zero or invalid values so fields stay blank
             const filteredGoals: {[key: string]: number} = {};
@@ -933,7 +934,7 @@ export default function FinancialScorePage() {
           }
         })
         .catch(err => {
-          console.error('❌ Error loading expense goals:', err);
+          console.error('âŒ Error loading expense goals:', err);
           // Keep empty on error
           setExpenseGoals({});
         });
@@ -946,14 +947,14 @@ export default function FinancialScorePage() {
       fetch(`/api/valuation-settings?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
-          console.log('📊 Valuation settings loaded:', data);
+          console.log('ðŸ“Š Valuation settings loaded:', data);
           setSdeMultiplier(data.sdeMultiplier || 2.5);
           setEbitdaMultiplier(data.ebitdaMultiplier || 5.0);
           setDcfDiscountRate(data.dcfDiscountRate || 10.0);
           setDcfTerminalGrowth(data.dcfTerminalGrowth || 2.0);
         })
         .catch(err => {
-          console.error('❌ Error loading valuation settings:', err);
+          console.error('âŒ Error loading valuation settings:', err);
           // Keep defaults on error
           setSdeMultiplier(2.5);
           setEbitdaMultiplier(5.0);
@@ -1092,7 +1093,7 @@ export default function FinancialScorePage() {
       
       try {
         // ALWAYS clear state at the start to prevent stale data
-        console.log('🧹 Clearing all state before loading new company data');
+        console.log('ðŸ§¹ Clearing all state before loading new company data');
         setQbRawData(null);
         setRawRows([]);
         setMapping({ date: '' });
@@ -1122,36 +1123,36 @@ export default function FinancialScorePage() {
         // Load financial records
         const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const companyName = selectedCompany?.name || 'Unknown';
-        console.log(`📂 LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
+        console.log(`ðŸ“‚ LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
         
         const { records } = await financialsApi.getByCompany(selectedCompanyId);
-        console.log(`📂 Found ${records.length} financial records for company "${companyName}"`);
+        console.log(`ðŸ“‚ Found ${records.length} financial records for company "${companyName}"`);
         
         // If no records found, clear aiMappings as well
         if (!records || records.length === 0) {
-          console.log(`🧹 No records found - clearing aiMappings too`);
+          console.log(`ðŸ§¹ No records found - clearing aiMappings too`);
           setAiMappings([]);
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
-          console.log(`📂 Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
+          console.log(`ðŸ“‚ Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
           
           // Check if this is QuickBooks data and extract raw QB financial statements
           if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
               !Array.isArray(latestRecord.rawData) &&
               (latestRecord.rawData.profitAndLoss || latestRecord.rawData.balanceSheet)) {
             // QuickBooks data - use monthlyData directly
-            console.log(`🔄 Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
-            console.log(`📄 Record belongs to company ID: ${latestRecord.companyId}`);
-            console.log(`📅 QB Data sync date:`, latestRecord.rawData.syncDate);
-            console.log(`🔑 QB rawData object keys:`, Object.keys(latestRecord.rawData));
-            console.log(`✅ SETTING qbRawData with sync date:`, latestRecord.rawData.syncDate);
+            console.log(`ðŸ”„ Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
+            console.log(`ðŸ“„ Record belongs to company ID: ${latestRecord.companyId}`);
+            console.log(`ðŸ“… QB Data sync date:`, latestRecord.rawData.syncDate);
+            console.log(`ðŸ”‘ QB rawData object keys:`, Object.keys(latestRecord.rawData));
+            console.log(`âœ… SETTING qbRawData with sync date:`, latestRecord.rawData.syncDate);
             // Add companyId to the raw data so we can verify it matches
             setQbRawData({
               ...latestRecord.rawData,
               _companyId: selectedCompanyId,
               _recordId: latestRecord.id
             });
-            console.log(`⚠️ Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
+            console.log(`âš ï¸ Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
             // Force re-render of Financial Statements view
             setDataRefreshKey(prev => prev + 1);
             setRawRows([]); // Set empty array since rawRows is not used for QB data
@@ -1247,11 +1248,11 @@ export default function FinancialScorePage() {
         }
         
         // Load assessment records
-        console.log(`📊 Loading assessment records for company: ${selectedCompanyId}`);
+        console.log(`ðŸ“Š Loading assessment records for company: ${selectedCompanyId}`);
         const { records: assessments } = await assessmentsApi.getByCompany(selectedCompanyId);
-        console.log(`📊 Loaded ${assessments?.length || 0} assessment records:`, assessments);
+        console.log(`ðŸ“Š Loaded ${assessments?.length || 0} assessment records:`, assessments);
         setAssessmentRecords(assessments || []);
-        console.log(`✅ Assessment records set in state`);
+        console.log(`âœ… Assessment records set in state`);
         
         // Load company profile
         const { profile } = await profilesApi.get(selectedCompanyId);
@@ -1302,12 +1303,12 @@ export default function FinancialScorePage() {
           console.log('Fetching benchmarks for industry:', company.industrySector, 'assetSize:', assetCategory);
           const benchmarkData = await benchmarksApi.get(String(company.industrySector), assetCategory);
           setBenchmarks(benchmarkData || []);
-          console.log('✅ Loaded', benchmarkData?.length || 0, 'benchmarks');
+          console.log('âœ… Loaded', benchmarkData?.length || 0, 'benchmarks');
           if (benchmarkData && benchmarkData.length > 0) {
             console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map((b: any) => b.metricName).join(', '));
           }
         } else {
-          console.log('⚠️ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
+          console.log('âš ï¸ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
         }
 
         // Load subscription pricing for this company
@@ -1359,7 +1360,7 @@ export default function FinancialScorePage() {
             // Load assessment records for this company
             const { records } = await assessmentsApi.getByCompany(company.id);
             if (records) {
-              console.log(`📊 Loaded ${records.length} assessment records for company ${company.id} (${company.name}):`, 
+              console.log(`ðŸ“Š Loaded ${records.length} assessment records for company ${company.id} (${company.name}):`, 
                 records.map((r: any) => ({ userEmail: r.user?.email, companyId: r.companyId, answersCount: Object.keys(r.responses || {}).length }))
               );
               allAssessments.push(...records);
@@ -1368,7 +1369,7 @@ export default function FinancialScorePage() {
             console.error(`Error loading data for company ${company.id}:`, error);
           }
         }
-        console.log(`✅ Total loaded: ${allUsers.length} users, ${allAssessments.length} assessment records`);
+        console.log(`âœ… Total loaded: ${allUsers.length} users, ${allAssessments.length} assessment records`);
         console.log(`Assessment users:`, allUsers.filter(u => u.userType === 'assessment').map(u => ({ email: u.email, companyId: u.companyId })));
         setUsers(allUsers);
         setAssessmentRecords(allAssessments);
@@ -1482,14 +1483,14 @@ export default function FinancialScorePage() {
             totalLAndE: m.totalLAndE || 0
           }));
           
-          console.log('✅ Loaded', formattedData.length, 'months of financial data from database');
-          console.log('📊 RAW from database (sample):', {
+          console.log('âœ… Loaded', formattedData.length, 'months of financial data from database');
+          console.log('ðŸ“Š RAW from database (sample):', {
             revenue: monthlyData[0]?.revenue,
             payroll: monthlyData[0]?.payroll,
             professionalFees: monthlyData[0]?.professionalFees,
             rent: monthlyData[0]?.rent
           });
-          console.log('📊 FORMATTED for display (sample):', {
+          console.log('ðŸ“Š FORMATTED for display (sample):', {
             revenue: formattedData[0]?.revenue,
             opexPayroll: formattedData[0]?.opexPayroll,
             professionalServices: formattedData[0]?.professionalServices,
@@ -1590,13 +1591,13 @@ export default function FinancialScorePage() {
           };
         });
         
-        console.log('📤 Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
-        console.log('📊 Sample Excel values from row 0:', { 
+        console.log('ðŸ“¤ Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
+        console.log('ðŸ“Š Sample Excel values from row 0:', { 
           revenue: rawRows[0]?.[mapping.revenue!], 
           expense: rawRows[0]?.[mapping.expense!],
           professionalServices: rawRows[0]?.[mapping.professionalServices!]
         });
-        console.log('📊 First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
+        console.log('ðŸ“Š First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
           month: m.month, 
           revenue: m.revenue, 
           expense: m.expense,
@@ -2225,7 +2226,7 @@ export default function FinancialScorePage() {
     try {
       const { company } = await companiesApi.updatePricing(selectedCompanyId, subscriptionMonthlyPrice || 0, subscriptionQuarterlyPrice || 0, subscriptionAnnualPrice || 0);
       
-      console.log('💰 Subscription pricing saved:', company);
+      console.log('ðŸ’° Subscription pricing saved:', company);
       
       // Update the companies list with the new pricing
       setCompanies(Array.isArray(companies) ? companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c) : [company]);
@@ -2236,9 +2237,9 @@ export default function FinancialScorePage() {
         setCompanies(allCompanies);
       }
       
-      alert('✅ Subscription pricing saved successfully!');
+      alert('âœ… Subscription pricing saved successfully!');
     } catch (error) {
-      console.error('❌ Error saving subscription pricing:', error);
+      console.error('âŒ Error saving subscription pricing:', error);
       alert(error instanceof ApiError ? error.message : 'Failed to save subscription pricing');
     } finally {
       setIsLoading(false);
@@ -2306,9 +2307,9 @@ export default function FinancialScorePage() {
       console.error('Error creating user:', error);
       if (error instanceof ApiError) {
         if (error.message.includes('already registered')) {
-          alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+          alert(`âš ï¸ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
         } else if (error.message.includes('Password does not meet requirements')) {
-          alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+          alert('âŒ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -2392,7 +2393,7 @@ export default function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('âŒ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -2425,7 +2426,7 @@ export default function FinancialScorePage() {
         return newState;
       });
       
-      alert('✅ Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
+      alert('âœ… Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
     }
@@ -3467,8 +3468,8 @@ export default function FinancialScorePage() {
     }
 
     // Show confirmation
-    const reportNames = printQueue.map(p => p.title).join('\n• ');
-    if (!confirm(`You are about to print the following reports in sequence:\n\n• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
+    const reportNames = printQueue.map(p => p.title).join('\nâ€¢ ');
+    if (!confirm(`You are about to print the following reports in sequence:\n\nâ€¢ ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
       return;
     }
 
@@ -3555,7 +3556,7 @@ export default function FinancialScorePage() {
     );
   }
 
-  console.log('🎨 RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
+  console.log('ðŸŽ¨ RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
 
   return (
     <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -3674,7 +3675,7 @@ export default function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-intro' && '• '}Introduction
+                    {currentView === 'fs-intro' && 'â€¢ '}Introduction
                   </div>
                   <div
                     onClick={() => setCurrentView('fs-score')}
@@ -3702,7 +3703,7 @@ export default function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-score' && '• '}Financial Score
+                    {currentView === 'fs-score' && 'â€¢ '}Financial Score
                   </div>
                 </div>
               )}
@@ -3764,7 +3765,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-welcome' && '• '}Welcome
+                  {currentView === 'ma-welcome' && 'â€¢ '}Welcome
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-questionnaire')}
@@ -3792,7 +3793,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-questionnaire' && '• '}Questionnaire
+                  {currentView === 'ma-questionnaire' && 'â€¢ '}Questionnaire
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-your-results')}
@@ -3820,7 +3821,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-your-results' && '• '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
+                  {currentView === 'ma-your-results' && 'â€¢ '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scores-summary')}
@@ -3848,7 +3849,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scores-summary' && '• '}Scores Summary
+                  {currentView === 'ma-scores-summary' && 'â€¢ '}Scores Summary
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scoring-guide')}
@@ -3876,7 +3877,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scoring-guide' && '• '}Scoring Guide
+                  {currentView === 'ma-scoring-guide' && 'â€¢ '}Scoring Guide
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-charts')}
@@ -3904,7 +3905,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-charts' && '• '}Charts
+                  {currentView === 'ma-charts' && 'â€¢ '}Charts
                 </div>
               </div>
               )}
@@ -4076,7 +4077,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                🔒 Privacy Policy
+                ðŸ”’ Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4102,7 +4103,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📄 License Agreement
+                ðŸ“„ License Agreement
               </a>
             </div>
 
@@ -4130,7 +4131,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📧 Contact Support
+                ðŸ“§ Contact Support
               </a>
             </div>
           </nav>
@@ -4325,7 +4326,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                🔒 Privacy Policy
+                ðŸ”’ Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4351,7 +4352,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📄 License Agreement
+                ðŸ“„ License Agreement
               </a>
             </div>
 
@@ -4379,7 +4380,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📧 Contact Support
+                ðŸ“§ Contact Support
               </a>
             </div>
           </nav>
@@ -4393,2068 +4394,63 @@ export default function FinancialScorePage() {
           <>
           {/* Site Administration */}
           {currentView === 'siteadmin' && currentUser?.role === 'siteadmin' && (
-            <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
-              <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Site Administration</h1>
-              
-              {/* Tab Navigation */}
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '2px solid #e2e8f0' }}>
-                <button
-                  onClick={() => setSiteAdminTab('consultants')}
-                  style={{
-                    padding: '8px 16px',
-                    background: siteAdminTab === 'consultants' ? '#667eea' : 'transparent',
-                    color: siteAdminTab === 'consultants' ? 'white' : '#64748b',
-                    border: 'none',
-                    borderBottom: siteAdminTab === 'consultants' ? '3px solid #667eea' : '3px solid transparent',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    borderRadius: '6px 6px 0 0',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Consultants
-                </button>
-                <button
-                  onClick={() => setSiteAdminTab('businesses')}
-                  style={{
-                    padding: '8px 16px',
-                    background: siteAdminTab === 'businesses' ? '#667eea' : 'transparent',
-                    color: siteAdminTab === 'businesses' ? 'white' : '#64748b',
-                    border: 'none',
-                    borderBottom: siteAdminTab === 'businesses' ? '3px solid #667eea' : '3px solid transparent',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    borderRadius: '6px 6px 0 0',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Businesses
-                </button>
-                <button
-                  onClick={() => setSiteAdminTab('affiliates')}
-                  style={{
-                    padding: '8px 16px',
-                    background: siteAdminTab === 'affiliates' ? '#667eea' : 'transparent',
-                    color: siteAdminTab === 'affiliates' ? 'white' : '#64748b',
-                    border: 'none',
-                    borderBottom: siteAdminTab === 'affiliates' ? '3px solid #667eea' : '3px solid transparent',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    borderRadius: '6px 6px 0 0',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Affiliates
-                </button>
-                <button
-                  onClick={() => setSiteAdminTab('default-pricing')}
-                  style={{
-                    padding: '8px 16px',
-                    background: siteAdminTab === 'default-pricing' ? '#667eea' : 'transparent',
-                    color: siteAdminTab === 'default-pricing' ? 'white' : '#64748b',
-                    border: 'none',
-                    borderBottom: siteAdminTab === 'default-pricing' ? '3px solid #667eea' : '3px solid transparent',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    borderRadius: '6px 6px 0 0',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Default Pricing
-                </button>
-                <button
-                  onClick={() => setSiteAdminTab('siteadmins')}
-                  style={{
-                    padding: '8px 16px',
-                    background: siteAdminTab === 'siteadmins' ? '#667eea' : 'transparent',
-                    color: siteAdminTab === 'siteadmins' ? 'white' : '#64748b',
-                    border: 'none',
-                    borderBottom: siteAdminTab === 'siteadmins' ? '3px solid #667eea' : '3px solid transparent',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    borderRadius: '6px 6px 0 0',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Site Administrators
-                </button>
-              </div>
-
-              {/* Consultants Tab */}
-              {siteAdminTab === 'consultants' && (
-              <>
-              {/* Add Consultant Form */}
-              <div style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showAddConsultantForm ? '12px' : '0' }}>
-                  <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Add New Consultant</h2>
-                  <button
-                    onClick={() => setShowAddConsultantForm(!showAddConsultantForm)}
-                    style={{ 
-                      padding: '4px 12px', 
-                      background: showAddConsultantForm ? '#f1f5f9' : '#667eea', 
-                      color: showAddConsultantForm ? '#475569' : 'white', 
-                      border: 'none', 
-                      borderRadius: '6px', 
-                      fontSize: '12px', 
-                      fontWeight: '600', 
-                      cursor: 'pointer' 
-                    }}
-                  >
-                    {showAddConsultantForm ? '▲' : '▼'}
-                  </button>
-                </div>
-                {showAddConsultantForm && (
-                  <>
-                    {/* Personal Information Section */}
-                    <div style={{ marginBottom: '16px' }}>
-                      <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Contact Person Information</h4>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                        <input
-                          type="text"
-                          placeholder="Type *"
-                          value={newConsultantType}
-                          onChange={(e) => setNewConsultantType(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Contact Person *"
-                          value={newConsultantFullName}
-                          onChange={(e) => setNewConsultantFullName(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="email"
-                          placeholder="Email *"
-                          value={newConsultantEmail}
-                          onChange={(e) => setNewConsultantEmail(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="tel"
-                          placeholder="Phone *"
-                          value={newConsultantPhone}
-                          onChange={(e) => setNewConsultantPhone(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <div style={{ gridColumn: 'span 2' }}>
-                          <input
-                            type="password"
-                            placeholder="Password *"
-                            value={newConsultantPassword}
-                            onChange={(e) => setNewConsultantPassword(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', width: '100%' }}
-                          />
-                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', lineHeight: '1.4' }}>
-                            Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Company Information Section */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Company Information (Optional)</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <input
-                          type="text"
-                          placeholder="Company Name"
-                          value={newConsultantCompanyName}
-                          onChange={(e) => setNewConsultantCompanyName(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Company Address Line 1"
-                          value={newConsultantCompanyAddress1}
-                          onChange={(e) => setNewConsultantCompanyAddress1(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Company Address Line 2"
-                          value={newConsultantCompanyAddress2}
-                          onChange={(e) => setNewConsultantCompanyAddress2(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px' }}>
-                          <input
-                            type="text"
-                            placeholder="City"
-                            value={newConsultantCompanyCity}
-                            onChange={(e) => setNewConsultantCompanyCity(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                          />
-                          <select
-                            value={newConsultantCompanyState}
-                            onChange={(e) => setNewConsultantCompanyState(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: 'white' }}
-                          >
-                            {US_STATES.map(state => (
-                              <option key={state.code} value={state.code}>{state.code || 'State'}</option>
-                            ))}
-                          </select>
-                          <input
-                            type="text"
-                            placeholder="ZIP"
-                            value={newConsultantCompanyZip}
-                            onChange={(e) => setNewConsultantCompanyZip(e.target.value)}
-                            maxLength={10}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                          />
-                        </div>
-                        <input
-                          type="url"
-                          placeholder="Company Website"
-                          value={newConsultantCompanyWebsite}
-                          onChange={(e) => setNewConsultantCompanyWebsite(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={addConsultant}
-                      disabled={isLoading}
-                      style={{ 
-                        padding: '8px 20px', 
-                        background: isLoading ? '#94a3b8' : '#10b981', 
-                        color: 'white', 
-                        border: 'none', 
-                        borderRadius: '6px', 
-                        fontSize: '13px', 
-                        fontWeight: '600', 
-                        cursor: isLoading ? 'not-allowed' : 'pointer',
-                        opacity: isLoading ? 0.6 : 1
-                      }}
-                    >
-                      {isLoading ? 'Adding...' : 'Add Consultant'}
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* Consultants List */}
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '10px' }}>
-                Total Consultants: {consultants.filter(c => c.type !== 'business').length}
-              </div>
-
-              {consultants.filter(c => c.type !== 'business').length === 0 ? (
-                <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                  <div style={{ fontSize: '36px', marginBottom: '12px' }}>👥</div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No Consultants</h3>
-                  <p style={{ fontSize: '13px', color: '#94a3b8' }}>Add your first consultant to get started</p>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: '12px' }}>
-                  {consultants.filter(c => c.type !== 'business').map((consultant) => {
-                    const consultantCompanies = getConsultantCompanies(consultant.id);
-                    const expanded = selectedConsultantId === consultant.id;
-
-                    return (
-                      <div key={consultant.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
-                        {/* Consultant Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ flex: 1 }}>
-                            <div>
-                              <h3 
-                                onClick={() => {
-                                  // Save current admin user
-                                  setSiteAdminViewingAs(currentUser);
-                                  // Switch to viewing this consultant's dashboard
-                                  setCurrentUser({
-                                    ...consultant.user,
-                                    role: 'consultant',
-                                    consultantId: consultant.id,
-                                    consultantType: consultant.type
-                                  });
-                                  setCurrentView('admin');
-                                }}
-                                style={{ 
-                                  fontSize: '15px', 
-                                  fontWeight: '600', 
-                                  color: '#667eea', 
-                                  marginBottom: '2px',
-                                  cursor: 'pointer',
-                                  textDecoration: 'underline'
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.color = '#5568d3'}
-                                onMouseLeave={(e) => e.currentTarget.style.color = '#667eea'}
-                              >
-                                {consultant.companyName || consultant.fullName}
-                              </h3>
-                              {consultant.companyName && (
-                                <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
-                                  Contact: {consultant.fullName}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              onClick={() => setSelectedConsultantId(expanded ? '' : consultant.id)}
-                              style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                            >
-                              {expanded ? 'Collapse' : 'Expand'}
-                            </button>
-                            <button
-                              onClick={() => {
-                                const displayName = consultant.companyName || consultant.fullName;
-                                if (window.confirm(`Are you sure you want to delete ${displayName}? This action cannot be undone.`)) {
-                                  deleteConsultant(consultant.id);
-                                }
-                              }}
-                              style={{ padding: '6px 12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Expanded Details */}
-                        {expanded && (
-                          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', marginTop: '10px' }}>
-                            {/* Consultant Information */}
-                            <div style={{ marginBottom: '10px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                <h4 style={{ fontSize: '12px', fontWeight: '600', color: '#475569', margin: 0 }}>Consultant Information</h4>
-                                {!editingConsultantInfo[consultant.id] && (
-                                  <button
-                                    onClick={() => {
-                                      setEditingConsultantInfo({
-                                        ...editingConsultantInfo,
-                                        [consultant.id]: {
-                                          fullName: consultant.fullName,
-                                          email: consultant.email,
-                                          address: consultant.address || '',
-                                          phone: consultant.phone || '',
-                                          type: consultant.type || '',
-                                          companyName: consultant.companyName || '',
-                                          companyAddress1: consultant.companyAddress1 || '',
-                                          companyAddress2: consultant.companyAddress2 || '',
-                                          companyCity: consultant.companyCity || '',
-                                          companyState: consultant.companyState || '',
-                                          companyZip: consultant.companyZip || '',
-                                          companyWebsite: consultant.companyWebsite || ''
-                                        }
-                                      });
-                                    }}
-                                    style={{ padding: '3px 8px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                  >
-                                    Edit
-                                  </button>
-                                )}
-                              </div>
-                              
-                              {editingConsultantInfo[consultant.id] ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
-                                    <div>
-                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Contact Person</label>
-                                      <input
-                                        type="text"
-                                        value={editingConsultantInfo[consultant.id].fullName}
-                                        onChange={(e) => setEditingConsultantInfo({
-                                          ...editingConsultantInfo,
-                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], fullName: e.target.value }
-                                        })}
-                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Phone</label>
-                                      <input
-                                        type="text"
-                                        value={editingConsultantInfo[consultant.id].phone}
-                                        onChange={(e) => setEditingConsultantInfo({
-                                          ...editingConsultantInfo,
-                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], phone: e.target.value }
-                                        })}
-                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                      />
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Email</label>
-                                    <input
-                                      type="email"
-                                      value={editingConsultantInfo[consultant.id].email}
-                                      onChange={(e) => setEditingConsultantInfo({
-                                        ...editingConsultantInfo,
-                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], email: e.target.value }
-                                      })}
-                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Company Name</label>
-                                    <input
-                                      type="text"
-                                      value={editingConsultantInfo[consultant.id].companyName || ''}
-                                      onChange={(e) => setEditingConsultantInfo({
-                                        ...editingConsultantInfo,
-                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], companyName: e.target.value }
-                                      })}
-                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                    />
-                                  </div>
-                                  <div style={{ marginTop: '6px' }}>
-                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Company Address</label>
-                                    <input
-                                      type="text"
-                                      placeholder="Address Line 1"
-                                      value={editingConsultantInfo[consultant.id].companyAddress1 || ''}
-                                      onChange={(e) => setEditingConsultantInfo({
-                                        ...editingConsultantInfo,
-                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], companyAddress1: e.target.value }
-                                      })}
-                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px', marginBottom: '4px' }}
-                                    />
-                                    <input
-                                      type="text"
-                                      placeholder="Address Line 2 (Optional)"
-                                      value={editingConsultantInfo[consultant.id].companyAddress2 || ''}
-                                      onChange={(e) => setEditingConsultantInfo({
-                                        ...editingConsultantInfo,
-                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], companyAddress2: e.target.value }
-                                      })}
-                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px', marginBottom: '4px' }}
-                                    />
-                                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '4px' }}>
-                                      <input
-                                        type="text"
-                                        placeholder="City"
-                                        value={editingConsultantInfo[consultant.id].companyCity || ''}
-                                        onChange={(e) => setEditingConsultantInfo({
-                                          ...editingConsultantInfo,
-                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], companyCity: e.target.value }
-                                        })}
-                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                      />
-                                      <select
-                                        value={editingConsultantInfo[consultant.id].companyState || ''}
-                                        onChange={(e) => setEditingConsultantInfo({
-                                          ...editingConsultantInfo,
-                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], companyState: e.target.value }
-                                        })}
-                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px', backgroundColor: 'white' }}
-                                      >
-                                        {US_STATES.map(state => (
-                                          <option key={state.code} value={state.code}>{state.code || 'State'}</option>
-                                        ))}
-                                      </select>
-                                      <input
-                                        type="text"
-                                        placeholder="ZIP"
-                                        value={editingConsultantInfo[consultant.id].companyZip || ''}
-                                        onChange={(e) => setEditingConsultantInfo({
-                                          ...editingConsultantInfo,
-                                          [consultant.id]: { ...editingConsultantInfo[consultant.id], companyZip: e.target.value }
-                                        })}
-                                        maxLength={10}
-                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                      />
-                                    </div>
-                                  </div>
-                                  <div style={{ marginTop: '6px' }}>
-                                    <label style={{ fontSize: '10px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '2px' }}>Company Website</label>
-                                    <input
-                                      type="url"
-                                      value={editingConsultantInfo[consultant.id].companyWebsite || ''}
-                                      onChange={(e) => setEditingConsultantInfo({
-                                        ...editingConsultantInfo,
-                                        [consultant.id]: { ...editingConsultantInfo[consultant.id], companyWebsite: e.target.value }
-                                      })}
-                                      style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                    />
-                                  </div>
-                                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                                    <button
-                                      onClick={() => {
-                                        updateConsultantInfo(consultant.id, editingConsultantInfo[consultant.id]);
-                                      }}
-                                      style={{ padding: '4px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                    >
-                                      Save
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setEditingConsultantInfo((prev) => {
-                                          const newState = { ...prev };
-                                          delete newState[consultant.id];
-                                          return newState;
-                                        });
-                                      }}
-                                      style={{ padding: '4px 12px', background: '#64748b', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', fontSize: '11px', color: '#64748b' }}>
-                                  <div><span style={{ fontWeight: '600' }}>Email:</span> {consultant.email}</div>
-                                  <div><span style={{ fontWeight: '600' }}>Phone:</span> {consultant.phone || 'N/A'}</div>
-                                  <div style={{ gridColumn: '1 / -1' }}><span style={{ fontWeight: '600' }}>Company Name:</span> {consultant.companyName || 'N/A'}</div>
-                                  <div style={{ gridColumn: '1 / -1' }}>
-                                    <span style={{ fontWeight: '600' }}>Company Address:</span> {
-                                      consultant.companyAddress1 ? (
-                                        <>
-                                          {consultant.companyAddress1}
-                                          {consultant.companyAddress2 && `, ${consultant.companyAddress2}`}
-                                          {consultant.companyCity && `, ${consultant.companyCity}`}
-                                          {consultant.companyState && `, ${consultant.companyState}`}
-                                          {consultant.companyZip && ` ${consultant.companyZip}`}
-                                        </>
-                                      ) : 'N/A'
-                                    }
-                                  </div>
-                                  <div style={{ gridColumn: '1 / -1' }}>
-                                    <span style={{ fontWeight: '600' }}>Company Website:</span> {consultant.companyWebsite ? (
-                                      <a 
-                                        href={consultant.companyWebsite.startsWith('http://') || consultant.companyWebsite.startsWith('https://') 
-                                          ? consultant.companyWebsite 
-                                          : `https://${consultant.companyWebsite}`
-                                        } 
-                                        target="_blank" 
-                                        rel="noopener noreferrer" 
-                                        style={{ color: '#667eea', textDecoration: 'underline', marginLeft: '4px' }}
-                                      >
-                                        {consultant.companyWebsite}
-                                      </a>
-                                    ) : 'N/A'}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                              Companies ({consultantCompanies.length})
-                            </h4>
-                            
-                            {consultantCompanies.length === 0 ? (
-                              <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '16px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>
-                                <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>No companies yet</p>
-                              </div>
-                            ) : (
-                              <div style={{ display: 'grid', gap: '8px' }}>
-                                {consultantCompanies.map((company) => {
-                                  const companyUsers = getCompanyUsers(company.id);
-                                  const isCompanyExpanded = expandedCompanyIds.includes(company.id);
-                                  const editing = editingPricing[company.id];
-                                  
-                                  return (
-                                    <div key={company.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', border: '1px solid #e2e8f0' }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '8px' : '0' }}>
-                                        <div style={{ flex: 1 }}>
-                                          <h5 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>{company.name}</h5>
-                                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                                            <span style={{ fontWeight: '600' }}>Industry:</span> {
-                                              company.industrySector 
-                                                ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` 
-                                                : 'Not set'
-                                            }
-                                          </div>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                          <div style={{ fontSize: '11px', fontWeight: '600', color: '#667eea' }}>
-                                            {companyUsers.length} user{companyUsers.length !== 1 ? 's' : ''}
-                                          </div>
-                                          <button
-                                            onClick={() => {
-                                              setExpandedCompanyIds(prev => 
-                                                prev.includes(company.id) 
-                                                  ? prev.filter(id => id !== company.id)
-                                                  : [...prev, company.id]
-                                              );
-                                            }}
-                                            style={{ 
-                                              padding: '4px 10px', 
-                                              background: isCompanyExpanded ? '#f1f5f9' : '#667eea', 
-                                              color: isCompanyExpanded ? '#475569' : 'white', 
-                                              border: 'none', 
-                                              borderRadius: '4px', 
-                                              fontSize: '11px', 
-                                              fontWeight: '600', 
-                                              cursor: 'pointer' 
-                                            }}
-                                          >
-                                            {isCompanyExpanded ? '▲' : '▼'}
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      {/* Expanded Details */}
-                                      {isCompanyExpanded && (
-                                        <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
-                                          {/* Company Address */}
-                                          {(company.addressStreet || company.addressCity) && (
-                                            <div style={{ marginBottom: '8px', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                              <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Address</h6>
-                                              <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                                {company.addressStreet && <div>{company.addressStreet}</div>}
-                                                <div>
-                                                  {company.addressCity && company.addressCity}
-                                                  {company.addressState && `, ${company.addressState}`}
-                                                  {company.addressZip && ` ${company.addressZip}`}
-                                                </div>
-                                                {company.addressCountry && <div>{company.addressCountry}</div>}
-                                              </div>
-                                            </div>
-                                          )}
-                                          
-                                          {/* Subscription Pricing */}
-                                          <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                            <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h6>
-                                            {editing ? (
-                                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-                                                <div>
-                                                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
-                                                  <input
-                                                    type="number"
-                                                    value={editing.monthly}
-                                                    onChange={(e) => setEditingPricing({
-                                                      ...editingPricing,
-                                                      [company.id]: { ...editing, monthly: parseFloat(e.target.value) || 0 }
-                                                    })}
-                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                                  />
-                                                </div>
-                                                <div>
-                                                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Quarterly ($)</label>
-                                                  <input
-                                                    type="number"
-                                                    value={editing.quarterly}
-                                                    onChange={(e) => setEditingPricing({
-                                                      ...editingPricing,
-                                                      [company.id]: { ...editing, quarterly: parseFloat(e.target.value) || 0 }
-                                                    })}
-                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                                  />
-                                                </div>
-                                                <div>
-                                                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Annual ($)</label>
-                                                  <input
-                                                    type="number"
-                                                    value={editing.annual}
-                                                    onChange={(e) => setEditingPricing({
-                                                      ...editingPricing,
-                                                      [company.id]: { ...editing, annual: parseFloat(e.target.value) || 0 }
-                                                    })}
-                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                                  />
-                                                </div>
-                                                <div style={{ display: 'flex', gap: '6px', gridColumn: 'span 3' }}>
-                                                  <button
-                                                    onClick={() => {
-                                                      updateCompanyPricing(company.id, editing);
-                                                    }}
-                                                    style={{ padding: '4px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                                  >
-                                                    Save
-                                                  </button>
-                                                  <button
-                                                    onClick={() => {
-                                                      setEditingPricing((prev) => {
-                                                        const newState = { ...prev };
-                                                        delete newState[company.id];
-                                                        return newState;
-                                                      });
-                                                    }}
-                                                    style={{ padding: '4px 10px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                                  >
-                                                    Cancel
-                                                  </button>
-                                                </div>
-                                              </div>
-                                            ) : (
-                                              <div>
-                                                <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
-                                                  <div><strong>Monthly:</strong> ${company.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
-                                                  <div><strong>Quarterly:</strong> ${company.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
-                                                  <div><strong>Annual:</strong> ${company.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
-                                                </div>
-                                                <button
-                                                  onClick={() => {
-                                                    setEditingPricing({
-                                                      ...editingPricing,
-                                                      [company.id]: {
-                                                        monthly: company.subscriptionMonthlyPrice ?? 0,
-                                                        quarterly: company.subscriptionQuarterlyPrice ?? 0,
-                                                        annual: company.subscriptionAnnualPrice ?? 0
-                                                      }
-                                                    });
-                                                  }}
-                                                  style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                                >
-                                                  Edit Pricing
-                                                </button>
-                                              </div>
-                                            )}
-                                          </div>
-
-                                          {/* Users */}
-                                          {companyUsers.length > 0 && (
-                                            <div>
-                                              <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Users:</h6>
-                                              <div style={{ display: 'grid', gap: '4px' }}>
-                                                {companyUsers.map((user) => (
-                                                  <div key={user.id} style={{ background: 'white', borderRadius: '4px', padding: '6px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <div>
-                                                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#1e293b' }}>{user.name}</div>
-                                                      <div style={{ fontSize: '10px', color: '#64748b' }}>{user.email}</div>
-                                                    </div>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              </>
-              )}
-
-              {/* Businesses Tab */}
-              {siteAdminTab === 'businesses' && (
-                <div>
-                  {/* Businesses List */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                      Total Businesses: {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).length}
-                    </div>
-                    <button
-                      onClick={async () => {
-                        // Identify orphaned business records (businesses without matching companies)
-                        const orphanedBusinesses = consultants.filter(consultant => {
-                          if (consultant.type !== 'business') return false; // Only check business-type consultants
-                          return !companies.some(comp => comp.consultantId === consultant.id); // Orphaned if no company
-                        });
-
-                        if (orphanedBusinesses.length === 0) {
-                          alert('✅ No orphaned business records found!');
-                          return;
-                        }
-
-                        // Confirm deletion
-                        if (!confirm(`Found ${orphanedBusinesses.length} orphaned business record(s).\n\nThese are business registrations without company data.\n\nDelete them permanently from the database?`)) {
-                          return;
-                        }
-
-                        setIsLoading(true);
-                        let deletedCount = 0;
-                        const errors: string[] = [];
-
-                        try {
-                          // Delete each orphaned business from the database
-                          for (const orphaned of orphanedBusinesses) {
-                            try {
-                              await consultantsApi.delete(orphaned.id);
-                              deletedCount++;
-                            } catch (error) {
-                              errors.push(`${orphaned.fullName}: ${error instanceof ApiError ? error.message : 'Failed to delete'}`);
-                            }
-                          }
-
-                          // Update local state to remove deleted consultants
-                          setConsultants(consultants.filter(c => !orphanedBusinesses.find(o => o.id === c.id)));
-
-                          // Show results
-                          if (errors.length === 0) {
-                            alert(`✅ Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
-                          } else {
-                            alert(`⚠️ Deleted ${deletedCount} of ${orphanedBusinesses.length} records.\n\nErrors:\n${errors.join('\n')}`);
-                          }
-                        } catch (error) {
-                          alert(`❌ Error during cleanup: ${error instanceof ApiError ? error.message : 'Unknown error'}`);
-                        } finally {
-                          setIsLoading(false);
-                        }
-                      }}
-                      disabled={isLoading}
-                      style={{
-                        padding: '6px 12px',
-                        background: isLoading ? '#94a3b8' : '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        fontWeight: '600',
-                        cursor: isLoading ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        opacity: isLoading ? 0.6 : 1
-                      }}
-                    >
-                      {isLoading ? '⏳ Cleaning...' : '🔄 Clean Up Orphaned Records'}
-                    </button>
-                  </div>
-
-                  {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).length === 0 ? (
-                    <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                      <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
-                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses registered yet</h3>
-                      <p style={{ fontSize: '13px', color: '#94a3b8' }}>Businesses will appear here once they register</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).map((business) => {
-                        const businessCompany = Array.isArray(companies) ? companies.find(comp => comp.consultantId === business.id) : undefined;
-                        const isExpanded = expandedBusinessIds.has(business.id);
-                        const editing = editingPricing[business.id];
-                        
-                        return (
-                          <div key={business.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
-                            {/* Business Header */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <h3 
-                                    onClick={() => {
-                                      // Save current admin user
-                                      setSiteAdminViewingAs(currentUser);
-                                      // Switch to viewing this business's dashboard
-                                      setCurrentUser({
-                                        ...business.user,
-                                        role: 'consultant',
-                                        consultantId: business.id,
-                                        consultantType: business.type
-                                      });
-                                      setCurrentView('admin');
-                                    }}
-                                    style={{ 
-                                      fontSize: '15px', 
-                                      fontWeight: '600', 
-                                      color: '#667eea', 
-                                      margin: 0,
-                                      cursor: 'pointer',
-                                      textDecoration: 'underline'
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.color = '#5568d3'}
-                                    onMouseLeave={(e) => e.currentTarget.style.color = '#667eea'}
-                                  >
-                                    {business.fullName}
-                                  </h3>
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                <button
-                                  onClick={() => {
-                                    setExpandedBusinessIds(prev => {
-                                      const newSet = new Set(prev);
-                                      if (newSet.has(business.id)) {
-                                        newSet.delete(business.id);
-                                      } else {
-                                        newSet.add(business.id);
-                                      }
-                                      return newSet;
-                                    });
-                                  }}
-                                  style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                                >
-                                  {isExpanded ? 'Collapse' : 'Expand'}
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    console.log('Delete button clicked', { businessCompany, business });
-                                    if (businessCompany) {
-                                      console.log('Setting company to delete:', businessCompany.name);
-                                      setCompanyToDelete({
-                                        companyId: businessCompany.id,
-                                        businessId: business.id,
-                                        companyName: businessCompany.name
-                                      });
-                                      setShowDeleteConfirmation(true);
-                                    } else {
-                                      console.log('No company found - showing alert');
-                                      alert('No company found for this business');
-                                    }
-                                  }}
-                                  style={{ 
-                                    padding: '6px 12px', 
-                                    background: '#ef4444', 
-                                    color: 'white', 
-                                    border: 'none', 
-                                    borderRadius: '6px', 
-                                    fontSize: '12px', 
-                                    fontWeight: '600', 
-                                    cursor: 'pointer',
-                                    transition: 'background 0.2s'
-                                  }}
-                                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Expanded Details */}
-                            {isExpanded && (
-                              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '10px', paddingTop: '10px' }}>
-
-                                {/* Business Information */}
-                                <div style={{ marginBottom: '8px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
-                                  <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Business Information</h4>
-                                  <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                    <div><strong>Type:</strong> {business.type}</div>
-                                    <div><strong>Email:</strong> {business.user?.email}</div>
-                                    <div><strong>Phone:</strong> {business.phone || 'Not provided'}</div>
-                                    <div><strong>Address:</strong> {
-                                      businessCompany && (businessCompany.addressStreet || businessCompany.addressCity) ? (
-                                        <>
-                                          {businessCompany.addressStreet && <>{businessCompany.addressStreet}<br /></>}
-                                          {businessCompany.addressCity && businessCompany.addressCity}
-                                          {businessCompany.addressState && `, ${businessCompany.addressState}`}
-                                          {businessCompany.addressZip && ` ${businessCompany.addressZip}`}
-                                          {businessCompany.addressCountry && <><br />{businessCompany.addressCountry}</>}
-                                        </>
-                                      ) : 'Not provided'
-                                    }</div>
-                                  </div>
-                                </div>
-
-                                {/* Company Details */}
-                                {businessCompany && (
-                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#f0f9ff', borderRadius: '6px' }}>
-                                    <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Company Details</h4>
-                                    <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                      <div><strong>Company Name:</strong> {businessCompany.name}</div>
-                                      <div><strong>Industry:</strong> {businessCompany.industrySector || 'Not set'}</div>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Subscription Pricing */}
-                                <div style={{ padding: '8px', background: '#fef3c7', borderRadius: '6px' }}>
-                                  <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h4>
-                                  {editing ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-                                      <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
-                                        <input
-                                          type="number"
-                                          value={editing.monthly}
-                                          onChange={(e) => setEditingPricing({
-                                            ...editingPricing,
-                                            [business.id]: { ...editing, monthly: parseFloat(e.target.value) || 0 }
-                                          })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                        />
-                                      </div>
-                                      <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Quarterly ($)</label>
-                                        <input
-                                          type="number"
-                                          value={editing.quarterly}
-                                          onChange={(e) => setEditingPricing({
-                                            ...editingPricing,
-                                            [business.id]: { ...editing, quarterly: parseFloat(e.target.value) || 0 }
-                                          })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                        />
-                                      </div>
-                                      <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Annual ($)</label>
-                                        <input
-                                          type="number"
-                                          value={editing.annual}
-                                          onChange={(e) => setEditingPricing({
-                                            ...editingPricing,
-                                            [business.id]: { ...editing, annual: parseFloat(e.target.value) || 0 }
-                                          })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
-                                        />
-                                      </div>
-                                      <button
-                                        onClick={() => {
-                                          if (businessCompany) {
-                                            updateCompanyPricing(businessCompany.id, editing);
-                                          }
-                                        }}
-                                        style={{ padding: '4px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                      >
-                                        Save
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setEditingPricing((prev) => {
-                                            const newState = { ...prev };
-                                            delete newState[business.id];
-                                            return newState;
-                                          });
-                                        }}
-                                        style={{ padding: '4px 10px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div>
-                                      <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
-                                        <div><strong>Monthly:</strong> ${businessCompany?.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
-                                        <div><strong>Quarterly:</strong> ${businessCompany?.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
-                                        <div><strong>Annual:</strong> ${businessCompany?.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
-                                      </div>
-                                      <button
-                                        onClick={() => {
-                                          setEditingPricing({
-                                            ...editingPricing,
-                                            [business.id]: {
-                                              monthly: businessCompany?.subscriptionMonthlyPrice ?? 0,
-                                              quarterly: businessCompany?.subscriptionQuarterlyPrice ?? 0,
-                                              annual: businessCompany?.subscriptionAnnualPrice ?? 0
-                                            }
-                                          });
-                                        }}
-                                        style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
-                                      >
-                                        Edit Pricing
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Affiliates Tab */}
-              {siteAdminTab === 'affiliates' && (
-                <div>
-                  {/* Add Affiliate Button */}
-                  <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                      Affiliate Partners ({affiliates.length})
-                    </h2>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {affiliates.length > 0 && (
-                        <button
-                          onClick={() => {
-                            if (expandedAffiliateId) {
-                              setExpandedAffiliateId(null);
-                            } else {
-                              // Expand the first one as a sample
-                              setExpandedAffiliateId(affiliates[0]?.id || null);
-                            }
-                          }}
-                          style={{
-                            padding: '10px 16px',
-                            background: '#94a3b8',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            fontSize: '14px',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {expandedAffiliateId ? 'Collapse All' : 'Expand All'}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          if (showAddAffiliateForm) {
-                            setShowAddAffiliateForm(false);
-                            setEditingAffiliate(null);
-                          } else {
-                            setShowAddAffiliateForm(true);
-                            setEditingAffiliate({
-                              name: '',
-                              contactName: '',
-                              contactEmail: '',
-                              contactPhone: '',
-                              address: '',
-                              city: '',
-                              state: '',
-                              zip: '',
-                              website: '',
-                              isActive: true
-                            });
-                          }
-                        }}
-                        style={{
-                          padding: '10px 16px',
-                          background: showAddAffiliateForm ? '#94a3b8' : '#667eea',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '8px',
-                          fontSize: '14px',
-                          fontWeight: '600',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {showAddAffiliateForm ? 'Cancel' : '+ Add Affiliate'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Add/Edit Affiliate Form */}
-                  {(showAddAffiliateForm || editingAffiliate) && (
-                    <div style={{ background: 'white', borderRadius: '8px', padding: '16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '2px solid #667eea' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                        {editingAffiliate?.id ? 'Edit Affiliate' : 'Add New Affiliate'}
-                      </h3>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                        {/* Left Column */}
-                        <div>
-                          <div style={{ marginBottom: '8px' }}>
-                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                              Affiliate Name *
-                            </label>
-                            <input
-                              type="text"
-                              value={editingAffiliate?.name || ''}
-                              onChange={(e) => setEditingAffiliate({...editingAffiliate, name: e.target.value})}
-                              placeholder="e.g., ABC Partnership"
-                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                            />
-                          </div>
-                          <div style={{ marginBottom: '8px' }}>
-                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                              Contact Name
-                            </label>
-                            <input
-                              type="text"
-                              value={editingAffiliate?.contactName || ''}
-                              onChange={(e) => setEditingAffiliate({...editingAffiliate, contactName: e.target.value})}
-                              placeholder="Contact person"
-                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                            />
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                            <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                Email
-                              </label>
-                              <input
-                                type="email"
-                                value={editingAffiliate?.contactEmail || ''}
-                                onChange={(e) => setEditingAffiliate({...editingAffiliate, contactEmail: e.target.value})}
-                                placeholder="email@example.com"
-                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                              />
-                            </div>
-                            <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                Phone
-                              </label>
-                              <input
-                                type="tel"
-                                value={editingAffiliate?.contactPhone || ''}
-                                onChange={(e) => setEditingAffiliate({...editingAffiliate, contactPhone: e.target.value})}
-                                placeholder="(555) 123-4567"
-                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Right Column */}
-                        <div>
-                          <div style={{ marginBottom: '8px' }}>
-                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                              Street Address
-                            </label>
-                            <input
-                              type="text"
-                              value={editingAffiliate?.address || ''}
-                              onChange={(e) => setEditingAffiliate({...editingAffiliate, address: e.target.value})}
-                              placeholder="123 Main St"
-                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                            />
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 70px 90px', gap: '8px', marginBottom: '8px' }}>
-                            <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                City
-                              </label>
-                              <input
-                                type="text"
-                                value={editingAffiliate?.city || ''}
-                                onChange={(e) => setEditingAffiliate({...editingAffiliate, city: e.target.value})}
-                                placeholder="City"
-                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                              />
-                            </div>
-                            <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                State
-                              </label>
-                              <input
-                                type="text"
-                                value={editingAffiliate?.state || ''}
-                                onChange={(e) => setEditingAffiliate({...editingAffiliate, state: e.target.value})}
-                                placeholder="ST"
-                                maxLength={2}
-                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', textTransform: 'uppercase' }}
-                              />
-                            </div>
-                            <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                ZIP
-                              </label>
-                              <input
-                                type="text"
-                                value={editingAffiliate?.zip || ''}
-                                onChange={(e) => setEditingAffiliate({...editingAffiliate, zip: e.target.value})}
-                                placeholder="12345"
-                                maxLength={10}
-                                style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                              />
-                            </div>
-                          </div>
-                          <div style={{ marginBottom: '8px' }}>
-                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                              Website
-                            </label>
-                            <input
-                              type="text"
-                              value={editingAffiliate?.website || ''}
-                              onChange={(e) => setEditingAffiliate({...editingAffiliate, website: e.target.value})}
-                              placeholder="www.example.com"
-                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Status */}
-                      <div style={{ marginBottom: '12px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={editingAffiliate?.isActive !== false}
-                            onChange={(e) => setEditingAffiliate({...editingAffiliate, isActive: e.target.checked})}
-                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                          />
-                          <span style={{ fontSize: '12px', fontWeight: '500', color: '#475569' }}>
-                            Active (can be selected during registration)
-                          </span>
-                        </label>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
-                        <button
-                          onClick={() => {
-                            setEditingAffiliate(null);
-                            setShowAddAffiliateForm(false);
-                          }}
-                          style={{ padding: '6px 16px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (!editingAffiliate?.name) {
-                              alert('Please enter an affiliate name');
-                              return;
-                            }
-
-                            try {
-                              const method = editingAffiliate.id ? 'PUT' : 'POST';
-                              const response = await fetch('/api/affiliates', {
-                                method,
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(editingAffiliate)
-                              });
-
-                              const data = await response.json();
-                              if (!response.ok) {
-                                alert(data.error || 'Failed to save affiliate');
-                                return;
-                              }
-
-                              // Reload affiliates
-                              const affiliatesResponse = await fetch('/api/affiliates');
-                              const affiliatesData = await affiliatesResponse.json();
-                              if (affiliatesData.affiliates) {
-                                setAffiliates(affiliatesData.affiliates);
-                              }
-
-                              setEditingAffiliate(null);
-                              setShowAddAffiliateForm(false);
-                              alert(editingAffiliate.id ? 'Affiliate updated successfully!' : 'Affiliate created successfully!');
-                            } catch (error) {
-                              console.error('Error saving affiliate:', error);
-                              alert('Failed to save affiliate');
-                            }
-                          }}
-                          style={{ padding: '6px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
-                        >
-                          {editingAffiliate?.id ? 'Update Affiliate' : 'Create Affiliate'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Affiliates List */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {affiliates.length === 0 ? (
-                      <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', color: '#64748b' }}>
-                        <p style={{ fontSize: '16px', marginBottom: '8px' }}>No affiliates yet</p>
-                        <p style={{ fontSize: '14px' }}>Click "Add Affiliate" to create your first affiliate partner</p>
-                      </div>
-                    ) : (
-                      affiliates.map((affiliate: any) => (
-                        <div key={affiliate.id} style={{ background: 'white', borderRadius: '8px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                                  {affiliate.name}
-                                </h3>
-                                {!affiliate.isActive && (
-                                  <span style={{ padding: '4px 8px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
-                                    INACTIVE
-                                  </span>
-                                )}
-                                <span style={{ padding: '4px 8px', background: '#f0fdf4', color: '#15803d', border: '1px solid #86efac', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
-                                  {affiliate._count.companies} Business{affiliate._count.companies !== 1 ? 'es' : ''}
-                                </span>
-                                <span style={{ padding: '4px 8px', background: '#eff6ff', color: '#1e40af', border: '1px solid #93c5fd', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
-                                  {affiliate.codes?.length || 0} Code{affiliate.codes?.length !== 1 ? 's' : ''}
-                                </span>
-                              </div>
-                              
-                              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
-                                {affiliate.contactName && <div>Contact: {affiliate.contactName}</div>}
-                                {affiliate.contactEmail && <div>Email: {affiliate.contactEmail}</div>}
-                                {affiliate.contactPhone && <div>Phone: {affiliate.contactPhone}</div>}
-                              </div>
-
-                              <button
-                                onClick={() => setExpandedAffiliateId(expandedAffiliateId === affiliate.id ? null : affiliate.id)}
-                                style={{ padding: '6px 12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                              >
-                                {expandedAffiliateId === affiliate.id ? '▼ Hide Details' : '▶ See Codes & Pricing'}
-                              </button>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <button
-                                onClick={() => {
-                                  setEditingAffiliate(affiliate);
-                                  setShowAddAffiliateForm(false);
-                                  setExpandedAffiliateId(null); // Close any expanded details
-                                  // Scroll to top to show the edit form
-                                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                                }}
-                                style={{ padding: '8px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  if (!confirm(`Delete affiliate "${affiliate.name}"? This cannot be undone.`)) return;
-                                  
-                                  try {
-                                    const response = await fetch(`/api/affiliates?id=${affiliate.id}`, {
-                                      method: 'DELETE'
-                                    });
-                                    
-                                    const data = await response.json();
-                                    if (!response.ok) {
-                                      alert(data.error || 'Failed to delete affiliate');
-                                      return;
-                                    }
-
-                                    // Reload affiliates
-                                    const affiliatesResponse = await fetch('/api/affiliates');
-                                    const affiliatesData = await affiliatesResponse.json();
-                                    if (affiliatesData.affiliates) {
-                                      setAffiliates(affiliatesData.affiliates);
-                                    }
-                                    alert('Affiliate deleted successfully!');
-                                  } catch (error) {
-                                    console.error('Error deleting affiliate:', error);
-                                    alert('Failed to delete affiliate');
-                                  }
-                                }}
-                                style={{ padding: '8px 12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Expanded Details */}
-                          {expandedAffiliateId === affiliate.id && (
-                            <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
-                              {/* Affiliate Codes Management */}
-                              <div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                  <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Affiliate Codes</h4>
-                                </div>
-
-                                {/* Add New Code Form */}
-                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                                  {/* Row 1: Code Info */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 80px 120px', gap: '8px', marginBottom: '8px' }}>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Code *
-                                      </label>
-                                      <input
-                                        type="text"
-                                        value={newAffiliateCode.code}
-                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, code: e.target.value.toUpperCase()})}
-                                        placeholder="PROMO2025"
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Description
-                                      </label>
-                                      <input
-                                        type="text"
-                                        value={newAffiliateCode.description}
-                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, description: e.target.value})}
-                                        placeholder="Optional"
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Max Uses
-                                      </label>
-                                      <input
-                                        type="number"
-                                        value={newAffiliateCode.maxUses}
-                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, maxUses: e.target.value})}
-                                        placeholder="∞"
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Expires
-                                      </label>
-                                      <input
-                                        type="date"
-                                        value={newAffiliateCode.expiresAt}
-                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, expiresAt: e.target.value})}
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
-                                      />
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Row 2: Pricing & Button */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Monthly ($) *
-                                      </label>
-                                      <input
-                                        type="number"
-                                        value={newAffiliateCode.monthlyPrice || ''}
-                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, monthlyPrice: e.target.value})}
-                                        placeholder="0.00"
-                                        step="0.01"
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Quarterly ($) *
-                                      </label>
-                                      <input
-                                        type="number"
-                                        value={newAffiliateCode.quarterlyPrice || ''}
-                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, quarterlyPrice: e.target.value})}
-                                        placeholder="0.00"
-                                        step="0.01"
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Annual ($) *
-                                      </label>
-                                      <input
-                                        type="number"
-                                        value={newAffiliateCode.annualPrice || ''}
-                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, annualPrice: e.target.value})}
-                                        placeholder="0.00"
-                                        step="0.01"
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
-                                      />
-                                    </div>
-                                    <button
-                                      onClick={async () => {
-                                        if (!newAffiliateCode.code) {
-                                          alert('Please enter a code');
-                                          return;
-                                        }
-                                        if (!newAffiliateCode.monthlyPrice || !newAffiliateCode.quarterlyPrice || !newAffiliateCode.annualPrice) {
-                                          alert('Please enter all pricing fields');
-                                          return;
-                                        }
-
-                                        try {
-                                          const response = await fetch('/api/affiliates/codes', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({
-                                              affiliateId: affiliate.id,
-                                              code: newAffiliateCode.code,
-                                              description: newAffiliateCode.description || null,
-                                              monthlyPrice: parseFloat(newAffiliateCode.monthlyPrice),
-                                              quarterlyPrice: parseFloat(newAffiliateCode.quarterlyPrice),
-                                              annualPrice: parseFloat(newAffiliateCode.annualPrice),
-                                              maxUses: newAffiliateCode.maxUses ? parseInt(newAffiliateCode.maxUses) : null,
-                                              expiresAt: newAffiliateCode.expiresAt || null
-                                            })
-                                          });
-
-                                          const data = await response.json();
-                                          if (!response.ok) {
-                                            alert(data.error || 'Failed to create code');
-                                            return;
-                                          }
-
-                                          // Reload affiliates
-                                          const affiliatesResponse = await fetch('/api/affiliates');
-                                          const affiliatesData = await affiliatesResponse.json();
-                                          if (affiliatesData.affiliates) {
-                                            setAffiliates(affiliatesData.affiliates);
-                                          }
-
-                                          setNewAffiliateCode({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
-                                          alert('Code created successfully!');
-                                        } catch (error) {
-                                          console.error('Error creating code:', error);
-                                          alert('Failed to create code');
-                                        }
-                                      }}
-                                      style={{ padding: '6px 12px', background: '#22c55e', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                                    >
-                                      + Add Code
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Codes List */}
-                                {affiliate.codes && affiliate.codes.length > 0 ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    {affiliate.codes.map((code: any) => (
-                                      <div key={code.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div style={{ flex: 1 }}>
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                            <span style={{ fontFamily: 'monospace', fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
-                                              {code.code}
-                                            </span>
-                                            {!code.isActive && (
-                                              <span style={{ padding: '2px 6px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '10px', fontWeight: '600' }}>
-                                                INACTIVE
-                                              </span>
-                                            )}
-                                            {code.expiresAt && new Date(code.expiresAt) < new Date() && (
-                                              <span style={{ padding: '2px 6px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '10px', fontWeight: '600' }}>
-                                                EXPIRED
-                                              </span>
-                                            )}
-                                          </div>
-                                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                                            {code.description && <span>{code.description} • </span>}
-                                            <span>Uses: {code.currentUses}{code.maxUses ? `/${code.maxUses}` : ''}</span>
-                                            {code.expiresAt && <span> • Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>}
-                                          </div>
-                                          <div style={{ fontSize: '11px', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>
-                                            Pricing: ${code.monthlyPrice}/mo • ${code.quarterlyPrice}/qtr • ${code.annualPrice}/yr
-                                          </div>
-                                        </div>
-                                        <button
-                                          onClick={async () => {
-                                            if (!confirm(`Delete code "${code.code}"?`)) return;
-                                            
-                                            try {
-                                              const response = await fetch(`/api/affiliates/codes?id=${code.id}`, {
-                                                method: 'DELETE'
-                                              });
-                                              
-                                              if (!response.ok) {
-                                                const data = await response.json();
-                                                alert(data.error || 'Failed to delete code');
-                                                return;
-                                              }
-
-                                              // Reload affiliates
-                                              const affiliatesResponse = await fetch('/api/affiliates');
-                                              const affiliatesData = await affiliatesResponse.json();
-                                              if (affiliatesData.affiliates) {
-                                                setAffiliates(affiliatesData.affiliates);
-                                              }
-                                            } catch (error) {
-                                              console.error('Error deleting code:', error);
-                                              alert('Failed to delete code');
-                                            }
-                                          }}
-                                          style={{ padding: '4px 8px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div style={{ textAlign: 'center', padding: '20px', color: '#64748b', fontSize: '13px' }}>
-                                    No codes yet. Add a code above.
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Default Pricing Tab */}
-              {siteAdminTab === 'default-pricing' && (
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Default Subscription Pricing</h2>
-                  <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
-                    Set default pricing for new businesses and consultants. You can still customize pricing for individual companies.
-                  </p>
-
-                  {/* Business Default Pricing */}
-                  <div style={{ background: '#eff6ff', border: '2px solid #3b82f6', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e40af', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      🏢 Default Business Pricing
-                    </h3>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                          Monthly Price ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={defaultBusinessMonthlyPrice}
-                          onChange={(e) => setDefaultBusinessMonthlyPrice(parseFloat(e.target.value) || 0)}
-                          placeholder="195.00"
-                          step="0.01"
-                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                        />
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Billed monthly</div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                          Quarterly Price ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={defaultBusinessQuarterlyPrice}
-                          onChange={(e) => setDefaultBusinessQuarterlyPrice(parseFloat(e.target.value) || 0)}
-                          placeholder="500.00"
-                          step="0.01"
-                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                        />
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Billed every 3 months</div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                          Annual Price ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={defaultBusinessAnnualPrice}
-                          onChange={(e) => setDefaultBusinessAnnualPrice(parseFloat(e.target.value) || 0)}
-                          placeholder="1750.00"
-                          step="0.01"
-                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                        />
-                        <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={async () => {
-                        try {
-                          const response = await fetch('/api/settings', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              businessMonthlyPrice: defaultBusinessMonthlyPrice,
-                              businessQuarterlyPrice: defaultBusinessQuarterlyPrice,
-                              businessAnnualPrice: defaultBusinessAnnualPrice,
-                              consultantMonthlyPrice: defaultConsultantMonthlyPrice,
-                              consultantQuarterlyPrice: defaultConsultantQuarterlyPrice,
-                              consultantAnnualPrice: defaultConsultantAnnualPrice
-                            })
-                          });
-                          
-                          if (response.ok) {
-                            alert(`✅ Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
-                          } else {
-                            alert('❌ Failed to save pricing. Please try again.');
-                          }
-                        } catch (error) {
-                          console.error('Error saving pricing:', error);
-                          alert('❌ Error saving pricing. Please try again.');
-                        }
-                      }}
-                      style={{
-                        padding: '12px 24px',
-                        background: '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 4px rgba(59, 130, 246, 0.3)'
-                      }}
-                    >
-                      💾 Save Business Defaults
-                    </button>
-                  </div>
-
-                  {/* Consultant Default Pricing */}
-                  <div style={{ background: '#f0fdf4', border: '2px solid #10b981', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      👥 Default Consultant Pricing
-                    </h3>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                          Monthly Price ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={defaultConsultantMonthlyPrice}
-                          onChange={(e) => setDefaultConsultantMonthlyPrice(parseFloat(e.target.value) || 0)}
-                          placeholder="195.00"
-                          step="0.01"
-                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                        />
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Billed monthly</div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                          Quarterly Price ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={defaultConsultantQuarterlyPrice}
-                          onChange={(e) => setDefaultConsultantQuarterlyPrice(parseFloat(e.target.value) || 0)}
-                          placeholder="500.00"
-                          step="0.01"
-                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                        />
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Billed every 3 months</div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                          Annual Price ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={defaultConsultantAnnualPrice}
-                          onChange={(e) => setDefaultConsultantAnnualPrice(parseFloat(e.target.value) || 0)}
-                          placeholder="1750.00"
-                          step="0.01"
-                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                        />
-                        <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={async () => {
-                        try {
-                          const response = await fetch('/api/settings', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              businessMonthlyPrice: defaultBusinessMonthlyPrice,
-                              businessQuarterlyPrice: defaultBusinessQuarterlyPrice,
-                              businessAnnualPrice: defaultBusinessAnnualPrice,
-                              consultantMonthlyPrice: defaultConsultantMonthlyPrice,
-                              consultantQuarterlyPrice: defaultConsultantQuarterlyPrice,
-                              consultantAnnualPrice: defaultConsultantAnnualPrice
-                            })
-                          });
-                          
-                          if (response.ok) {
-                            alert(`✅ Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
-                          } else {
-                            alert('❌ Failed to save pricing. Please try again.');
-                          }
-                        } catch (error) {
-                          console.error('Error saving pricing:', error);
-                          alert('❌ Error saving pricing. Please try again.');
-                        }
-                      }}
-                      style={{
-                        padding: '12px 24px',
-                        background: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)'
-                      }}
-                    >
-                      💾 Save Consultant Defaults
-                    </button>
-                  </div>
-
-                  <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '12px', padding: '16px' }}>
-                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      💡 How It Works
-                    </h4>
-                    <ul style={{ fontSize: '13px', color: '#78350f', marginLeft: '20px', marginBottom: '0' }}>
-                      <li style={{ marginBottom: '6px' }}>Business defaults apply when creating companies in the <strong>Businesses</strong> tab</li>
-                      <li style={{ marginBottom: '6px' }}>Consultant defaults apply when creating companies in the <strong>Consultants</strong> tab</li>
-                      <li style={{ marginBottom: '6px' }}>You can override pricing for any individual company at any time</li>
-                      <li>Existing company pricing will not be affected by changes to defaults</li>
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              {/* Site Administrators Tab */}
-              {siteAdminTab === 'siteadmins' && (
-              <>
-              {/* Add Site Admin Form */}
-              <div style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showAddSiteAdminForm ? '12px' : '0' }}>
-                  <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Add New Site Administrator</h2>
-                  <button
-                    onClick={() => setShowAddSiteAdminForm(!showAddSiteAdminForm)}
-                    style={{ 
-                      padding: '4px 12px', 
-                      background: showAddSiteAdminForm ? '#f1f5f9' : '#667eea', 
-                      color: showAddSiteAdminForm ? '#475569' : 'white', 
-                      border: 'none', 
-                      borderRadius: '6px', 
-                      fontSize: '12px', 
-                      fontWeight: '600', 
-                      cursor: 'pointer' 
-                    }}
-                  >
-                    {showAddSiteAdminForm ? '▲' : '▼'}
-                  </button>
-                </div>
-                {showAddSiteAdminForm && (
-                  <>
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                        <input
-                          type="text"
-                          placeholder="First Name *"
-                          value={newSiteAdminFirstName}
-                          onChange={(e) => setNewSiteAdminFirstName(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Last Name *"
-                          value={newSiteAdminLastName}
-                          onChange={(e) => setNewSiteAdminLastName(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="email"
-                          placeholder="Email *"
-                          value={newSiteAdminEmail}
-                          onChange={(e) => setNewSiteAdminEmail(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <div>
-                          <input
-                            type="password"
-                            placeholder="Password *"
-                            value={newSiteAdminPassword}
-                            onChange={(e) => setNewSiteAdminPassword(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', width: '100%' }}
-                          />
-                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', lineHeight: '1.4' }}>
-                            Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={async () => {
-                        if (!newSiteAdminFirstName || !newSiteAdminLastName || !newSiteAdminEmail || !newSiteAdminPassword) {
-                          alert('Please fill in all required fields');
-                          return;
-                        }
-                        
-                        setIsLoading(true);
-                        try {
-                          const response = await fetch('/api/siteadmins', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              firstName: newSiteAdminFirstName,
-                              lastName: newSiteAdminLastName,
-                              email: newSiteAdminEmail,
-                              password: newSiteAdminPassword,
-                            }),
-                          });
-
-                          if (response.ok) {
-                            const newAdmin = await response.json();
-                            setSiteAdmins([...siteAdmins, newAdmin]);
-                            setNewSiteAdminFirstName('');
-                            setNewSiteAdminLastName('');
-                            setNewSiteAdminEmail('');
-                            setNewSiteAdminPassword('');
-                            setShowAddSiteAdminForm(false);
-                            alert('✅ Site administrator added successfully!');
-                          } else {
-                            const error = await response.json();
-                            if (error.error && error.error.includes('Password does not meet requirements')) {
-                              alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
-                            } else {
-                              alert(`❌ Failed to add site administrator: ${error.error || 'Unknown error'}`);
-                            }
-                          }
-                        } catch (error) {
-                          console.error('Error adding site administrator:', error);
-                          alert('❌ Error adding site administrator. Please try again.');
-                        } finally {
-                          setIsLoading(false);
-                        }
-                      }}
-                      disabled={isLoading}
-                      style={{ 
-                        padding: '8px 20px', 
-                        background: isLoading ? '#94a3b8' : '#10b981', 
-                        color: 'white', 
-                        border: 'none', 
-                        borderRadius: '6px', 
-                        fontSize: '13px', 
-                        fontWeight: '600', 
-                        cursor: isLoading ? 'not-allowed' : 'pointer',
-                        opacity: isLoading ? 0.6 : 1
-                      }}
-                    >
-                      {isLoading ? 'Adding...' : 'Add Site Administrator'}
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* Site Admins List */}
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Site Administrators ({siteAdmins.length})</h2>
-                
-                {siteAdmins.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>👥</div>
-                    <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>No site administrators yet</p>
-                    <p style={{ fontSize: '14px' }}>Add a new site administrator to get started</p>
-                  </div>
-                ) : (
-                  <div style={{ display: 'grid', gap: '12px' }}>
-                    {siteAdmins.map((admin: any) => (
-                      <div
-                        key={admin.id}
-                        style={{
-                          background: '#f8fafc',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: '8px',
-                          padding: '16px',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-                            {admin.name}
-                          </div>
-                          <div style={{ fontSize: '13px', color: '#64748b' }}>
-                            {admin.email}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            onClick={async () => {
-                              if (!confirm(`Are you sure you want to delete site administrator "${admin.name}"?`)) {
-                                return;
-                              }
-                              
-                              try {
-                                const response = await fetch(`/api/siteadmins?id=${admin.id}`, {
-                                  method: 'DELETE',
-                                });
-
-                                if (response.ok) {
-                                  setSiteAdmins(siteAdmins.filter((a: any) => a.id !== admin.id));
-                                  alert('✅ Site administrator deleted successfully!');
-                                } else {
-                                  alert('❌ Failed to delete site administrator');
-                                }
-                              } catch (error) {
-                                console.error('Error deleting site administrator:', error);
-                                alert('❌ Error deleting site administrator');
-                              }
-                            }}
-                            style={{
-                              padding: '6px 12px',
-                              background: '#ef4444',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              </>
-              )}
-            </div>
+            <SiteAdminDashboard
+              siteAdminTab={siteAdminTab}
+              setSiteAdminTab={setSiteAdminTab}
+              consultants={consultants}
+              siteAdmins={siteAdmins}
+              selectedConsultantId={selectedConsultantId}
+              setSelectedConsultantId={setSelectedConsultantId}
+              expandedCompanyIds={expandedCompanyIds}
+              setExpandedCompanyIds={setExpandedCompanyIds}
+              showAddConsultantForm={showAddConsultantForm}
+              setShowAddConsultantForm={setShowAddConsultantForm}
+              newConsultantType={newConsultantType}
+              setNewConsultantType={setNewConsultantType}
+              newConsultantFullName={newConsultantFullName}
+              setNewConsultantFullName={setNewConsultantFullName}
+              newConsultantEmail={newConsultantEmail}
+              setNewConsultantEmail={setNewConsultantEmail}
+              newConsultantPhone={newConsultantPhone}
+              setNewConsultantPhone={setNewConsultantPhone}
+              newConsultantPassword={newConsultantPassword}
+              setNewConsultantPassword={setNewConsultantPassword}
+              newConsultantAddress={newConsultantAddress}
+              setNewConsultantAddress={setNewConsultantAddress}
+              newConsultantCompanyName={newConsultantCompanyName}
+              setNewConsultantCompanyName={setNewConsultantCompanyName}
+              newConsultantCompanyAddress1={newConsultantCompanyAddress1}
+              setNewConsultantCompanyAddress1={setNewConsultantCompanyAddress1}
+              newConsultantCompanyAddress2={newConsultantCompanyAddress2}
+              setNewConsultantCompanyAddress2={setNewConsultantCompanyAddress2}
+              newConsultantCompanyCity={newConsultantCompanyCity}
+              setNewConsultantCompanyCity={setNewConsultantCompanyCity}
+              newConsultantCompanyState={newConsultantCompanyState}
+              setNewConsultantCompanyState={setNewConsultantCompanyState}
+              newConsultantCompanyZip={newConsultantCompanyZip}
+              setNewConsultantCompanyZip={setNewConsultantCompanyZip}
+              newConsultantCompanyWebsite={newConsultantCompanyWebsite}
+              setNewConsultantCompanyWebsite={setNewConsultantCompanyWebsite}
+              addConsultant={addConsultant}
+              deleteConsultant={deleteConsultant}
+              viewAsConsultant={viewAsConsultant}
+              setCurrentUser={setCurrentUser}
+              setSiteAdminViewingAs={setSiteAdminViewingAs}
+              setCurrentView={setCurrentView}
+              currentUser={currentUser}
+              newSiteAdminFirstName={newSiteAdminFirstName}
+              setNewSiteAdminFirstName={setNewSiteAdminFirstName}
+              newSiteAdminLastName={newSiteAdminLastName}
+              setNewSiteAdminLastName={setNewSiteAdminLastName}
+              newSiteAdminEmail={newSiteAdminEmail}
+              setNewSiteAdminEmail={setNewSiteAdminEmail}
+              newSiteAdminPassword={newSiteAdminPassword}
+              setNewSiteAdminPassword={setNewSiteAdminPassword}
+              showAddSiteAdminForm={showAddSiteAdminForm}
+              setShowAddSiteAdminForm={setShowAddSiteAdminForm}
+              addSiteAdmin={addSiteAdmin}
+              deleteSiteAdmin={deleteSiteAdmin}
+            />
           )}
 
           {/* Consultant Dashboard */}
@@ -6527,7 +4523,7 @@ export default function FinancialScorePage() {
                   gap: '8px'
                 }}
               >
-                ← Back to Site Admin
+                â† Back to Site Admin
               </button>
             )}
           </div>
@@ -6696,9 +4692,9 @@ export default function FinancialScorePage() {
               {/* QuickBooks Data Verification Section */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>✓ QuickBooks Data Verification</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>âœ“ QuickBooks Data Verification</h2>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    Imported from QuickBooks • {loadedMonthlyData.length} months of data verified
+                    Imported from QuickBooks â€¢ {loadedMonthlyData.length} months of data verified
                   </p>
 
                   {/* Summary Stats */}
@@ -6789,12 +4785,12 @@ export default function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>✓ Data Quality Check</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>âœ“ Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      • All {loadedMonthlyData.length} months have complete data<br/>
-                      • Income Statement fields populated: Revenue, Expenses, COGS<br/>
-                      • Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
-                      • Ready for AI-assisted mapping
+                      â€¢ All {loadedMonthlyData.length} months have complete data<br/>
+                      â€¢ Income Statement fields populated: Revenue, Expenses, COGS<br/>
+                      â€¢ Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
+                      â€¢ Ready for AI-assisted mapping
                     </div>
                   </div>
                 </div>
@@ -6813,7 +4809,7 @@ export default function FinancialScorePage() {
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
                   <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
                   {error && <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>}
-                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>✓ Loaded: {file.name}</div>}
+                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>âœ“ Loaded: {file.name}</div>}
                 </div>
 
               {file && columns.length > 0 && (
@@ -6938,7 +4934,7 @@ export default function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? '✓ Connected' : qbStatus === 'ERROR' ? '✗ Error' : qbStatus === 'EXPIRED' ? '⚠ Token Expired' : '⚠ Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? 'âœ“ Connected' : qbStatus === 'ERROR' ? 'âœ— Error' : qbStatus === 'EXPIRED' ? 'âš  Token Expired' : 'âš  Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -7016,9 +5012,9 @@ export default function FinancialScorePage() {
               {/* QuickBooks Data Verification */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>✓ QuickBooks Data Verification</h3>
+                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>âœ“ QuickBooks Data Verification</h3>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    Synced successfully • {loadedMonthlyData.length} months of data imported
+                    Synced successfully â€¢ {loadedMonthlyData.length} months of data imported
                   </p>
 
                   {/* Summary Stats */}
@@ -7126,7 +5122,7 @@ export default function FinancialScorePage() {
                                 <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                   <td style={{ padding: '8px', color: '#1e293b' }}>
                                     <span style={{ fontSize: '10px', color: '#94a3b8', marginRight: '8px' }}>
-                                      {isIncome ? '📈' : '📉'}
+                                      {isIncome ? 'ðŸ“ˆ' : 'ðŸ“‰'}
                                     </span>
                                     {account.name}
                                   </td>
@@ -7180,12 +5176,12 @@ export default function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>✓ Data Quality Check</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>âœ“ Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      • All {loadedMonthlyData.length} months have complete data<br/>
-                      • Income Statement: Revenue, Expenses, COGS populated<br/>
-                      • Balance Sheet: Assets, Liabilities, Equity populated<br/>
-                      • Ready for AI-assisted account mapping
+                      â€¢ All {loadedMonthlyData.length} months have complete data<br/>
+                      â€¢ Income Statement: Revenue, Expenses, COGS populated<br/>
+                      â€¢ Balance Sheet: Assets, Liabilities, Equity populated<br/>
+                      â€¢ Ready for AI-assisted account mapping
                     </div>
                   </div>
 
@@ -7212,8 +5208,8 @@ export default function FinancialScorePage() {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                       onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
                     >
-                      <span>🤖</span>
-                      <span>Proceed to AI Account Mapping →</span>
+                      <span>ðŸ¤–</span>
+                      <span>Proceed to AI Account Mapping â†’</span>
                     </button>
                   </div>
                 </div>
@@ -7332,7 +5328,7 @@ export default function FinancialScorePage() {
                       onClick={() => setShowCheckoutModal(false)}
                       style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                     >
-                      ×
+                      Ã—
                     </button>
                   </div>
 
@@ -7353,7 +5349,7 @@ export default function FinancialScorePage() {
 
                   {/* USAePay Payment Form */}
                   <div style={{ marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>💳 Payment Information</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>ðŸ’³ Payment Information</h3>
                     
                     {/* Payment Form */}
                     <form onSubmit={async (e) => {
@@ -7386,23 +5382,23 @@ export default function FinancialScorePage() {
                         const result = await response.json();
                         
                         if (result.success) {
-                          alert(`✅ Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
+                          alert(`âœ… Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
                           setShowCheckoutModal(false);
                           setSelectedSubscriptionPlan(null);
                           // Refresh companies to show updated subscription
                           loadAllCompanies();
                         } else {
-                          alert(`❌ Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
+                          alert(`âŒ Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
                         }
                       } catch (error) {
                         console.error('Payment error:', error);
-                        alert('❌ An error occurred while processing your payment. Please try again.');
+                        alert('âŒ An error occurred while processing your payment. Please try again.');
                       }
                     }}>
                       {/* Card Information Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                         <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          💳 Card Details
+                          ðŸ’³ Card Details
                         </h4>
                         
                         <div style={{ marginBottom: '12px' }}>
@@ -7466,7 +5462,7 @@ export default function FinancialScorePage() {
                       
                       {/* Billing Address Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📍 Billing Address</h4>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>ðŸ“ Billing Address</h4>
                         
                         <div style={{ marginBottom: '12px' }}>
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
@@ -7578,14 +5574,14 @@ export default function FinancialScorePage() {
                             gap: '8px'
                           }}
                         >
-                          💳 Complete Payment - ${planPrice.toFixed(2)}
+                          ðŸ’³ Complete Payment - ${planPrice.toFixed(2)}
                         </button>
                       </div>
                     </form>
                     
                     {/* Security Notice */}
                     <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>🔒</span>
+                      <span style={{ fontSize: '16px' }}>ðŸ”’</span>
                       <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
                         Secured by USAePay - Your payment information is encrypted
                       </span>
@@ -7595,7 +5591,7 @@ export default function FinancialScorePage() {
                   {/* Security Notice */}
                   <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>🔒</span>
+                      <span style={{ fontSize: '16px' }}>ðŸ”’</span>
                       <span style={{ fontSize: '13px', fontWeight: '500', color: '#059669' }}>
                         Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                       </span>
@@ -7617,7 +5613,7 @@ export default function FinancialScorePage() {
                     onClick={() => setShowUpdatePaymentModal(false)}
                     style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                   >
-                    ×
+                    Ã—
                   </button>
                 </div>
 
@@ -7625,7 +5621,7 @@ export default function FinancialScorePage() {
                   {/* Card Information Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      💳 Card Details
+                      ðŸ’³ Card Details
                     </h4>
                     
                     <div style={{ marginBottom: '12px' }}>
@@ -7699,7 +5695,7 @@ export default function FinancialScorePage() {
                   {/* Billing Address Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                      📍 Billing Address
+                      ðŸ“ Billing Address
                     </h4>
 
                     <div style={{ marginBottom: '12px' }}>
@@ -7756,7 +5752,7 @@ export default function FinancialScorePage() {
 
                   {/* Security Notice */}
                   <div style={{ background: '#d1fae5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '12px', marginBottom: '20px', display: 'flex', alignItems: 'start', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>🔒</span>
+                    <span style={{ fontSize: '18px' }}>ðŸ”’</span>
                     <span style={{ fontSize: '13px', color: '#065f46', lineHeight: '1.5' }}>
                       Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                     </span>
@@ -7808,7 +5804,7 @@ export default function FinancialScorePage() {
                           Updating...
                         </>
                       ) : (
-                        '💳 Update Payment Method'
+                        'ðŸ’³ Update Payment Method'
                       )}
                     </button>
                   </div>
@@ -8069,7 +6065,7 @@ export default function FinancialScorePage() {
                               lineHeight: '1'
                             }}
                           >
-                            ×
+                            Ã—
                           </button>
                         </div>
                       ))}
@@ -8117,7 +6113,7 @@ export default function FinancialScorePage() {
                       ];
                       
                       if (expenseCategories.includes(item) && expenseGoals[item]) {
-                        // Calculate goal as: Goal % × Revenue for each month
+                        // Calculate goal as: Goal % Ã— Revenue for each month
                         return monthly.map(m => {
                           const revenue = m.revenue || 0;
                               const goalPct = expenseGoals[item] / 100;
@@ -8240,7 +6236,7 @@ export default function FinancialScorePage() {
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Expense Items as % of Total Revenue</h2>
               
               <div style={{ marginBottom: '12px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>💡 How to Use This Analysis</h3>
+                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>ðŸ’¡ How to Use This Analysis</h3>
                 <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#15803d', lineHeight: '1.6' }}>
                   <li>Each chart shows an expense category as a <strong>percentage of total revenue</strong> over time</li>
                   <li>Look for categories with <strong>increasing trends</strong> that may need cost control</li>
@@ -8661,7 +6657,7 @@ export default function FinancialScorePage() {
                 
                 <div style={{ display: 'grid', gap: '20px' }}>
                   <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 – 100: Strong Financial Performance</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 â€“ 100: Strong Financial Performance</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#064e3b', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Good growth and good balance</li>
                       <li>In a good position for considering an M&A transaction</li>
@@ -8670,7 +6666,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 – 80: Good Fundamentals</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 â€“ 80: Good Fundamentals</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>In a good position for revenue growth</li>
                       <li>Needs to focus on bringing costs down as volume grows</li>
@@ -8678,7 +6674,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 – 50: Basic Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 â€“ 50: Basic Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Cost structure issues; not in a position to grow</li>
                       <li>Improvements needed in operations and process controls</li>
@@ -8687,7 +6683,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 – 30: Serious Performance Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 â€“ 30: Serious Performance Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Problems exist which may not be correctable</li>
                       <li>Some form of major restructuring or liquidation may be best</li>
@@ -8840,7 +6836,7 @@ export default function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                🖨️ Print
+                ðŸ–¨ï¸ Print
               </button>
             </div>
           </div>
@@ -8881,7 +6877,7 @@ export default function FinancialScorePage() {
                     {expenseAdjustment >= 0 ? '+' : ''}{expenseAdjustment}
                   </div>
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                    {expenseAdjustment > 0 ? '✓ BONUS' : expenseAdjustment < 0 ? '✗ PENALTY' : 'NEUTRAL'}
+                    {expenseAdjustment > 0 ? 'âœ“ BONUS' : expenseAdjustment < 0 ? 'âœ— PENALTY' : 'NEUTRAL'}
                   </div>
                 </div>
                 <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
@@ -8965,7 +6961,7 @@ export default function FinancialScorePage() {
                   lineHeight: 1
                 }}
               >
-                ×
+                Ã—
               </button>
             </div>
             
@@ -9163,7 +7159,7 @@ export default function FinancialScorePage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                🖨️ Print Dashboard
+                ðŸ–¨ï¸ Print Dashboard
               </button>
               <button
                 className="no-print"
@@ -9183,7 +7179,7 @@ export default function FinancialScorePage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
+                {showDashboardCustomizer ? 'Done Customizing' : 'âš™ï¸ Customize Dashboard'}
               </button>
             </div>
           </div>
@@ -9199,7 +7195,7 @@ export default function FinancialScorePage() {
               border: '2px solid #667eea'
             }}>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                🎨 Build Your Custom Dashboard
+                ðŸŽ¨ Build Your Custom Dashboard
               </h2>
               <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
                 Select the metrics and charts you want to see. Click on any item to add or remove it from your dashboard. Items will appear in the order selected.
@@ -9211,7 +7207,7 @@ export default function FinancialScorePage() {
               {/* Ratios Section */}
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  📊 Financial Ratios
+                  ðŸ“Š Financial Ratios
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                   {/* Liquidity Ratios */}
@@ -9417,7 +7413,7 @@ export default function FinancialScorePage() {
                               padding: 0
                             }}
                           >
-                            ×
+                            Ã—
                           </button>
                         </div>
                       ))}
@@ -9429,7 +7425,7 @@ export default function FinancialScorePage() {
                 {/* Trend Analysis Section */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    📈 Trend Analysis
+                    ðŸ“ˆ Trend Analysis
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                     {/* Item Trends Dropdown */}
@@ -9607,7 +7603,7 @@ export default function FinancialScorePage() {
                                 lineHeight: '1'
                               }}
                             >
-                              ×
+                              Ã—
                             </button>
                       </div>
                     ))}
@@ -9619,7 +7615,7 @@ export default function FinancialScorePage() {
                 {/* Working Capital Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💰 Working Capital Metrics
+                    ðŸ’° Working Capital Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle', 'Working Capital Trend'].map(widget => (
@@ -9648,7 +7644,7 @@ export default function FinancialScorePage() {
                         }}
                       >
                         <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? 'âœ“' : '+'}</span>
                       </div>
                     ))}
                   </div>
@@ -9657,7 +7653,7 @@ export default function FinancialScorePage() {
                 {/* Cash Flow Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💵 Cash Flow
+                    ðŸ’µ Cash Flow
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['Operating Cash Flow', 'Free Cash Flow', 'Cash Position'].map(widget => (
@@ -9686,7 +7682,7 @@ export default function FinancialScorePage() {
                         }}
                       >
                         <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? 'âœ“' : '+'}</span>
                       </div>
                     ))}
                   </div>
@@ -9695,7 +7691,7 @@ export default function FinancialScorePage() {
                 {/* Valuation Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💎 Valuation Metrics
+                    ðŸ’Ž Valuation Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'].map(widget => (
@@ -9724,7 +7720,7 @@ export default function FinancialScorePage() {
                         }}
                       >
                         <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? 'âœ“' : '+'}</span>
                       </div>
                     ))}
                   </div>
@@ -9766,7 +7762,7 @@ export default function FinancialScorePage() {
               textAlign: 'center',
               border: '2px dashed #cbd5e1'
             }}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>📊</div>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>ðŸ“Š</div>
               <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
                 Your Dashboard is Empty
               </h3>
@@ -9853,7 +7849,7 @@ export default function FinancialScorePage() {
                             ${(currentWC / 1000).toFixed(0)}K
                           </div>
                           <div style={{ fontSize: '11px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                            {wcChange >= 0 ? '↑' : '↓'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
+                            {wcChange >= 0 ? 'â†‘' : 'â†“'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
                           </div>
                         </div>
                       )}
@@ -9961,7 +7957,7 @@ export default function FinancialScorePage() {
                                 ${(sdeValuation / 1000000).toFixed(2)}M
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier.toFixed(1)}x
+                                SDE: ${(ttmSDE / 1000).toFixed(0)}K Ã— {sdeMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -9973,7 +7969,7 @@ export default function FinancialScorePage() {
                                 ${(ebitdaValuation / 1000000).toFixed(2)}M
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier.toFixed(1)}x
+                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K Ã— {ebitdaMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -10323,11 +8319,11 @@ export default function FinancialScorePage() {
           {/* Benchmark Status Indicator */}
           {benchmarks.length > 0 ? (
             <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#065f46' }}>
-              ✓ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
+              âœ“ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
             </div>
           ) : (
             <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
-              ⚠ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
+              âš  No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
             </div>
           )}
 
@@ -10541,7 +8537,7 @@ export default function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      🖨️ Print Priority Ratios
+                      ðŸ–¨ï¸ Print Priority Ratios
                     </button>
                   </div>
                   <div className="priority-ratios-print-content">
@@ -10584,7 +8580,7 @@ export default function FinancialScorePage() {
                             justifyContent: 'center'
                           }}
                         >
-                          ×
+                          Ã—
                         </button>
                       </div>
                     ))}
@@ -10595,7 +8591,7 @@ export default function FinancialScorePage() {
 
               {priorityRatios.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '60px', color: '#64748b' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>ðŸ“Š</div>
                   <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>No Priority Ratios Selected</h3>
                   <p>Select ratios from the dropdowns above to create your custom KPI dashboard.</p>
                 </div>
@@ -10629,7 +8625,7 @@ export default function FinancialScorePage() {
                   onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
                   onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
                 >
-                  📥 Export to Excel
+                  ðŸ“¥ Export to Excel
                 </button>
               </div>
               
@@ -10927,7 +8923,7 @@ export default function FinancialScorePage() {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
                 onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
               >
-                🔄 Refresh Analysis
+                ðŸ”„ Refresh Analysis
               </button>
               <button
                 className="no-print"
@@ -10944,7 +8940,7 @@ export default function FinancialScorePage() {
                   boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)',
                 }}
               >
-                💾 Export to Word
+                ðŸ’¾ Export to Word
               </button>
               <button 
                 className="no-print"
@@ -10960,7 +8956,7 @@ export default function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                🖨️ Print
+                ðŸ–¨ï¸ Print
               </button>
             </div>
           </div>
@@ -11500,9 +9496,9 @@ export default function FinancialScorePage() {
                          revTrend > -15 ? <span style={{ color: '#f59e0b' }}>, suggesting slowing momentum requiring attention</span> :
                          <span style={{ color: '#ef4444' }}>, indicating significant contraction requiring strategic intervention</span>}.
                         <strong> Expense</strong> trends show {expTrend > 0 ? 'growth' : 'reduction'} of <strong style={{ color: Math.abs(expTrend) < Math.abs(revTrend) ? '#10b981' : '#ef4444' }}>{Math.abs(expTrend).toFixed(1)}%</strong> over the same period
-                        {expTrend < revTrend ? <span style={{ color: '#10b981' }}>, with expenses growing {revTrend - expTrend > 10 ? 'significantly ' : ''}slower than revenue—excellent operational leverage</span> :
+                        {expTrend < revTrend ? <span style={{ color: '#10b981' }}>, with expenses growing {revTrend - expTrend > 10 ? 'significantly ' : ''}slower than revenueâ€”excellent operational leverage</span> :
                          expTrend === revTrend ? ', matching revenue growth pace' :
-                         <span style={{ color: '#ef4444' }}>, outpacing revenue growth by {(expTrend - revTrend).toFixed(1)} percentage points—margin compression risk</span>}.
+                         <span style={{ color: '#ef4444' }}>, outpacing revenue growth by {(expTrend - revTrend).toFixed(1)} percentage pointsâ€”margin compression risk</span>}.
                         <strong> Net margin</strong> {marginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: marginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(marginChange).toFixed(1)}</strong> percentage points to <strong>{recentMargin.toFixed(1)}%</strong>
                         {marginChange > 3 ? <span style={{ color: '#10b981' }}>, reflecting improving profitability and strong operational efficiency</span> :
                          marginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
@@ -11511,7 +9507,7 @@ export default function FinancialScorePage() {
                         {assetGrowth !== 0 && (
                           <>
                             <strong> Asset base</strong> {assetGrowth > 0 ? 'grew' : 'declined'} by <strong style={{ color: assetGrowth > 0 ? '#667eea' : '#f59e0b' }}>{Math.abs(assetGrowth).toFixed(1)}%</strong> year-over-year
-                            {assetGrowth > revTrend + 10 ? <span style={{ color: '#f59e0b' }}>, growing faster than revenue—monitor asset efficiency and ROA</span> :
+                            {assetGrowth > revTrend + 10 ? <span style={{ color: '#f59e0b' }}>, growing faster than revenueâ€”monitor asset efficiency and ROA</span> :
                              assetGrowth > 5 ? ', supporting business expansion' :
                              assetGrowth > -5 ? ', remaining relatively stable' :
                              <span style={{ color: '#64748b' }}>, contracting which may improve asset turnover ratios</span>}.
@@ -11672,7 +9668,7 @@ export default function FinancialScorePage() {
                          <span style={{ color: '#ef4444' }}>, indicating negative working capital position requiring immediate attention and potential financing needs</span>}.
                         The working capital ratio of <strong>{wcRatio.toFixed(2)}</strong> has {wcRatioChange > 0 ? 'improved' : wcRatioChange < 0 ? 'declined' : 'remained stable'} 
                         {Math.abs(wcRatioChange) > 5 ? <span> by <strong style={{ color: wcRatioChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(wcRatioChange).toFixed(1)}%</strong> from {priorWCRatio.toFixed(2)} a year ago</span> : ' over the past year'}
-                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assets—a concerning liquidity position</span> :
+                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assetsâ€”a concerning liquidity position</span> :
                          wcRatio < 1.5 ? <span style={{ color: '#f59e0b' }}>, suggesting tight liquidity that may limit operational flexibility</span> :
                          wcRatio > 3.0 ? <span style={{ color: '#10b981' }}>, reflecting exceptionally strong liquidity, though potentially excess capital that could be deployed more productively</span> :
                          ', indicating adequate short-term liquidity'}.
@@ -11712,7 +9708,7 @@ export default function FinancialScorePage() {
                         {monthly.length >= 13 && Math.abs(cccChange) > 5 && (
                           <span> has {cccChange > 0 ? 'lengthened' : 'shortened'} by <strong style={{ color: cccChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(cccChange).toFixed(0)} days</strong> year-over-year</span>
                         )}
-                        {ccc < 0 ? <span style={{ color: '#10b981' }}>, indicating the business receives payment before paying suppliers—an exceptionally favorable working capital dynamic generating float</span> :
+                        {ccc < 0 ? <span style={{ color: '#10b981' }}>, indicating the business receives payment before paying suppliersâ€”an exceptionally favorable working capital dynamic generating float</span> :
                          ccc < 30 ? <span style={{ color: '#10b981' }}>, demonstrating highly efficient working capital management with rapid cash generation cycles</span> :
                          ccc < 60 ? ', reflecting reasonable working capital efficiency' :
                          ccc < 90 ? <span style={{ color: '#f59e0b' }}>, suggesting extended working capital cycle that ties up significant cash in operations</span> :
@@ -11863,15 +9859,15 @@ export default function FinancialScorePage() {
                          opCFMargin > 0 ? <span style={{ color: '#f59e0b' }}>, suggesting opportunities to improve working capital efficiency</span> :
                          <span style={{ color: '#ef4444' }}>, indicating cash outflow from operations requiring immediate attention</span>}.
                         Working capital changes {changeInWC > 0 ? 'contributed' : 'consumed'} <strong>${(Math.abs(changeInWC) / 1000).toFixed(1)}K</strong>
-                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capital—review receivables and inventory management</span> :
+                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capitalâ€”review receivables and inventory management</span> :
                          changeInWC > ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, with efficient working capital management releasing cash for other uses</span> :
                          ''}.
                         <strong> Investing activities</strong> {investingCF < 0 ? 'deployed' : 'generated'} <strong style={{ color: '#667eea' }}>${(Math.abs(investingCF) / 1000).toFixed(1)}K</strong>
-                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flow—monitor return on invested capital</span> :
+                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flowâ€”monitor return on invested capital</span> :
                          capEx > 0 ? ', supporting maintenance and growth of the asset base' :
                          ', with minimal capital investment in fixed assets'}.
                         <strong> Financing activities</strong> {financingCF > 0 ? 'provided' : 'consumed'} <strong style={{ color: financingCF > 0 ? '#667eea' : '#64748b' }}>${(Math.abs(financingCF) / 1000).toFixed(1)}K</strong>
-                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of ${(changeInDebt / 1000).toFixed(1)}K—monitor leverage ratios</span> :
+                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of ${(changeInDebt / 1000).toFixed(1)}Kâ€”monitor leverage ratios</span> :
                          changeInDebt < -ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, reducing debt by ${(Math.abs(changeInDebt) / 1000).toFixed(1)}K and strengthening the balance sheet</span> :
                          ''}.
                         <strong> Free cash flow</strong> of <strong style={{ color: freeCF > 0 ? '#10b981' : '#ef4444' }}>${(freeCF / 1000).toFixed(1)}K</strong>
@@ -11880,7 +9876,7 @@ export default function FinancialScorePage() {
                          <span style={{ color: '#ef4444' }}> indicates operations are not generating sufficient cash to cover capital needs</span>}.
                         Net cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#f59e0b' }}>${(Math.abs(cashChange) / 1000).toFixed(1)}K</strong> to <strong>${(last12[last12.length - 1].cash / 1000).toFixed(1)}K</strong>
                         {cashChange / ltmRev > 0.15 ? <span style={{ color: '#10b981' }}>, building substantial cash reserves and financial resilience</span> :
-                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reserves—monitor cash runway and funding needs</span> :
+                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reservesâ€”monitor cash runway and funding needs</span> :
                          ''}.
                       </>
                     );
@@ -12067,7 +10063,7 @@ export default function FinancialScorePage() {
             
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#10b981', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>✓</span> Key Strengths & Competitive Advantages
+                <span style={{ fontSize: '20px' }}>âœ“</span> Key Strengths & Competitive Advantages
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.strengths.length > 0 ? (
@@ -12084,7 +10080,7 @@ export default function FinancialScorePage() {
 
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ef4444', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>⚠</span> Areas Requiring Management Attention
+                <span style={{ fontSize: '20px' }}>âš </span> Areas Requiring Management Attention
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.weaknesses.length > 0 ? (
@@ -12101,7 +10097,7 @@ export default function FinancialScorePage() {
 
             <div>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#667eea', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>💡</span> Strategic Recommendations & Action Items
+                <span style={{ fontSize: '20px' }}>ðŸ’¡</span> Strategic Recommendations & Action Items
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.insights.length > 0 ? (
@@ -12124,7 +10120,7 @@ export default function FinancialScorePage() {
             {mdaAnalysis.strengths.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#10b981', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>✓</span> Strengths
+                  <span style={{ fontSize: '24px' }}>âœ“</span> Strengths
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.strengths.map((str, idx) => (
@@ -12137,7 +10133,7 @@ export default function FinancialScorePage() {
             {mdaAnalysis.weaknesses.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#ef4444', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>⚠</span> Areas for Improvement
+                  <span style={{ fontSize: '24px' }}>âš </span> Areas for Improvement
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.weaknesses.map((weak, idx) => (
@@ -12150,7 +10146,7 @@ export default function FinancialScorePage() {
             {mdaAnalysis.insights.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>💡</span> Strategic Insights
+                  <span style={{ fontSize: '24px' }}>ðŸ’¡</span> Strategic Insights
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.insights.map((ins, idx) => (
@@ -12166,7 +10162,7 @@ export default function FinancialScorePage() {
           {mdaTab === 'key-metrics' && monthly.length >= 12 && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
-              ⚠️ Critical Review Items
+              âš ï¸ Critical Review Items
             </h2>
             
             <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' }}>
@@ -12757,7 +10753,7 @@ export default function FinancialScorePage() {
                   {/* Issues List */}
                   {issues.length === 0 ? (
                     <div style={{ background: '#d1fae5', borderRadius: '12px', padding: '32px', textAlign: 'center', border: '2px solid #10b981' }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>✅</div>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>âœ…</div>
                       <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>No Critical Issues Detected</h3>
                       <p style={{ fontSize: '15px', color: '#047857', margin: 0 }}>
                         All analyzed metrics are within acceptable ranges. Continue monitoring for any changes.
@@ -12769,7 +10765,7 @@ export default function FinancialScorePage() {
                         const bgColor = issue.severity === 'high' ? '#fee2e2' : issue.severity === 'medium' ? '#fef3c7' : '#dbeafe';
                         const borderColor = issue.severity === 'high' ? '#ef4444' : issue.severity === 'medium' ? '#f59e0b' : '#3b82f6';
                         const textColor = issue.severity === 'high' ? '#991b1b' : issue.severity === 'medium' ? '#92400e' : '#1e40af';
-                        const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🔵';
+                        const icon = issue.severity === 'high' ? 'ðŸ”´' : issue.severity === 'medium' ? 'ðŸŸ¡' : 'ðŸ”µ';
                         
                         return (
                           <div key={idx} style={{ background: bgColor, borderRadius: '12px', padding: '20px', border: `2px solid ${borderColor}` }}>
@@ -12803,7 +10799,7 @@ export default function FinancialScorePage() {
                   {/* Action Items */}
                   {issues.filter(i => i.severity === 'high').length > 0 && (
                     <div style={{ marginTop: '32px', background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #667eea' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>📋 Recommended Actions</h3>
+                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>ðŸ“‹ Recommended Actions</h3>
                       <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
                         {issues.filter(i => i.severity === 'high').length > 0 && (
                           <li><strong>Immediate attention required:</strong> Address all high-priority issues within the next 30 days</li>
@@ -13057,7 +11053,7 @@ export default function FinancialScorePage() {
                     }
                   });
                   
-                  console.log('💾 Saving expense goals for company:', selectedCompanyId, goalsToSave);
+                  console.log('ðŸ’¾ Saving expense goals for company:', selectedCompanyId, goalsToSave);
                   setGoalsSaveStatus('saving');
                   try {
                     const response = await fetch('/api/expense-goals', {
@@ -13069,17 +11065,17 @@ export default function FinancialScorePage() {
                       })
                     });
                     const result = await response.json();
-                    console.log('💾 Save response:', result);
+                    console.log('ðŸ’¾ Save response:', result);
                     if (response.ok) {
                       setGoalsSaveStatus('saved');
                       setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                     } else {
-                      console.error('❌ Failed to save goals:', result);
+                      console.error('âŒ Failed to save goals:', result);
                       setGoalsSaveStatus('error');
                       setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                     }
                   } catch (error) {
-                    console.error('❌ Error saving goals:', error);
+                    console.error('âŒ Error saving goals:', error);
                     setGoalsSaveStatus('error');
                     setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                   }
@@ -13098,7 +11094,7 @@ export default function FinancialScorePage() {
                   transition: 'all 0.3s ease'
                 }}
               >
-                {goalsSaveStatus === 'saving' ? '💾 Saving...' : goalsSaveStatus === 'saved' ? '✓ Saved!' : goalsSaveStatus === 'error' ? '✗ Error' : 'Save Goals'}
+                {goalsSaveStatus === 'saving' ? 'ðŸ’¾ Saving...' : goalsSaveStatus === 'saved' ? 'âœ“ Saved!' : goalsSaveStatus === 'error' ? 'âœ— Error' : 'Save Goals'}
               </button>
             </div>
           </div>
@@ -13283,7 +11279,7 @@ export default function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                🖨️ Print
+                ðŸ–¨ï¸ Print
               </button>
             </div>
           </div>
@@ -13338,7 +11334,7 @@ export default function FinancialScorePage() {
                       ${(currentWC / 1000).toFixed(0)}K
                     </div>
                     <div style={{ fontSize: '12px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                      {wcChange >= 0 ? '↑' : '↓'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%) vs. 1Y ago
+                      {wcChange >= 0 ? 'â†‘' : 'â†“'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%) vs. 1Y ago
                     </div>
                   </div>
                   
@@ -13542,7 +11538,7 @@ export default function FinancialScorePage() {
                   <div style={{ display: 'grid', gap: '16px' }}>
                     {currentWC > 0 && wcRatio >= 1.5 && (
                       <div style={{ padding: '16px', background: '#f0fdf4', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '4px' }}>✓ Strong Liquidity Position</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '4px' }}>âœ“ Strong Liquidity Position</div>
                         <div style={{ fontSize: '13px', color: '#166534', lineHeight: '1.6' }}>
                           Your working capital ratio of {wcRatio} indicates strong short-term financial health with ${(currentWC / 1000).toFixed(0)}K in working capital available to cover operational needs.
                         </div>
@@ -13551,7 +11547,7 @@ export default function FinancialScorePage() {
                     
                     {currentWC > 0 && wcRatio < 1.5 && wcRatio >= 1.0 && (
                       <div style={{ padding: '16px', background: '#fffbeb', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠ Adequate but Monitor Closely</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>âš  Adequate but Monitor Closely</div>
                         <div style={{ fontSize: '13px', color: '#92400e', lineHeight: '1.6' }}>
                           Your working capital ratio of {wcRatio} is adequate but below ideal levels. Consider improving cash flow or reducing short-term liabilities to strengthen your position.
                         </div>
@@ -13560,7 +11556,7 @@ export default function FinancialScorePage() {
                     
                     {wcRatio < 1.0 && (
                       <div style={{ padding: '16px', background: '#fef2f2', borderRadius: '8px', borderLeft: '4px solid #ef4444' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠ Liquidity Concern</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>âš  Liquidity Concern</div>
                         <div style={{ fontSize: '13px', color: '#991b1b', lineHeight: '1.6' }}>
                           Your working capital ratio of {wcRatio} indicates current liabilities exceed current assets. Immediate attention to cash flow management and working capital optimization is recommended.
                         </div>
@@ -13569,7 +11565,7 @@ export default function FinancialScorePage() {
                     
                     {wcChange > 0 && (
                       <div style={{ padding: '16px', background: '#f0f9ff', borderRadius: '8px', borderLeft: '4px solid #0284c7' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px' }}>↑ Positive Trend</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px' }}>â†‘ Positive Trend</div>
                         <div style={{ fontSize: '13px', color: '#0c4a6e', lineHeight: '1.6' }}>
                           Working capital has increased by ${(wcChange / 1000).toFixed(0)}K ({wcChangePercent.toFixed(1)}%) over the past year, indicating improved operational efficiency and financial stability.
                         </div>
@@ -13591,7 +11587,7 @@ export default function FinancialScorePage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
                 onClick={async () => {
-                  console.log('💾 Saving valuation settings for company:', selectedCompanyId);
+                  console.log('ðŸ’¾ Saving valuation settings for company:', selectedCompanyId);
                   setValuationSaveStatus('saving');
                   try {
                     const response = await fetch('/api/valuation-settings', {
@@ -13606,17 +11602,17 @@ export default function FinancialScorePage() {
                       })
                     });
                     const result = await response.json();
-                    console.log('💾 Save response:', result);
+                    console.log('ðŸ’¾ Save response:', result);
                     if (response.ok) {
                       setValuationSaveStatus('saved');
                       setTimeout(() => setValuationSaveStatus('idle'), 3000);
                     } else {
-                      console.error('❌ Failed to save valuation settings:', result);
+                      console.error('âŒ Failed to save valuation settings:', result);
                       setValuationSaveStatus('error');
                       setTimeout(() => setValuationSaveStatus('idle'), 3000);
                     }
                   } catch (error) {
-                    console.error('❌ Error saving valuation settings:', error);
+                    console.error('âŒ Error saving valuation settings:', error);
                     setValuationSaveStatus('error');
                     setTimeout(() => setValuationSaveStatus('idle'), 3000);
                   }
@@ -13635,7 +11631,7 @@ export default function FinancialScorePage() {
                   transition: 'all 0.3s ease'
                 }}
               >
-                {valuationSaveStatus === 'saving' ? '💾 Saving...' : valuationSaveStatus === 'saved' ? '✓ Saved!' : valuationSaveStatus === 'error' ? '✗ Error' : 'Save Settings'}
+                {valuationSaveStatus === 'saving' ? 'ðŸ’¾ Saving...' : valuationSaveStatus === 'saved' ? 'âœ“ Saved!' : valuationSaveStatus === 'error' ? 'âœ— Error' : 'Save Settings'}
               </button>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
@@ -13705,7 +11701,7 @@ export default function FinancialScorePage() {
                       ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
+                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K Ã— {sdeMultiplier}x
                     </div>
                   </div>
                   
@@ -13715,7 +11711,7 @@ export default function FinancialScorePage() {
                       ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
+                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K Ã— {ebitdaMultiplier}x
                     </div>
                   </div>
                   
@@ -14067,7 +12063,7 @@ export default function FinancialScorePage() {
                     cursor: 'pointer',
                     boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                   }}>
-                  🖨️ Print
+                  ðŸ–¨ï¸ Print
                 </button>
               )}
             </div>
@@ -14132,7 +12128,7 @@ export default function FinancialScorePage() {
           <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
             <details>
               <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                📚 Cash Flow Metrics - Definitions & Examples
+                ðŸ“š Cash Flow Metrics - Definitions & Examples
               </summary>
               
               <div style={{ display: 'grid', gap: '20px', marginTop: '16px' }}>
@@ -14199,10 +12195,10 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Percentage of revenue converted to operating cash flow. Higher percentages indicate better cash generation efficiency.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> (Operating Cash Flow ÷ Revenue) × 100
+                    <strong>Formula:</strong> (Operating Cash Flow Ã· Revenue) Ã— 100
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 ÷ $250,000) × 100 = <strong>23.2%</strong>
+                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 Ã· $250,000) Ã— 100 = <strong>23.2%</strong>
                   </p>
                 </div>
 
@@ -14213,10 +12209,10 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Number of days the company can operate with its current cash balance at the current cash flow rate. Indicates financial runway.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Ending Cash ÷ (Operating Cash Flow ÷ 30)
+                    <strong>Formula:</strong> Ending Cash Ã· (Operating Cash Flow Ã· 30)
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 ÷ ($58,000 ÷ 30) = <strong>38.8 days</strong>
+                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 Ã· ($58,000 Ã· 30) = <strong>38.8 days</strong>
                   </p>
                 </div>
 
@@ -14227,11 +12223,11 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days inventory is held before being sold. Lower values indicate faster inventory turnover and better working capital management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Inventory Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS ÷ Avg Inventory</span>
+                    <strong>Formula:</strong> 365 Ã· Inventory Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS Ã· Avg Inventory</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 ÷ 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 Ã· 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -14242,11 +12238,11 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days to collect payment from customers after a sale. Lower values indicate faster cash collection and better receivables management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Receivables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue ÷ Avg A/R</span>
+                    <strong>Formula:</strong> 365 Ã· Receivables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue Ã· Avg A/R</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 ÷ 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 Ã· 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -14257,11 +12253,11 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days the company takes to pay its suppliers. Higher values can indicate better use of supplier credit, but be careful not to damage supplier relationships.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Payables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS ÷ Avg A/P</span>
+                    <strong>Formula:</strong> 365 Ã· Payables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS Ã· Avg A/P</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 ÷ 8 = <strong>45.6 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 Ã· 8 = <strong>45.6 days</strong>
                   </p>
                 </div>
 
@@ -14286,7 +12282,7 @@ export default function FinancialScorePage() {
           <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
             <details>
               <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                📖 Why Cash Flow Management is Critical for your Business
+                ðŸ“– Why Cash Flow Management is Critical for your Business
               </summary>
               
               <div style={{ marginTop: '16px', fontSize: '14px', lineHeight: '1.8', color: '#475569' }}>
@@ -14398,7 +12394,7 @@ export default function FinancialScorePage() {
                   Conclusion: Liquidity is the Key to Resilience
                 </h3>
                 <p style={{ marginBottom: '0' }}>
-                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters most—growing your business.
+                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters mostâ€”growing your business.
                 </p>
               </div>
             </details>
@@ -14851,14 +12847,14 @@ export default function FinancialScorePage() {
                   <div style={{ display: 'grid', gap: '16px' }}>
                     {totalOperatingCF > 0 ? (
                       <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>✓ Positive Operating Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>âœ“ Positive Operating Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#047857' }}>
                           The company generated ${(totalOperatingCF / 1000).toFixed(0)}K in cash from operations over the last 12 months, indicating healthy operational performance.
                         </div>
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠ Negative Operating Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>âš  Negative Operating Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           The company consumed ${Math.abs(totalOperatingCF / 1000).toFixed(0)}K in cash from operations, which may indicate operational challenges.
                         </div>
@@ -14867,14 +12863,14 @@ export default function FinancialScorePage() {
                     
                     {totalFreeCF > 0 ? (
                       <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>✓ Positive Free Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>âœ“ Positive Free Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#047857' }}>
                           After capital expenditures, the company has ${(totalFreeCF / 1000).toFixed(0)}K in free cash flow available for growth, debt reduction, or distributions.
                         </div>
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠ Negative Free Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>âš  Negative Free Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#b45309' }}>
                           Capital expenditures exceed operating cash flow by ${Math.abs(totalFreeCF / 1000).toFixed(0)}K, requiring external financing.
                         </div>
@@ -14883,14 +12879,14 @@ export default function FinancialScorePage() {
                     
                     {avgCashFlowMargin > 15 ? (
                       <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>✓ Strong Cash Flow Margin</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>âœ“ Strong Cash Flow Margin</div>
                         <div style={{ fontSize: '13px', color: '#047857' }}>
                           Average cash flow margin of {avgCashFlowMargin.toFixed(1)}% indicates the company efficiently converts revenue into cash.
                         </div>
                       </div>
                     ) : avgCashFlowMargin < 5 ? (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠ Low Cash Flow Margin</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>âš  Low Cash Flow Margin</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           Cash flow margin of {avgCashFlowMargin.toFixed(1)}% suggests challenges in converting revenue to cash. Review receivables collection and expense timing.
                         </div>
@@ -14908,22 +12904,22 @@ export default function FinancialScorePage() {
       {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && qbRawData) && (() => {
         // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
+          console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⚠️ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>âš ï¸ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
         
         const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
-        console.log(`🔄 ========================================`);
-        console.log(`🔄 DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
-        console.log(`🔄 Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
-        console.log(`🔄 QB Data sync date:`, qbRawData.syncDate);
-        console.log(`🔄 Data belongs to company:`, qbRawData._companyId);
-        console.log(`🔄 Record ID:`, qbRawData._recordId);
-        console.log(`🔄 ========================================`);
+        console.log(`ðŸ”„ ========================================`);
+        console.log(`ðŸ”„ DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
+        console.log(`ðŸ”„ Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
+        console.log(`ðŸ”„ QB Data sync date:`, qbRawData.syncDate);
+        console.log(`ðŸ”„ Data belongs to company:`, qbRawData._companyId);
+        console.log(`ðŸ”„ Record ID:`, qbRawData._recordId);
+        console.log(`ðŸ”„ ========================================`);
         
         // Helper function to recursively extract all rows from QB report
         // Extract from the last month column, not the total column
@@ -15028,7 +13024,7 @@ export default function FinancialScorePage() {
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              Map QuickBooks accounts to your standardized financial fields • Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
+              Map QuickBooks accounts to your standardized financial fields â€¢ Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
             </p>
 
             {/* Lines of Business Section */}
@@ -15090,8 +13086,8 @@ export default function FinancialScorePage() {
                         const accountClassifications: Record<string, string> = {};
                         const chartOfAccounts = qbRawData?.chartOfAccounts?.QueryResponse?.Account || [];
                         
-                        console.log('🔍 Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
-                        console.log('🔍 Total accounts in chart:', chartOfAccounts.length);
+                        console.log('ðŸ” Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
+                        console.log('ðŸ” Total accounts in chart:', chartOfAccounts.length);
                         
                         chartOfAccounts.forEach((account: any) => {
                           const accountName = account.Name;
@@ -15137,7 +13133,7 @@ export default function FinancialScorePage() {
                         });
                         
                         if (Object.keys(accountClassifications).length === 0) {
-                          console.error('⚠️ No Chart of Accounts data found! Classifications will be incorrect.');
+                          console.error('âš ï¸ No Chart of Accounts data found! Classifications will be incorrect.');
                         }
                         
                         // Extract all account names WITH classifications from QB data
@@ -15162,13 +13158,13 @@ export default function FinancialScorePage() {
                         // For Balance Sheet: Get individual items (all detail accounts)
                         const bsDataRows = bsRows.filter(r => r.type === 'data' && !r.isHeader && !r.isTotal);
                         
-                        console.log('🔍 Revenue individual items:', revenueDataRows.length);
-                        console.log('🔍 Expense individual items:', expenseDataRows.length);
-                        console.log('🔍 BS individual items:', bsDataRows.length);
+                        console.log('ðŸ” Revenue individual items:', revenueDataRows.length);
+                        console.log('ðŸ” Expense individual items:', expenseDataRows.length);
+                        console.log('ðŸ” BS individual items:', bsDataRows.length);
                         
                         // DEBUG: Pick first revenue account to track through entire process
                         const testAccount = revenueDataRows[0]?.name || expenseDataRows[0]?.name || bsDataRows[0]?.name;
-                        console.log(`\n🔬 TRACKING TEST ACCOUNT: "${testAccount}"`);
+                        console.log(`\nðŸ”¬ TRACKING TEST ACCOUNT: "${testAccount}"`);
                         if (testAccount) {
                           const testRow = plRows.find(r => r.name === testAccount) || bsRows.find(r => r.name === testAccount);
                           console.log('Test account raw data:', testRow);
@@ -15212,7 +13208,7 @@ export default function FinancialScorePage() {
                             
                             // Debug first 5 accounts
                             if (idx < 5) {
-                              console.log(`BS Account ${idx}: "${row.name}" | Section: "${row.section}" → ${classification}`);
+                              console.log(`BS Account ${idx}: "${row.name}" | Section: "${row.section}" â†’ ${classification}`);
                             }
                           } else if (!classification) {
                             classification = 'Asset'; // Last resort default
@@ -15227,10 +13223,10 @@ export default function FinancialScorePage() {
                           qbAccountsWithClass.push({ name: row.name, classification });
                         });
                         
-                        console.log(`📊 BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
+                        console.log(`ðŸ“Š BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
                         
-                        console.log('🔍 TOTAL accounts to map:', qbAccountsWithClass.length);
-                        console.log('🔍 First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
+                        console.log('ðŸ” TOTAL accounts to map:', qbAccountsWithClass.length);
+                        console.log('ðŸ” First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
 
                         const response = await fetch('/api/ai-mapping', {
                           method: 'POST',
@@ -15251,7 +13247,7 @@ export default function FinancialScorePage() {
                         // DEBUG: Track test account through mapping
                         if (testAccount) {
                           const testMapping = data.mappings.find((m: any) => m.qbAccount === testAccount);
-                          console.log(`\n🔬 TEST ACCOUNT MAPPING:`, testMapping);
+                          console.log(`\nðŸ”¬ TEST ACCOUNT MAPPING:`, testMapping);
                         }
                         
                         setShowMappingSection(true);
@@ -15280,12 +13276,12 @@ export default function FinancialScorePage() {
                   >
                     {isGeneratingMappings ? (
                       <>
-                        <span>⏳</span>
+                        <span>â³</span>
                         <span>Generating Mappings...</span>
                       </>
                     ) : (
                       <>
-                        <span>🤖</span>
+                        <span>ðŸ¤–</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -15296,7 +13292,7 @@ export default function FinancialScorePage() {
                   <div>
                     <div style={{ marginBottom: '16px', padding: '16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#0369a1', marginBottom: '4px' }}>
-                        ✨ AI Suggestions Generated
+                        âœ¨ AI Suggestions Generated
                       </div>
                       <div style={{ fontSize: '13px', color: '#0c4a6e' }}>
                         Review the suggested mappings below. You can edit any mapping before saving. Mappings will be used to automatically populate your standardized financial statements from QuickBooks data.
@@ -15582,7 +13578,7 @@ export default function FinancialScorePage() {
                                   
                                   // Clear from state
                                   setAiMappings([]);
-                                  alert('All mappings cleared! ✅');
+                                  alert('All mappings cleared! âœ…');
                                 } catch (error: any) {
                                   alert('Failed to clear mappings: ' + error.message);
                                 }
@@ -15600,7 +13596,7 @@ export default function FinancialScorePage() {
                               cursor: aiMappings.length === 0 ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            🗑️ Clear All
+                            ðŸ—‘ï¸ Clear All
                           </button>
                           <button
                             onClick={() => {
@@ -15649,7 +13645,7 @@ export default function FinancialScorePage() {
                                 // Update local state to reflect deduplicated mappings
                                 setAiMappings(uniqueMappings);
                                 
-                                alert('Mappings saved successfully! ✅');
+                                alert('Mappings saved successfully! âœ…');
                                 // Keep the section visible after saving so users can see their saved mappings
                               } catch (error: any) {
                                 console.error('Error saving mappings:', error);
@@ -15671,7 +13667,7 @@ export default function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                            {isSavingMappings ? 'Saving...' : 'ðŸ’¾ Save Mappings'}
                           </button>
                         </div>
                       </div>
@@ -15697,8 +13693,8 @@ export default function FinancialScorePage() {
                           
                           setIsProcessingMonthlyData(true);
                           try {
-                            console.log('🔄 Processing 36 months of data using mappings...');
-                            console.log('📋 Total mappings:', aiMappings.length);
+                            console.log('ðŸ”„ Processing 36 months of data using mappings...');
+                            console.log('ðŸ“‹ Total mappings:', aiMappings.length);
                             
                             // DEBUG: Track Professional Services expense account
                             const testMapping = aiMappings.find(m => 
@@ -15707,7 +13703,7 @@ export default function FinancialScorePage() {
                               m.qbAccount?.toLowerCase().includes('legal')
                             );
                             const testAccountName = testMapping?.qbAccount;
-                            console.log(`🔬 TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
+                            console.log(`ðŸ”¬ TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
                             
                             // Get column information from QB report
                             const plColumns = qbRawData.profitAndLoss.Columns?.Column || [];
@@ -15748,7 +13744,7 @@ export default function FinancialScorePage() {
                                         accountValues[accountName] = isNaN(numValue) ? 0 : numValue;
                                         
                                         if (isFirstCall && accountName.toLowerCase().includes('legal')) {
-                                          console.log(`\n💰 Found Section Summary "${accountName}":`, {
+                                          console.log(`\nðŸ’° Found Section Summary "${accountName}":`, {
                                       columnIndex,
                                       value,
                                             numValue
@@ -15775,7 +13771,7 @@ export default function FinancialScorePage() {
                               processRows(rows, 0);
                               
                               if (isFirstCall) {
-                                console.log(`\n📊 Extraction results: Found ${Object.keys(accountValues).length} accounts`);
+                                console.log(`\nðŸ“Š Extraction results: Found ${Object.keys(accountValues).length} accounts`);
                               }
                               
                               return accountValues;
@@ -15791,7 +13787,7 @@ export default function FinancialScorePage() {
                               
                               // Debug logging for first few months
                               if (i <= 3) {
-                                console.log(`\n🔍 Month ${i} extraction debug:`);
+                                console.log(`\nðŸ” Month ${i} extraction debug:`);
                                 console.log(`P&L data keys:`, Object.keys(plData).slice(0, 10));
                                 console.log(`P&L sample values:`, Object.entries(plData).slice(0, 5));
                                 console.log(`BS data keys:`, Object.keys(bsData).slice(0, 10));
@@ -15799,7 +13795,7 @@ export default function FinancialScorePage() {
                               
                               // Debug mappings for first month
                               if (i === 1) {
-                                console.log(`\n🗺️ Total mappings: ${aiMappings.length}`);
+                                console.log(`\nðŸ—ºï¸ Total mappings: ${aiMappings.length}`);
                                 const targetFieldCounts: Record<string, number> = {};
                                 aiMappings.forEach(m => {
                                   targetFieldCounts[m.targetField] = (targetFieldCounts[m.targetField] || 0) + 1;
@@ -15878,7 +13874,7 @@ export default function FinancialScorePage() {
                                 
                                 // DEBUG: Track test account through every month
                                 if (qbAccount === testAccountName) {
-                                  console.log(`\n🔬 MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
+                                  console.log(`\nðŸ”¬ MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
                                     targetField,
                                     classification,
                                     isBalanceSheet,
@@ -16023,7 +14019,7 @@ export default function FinancialScorePage() {
                               }
                             }
                             
-                            console.log(`✅ Processed ${monthlyData.length} months of data`);
+                            console.log(`âœ… Processed ${monthlyData.length} months of data`);
                             console.log('First month:', monthlyData[0]);
                             console.log('Last month:', monthlyData[monthlyData.length - 1]);
                             console.log('Date range:', monthlyData[0]?.monthDate?.substring(0, 7), 'to', monthlyData[monthlyData.length - 1]?.monthDate?.substring(0, 7));
@@ -16032,7 +14028,7 @@ export default function FinancialScorePage() {
                             if (testAccountName) {
                               const testMapping = aiMappings.find(m => m.qbAccount === testAccountName);
                               const targetField = testMapping?.targetField;
-                              console.log(`\n🔬 FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
+                              console.log(`\nðŸ”¬ FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
                               console.log(`Mapped to field: ${targetField}`);
                               console.log('Values across all months:');
                               monthlyData.forEach((month, idx) => {
@@ -16044,11 +14040,11 @@ export default function FinancialScorePage() {
                             
                             // Check if we have less than expected months
                             if (monthlyData.length < 12) {
-                              console.warn(`⚠️ WARNING: Only ${monthlyData.length} months of data found. Expected at least 12 months for proper reporting.`);
+                              console.warn(`âš ï¸ WARNING: Only ${monthlyData.length} months of data found. Expected at least 12 months for proper reporting.`);
                               if (monthlyData.length === 1) {
-                                alert(`⚠️ Only 1 month of data was processed!\n\nQuickBooks may have returned a single-column report instead of monthly breakdown.\n\nThe reports need at least 12 months of data to function properly.\n\nTip: Check the QuickBooks sync settings or try re-syncing.`);
+                                alert(`âš ï¸ Only 1 month of data was processed!\n\nQuickBooks may have returned a single-column report instead of monthly breakdown.\n\nThe reports need at least 12 months of data to function properly.\n\nTip: Check the QuickBooks sync settings or try re-syncing.`);
                               } else {
-                                alert(`⚠️ Only ${monthlyData.length} months of data processed.\n\nReports work best with at least 12 months of data.`);
+                                alert(`âš ï¸ Only ${monthlyData.length} months of data processed.\n\nReports work best with at least 12 months of data.`);
                               }
                             }
                             
@@ -16131,9 +14127,9 @@ export default function FinancialScorePage() {
                               totalLAndE: m.totalLAndE || 0
                             }));
                             setLoadedMonthlyData(convertedMonthly);
-                            console.log('✅ Updated loadedMonthlyData state with', convertedMonthly.length, 'months');
+                            console.log('âœ… Updated loadedMonthlyData state with', convertedMonthly.length, 'months');
                             
-                            alert(`✅ Successfully processed and saved ${monthlyData.length} months of financial data!`);
+                            alert(`âœ… Successfully processed and saved ${monthlyData.length} months of financial data!`);
                           } catch (error: any) {
                             console.error('Error processing monthly data:', error);
                             alert('Failed to process monthly data: ' + error.message);
@@ -16154,7 +14150,7 @@ export default function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                         }}
                       >
-                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                        {isProcessingMonthlyData ? 'Processing...' : 'âš™ï¸ Process & Save Monthly Data'}
                       </button>
                           <button
                             onClick={async () => {
@@ -16228,7 +14224,7 @@ export default function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            📥 Download Mapped Data (CSV)
+                            ðŸ“¥ Download Mapped Data (CSV)
                           </button>
                         </div>
                       </div>
@@ -16247,22 +14243,22 @@ export default function FinancialScorePage() {
       {false && currentView === 'financial-statements' && selectedCompanyId && qbRawData && (() => {
         // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
+          console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⚠️ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>âš ï¸ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
         
         const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
-        console.log(`📊 ========================================`);
-        console.log(`📊 FINANCIAL STATEMENTS RENDERING (Refresh Key: ${dataRefreshKey})`);
-        console.log(`📊 Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
-        console.log(`📊 QB Data sync date:`, qbRawData.syncDate);
-        console.log(`📊 Data belongs to company:`, qbRawData._companyId);
-        console.log(`📊 Record ID:`, qbRawData._recordId);
-        console.log(`📊 ========================================`);
+        console.log(`ðŸ“Š ========================================`);
+        console.log(`ðŸ“Š FINANCIAL STATEMENTS RENDERING (Refresh Key: ${dataRefreshKey})`);
+        console.log(`ðŸ“Š Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
+        console.log(`ðŸ“Š QB Data sync date:`, qbRawData.syncDate);
+        console.log(`ðŸ“Š Data belongs to company:`, qbRawData._companyId);
+        console.log(`ðŸ“Š Record ID:`, qbRawData._recordId);
+        console.log(`ðŸ“Š ========================================`);
 
         // Helper function to recursively extract all rows from QB report
         const extractRows = (data: any, level: number = 0, parentSection: string = ''): any[] => {
@@ -16337,7 +14333,7 @@ export default function FinancialScorePage() {
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-              QuickBooks Data • Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
+              QuickBooks Data â€¢ Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
             </p>
 
             {/* Tab Navigation */}
@@ -16465,7 +14461,7 @@ export default function FinancialScorePage() {
 
             {/* Statement Content Area */}
             {(() => {
-              console.log('📊 Financial Statement Render Check:', {
+              console.log('ðŸ“Š Financial Statement Render Check:', {
                 statementType,
                 statementPeriod,
                 monthlyLength: monthly?.length || 0,
@@ -16792,7 +14788,7 @@ export default function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                       <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
-                      <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} • All items shown as % of Revenue</div>
+                      <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} â€¢ All items shown as % of Revenue</div>
                     </div>
 
                     {/* Column Headers */}
@@ -17234,7 +15230,7 @@ export default function FinancialScorePage() {
                       </div>
                       {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          âš ï¸ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       )}
                     </div>
@@ -17288,7 +15284,7 @@ export default function FinancialScorePage() {
                   return (
                     <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                       <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                        📊 No Data Available
+                        ðŸ“Š No Data Available
                       </div>
                       <p style={{ fontSize: '14px', color: '#94a3b8' }}>
                         No financial data available for the selected period.
@@ -18658,7 +16654,7 @@ export default function FinancialScorePage() {
                         </div>
                         {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                           <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                            ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            âš ï¸ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </div>
                         )}
                       </div>
@@ -18671,7 +16667,7 @@ export default function FinancialScorePage() {
                 return (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                     <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                      📊 Financial Statement Viewer
+                      ðŸ“Š Financial Statement Viewer
                     </div>
                     <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
                       {monthly.length === 0 
@@ -18767,11 +16763,11 @@ export default function FinancialScorePage() {
                             <strong>Report Period:</strong> {qbRawData.profitAndLoss.Header.StartPeriod || 'N/A'} to {qbRawData.profitAndLoss.Header.EndPeriod || 'N/A'}
                           </div>
                           <div style={{ color: '#10b981', fontWeight: '600', marginTop: '4px', padding: '8px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
-                            📅 Displaying: {hasMultipleMonths ? `Monthly data for ${monthLabel}` : `Period total for ${monthLabel}`}
+                            ðŸ“… Displaying: {hasMultipleMonths ? `Monthly data for ${monthLabel}` : `Period total for ${monthLabel}`}
                           </div>
                           {!hasMultipleMonths && (
                             <div style={{ color: '#f59e0b', fontWeight: '500', fontSize: '12px', marginTop: '4px', padding: '6px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #fcd34d' }}>
-                              ⚠️ Note: This appears to be cumulative for the entire period, not monthly breakdowns
+                              âš ï¸ Note: This appears to be cumulative for the entire period, not monthly breakdowns
                             </div>
                           )}
                         </div>
@@ -18849,7 +16845,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18870,7 +16866,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18903,7 +16899,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18946,7 +16942,7 @@ export default function FinancialScorePage() {
                           As of: {qbRawData.balanceSheet.Header.Time || qbRawData.balanceSheet.Header.EndPeriod || 'N/A'}
                         </div>
                         <div style={{ color: '#3b82f6', fontWeight: '500', fontSize: '12px', marginTop: '4px' }}>
-                          📊 Balance Sheet shows point-in-time snapshot as of the date above
+                          ðŸ“Š Balance Sheet shows point-in-time snapshot as of the date above
                         </div>
                       </div>
                     )}
@@ -19037,7 +17033,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -19057,7 +17053,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -19077,7 +17073,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -19100,7 +17096,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -19120,7 +17116,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -19141,7 +17137,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>â†’ {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -19163,7 +17159,7 @@ export default function FinancialScorePage() {
                             {/* Balance Check */}
                             {Math.abs(totalAssets - totalLiabAndEquity) > 0.01 && (
                               <div style={{ padding: '10px 16px', background: '#fef2f2', border: '2px solid #ef4444', marginTop: '8px', borderRadius: '6px' }}>
-                                <span style={{ color: '#991b1b', fontWeight: '600' }}>⚠️ Balance Check: Assets and Liabilities+Equity do not match!</span>
+                                <span style={{ color: '#991b1b', fontWeight: '600' }}>âš ï¸ Balance Check: Assets and Liabilities+Equity do not match!</span>
                               </div>
                             )}
                           </>
@@ -19455,7 +17451,7 @@ export default function FinancialScorePage() {
                     gap: '8px'
                   }}
                 >
-                  🖨️ Print
+                  ðŸ–¨ï¸ Print
                 </button>
               </div>
             </div>
@@ -19463,7 +17459,7 @@ export default function FinancialScorePage() {
 
           {/* Statement Content Area */}
           {(() => {
-            console.log('📊 Financial Statement Render Check (CSV/Monthly Data):', {
+            console.log('ðŸ“Š Financial Statement Render Check (CSV/Monthly Data):', {
               statementType,
               statementPeriod,
               monthlyLength: monthly?.length || 0,
@@ -19789,7 +17785,7 @@ export default function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                     <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
-                    <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} • All items shown as % of Revenue</div>
+                    <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} â€¢ All items shown as % of Revenue</div>
                   </div>
 
                   {/* Column Headers */}
@@ -20231,7 +18227,7 @@ export default function FinancialScorePage() {
                     </div>
                     {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                       <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                        ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        âš ï¸ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </div>
                     )}
                   </div>
@@ -20285,7 +18281,7 @@ export default function FinancialScorePage() {
                 return (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                     <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                      📊 No Data Available
+                      ðŸ“Š No Data Available
                     </div>
                     <p style={{ fontSize: '14px', color: '#94a3b8' }}>
                       No financial data available for the selected period.
@@ -21700,7 +19696,7 @@ export default function FinancialScorePage() {
                       </div>
                       {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          âš ï¸ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       )}
                     </div>
@@ -21713,7 +19709,7 @@ export default function FinancialScorePage() {
               return (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                   <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                    📊 Financial Statement Viewer
+                    ðŸ“Š Financial Statement Viewer
                   </div>
                   <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
                     Select options above to view financial statements.
@@ -21754,7 +19750,7 @@ export default function FinancialScorePage() {
           </div>
           <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center', marginTop: '32px' }}>
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-              📊 No Financial Data Available
+              ðŸ“Š No Financial Data Available
             </div>
             <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
               Please import financial data via CSV or sync from QuickBooks to view financial statements.
@@ -21769,7 +19765,7 @@ export default function FinancialScorePage() {
         const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
         const canView = currentView === 'ma-questionnaire' && hasCompanyId && hasCorrectRole;
         
-        console.log('📋 Questionnaire render check:', {
+        console.log('ðŸ“‹ Questionnaire render check:', {
           currentView,
           isQuestionnaireView: currentView === 'ma-questionnaire',
           selectedCompanyId,
@@ -21791,7 +19787,7 @@ export default function FinancialScorePage() {
           
           {currentUser?.role === 'consultant' && (
             <div style={{ background: '#fffbeb', border: '2px solid #fbbf24', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>⚠ Consultant View Only</h3>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>âš  Consultant View Only</h3>
               <p style={{ fontSize: '14px', color: '#78350f', margin: 0 }}>
                 As a consultant, you can view this questionnaire but cannot fill it out. Only company users can complete assessments. 
                 Navigate to "View Assessments" in the Administrator Dashboard to see user responses.
@@ -21839,7 +19835,7 @@ export default function FinancialScorePage() {
                     </div>
                     {unansweredQuestions.includes(question.id) && (
                       <div style={{ marginTop: '8px', fontSize: '12px', color: '#ef4444', fontWeight: '600' }}>
-                        ⚠ Please select a rating
+                        âš  Please select a rating
                       </div>
                     )}
                   </div>
@@ -22363,7 +20359,7 @@ export default function FinancialScorePage() {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                 onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
               >
-                🖨️ Generate Print Package
+                ðŸ–¨ï¸ Generate Print Package
               </button>
               <button
                 onClick={() => {
@@ -22409,7 +20405,7 @@ export default function FinancialScorePage() {
             {/* Info Box */}
             <div style={{ marginTop: '32px', padding: '16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px' }}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <span style={{ fontSize: '20px' }}>ℹ️</span>
+                <span style={{ fontSize: '20px' }}>â„¹ï¸</span>
                 <div style={{ fontSize: '14px', color: '#1e40af', lineHeight: '1.6' }}>
                   <strong>How it works:</strong> Select the reports you want to include, then click "Generate Print Package" to create a combined PDF with all selected reports in a single document ready for printing.
                 </div>
@@ -22426,7 +20422,7 @@ export default function FinancialScorePage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>âš ï¸</div>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Delete Company</h2>
               <p style={{ fontSize: '16px', color: '#64748b', lineHeight: '1.6' }}>
                 Are you sure you want to delete <strong style={{ color: '#ef4444' }}>"{companyToDelete.companyName}"</strong>?
