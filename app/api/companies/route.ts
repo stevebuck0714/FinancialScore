@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 // POST create new company
 export async function POST(request: NextRequest) {
   try {
-    const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector } = await request.json();
+    const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode } = await request.json();
 
     if (!name || !consultantId) {
       return NextResponse.json(
@@ -61,37 +61,101 @@ export async function POST(request: NextRequest) {
       select: { type: true }
     });
 
-    // Fetch default pricing from SystemSettings
-    let defaultPricing = await prisma.systemSettings.findUnique({
-      where: { key: 'default_pricing' }
-    });
+    let monthlyPrice: number;
+    let quarterlyPrice: number;
+    let annualPrice: number;
+    let affiliateId: string | undefined;
+    let validatedAffiliateCode: string | undefined;
 
-    // If no settings exist, create with defaults
-    if (!defaultPricing) {
-      defaultPricing = await prisma.systemSettings.create({
-        data: {
-          key: 'default_pricing',
-          businessMonthlyPrice: 195,
-          businessQuarterlyPrice: 500,
-          businessAnnualPrice: 1750,
-          consultantMonthlyPrice: 195,
-          consultantQuarterlyPrice: 500,
-          consultantAnnualPrice: 1750
+    // If affiliate code is provided, validate and use affiliate pricing
+    if (affiliateCode) {
+      const affiliateCodeRecord = await prisma.affiliateCode.findUnique({
+        where: { code: affiliateCode.toUpperCase() },
+        include: {
+          affiliate: true
         }
       });
-    }
 
-    // Use consultant pricing for regular consultants, business pricing for business consultants
-    const isBusinessConsultant = consultant?.type === 'business';
-    const monthlyPrice = isBusinessConsultant 
-      ? (defaultPricing.businessMonthlyPrice ?? 195)
-      : (defaultPricing.consultantMonthlyPrice ?? 195);
-    const quarterlyPrice = isBusinessConsultant
-      ? (defaultPricing.businessQuarterlyPrice ?? 500)
-      : (defaultPricing.consultantQuarterlyPrice ?? 500);
-    const annualPrice = isBusinessConsultant
-      ? (defaultPricing.businessAnnualPrice ?? 1750)
-      : (defaultPricing.consultantAnnualPrice ?? 1750);
+      if (!affiliateCodeRecord) {
+        return NextResponse.json(
+          { error: 'Invalid affiliate code' },
+          { status: 400 }
+        );
+      }
+
+      if (!affiliateCodeRecord.isActive) {
+        return NextResponse.json(
+          { error: 'This affiliate code is no longer active' },
+          { status: 400 }
+        );
+      }
+
+      if (!affiliateCodeRecord.affiliate.isActive) {
+        return NextResponse.json(
+          { error: 'This affiliate is no longer active' },
+          { status: 400 }
+        );
+      }
+
+      if (affiliateCodeRecord.expiresAt && new Date(affiliateCodeRecord.expiresAt) < new Date()) {
+        return NextResponse.json(
+          { error: 'This affiliate code has expired' },
+          { status: 400 }
+        );
+      }
+
+      if (affiliateCodeRecord.maxUses && affiliateCodeRecord.currentUses >= affiliateCodeRecord.maxUses) {
+        return NextResponse.json(
+          { error: 'This affiliate code has reached its maximum number of uses' },
+          { status: 400 }
+        );
+      }
+
+      // Use affiliate pricing
+      monthlyPrice = affiliateCodeRecord.monthlyPrice;
+      quarterlyPrice = affiliateCodeRecord.quarterlyPrice;
+      annualPrice = affiliateCodeRecord.annualPrice;
+      affiliateId = affiliateCodeRecord.affiliateId;
+      validatedAffiliateCode = affiliateCodeRecord.code;
+
+      // Increment usage count
+      await prisma.affiliateCode.update({
+        where: { id: affiliateCodeRecord.id },
+        data: { currentUses: affiliateCodeRecord.currentUses + 1 }
+      });
+    } else {
+      // Fetch default pricing from SystemSettings
+      let defaultPricing = await prisma.systemSettings.findUnique({
+        where: { key: 'default_pricing' }
+      });
+
+      // If no settings exist, create with defaults
+      if (!defaultPricing) {
+        defaultPricing = await prisma.systemSettings.create({
+          data: {
+            key: 'default_pricing',
+            businessMonthlyPrice: 195,
+            businessQuarterlyPrice: 500,
+            businessAnnualPrice: 1750,
+            consultantMonthlyPrice: 195,
+            consultantQuarterlyPrice: 500,
+            consultantAnnualPrice: 1750
+          }
+        });
+      }
+
+      // Use consultant pricing for regular consultants, business pricing for business consultants
+      const isBusinessConsultant = consultant?.type === 'business';
+      monthlyPrice = isBusinessConsultant 
+        ? (defaultPricing.businessMonthlyPrice ?? 195)
+        : (defaultPricing.consultantMonthlyPrice ?? 195);
+      quarterlyPrice = isBusinessConsultant
+        ? (defaultPricing.businessQuarterlyPrice ?? 500)
+        : (defaultPricing.consultantQuarterlyPrice ?? 500);
+      annualPrice = isBusinessConsultant
+        ? (defaultPricing.businessAnnualPrice ?? 1750)
+        : (defaultPricing.consultantAnnualPrice ?? 1750);
+    }
 
     const company = await prisma.company.create({
       data: {
@@ -105,7 +169,9 @@ export async function POST(request: NextRequest) {
         industrySector,
         subscriptionMonthlyPrice: monthlyPrice,
         subscriptionQuarterlyPrice: quarterlyPrice,
-        subscriptionAnnualPrice: annualPrice
+        subscriptionAnnualPrice: annualPrice,
+        affiliateCode: validatedAffiliateCode,
+        affiliateId: affiliateId
       }
     });
 

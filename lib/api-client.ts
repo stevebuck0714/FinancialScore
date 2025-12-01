@@ -77,6 +77,7 @@ export const companiesApi = {
     consultantId: string;
     location?: string;
     industrySector?: number;
+    affiliateCode?: string;
   }) {
     return fetchApi('/api/companies', {
       method: 'POST',

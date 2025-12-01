@@ -43,6 +43,9 @@ interface CompanyDetailsTabProps {
   assessmentRecords: AssessmentRecord[];
   isLoading: boolean;
   newCompanyName: string;
+  availableAffiliateCodes?: any[];
+  selectedAffiliateCodeForNewCompany?: string;
+  setSelectedAffiliateCodeForNewCompany?: (code: string) => void;
   setNewCompanyName: (name: string) => void;
   addCompany: () => void;
   setEditingCompanyId: (id: string) => void;
@@ -84,6 +87,9 @@ export default function CompanyDetailsTab({
   assessmentRecords,
   isLoading,
   newCompanyName,
+  availableAffiliateCodes,
+  selectedAffiliateCodeForNewCompany,
+  setSelectedAffiliateCodeForNewCompany,
   setNewCompanyName,
   addCompany,
   setEditingCompanyId,
@@ -136,7 +142,7 @@ export default function CompanyDetailsTab({
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
               Select a company from the sidebar or create a new one:
             </p>
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
               <input 
                 type="text" 
                 placeholder="Company Name" 
@@ -146,6 +152,62 @@ export default function CompanyDetailsTab({
                 disabled={isLoading}
                 style={{ flex: 1, padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
+              
+              {/* Affiliate Code Selection */}
+              {availableAffiliateCodes && availableAffiliateCodes.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
+                    Affiliate Code (Optional)
+                  </label>
+                  <select
+                    value={selectedAffiliateCodeForNewCompany || ''}
+                    onChange={(e) => setSelectedAffiliateCodeForNewCompany && setSelectedAffiliateCodeForNewCompany(e.target.value)}
+                    disabled={isLoading}
+                    style={{ 
+                      padding: '12px 16px', 
+                      borderRadius: '8px', 
+                      border: '1px solid #cbd5e1', 
+                      fontSize: '14px',
+                      background: 'white',
+                      cursor: isLoading ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <option value="">No Affiliate Code (Use Default Pricing)</option>
+                    {availableAffiliateCodes.map((code) => {
+                      const selectedCode = availableAffiliateCodes.find(c => c.code === selectedAffiliateCodeForNewCompany);
+                      return (
+                        <option key={code.id} value={code.code}>
+                          {code.code} - {code.affiliateName} 
+                          {code.description ? ` (${code.description})` : ''}
+                          {' - '}
+                          ${code.monthlyPrice}/mo, ${code.quarterlyPrice}/qtr, ${code.annualPrice}/yr
+                        </option>
+                      );
+                    })}
+                  </select>
+                  
+                  {/* Show pricing preview if code is selected */}
+                  {selectedAffiliateCodeForNewCompany && (
+                    (() => {
+                      const selectedCode = availableAffiliateCodes.find(c => c.code === selectedAffiliateCodeForNewCompany);
+                      return selectedCode ? (
+                        <div style={{ 
+                          padding: '12px', 
+                          background: '#f0fdf4', 
+                          border: '1px solid #86efac', 
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          color: '#166534'
+                        }}>
+                          <div style={{ fontWeight: '600', marginBottom: '4px' }}>✓ Pricing from {selectedCode.affiliateName}</div>
+                          <div>Monthly: ${selectedCode.monthlyPrice} | Quarterly: ${selectedCode.quarterlyPrice} | Annual: ${selectedCode.annualPrice}</div>
+                        </div>
+                      ) : null;
+                    })()
+                  )}
+                </div>
+              )}
+              
               <button 
                 onClick={addCompany} 
                 disabled={isLoading}
@@ -158,7 +220,8 @@ export default function CompanyDetailsTab({
                   fontSize: '14px', 
                   fontWeight: '600', 
                   cursor: isLoading ? 'not-allowed' : 'pointer',
-                  opacity: isLoading ? 0.7 : 1 
+                  opacity: isLoading ? 0.7 : 1,
+                  alignSelf: 'flex-start'
                 }}
               >
                 {isLoading ? 'Adding...' : 'Add Company'}
