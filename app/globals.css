@@ -81,6 +81,33 @@ input[type="file"]::file-selector-button:hover {
     display: none !important;
   }
   
+  /* Hide sidebar on print */
+  aside {
+    display: none !important;
+  }
+  
+  /* Fix main content area for printing - remove fixed heights and overflow hidden */
+  #__next,
+  #__next > div,
+  #__next > div > div {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin-top: 0 !important;
+  }
+  
+  /* Main content wrapper should allow page breaks */
+  body > div > div > div {
+    overflow: visible !important;
+    height: auto !important;
+  }
+  
+  main {
+    height: auto !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  
   .mda-container {
     padding: 0.05in 0.1in 0 0.1in !important;
     margin: 0 !important;
