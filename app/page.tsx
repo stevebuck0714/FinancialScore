@@ -7052,10 +7052,6 @@ export default function FinancialScorePage() {
               * {
                 box-shadow: none !important;
                 background: white !important;
-                padding-top: 0 !important;
-                padding-bottom: 0 !important;
-                margin-top: 0 !important;
-                margin-bottom: 0 !important;
               }
               
               /* Remove all padding from body and containers */
@@ -7067,11 +7063,15 @@ export default function FinancialScorePage() {
               body > div {
                 padding: 0 !important;
                 margin: 0 !important;
+                height: auto !important;
+                overflow: visible !important;
               }
               
               body > div > div {
                 padding: 0 !important;
                 margin: 0 !important;
+                height: auto !important;
+                overflow: visible !important;
               }
               
               /* Dashboard container */
