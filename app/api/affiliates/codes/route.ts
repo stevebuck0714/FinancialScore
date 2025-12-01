@@ -48,6 +48,41 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// PUT - Update affiliate code
+export async function PUT(request: NextRequest) {
+  try {
+    const { id, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, isActive } = await request.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Code ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const affiliateCode = await prisma.affiliateCode.update({
+      where: { id },
+      data: {
+        description: description || null,
+        monthlyPrice: monthlyPrice ? parseFloat(monthlyPrice.toString()) : 0,
+        quarterlyPrice: quarterlyPrice ? parseFloat(quarterlyPrice.toString()) : 0,
+        annualPrice: annualPrice ? parseFloat(annualPrice.toString()) : 0,
+        maxUses: maxUses ? parseInt(maxUses.toString()) : null,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        isActive: isActive !== undefined ? isActive : true
+      }
+    });
+
+    return NextResponse.json({ code: affiliateCode });
+  } catch (error) {
+    console.error('Error updating affiliate code:', error);
+    return NextResponse.json(
+      { error: 'Failed to update code' },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE - Remove affiliate code
 export async function DELETE(request: NextRequest) {
   try {

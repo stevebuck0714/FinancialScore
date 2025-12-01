@@ -361,6 +361,7 @@ export default function FinancialScorePage() {
   const [showAddAffiliateForm, setShowAddAffiliateForm] = useState(false);
   const [expandedAffiliateId, setExpandedAffiliateId] = useState<string | null>(null);
   const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
+  const [editingAffiliateCode, setEditingAffiliateCode] = useState<any>(null);
   
   // Team management state
   const [consultantTeamMembers, setConsultantTeamMembers] = useState<any[]>([]);
@@ -4435,6 +4436,8 @@ export default function FinancialScorePage() {
               setExpandedAffiliateId={setExpandedAffiliateId}
               newAffiliateCode={newAffiliateCode}
               setNewAffiliateCode={setNewAffiliateCode}
+              editingAffiliateCode={editingAffiliateCode}
+              setEditingAffiliateCode={setEditingAffiliateCode}
               editingConsultantInfo={editingConsultantInfo}
               setEditingConsultantInfo={setEditingConsultantInfo}
               users={users}
