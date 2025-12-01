@@ -208,7 +208,6 @@ export async function POST(request: NextRequest) {
       });
 
       // Step 6b: Create revenue record for initial payment
-      const now = new Date();
       const planType = billingPeriod as 'monthly' | 'quarterly' | 'annual';
       const { start, end } = calculateBillingPeriod(now, planType);
       
