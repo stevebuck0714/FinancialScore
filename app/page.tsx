@@ -7805,7 +7805,7 @@ export default function FinancialScorePage() {
               textAlign: 'center',
               border: '2px dashed #cbd5e1'
             }}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>ðŸ“Š</div>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>📊</div>
               <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
                 Your Dashboard is Empty
               </h3>
