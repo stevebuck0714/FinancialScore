@@ -145,7 +145,8 @@ export async function POST(request: NextRequest) {
           email: normalizedEmail,
           name: fullName,
           passwordHash,
-          role: 'CONSULTANT'
+          role: 'CONSULTANT',
+          isPrimaryContact: true // New consultants are primary contacts
         }
       });
 
