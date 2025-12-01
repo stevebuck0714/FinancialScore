@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { formatPhoneNumber } from '@/app/utils/phone';
+import PasswordInput from '@/app/components/common/PasswordInput';
 
 interface TeamMember {
   id: number;
@@ -78,10 +80,10 @@ export default function TeamManagementTab({
               style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
             />
             <input
-              type="text"
-              placeholder="Phone"
+              type="tel"
+              placeholder="(555) 777-1212"
               value={newTeamMember.phone}
-              onChange={(e) => setNewTeamMember({...newTeamMember, phone: e.target.value})}
+              onChange={(e) => setNewTeamMember({...newTeamMember, phone: formatPhoneNumber(e.target.value)})}
               style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
             />
             <input
@@ -91,11 +93,10 @@ export default function TeamManagementTab({
               onChange={(e) => setNewTeamMember({...newTeamMember, title: e.target.value})}
               style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
             />
-            <input
-              type="password"
+            <PasswordInput
               placeholder="Password *"
               value={newTeamMember.password}
-              onChange={(e) => setNewTeamMember({...newTeamMember, password: e.target.value})}
+              onChange={(value) => setNewTeamMember({...newTeamMember, password: value})}
               style={{ padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
             />
           </div>

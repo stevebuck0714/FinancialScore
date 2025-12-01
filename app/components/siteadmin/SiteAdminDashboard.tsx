@@ -2,6 +2,8 @@
 
 import React from 'react';
 import { US_STATES } from '@/app/constants';
+import { formatPhoneNumber } from '@/app/utils/phone';
+import PasswordInput from '@/app/components/common/PasswordInput';
 
 export default function SiteAdminDashboard(props: any) {
   const {
@@ -191,18 +193,17 @@ export default function SiteAdminDashboard(props: any) {
                         />
                         <input
                           type="tel"
-                          placeholder="Phone *"
+                          placeholder="(555) 777-1212"
                           value={newConsultantPhone}
-                          onChange={(e) => setNewConsultantPhone(e.target.value)}
+                          onChange={(e) => setNewConsultantPhone(formatPhoneNumber(e.target.value))}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
                         <div style={{ gridColumn: 'span 2' }}>
-                          <input
-                            type="password"
+                          <PasswordInput
                             placeholder="Password *"
                             value={newConsultantPassword}
-                            onChange={(e) => setNewConsultantPassword(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', width: '100%' }}
+                            onChange={setNewConsultantPassword}
+                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                           />
                           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', lineHeight: '1.4' }}>
                             Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
@@ -1226,8 +1227,8 @@ export default function SiteAdminDashboard(props: any) {
                               <input
                                 type="tel"
                                 value={editingAffiliate?.contactPhone || ''}
-                                onChange={(e) => setEditingAffiliate({...editingAffiliate, contactPhone: e.target.value})}
-                                placeholder="(555) 123-4567"
+                                onChange={(e) => setEditingAffiliate({...editingAffiliate, contactPhone: formatPhoneNumber(e.target.value)})}
+                                placeholder="(555) 777-1212"
                                 style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                               />
                             </div>
@@ -2174,12 +2175,11 @@ export default function SiteAdminDashboard(props: any) {
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
                         <div>
-                          <input
-                            type="password"
+                          <PasswordInput
                             placeholder="Password *"
                             value={newSiteAdminPassword}
-                            onChange={(e) => setNewSiteAdminPassword(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', width: '100%' }}
+                            onChange={setNewSiteAdminPassword}
+                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                           />
                           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', lineHeight: '1.4' }}>
                             Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)

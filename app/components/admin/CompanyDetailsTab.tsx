@@ -2,6 +2,8 @@
 
 import React from 'react';
 import { INDUSTRY_SECTORS } from '@/data/industrySectors';
+import { formatPhoneNumber } from '@/app/utils/phone';
+import PasswordInput from '@/app/components/common/PasswordInput';
 
 interface User {
   id: string;
@@ -325,24 +327,23 @@ export default function CompanyDetailsTab({
                       style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                     />
                     <input 
-                      type="text" 
+                      type="tel" 
                       name={`company_user_phone_${Date.now()}`}
-                      placeholder="Phone Number" 
+                      placeholder="(555) 777-1212" 
                       value={newCompanyUserPhone} 
-                      onChange={(e) => setNewCompanyUserPhone(e.target.value)} 
+                      onChange={(e) => setNewCompanyUserPhone(formatPhoneNumber(e.target.value))} 
                       autoComplete="off"
                       style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                     />
                   </div>
                   <div style={{ gridColumn: 'span 2' }}>
-                    <input 
-                      type="password" 
+                    <PasswordInput
                       name={`company_user_password_${Date.now()}`}
-                      placeholder="Password" 
-                      value={newCompanyUserPassword} 
-                      onChange={(e) => setNewCompanyUserPassword(e.target.value)} 
+                      placeholder="Password"
+                      value={newCompanyUserPassword}
+                      onChange={setNewCompanyUserPassword}
                       autoComplete="new-password"
-                      style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', width: '100%' }} 
+                      style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
                     />
                     <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', lineHeight: '1.3' }}>
                       8+ chars with uppercase, lowercase, number, and special character
@@ -427,14 +428,13 @@ export default function CompanyDetailsTab({
                       style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                     />
                     <div style={{ gridColumn: 'span 2' }}>
-                      <input 
-                        type="password" 
+                      <PasswordInput
                         name={`assessment_user_password_${Date.now()}`}
-                        placeholder="Password" 
-                        value={newAssessmentUserPassword} 
-                        onChange={(e) => setNewAssessmentUserPassword(e.target.value)} 
+                        placeholder="Password"
+                        value={newAssessmentUserPassword}
+                        onChange={setNewAssessmentUserPassword}
                         autoComplete="new-password"
-                        style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', width: '100%' }} 
+                        style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
                       />
                       <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', lineHeight: '1.3' }}>
                         8+ chars with uppercase, lowercase, number, and special character

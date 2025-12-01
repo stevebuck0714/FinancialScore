@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { US_STATES } from '../../constants';
+import { formatPhoneNumber } from '../../utils/phone';
 
 interface LoginViewProps {
   // State
@@ -185,9 +186,9 @@ export default function LoginView(props: LoginViewProps) {
             <input 
               type="tel" 
               name={`phone_${Date.now()}`}
-              placeholder="Phone Number *" 
+              placeholder="(555) 777-1212" 
               value={loginPhone} 
-              onChange={(e) => setLoginPhone(e.target.value)} 
+              onChange={(e) => setLoginPhone(formatPhoneNumber(e.target.value))} 
               autoComplete="off" 
               required
               style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 

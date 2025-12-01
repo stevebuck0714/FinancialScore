@@ -3,6 +3,8 @@
 import React from 'react';
 import { INDUSTRY_SECTORS } from '../../../data/industrySectors';
 import type { Company, User } from '../../types';
+import { formatPhoneNumber } from '../../utils/phone';
+import PasswordInput from '../common/PasswordInput';
 
 interface CompanyManagementTabProps {
   currentUser: any;
@@ -271,23 +273,22 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                             <input 
-                              type="text" 
+                              type="tel" 
                               name={`company_user_phone_${Date.now()}`}
-                              placeholder="Phone Number" 
+                              placeholder="(555) 777-1212" 
                               value={newCompanyUserPhone} 
-                              onChange={(e) => setNewCompanyUserPhone(e.target.value)} 
+                              onChange={(e) => setNewCompanyUserPhone(formatPhoneNumber(e.target.value))} 
                               autoComplete="off"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                           </div>
-                          <input 
-                            type="password" 
+                          <PasswordInput
                             name={`company_user_password_${Date.now()}`}
-                            placeholder="Password" 
-                            value={newCompanyUserPassword} 
-                            onChange={(e) => setNewCompanyUserPassword(e.target.value)} 
+                            placeholder="Password"
+                            value={newCompanyUserPassword}
+                            onChange={setNewCompanyUserPassword}
                             autoComplete="new-password"
-                            style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
+                            style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
                           />
                           <button onClick={() => addUser(comp.id, 'company')} style={{ padding: '8px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Company User</button>
                         </div>
@@ -367,14 +368,13 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                               autoComplete="off"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
-                            <input 
-                              type="password" 
+                            <PasswordInput
                               name={`assessment_user_password_${Date.now()}`}
-                              placeholder="Password" 
-                              value={newAssessmentUserPassword} 
-                              onChange={(e) => setNewAssessmentUserPassword(e.target.value)} 
+                              placeholder="Password"
+                              value={newAssessmentUserPassword}
+                              onChange={setNewAssessmentUserPassword}
                               autoComplete="new-password"
-                              style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
+                              style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
                             />
                             <button onClick={() => addUser(comp.id, 'assessment')} style={{ padding: '8px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Assessment User</button>
                           </div>
@@ -575,23 +575,22 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                             <input 
-                              type="text" 
+                              type="tel" 
                               name={`company_user_phone_${Date.now()}`}
-                              placeholder="Phone Number" 
+                              placeholder="(555) 777-1212" 
                               value={newCompanyUserPhone} 
-                              onChange={(e) => setNewCompanyUserPhone(e.target.value)} 
+                              onChange={(e) => setNewCompanyUserPhone(formatPhoneNumber(e.target.value))} 
                               autoComplete="off"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
                           </div>
-                          <input 
-                            type="password" 
+                          <PasswordInput
                             name={`company_user_password_${Date.now()}`}
-                            placeholder="Password" 
-                            value={newCompanyUserPassword} 
-                            onChange={(e) => setNewCompanyUserPassword(e.target.value)} 
+                            placeholder="Password"
+                            value={newCompanyUserPassword}
+                            onChange={setNewCompanyUserPassword}
                             autoComplete="new-password"
-                            style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
+                            style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
                           />
                           <button onClick={() => addUser(comp.id, 'company')} style={{ padding: '8px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Company User</button>
                         </div>
@@ -671,14 +670,13 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                               autoComplete="off"
                               style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
                             />
-                            <input 
-                              type="password" 
+                            <PasswordInput
                               name={`assessment_user_password_${Date.now()}`}
-                              placeholder="Password" 
-                              value={newAssessmentUserPassword} 
-                              onChange={(e) => setNewAssessmentUserPassword(e.target.value)} 
+                              placeholder="Password"
+                              value={newAssessmentUserPassword}
+                              onChange={setNewAssessmentUserPassword}
                               autoComplete="new-password"
-                              style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }} 
+                              style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
                             />
                             <button onClick={() => addUser(comp.id, 'assessment')} style={{ padding: '8px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Add Assessment User</button>
                           </div>
