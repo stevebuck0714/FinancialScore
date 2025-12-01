@@ -12155,12 +12155,14 @@ export default function FinancialScorePage() {
             </button>
           </div>
 
-          {/* Cash Flow Metrics Definitions */}
-          <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
-            <details>
-              <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                📚 Cash Flow Metrics - Definitions & Examples
-              </summary>
+          {/* Educational Resources - Side by Side */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+            {/* Cash Flow Metrics Definitions */}
+            <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
+              <details>
+                <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
+                  📚 Cash Flow Metrics - Definitions & Examples
+                </summary>
               
               <div style={{ display: 'grid', gap: '20px', marginTop: '16px' }}>
                 {/* Operating Cash Flow */}
@@ -12307,14 +12309,14 @@ export default function FinancialScorePage() {
                 </div>
               </div>
             </details>
-          </div>
+            </div>
 
-          {/* Cash Flow Management Article */}
-          <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
-            <details>
-              <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                📖 Why Cash Flow Management is Critical for your Business
-              </summary>
+            {/* Cash Flow Management Article */}
+            <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
+              <details>
+                <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
+                  📖 Why Cash Flow Management is Critical for your Business
+                </summary>
               
               <div style={{ marginTop: '16px', fontSize: '14px', lineHeight: '1.8', color: '#475569' }}>
                 <p style={{ marginBottom: '16px' }}>
@@ -12425,10 +12427,11 @@ export default function FinancialScorePage() {
                   Conclusion: Liquidity is the Key to Resilience
                 </h3>
                 <p style={{ marginBottom: '0' }}>
-                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters mostâ€”growing your business.
+                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters most—growing your business.
                 </p>
               </div>
-            </details>
+              </details>
+            </div>
           </div>
 
           {(() => {
