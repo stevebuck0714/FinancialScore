@@ -5,8 +5,22 @@ import { US_STATES } from '@/app/constants';
 
 export default function SiteAdminDashboard(props: any) {
   const {
-    siteAdminTab, setSiteAdminTab, consultants, siteAdmins,
+    siteAdminTab, setSiteAdminTab, consultants, companies, siteAdmins,
     selectedConsultantId, setSelectedConsultantId, expandedCompanyIds, setExpandedCompanyIds,
+    isLoading, expandedBusinessIds, setExpandedBusinessIds,
+    editingPricing, setEditingPricing,
+    defaultBusinessMonthlyPrice, setDefaultBusinessMonthlyPrice,
+    defaultBusinessQuarterlyPrice, setDefaultBusinessQuarterlyPrice,
+    defaultBusinessAnnualPrice, setDefaultBusinessAnnualPrice,
+    defaultConsultantMonthlyPrice, setDefaultConsultantMonthlyPrice,
+    defaultConsultantQuarterlyPrice, setDefaultConsultantQuarterlyPrice,
+    defaultConsultantAnnualPrice, setDefaultConsultantAnnualPrice,
+    affiliates, setAffiliates,
+    showAddAffiliateForm, setShowAddAffiliateForm,
+    editingAffiliate, setEditingAffiliate,
+    expandedAffiliateId, setExpandedAffiliateId,
+    editingConsultantInfo, setEditingConsultantInfo,
+    users, getCompanyUsers,
     showAddConsultantForm, setShowAddConsultantForm,
     newConsultantType, setNewConsultantType,
     newConsultantFullName, setNewConsultantFullName,
@@ -21,14 +35,13 @@ export default function SiteAdminDashboard(props: any) {
     newConsultantCompanyState, setNewConsultantCompanyState,
     newConsultantCompanyZip, setNewConsultantCompanyZip,
     newConsultantCompanyWebsite, setNewConsultantCompanyWebsite,
-    addConsultant, deleteConsultant, viewAsConsultant,
+    addConsultant, deleteConsultant, getConsultantCompanies,
     setCurrentUser, setSiteAdminViewingAs, setCurrentView, currentUser,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
     newSiteAdminEmail, setNewSiteAdminEmail,
     newSiteAdminPassword, setNewSiteAdminPassword,
-    showAddSiteAdminForm, setShowAddSiteAdminForm,
-    addSiteAdmin, deleteSiteAdmin
+    showAddSiteAdminForm, setShowAddSiteAdminForm
   } = props;
 
   return (
@@ -144,7 +157,7 @@ export default function SiteAdminDashboard(props: any) {
                       cursor: 'pointer' 
                     }}
                   >
-                    {showAddConsultantForm ? 'â–²' : 'â–¼'}
+                    {showAddConsultantForm ? '▲' : '▼'}
                   </button>
                 </div>
                 {showAddConsultantForm && (
@@ -787,7 +800,7 @@ export default function SiteAdminDashboard(props: any) {
                         });
 
                         if (orphanedBusinesses.length === 0) {
-                          alert('âœ… No orphaned business records found!');
+                          alert('✅ No orphaned business records found!');
                           return;
                         }
 
@@ -816,9 +829,9 @@ export default function SiteAdminDashboard(props: any) {
 
                           // Show results
                           if (errors.length === 0) {
-                            alert(`âœ… Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
+                            alert(`✅ Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
                           } else {
-                            alert(`âš ï¸ Deleted ${deletedCount} of ${orphanedBusinesses.length} records.\n\nErrors:\n${errors.join('\n')}`);
+                            alert(`⚠️ Deleted ${deletedCount} of ${orphanedBusinesses.length} records.\n\nErrors:\n${errors.join('\n')}`);
                           }
                         } catch (error) {
                           alert(`âŒ Error during cleanup: ${error instanceof ApiError ? error.message : 'Unknown error'}`);
@@ -842,7 +855,7 @@ export default function SiteAdminDashboard(props: any) {
                         opacity: isLoading ? 0.6 : 1
                       }}
                     >
-                      {isLoading ? 'â³ Cleaning...' : 'ðŸ”„ Clean Up Orphaned Records'}
+                      {isLoading ? '⏳ Cleaning...' : '🔄 Clean Up Orphaned Records'}
                     </button>
                   </div>
 
@@ -857,7 +870,7 @@ export default function SiteAdminDashboard(props: any) {
                       {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).map((business) => {
                         const businessCompany = Array.isArray(companies) ? companies.find(comp => comp.consultantId === business.id) : undefined;
                         const isExpanded = expandedBusinessIds.has(business.id);
-                        const editing = editingPricing[business.id];
+                        const editing = editingPricing?.[business.id];
                         
                         return (
                           <div key={business.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
@@ -1689,7 +1702,7 @@ export default function SiteAdminDashboard(props: any) {
                   {/* Business Default Pricing */}
                   <div style={{ background: '#eff6ff', border: '2px solid #3b82f6', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e40af', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      ðŸ¢ Default Business Pricing
+                      🏢 Default Business Pricing
                     </h3>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
@@ -1756,7 +1769,7 @@ export default function SiteAdminDashboard(props: any) {
                           });
                           
                           if (response.ok) {
-                            alert(`âœ… Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
+                            alert(`✅ Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
                           } else {
                             alert('âŒ Failed to save pricing. Please try again.');
                           }
@@ -1777,14 +1790,14 @@ export default function SiteAdminDashboard(props: any) {
                         boxShadow: '0 2px 4px rgba(59, 130, 246, 0.3)'
                       }}
                     >
-                      ðŸ’¾ Save Business Defaults
+                      💾 Save Business Defaults
                     </button>
                   </div>
 
                   {/* Consultant Default Pricing */}
                   <div style={{ background: '#f0fdf4', border: '2px solid #10b981', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      ðŸ‘¥ Default Consultant Pricing
+                      👥 Default Consultant Pricing
                     </h3>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
@@ -1851,7 +1864,7 @@ export default function SiteAdminDashboard(props: any) {
                           });
                           
                           if (response.ok) {
-                            alert(`âœ… Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
+                            alert(`✅ Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
                           } else {
                             alert('âŒ Failed to save pricing. Please try again.');
                           }
@@ -1872,13 +1885,13 @@ export default function SiteAdminDashboard(props: any) {
                         boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)'
                       }}
                     >
-                      ðŸ’¾ Save Consultant Defaults
+                      💾 Save Consultant Defaults
                     </button>
                   </div>
 
                   <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '12px', padding: '16px' }}>
                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      ðŸ’¡ How It Works
+                      💡 How It Works
                     </h4>
                     <ul style={{ fontSize: '13px', color: '#78350f', marginLeft: '20px', marginBottom: '0' }}>
                       <li style={{ marginBottom: '6px' }}>Business defaults apply when creating companies in the <strong>Businesses</strong> tab</li>
@@ -1981,7 +1994,7 @@ export default function SiteAdminDashboard(props: any) {
                             setNewSiteAdminEmail('');
                             setNewSiteAdminPassword('');
                             setShowAddSiteAdminForm(false);
-                            alert('âœ… Site administrator added successfully!');
+                            alert('✅ Site administrator added successfully!');
                           } else {
                             const error = await response.json();
                             if (error.error && error.error.includes('Password does not meet requirements')) {
@@ -2063,7 +2076,7 @@ export default function SiteAdminDashboard(props: any) {
 
                                 if (response.ok) {
                                   setSiteAdmins(siteAdmins.filter((a: any) => a.id !== admin.id));
-                                  alert('âœ… Site administrator deleted successfully!');
+                                  alert('✅ Site administrator deleted successfully!');
                                 } else {
                                   alert('âŒ Failed to delete site administrator');
                                 }
