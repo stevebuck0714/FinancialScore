@@ -93,7 +93,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           </button>
         )}
       </div>
-      <svg width={width} height={height} style={{ maxWidth: '100%', marginBottom: '10px' }} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+      <svg width={width} height={height} style={{ maxWidth: '100%', marginBottom: '5px' }} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
         {(() => {
           const gridValues = [];
           const step = range / 4;
@@ -243,7 +243,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           }
         })}
       </svg>
-      <div style={{ display: 'grid', gridTemplateColumns: benchmarkValue != null ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginTop: '15px', padding: '3px 12px', background: 'white', borderRadius: '8px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: benchmarkValue != null ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginTop: '5px', padding: '3px 12px', background: 'white', borderRadius: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>CURRENT:</div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: color }}>{formatter ? formatter(validData[validData.length - 1].value!) : validData[validData.length - 1].value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>

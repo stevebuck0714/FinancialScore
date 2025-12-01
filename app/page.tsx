@@ -8250,18 +8250,21 @@ export default function FinancialScorePage() {
                     value: wcProjections[i]
                   }));
                   
-                  return <ProjectionChart 
-                    key={widget} 
-                    title="Working Capital Trend & 12-Month Projection" 
-                    historicalData={wcHistorical}
-                    projectedData={{
-                      mostLikely: projectedData,
-                      bestCase: projectedData.map(d => ({ ...d, value: d.value * 1.1 })),
-                      worstCase: projectedData.map(d => ({ ...d, value: d.value * 0.9 }))
-                    }}
-                    valueKey="value"
-                    formatValue={(v) => '$' + (v / 1000).toFixed(0) + 'k'}
-                  />;
+                  return (
+                    <div key={widget} style={{ gridColumn: '1 / -1' }}>
+                      <ProjectionChart 
+                        title="Working Capital Trend & 12-Month Projection" 
+                        historicalData={wcHistorical}
+                        projectedData={{
+                          mostLikely: projectedData,
+                          bestCase: projectedData.map(d => ({ ...d, value: d.value * 1.1 })),
+                          worstCase: projectedData.map(d => ({ ...d, value: d.value * 0.9 }))
+                        }}
+                        valueKey="value"
+                        formatValue={(v) => '$' + (v / 1000).toFixed(0) + 'k'}
+                      />
+                    </div>
+                  );
                 }
                 
                 return null;
@@ -8347,7 +8350,7 @@ export default function FinancialScorePage() {
           {/* Benchmark Status Indicator */}
           {benchmarks.length > 0 ? (
             <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#065f46' }}>
-              âœ“ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
+              ✓ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
             </div>
           ) : (
             <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
