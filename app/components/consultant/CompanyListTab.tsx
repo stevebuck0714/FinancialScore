@@ -107,19 +107,18 @@ export default function CompanyListTab({
                     )}
                   </div>
                   
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                    {company.subscriptionStatus && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {company.subscriptionStatus === 'cancelled' && (
                       <div style={{
                         padding: '4px 12px',
-                        background: company.subscriptionStatus === 'active' ? '#10b981' : 
-                                   company.subscriptionStatus === 'trial' ? '#f59e0b' : '#ef4444',
+                        background: '#ef4444',
                         color: 'white',
-                        borderRadius: '12px',
+                        borderRadius: '6px',
                         fontSize: '11px',
                         fontWeight: '600',
                         textTransform: 'uppercase'
                       }}>
-                        {company.subscriptionStatus}
+                        Inactive
                       </div>
                     )}
                     <button
