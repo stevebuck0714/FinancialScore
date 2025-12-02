@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { US_STATES } from '@/app/constants';
+import { INDUSTRY_SECTORS } from '@/data/industrySectors';
 import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
 import BillingDashboard from '@/app/components/billing/BillingDashboard';
