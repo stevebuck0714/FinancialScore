@@ -4096,8 +4096,34 @@ export default function FinancialScorePage() {
               </div>
             )}
 
-            {/* Legal Links Section */}
+            {/* Getting Started & Legal Links Section */}
             <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+              <a
+                href="/getting-started"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#667eea',
+                  textDecoration: 'none',
+                  padding: '12px 24px',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  margin: '0 12px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#ede9fe';
+                  e.currentTarget.style.color = '#4338ca';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#667eea';
+                }}
+              >
+                📚 Getting Started
+              </a>
               <a
                 href="/privacy-policy"
                 target="_blank"
@@ -4345,8 +4371,34 @@ export default function FinancialScorePage() {
               </h3>
             </div>
 
-            {/* Legal Links Section */}
+            {/* Getting Started & Legal Links Section */}
             <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+              <a
+                href="/getting-started"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#667eea',
+                  textDecoration: 'none',
+                  padding: '12px 24px',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  margin: '0 12px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#ede9fe';
+                  e.currentTarget.style.color = '#4338ca';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#667eea';
+                }}
+              >
+                📚 Getting Started
+              </a>
               <a
                 href="/privacy-policy"
                 target="_blank"
@@ -13348,7 +13400,7 @@ export default function FinancialScorePage() {
                       </>
                     ) : (
                       <>
-                        <span>ðŸ¤–</span>
+                        <span>🤖</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -13359,7 +13411,7 @@ export default function FinancialScorePage() {
                   <div>
                     <div style={{ marginBottom: '16px', padding: '16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#0369a1', marginBottom: '4px' }}>
-                        âœ¨ AI Suggestions Generated
+                        ✨ AI Suggestions Generated
                       </div>
                       <div style={{ fontSize: '13px', color: '#0c4a6e' }}>
                         Review the suggested mappings below. You can edit any mapping before saving. Mappings will be used to automatically populate your standardized financial statements from QuickBooks data.
