@@ -208,7 +208,7 @@ export default function FinancialScorePage() {
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
     if (isPaymentRequired()) {
-      alert('⚠️ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
+      alert('⚠️ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
       setAdminDashboardTab('payments');
       setCurrentView('admin');
       return;
@@ -226,7 +226,7 @@ export default function FinancialScorePage() {
     
     // Block other tabs if payment is required
     if (isPaymentRequired()) {
-      alert('⚠️ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
+      alert('⚠️ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
       setAdminDashboardTab('payments');
       return;
     }
@@ -1155,7 +1155,7 @@ export default function FinancialScorePage() {
               _companyId: selectedCompanyId,
               _recordId: latestRecord.id
             });
-            console.log(`⚠️ Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
+            console.log(`⚠️ Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
             // Force re-render of Financial Statements view
             setDataRefreshKey(prev => prev + 1);
             setRawRows([]); // Set empty array since rawRows is not used for QB data
@@ -1311,7 +1311,7 @@ export default function FinancialScorePage() {
             console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map((b: any) => b.metricName).join(', '));
           }
         } else {
-          console.log('⚠️ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
+          console.log('⚠️ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
         }
 
         // Load subscription pricing for this company
@@ -2316,7 +2316,7 @@ export default function FinancialScorePage() {
       console.error('Error creating user:', error);
       if (error instanceof ApiError) {
         if (error.message.includes('already registered')) {
-          alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+          alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
         } else if (error.message.includes('Password does not meet requirements')) {
           alert('âŒ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
@@ -8606,7 +8606,7 @@ export default function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      ðŸ–¨ï¸ Print Priority Ratios
+                      ðŸ–¨ï¸ Print Priority Ratios
                     </button>
                   </div>
                   <div className="priority-ratios-print-content">
@@ -8694,7 +8694,7 @@ export default function FinancialScorePage() {
                   onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
                   onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
                 >
-                  ðŸ“¥ Export to Excel
+                  📥 Export to Excel
                 </button>
               </div>
               
@@ -10231,7 +10231,7 @@ export default function FinancialScorePage() {
           {mdaTab === 'key-metrics' && monthly.length >= 12 && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
-              ⚠️ Critical Review Items
+              ⚠️ Critical Review Items
             </h2>
             
             <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' }}>
@@ -12132,7 +12132,7 @@ export default function FinancialScorePage() {
                     cursor: 'pointer',
                     boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                   }}>
-                  ðŸ–¨ï¸ Print
+                  ðŸ–¨ï¸ Print
                 </button>
               )}
             </div>
@@ -12978,7 +12978,7 @@ export default function FinancialScorePage() {
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
           console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⚠️ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⚠️ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
@@ -13205,7 +13205,7 @@ export default function FinancialScorePage() {
                         });
                         
                         if (Object.keys(accountClassifications).length === 0) {
-                          console.error('⚠️ No Chart of Accounts data found! Classifications will be incorrect.');
+                          console.error('⚠️ No Chart of Accounts data found! Classifications will be incorrect.');
                         }
                         
                         // Extract all account names WITH classifications from QB data
@@ -13300,11 +13300,12 @@ export default function FinancialScorePage() {
                         console.log('ðŸ” TOTAL accounts to map:', qbAccountsWithClass.length);
                         console.log('ðŸ” First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
 
-                        const response = await fetch('/api/ai-mapping', {
+                        const response = await fetch('/api/ai-mapping/enhanced', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ 
                             qbAccountsWithClass,
+                            companyId: selectedCompanyId,
                             targetFields: []
                           })
                         });
@@ -13348,7 +13349,7 @@ export default function FinancialScorePage() {
                   >
                     {isGeneratingMappings ? (
                       <>
-                        <span>â³</span>
+                        <span>â³</span>
                         <span>Generating Mappings...</span>
                       </>
                     ) : (
@@ -13668,7 +13669,7 @@ export default function FinancialScorePage() {
                               cursor: aiMappings.length === 0 ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            ðŸ—‘ï¸ Clear All
+                            🗑️ Clear All
                           </button>
                           <button
                             onClick={() => {
@@ -13739,7 +13740,7 @@ export default function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isSavingMappings ? 'Saving...' : 'ðŸ’¾ Save Mappings'}
+                            {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
                           </button>
                         </div>
                       </div>
@@ -13867,7 +13868,7 @@ export default function FinancialScorePage() {
                               
                               // Debug mappings for first month
                               if (i === 1) {
-                                console.log(`\nðŸ—ºï¸ Total mappings: ${aiMappings.length}`);
+                                console.log(`\nðŸ—ºï¸ Total mappings: ${aiMappings.length}`);
                                 const targetFieldCounts: Record<string, number> = {};
                                 aiMappings.forEach(m => {
                                   targetFieldCounts[m.targetField] = (targetFieldCounts[m.targetField] || 0) + 1;
@@ -14112,11 +14113,11 @@ export default function FinancialScorePage() {
                             
                             // Check if we have less than expected months
                             if (monthlyData.length < 12) {
-                              console.warn(`⚠️ WARNING: Only ${monthlyData.length} months of data found. Expected at least 12 months for proper reporting.`);
+                              console.warn(`⚠️ WARNING: Only ${monthlyData.length} months of data found. Expected at least 12 months for proper reporting.`);
                               if (monthlyData.length === 1) {
-                                alert(`⚠️ Only 1 month of data was processed!\n\nQuickBooks may have returned a single-column report instead of monthly breakdown.\n\nThe reports need at least 12 months of data to function properly.\n\nTip: Check the QuickBooks sync settings or try re-syncing.`);
+                                alert(`⚠️ Only 1 month of data was processed!\n\nQuickBooks may have returned a single-column report instead of monthly breakdown.\n\nThe reports need at least 12 months of data to function properly.\n\nTip: Check the QuickBooks sync settings or try re-syncing.`);
                               } else {
-                                alert(`⚠️ Only ${monthlyData.length} months of data processed.\n\nReports work best with at least 12 months of data.`);
+                                alert(`⚠️ Only ${monthlyData.length} months of data processed.\n\nReports work best with at least 12 months of data.`);
                               }
                             }
                             
@@ -14222,7 +14223,7 @@ export default function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                         }}
                       >
-                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
                       </button>
                           <button
                             onClick={async () => {
@@ -14296,7 +14297,7 @@ export default function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            ðŸ“¥ Download Mapped Data (CSV)
+                            📥 Download Mapped Data (CSV)
                           </button>
                         </div>
                       </div>
@@ -14317,7 +14318,7 @@ export default function FinancialScorePage() {
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
           console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⚠️ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⚠️ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
@@ -15302,7 +15303,7 @@ export default function FinancialScorePage() {
                       </div>
                       {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       )}
                     </div>
@@ -16726,7 +16727,7 @@ export default function FinancialScorePage() {
                         </div>
                         {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                           <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                            ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </div>
                         )}
                       </div>
@@ -16839,7 +16840,7 @@ export default function FinancialScorePage() {
                           </div>
                           {!hasMultipleMonths && (
                             <div style={{ color: '#f59e0b', fontWeight: '500', fontSize: '12px', marginTop: '4px', padding: '6px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #fcd34d' }}>
-                              ⚠️ Note: This appears to be cumulative for the entire period, not monthly breakdowns
+                              ⚠️ Note: This appears to be cumulative for the entire period, not monthly breakdowns
                             </div>
                           )}
                         </div>
@@ -17231,7 +17232,7 @@ export default function FinancialScorePage() {
                             {/* Balance Check */}
                             {Math.abs(totalAssets - totalLiabAndEquity) > 0.01 && (
                               <div style={{ padding: '10px 16px', background: '#fef2f2', border: '2px solid #ef4444', marginTop: '8px', borderRadius: '6px' }}>
-                                <span style={{ color: '#991b1b', fontWeight: '600' }}>⚠️ Balance Check: Assets and Liabilities+Equity do not match!</span>
+                                <span style={{ color: '#991b1b', fontWeight: '600' }}>⚠️ Balance Check: Assets and Liabilities+Equity do not match!</span>
                               </div>
                             )}
                           </>
@@ -18299,7 +18300,7 @@ export default function FinancialScorePage() {
                     </div>
                     {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                       <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                        ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </div>
                     )}
                   </div>
@@ -19768,7 +19769,7 @@ export default function FinancialScorePage() {
                       </div>
                       {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       )}
                     </div>
@@ -20494,7 +20495,7 @@ export default function FinancialScorePage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Delete Company</h2>
               <p style={{ fontSize: '16px', color: '#64748b', lineHeight: '1.6' }}>
                 Are you sure you want to delete <strong style={{ color: '#ef4444' }}>"{companyToDelete.companyName}"</strong>?
