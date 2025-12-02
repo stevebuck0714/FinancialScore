@@ -49,7 +49,7 @@ export default function GettingStartedPage() {
                 { num: 1, title: 'Registration' },
                 { num: 2, title: 'Dashboard Overview' },
                 { num: 3, title: 'Adding Your First Client' },
-                { num: 4, title: 'Setting Up Your Profile' },
+                { num: 4, title: 'Completing the Company Profile' },
                 { num: 5, title: 'Connecting QuickBooks' },
                 { num: 6, title: 'Importing Financial Data' },
                 { num: 7, title: 'Mapping Accounts' },
@@ -119,11 +119,6 @@ export default function GettingStartedPage() {
                 ))}
               </tbody>
             </table>
-
-            <div style={{ background: '#fef3c7', borderLeft: '4px solid #f59e0b', padding: '16px', borderRadius: '0 8px 8px 0', marginBottom: '20px' }}>
-              <strong style={{ color: '#92400e' }}>💡 Tip:</strong>
-              <span style={{ color: '#92400e' }}> If you have an affiliate code from a partner, enter it during registration to receive special pricing.</span>
-            </div>
           </section>
 
           {/* Section 2: Dashboard Overview */}
@@ -166,9 +161,18 @@ export default function GettingStartedPage() {
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
               Step 1: Go to Company Management
             </h3>
-            <ol style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+            <ol style={{ marginLeft: '24px', marginBottom: '12px', lineHeight: '1.8', color: '#475569' }}>
               <li>From your dashboard, click the <strong>"Company Management"</strong> tab</li>
-              <li>Click <strong>"+ Add Company"</strong></li>
+              <li>In the Company Details section, enter a Client Company Name</li>
+            </ol>
+
+            <div style={{ background: '#fef3c7', borderLeft: '4px solid #f59e0b', padding: '16px', borderRadius: '0 8px 8px 0', marginBottom: '12px' }}>
+              <strong style={{ color: '#92400e' }}>💡 Tip:</strong>
+              <span style={{ color: '#92400e' }}> If you have an affiliate code, enter it now.</span>
+            </div>
+
+            <ol start={3} style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+              <li>Return to the Company Management page</li>
             </ol>
 
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
@@ -202,36 +206,32 @@ export default function GettingStartedPage() {
             </div>
 
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
-              Step 3: Set Up Primary Contact
+              Step 3: Add Company Users
             </h3>
             <p style={{ marginBottom: '12px', lineHeight: '1.8', color: '#475569' }}>
-              Create a login for your client's primary contact with their name, email, phone, and password.
+              Create logins for your client's users with their name, email, phone, and password.
             </p>
 
-            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
-              Step 4: Select Subscription Plan
-            </h3>
-            <ul style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
-              <li><strong>Monthly</strong> - Billed monthly</li>
-              <li><strong>Quarterly</strong> - Billed every 3 months (discounted)</li>
-              <li><strong>Annual</strong> - Billed yearly (best value)</li>
-            </ul>
           </section>
 
-          {/* Section 4: Profile Setup */}
+          {/* Section 4: Company Profile */}
           <section id="section-4" style={{ marginBottom: '48px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', borderBottom: '3px solid #667eea', paddingBottom: '12px' }}>
-              4. Setting Up Your Profile
+              4. Completing the Company Profile
             </h2>
             
             <p style={{ marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
-              Ensure your consultant profile is complete:
+              Complete the company profile with the following information:
             </p>
-            <ol style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
-              <li>Navigate to <strong>Settings</strong> or click your profile icon</li>
-              <li>Update your contact information, company details, and business address</li>
-              <li>Save your changes</li>
-            </ol>
+            <ul style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
+              <li>Company address and contact information</li>
+              <li>Industry sector selection (critical for benchmarking)</li>
+              <li>Fiscal year end date</li>
+              <li>Company website</li>
+              <li>Primary business description</li>
+              <li>Number of employees</li>
+              <li>Year established</li>
+            </ul>
           </section>
 
           {/* Section 5: QuickBooks */}
