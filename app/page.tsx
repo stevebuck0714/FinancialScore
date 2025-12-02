@@ -3619,8 +3619,8 @@ export default function FinancialScorePage() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          {/* Active Company Info at Top */}
-          {companyName && (
+          {/* Active Company Info at Top - Show for consultants with selected company or company users */}
+          {(companyName || (currentUser?.userType === 'company' && currentUser?.companyId)) && (
             <div style={{ padding: '0 24px 24px', borderBottom: '2px solid #e2e8f0' }}>
               <div 
                 onClick={() => {
@@ -3645,7 +3645,21 @@ export default function FinancialScorePage() {
                 }}
               >
                 <div style={{ fontSize: '11px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Company</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e40af' }}>{companyName}</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e40af' }}>
+                  {companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || 'Loading...' : '')}
+                </div>
+                {/* Show Advisor Name for Company Users */}
+                {currentUser?.userType === 'company' && currentUser?.consultantId && (() => {
+                  const consultant = consultants.find(c => c.id === currentUser.consultantId);
+                  if (consultant?.companyName) {
+                    return (
+                      <div style={{ fontSize: '12px', color: '#667eea', marginTop: '6px', fontWeight: '500' }}>
+                        {consultant.companyName}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             </div>
           )}
@@ -4543,29 +4557,9 @@ export default function FinancialScorePage() {
           {/* Admin Dashboard */}
           {currentView === 'admin' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              {(() => {
-                if (currentUser.consultantType === 'business') {
-                  return 'Business Dashboard';
-                }
-                // For company users, show their consultant's company name
-                if (currentUser.role === 'user' && currentUser.userType === 'company' && currentUser.consultantId) {
-                  const consultant = consultants.find(c => c.id === currentUser.consultantId);
-                  if (consultant && consultant.companyName) {
-                    return `Advisor: ${consultant.companyName}`;
-                  }
-                  // Fallback while loading
-                  return `Advisor: ${currentUser.name}`;
-                }
-                // For consultants, show their company name or personal name
-                if (currentUser.consultantCompanyName) {
-                  return `Advisor: ${currentUser.consultantCompanyName}`;
-                }
-                return `Advisor: ${currentUser.name}`;
-              })()}
-            </h1>
-            {siteAdminViewingAs && (
+          {/* Exit Preview Mode button (only when site admin is previewing) */}
+          {siteAdminViewingAs && (
+            <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '20px' }}>
               <button
                 onClick={() => {
                   // Restore admin user
@@ -4589,8 +4583,8 @@ export default function FinancialScorePage() {
               >
                 ← Back to Site Admin
               </button>
-            )}
-          </div>
+            </div>
+          )}
           
           {/* Tab Navigation */}
           <div className="dashboard-tabs-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
@@ -4875,7 +4869,7 @@ export default function FinancialScorePage() {
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
                   <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
                   {error && <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>}
-                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>âœ“ Loaded: {file.name}</div>}
+                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>✓ Loaded: {file.name}</div>}
                 </div>
 
               {file && columns.length > 0 && (
@@ -5000,7 +4994,7 @@ export default function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? 'âœ“ Connected' : qbStatus === 'ERROR' ? '✗ Error' : qbStatus === 'EXPIRED' ? 'âš  Token Expired' : 'âš  Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? '✓ Connected' : qbStatus === 'ERROR' ? '✗ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
