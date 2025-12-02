@@ -17,6 +17,7 @@ interface CompanyListTabProps {
   setCurrentView: (view: any) => void;
   setSelectedCompanyId: (id: string) => void;
   setAdminDashboardTab: (tab: string) => void;
+  setCompanyManagementSubTab: (tab: string) => void;
   setCompanyToDelete: (company: { companyId: string; businessId: string; companyName: string }) => void;
   setShowDeleteConfirmation: (show: boolean) => void;
 }
@@ -26,6 +27,7 @@ export default function CompanyListTab({
   setCurrentView,
   setSelectedCompanyId,
   setAdminDashboardTab,
+  setCompanyManagementSubTab,
   setCompanyToDelete,
   setShowDeleteConfirmation
 }: CompanyListTabProps) {
@@ -40,6 +42,7 @@ export default function CompanyListTab({
             setCurrentView('admin');
             setSelectedCompanyId('');
             setAdminDashboardTab('company-management');
+            setCompanyManagementSubTab('details');
           }}
           style={{
             padding: '10px 20px',
@@ -90,6 +93,7 @@ export default function CompanyListTab({
                       setSelectedCompanyId(company.id);
                       setCurrentView('admin');
                       setAdminDashboardTab('company-management');
+                      setCompanyManagementSubTab('details');
                     }}
                   >
                     <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
