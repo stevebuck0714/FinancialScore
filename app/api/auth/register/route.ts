@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
+import { sendConsultantRegistrationNotification, sendBusinessRegistrationNotification } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
@@ -167,6 +168,40 @@ export async function POST(request: NextRequest) {
 
       return { user, consultant, company };
     });
+
+    // Send email notification to support (don't block the response on this)
+    try {
+      const fullAddress = [companyAddress1, companyAddress2, companyCity, companyState, companyZip]
+        .filter(Boolean)
+        .join(', ');
+
+      if (type === 'business') {
+        // Business registration notification
+        await sendBusinessRegistrationNotification({
+          businessName: name,
+          businessEmail: normalizedEmail,
+          businessPhone: phone,
+          industry: undefined, // Not collected during registration
+          consultantName: undefined, // Self-registered businesses don't have a consultant yet
+          affiliateCode: affiliateCode ? affiliateCode.toUpperCase() : undefined
+        });
+      } else {
+        // Consultant registration notification
+        await sendConsultantRegistrationNotification({
+          consultantName: fullName || name,
+          consultantEmail: normalizedEmail,
+          consultantPhone: phone,
+          companyName: companyName,
+          companyAddress: fullAddress || undefined,
+          registrationType: 'consultant'
+        });
+      }
+      
+      console.log('✅ Registration notification email sent to support');
+    } catch (emailError) {
+      // Log error but don't fail the registration
+      console.error('❌ Failed to send registration notification email:', emailError);
+    }
 
     return NextResponse.json({
       user: {
