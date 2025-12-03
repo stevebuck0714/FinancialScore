@@ -1,7 +1,18 @@
 import { Resend } from 'resend';
 
-// Initialize Resend client
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy initialize Resend client to avoid errors when API key is not set
+let resend: Resend | null = null;
+
+function getResendClient(): Resend | null {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('⚠️ RESEND_API_KEY not set - email functionality disabled');
+    return null;
+  }
+  if (!resend) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resend;
+}
 
 // Default sender email (use your verified domain or onboarding@resend.dev for testing)
 const DEFAULT_FROM = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
@@ -36,8 +47,14 @@ export async function sendPasswordResetEmail({
   userName, 
   resetLink 
 }: PasswordResetEmailProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.log('⚠️ Skipping password reset email - Resend not configured');
+    return { success: false, skipped: true };
+  }
+  
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await client.emails.send({
       from: DEFAULT_FROM,
       to: [to],
       subject: 'Reset Your Password - Corelytics',
@@ -159,8 +176,14 @@ export async function sendConsultantRegistrationNotification({
   companyAddress,
   registrationType
 }: ConsultantRegistrationProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.log('⚠️ Skipping consultant registration notification - Resend not configured');
+    return { success: false, skipped: true };
+  }
+  
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await client.emails.send({
       from: DEFAULT_FROM,
       to: [NOTIFICATION_EMAIL],
       subject: `🎉 New ${registrationType === 'consultant' ? 'Consultant' : 'Business'} Registration - ${consultantName}`,
@@ -196,8 +219,14 @@ export async function sendBusinessRegistrationNotification({
   consultantName,
   affiliateCode
 }: BusinessRegistrationProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.log('⚠️ Skipping business registration notification - Resend not configured');
+    return { success: false, skipped: true };
+  }
+  
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await client.emails.send({
       from: DEFAULT_FROM,
       to: [NOTIFICATION_EMAIL],
       subject: `🏢 New Business Registration - ${businessName}`,

@@ -167,6 +167,12 @@ export async function POST(request: NextRequest) {
         }
       });
 
+      // Update user to link to consultant firm for team member queries
+      await tx.user.update({
+        where: { id: user.id },
+        data: { consultantId: consultant.id }
+      });
+
       return { user, consultant };
     });
 

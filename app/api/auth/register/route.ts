@@ -92,8 +92,65 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create user, consultant, and company (for business users) in a transaction
+    // Create user and either consultant OR company based on registration type
     const result = await prisma.$transaction(async (tx) => {
+      // Standalone business registration - no consultant record needed
+      if (type === 'business') {
+        const user = await tx.user.create({
+          data: {
+            email: normalizedEmail,
+            name,
+            passwordHash,
+            role: 'USER', // Business users get USER role, not CONSULTANT
+            phone: phone || undefined,
+            isPrimaryContact: true
+          }
+        });
+
+        const companyData: any = {
+          name: name, // Use the business name as company name
+          consultantId: null, // Standalone business - no consultant
+          subscriptionMonthlyPrice: pricingToUse?.businessMonthlyPrice ?? 0,
+          subscriptionQuarterlyPrice: pricingToUse?.businessQuarterlyPrice ?? 0,
+          subscriptionAnnualPrice: pricingToUse?.businessAnnualPrice ?? 0
+          // DO NOT set selectedSubscriptionPlan - they must pay first
+        };
+        
+        // If affiliate code was used, save it to the company
+        if (affiliateId && affiliateCode) {
+          companyData.affiliateId = affiliateId;
+          companyData.affiliateCode = affiliateCode.toUpperCase();
+        }
+        
+        const company = await tx.company.create({
+          data: companyData
+        });
+
+        // Link user to their company
+        await tx.user.update({
+          where: { id: user.id },
+          data: { companyId: company.id }
+        });
+        
+        // If affiliate code was used, increment its usage counter
+        if (affiliateId && affiliateCode) {
+          await tx.affiliateCode.updateMany({
+            where: {
+              affiliateId: affiliateId,
+              code: affiliateCode.toUpperCase()
+            },
+            data: {
+              currentUses: {
+                increment: 1
+              }
+            }
+          });
+        }
+
+        return { user, consultant: null, company };
+      }
+
+      // Consultant registration
       const user = await tx.user.create({
         data: {
           email: normalizedEmail,
@@ -128,45 +185,7 @@ export async function POST(request: NextRequest) {
         data: { consultantId: consultant.id }
       });
 
-      // Automatically create a company for business users
-      let company = null;
-      if (type === 'business') {
-        const companyData: any = {
-          name: name, // Use the business name as company name
-          consultantId: consultant.id,
-          subscriptionMonthlyPrice: pricingToUse?.businessMonthlyPrice ?? 0,
-          subscriptionQuarterlyPrice: pricingToUse?.businessQuarterlyPrice ?? 0,
-          subscriptionAnnualPrice: pricingToUse?.businessAnnualPrice ?? 0
-          // DO NOT set selectedSubscriptionPlan - they must pay first
-        };
-        
-        // If affiliate code was used, save it to the company
-        if (affiliateId && affiliateCode) {
-          companyData.affiliateId = affiliateId;
-          companyData.affiliateCode = affiliateCode.toUpperCase();
-        }
-        
-        company = await tx.company.create({
-          data: companyData
-        });
-        
-        // If affiliate code was used, increment its usage counter
-        if (affiliateId && affiliateCode) {
-          await tx.affiliateCode.updateMany({
-            where: {
-              affiliateId: affiliateId,
-              code: affiliateCode.toUpperCase()
-            },
-            data: {
-              currentUses: {
-                increment: 1
-              }
-            }
-          });
-        }
-      }
-
-      return { user, consultant, company };
+      return { user, consultant, company: null };
     });
 
     // Send email notification to support (don't block the response on this)
@@ -209,9 +228,11 @@ export async function POST(request: NextRequest) {
         email: result.user.email,
         name: result.user.name,
         role: result.user.role,
-        consultantId: result.consultant.id,
-        companyId: result.company?.id,
-        consultantType: result.consultant.type
+        consultantId: result.consultant?.id || null,
+        companyId: result.company?.id || null,
+        consultantType: result.consultant?.type || null,
+        consultantCompanyName: result.consultant?.companyName || null,
+        isPrimaryContact: result.user.isPrimaryContact
       }
     }, { status: 201 });
   } catch (error) {

@@ -27,6 +27,7 @@ interface ConsultantDashboardProps {
   setCurrentView: (view: any) => void;
   setSelectedCompanyId: (id: string) => void;
   setAdminDashboardTab: (tab: string) => void;
+  setCompanyManagementSubTab: (tab: string) => void;
   setCompanyToDelete: (company: { companyId: string; businessId: string; companyName: string }) => void;
   setShowDeleteConfirmation: (show: boolean) => void;
   isLoading: boolean;
@@ -47,6 +48,7 @@ export default function ConsultantDashboard({
   setCurrentView,
   setSelectedCompanyId,
   setAdminDashboardTab,
+  setCompanyManagementSubTab,
   setCompanyToDelete,
   setShowDeleteConfirmation,
   isLoading
@@ -120,6 +122,7 @@ export default function ConsultantDashboard({
           setCurrentView={setCurrentView}
           setSelectedCompanyId={setSelectedCompanyId}
           setAdminDashboardTab={setAdminDashboardTab}
+          setCompanyManagementSubTab={setCompanyManagementSubTab}
           setCompanyToDelete={setCompanyToDelete}
           setShowDeleteConfirmation={setShowDeleteConfirmation}
         />

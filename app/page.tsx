@@ -1338,17 +1338,21 @@ export default function FinancialScorePage() {
   }, [selectedCompanyId, currentUser, qbLastSync]);
 
 
+  // Track which consultant's companies are currently loaded
+  const [loadedConsultantId, setLoadedConsultantId] = useState<string | null>(null);
+
   // Load companies for consultants
   useEffect(() => {
     const loadConsultantCompanies = async () => {
       if (!currentUser || currentUser.role !== 'consultant' || !currentUser.consultantId) return;
       
-      // Only load if companies haven't been loaded yet (prevents double-loading on login)
-      if (companies.length > 0) return;
+      // Only reload if consultant changed (handles site admin viewing as different consultants)
+      if (loadedConsultantId === currentUser.consultantId) return;
       
       try {
         const { companies: consultantCompanies } = await companiesApi.getAll(currentUser.consultantId);
         setCompanies(consultantCompanies || []);
+        setLoadedConsultantId(currentUser.consultantId);
         
         // Load all users and assessment records for all companies
         const allUsers: User[] = [];
@@ -1388,7 +1392,7 @@ export default function FinancialScorePage() {
     };
     
     loadConsultantCompanies();
-  }, [currentUser, companies.length]);
+  }, [currentUser?.consultantId, currentUser?.role, loadedConsultantId]);
 
   // Load consultants for site admin
   useEffect(() => {
@@ -1875,7 +1879,18 @@ export default function FinancialScorePage() {
       
       setCurrentUser(normalizedUser);
       setIsLoggedIn(true);
-      setCurrentView('admin');
+      setCurrentView('consultant-dashboard');
+      
+      // Clear any stale company data and load fresh data for the new consultant
+      setCompanies([]);
+      if (user.consultantId) {
+        try {
+          const { companies: consultantCompanies } = await companiesApi.getAll(user.consultantId);
+          setCompanies(consultantCompanies || []);
+        } catch (error) {
+          console.error('Failed to load companies after registration:', error);
+        }
+      }
       
       // Clear all form fields
       setLoginName('');
@@ -4591,25 +4606,58 @@ export default function FinancialScorePage() {
 
           {/* Consultant Dashboard */}
           {currentView === 'consultant-dashboard' && currentUser?.role === 'consultant' && (
-            <ConsultantDashboard
-              currentUser={currentUser}
-              consultantDashboardTab={consultantDashboardTab}
-              setConsultantDashboardTab={setConsultantDashboardTab}
-              consultantTeamMembers={consultantTeamMembers}
-              showAddTeamMemberForm={showAddTeamMemberForm}
-              setShowAddTeamMemberForm={setShowAddTeamMemberForm}
-              newTeamMember={newTeamMember}
-              setNewTeamMember={setNewTeamMember}
-              addTeamMember={addTeamMember}
-              removeTeamMember={removeTeamMember}
-              companies={companies}
-              setCurrentView={setCurrentView}
-              setSelectedCompanyId={setSelectedCompanyId}
-              setAdminDashboardTab={setAdminDashboardTab}
-              setCompanyToDelete={setCompanyToDelete}
-              setShowDeleteConfirmation={setShowDeleteConfirmation}
-              isLoading={isLoading}
-            />
+            <div>
+              {/* Exit Preview Mode button (only when site admin is previewing) */}
+              {siteAdminViewingAs && (
+                <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 32px 0 32px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '0' }}>
+                    <button
+                      onClick={() => {
+                        setCurrentUser(siteAdminViewingAs);
+                        setSiteAdminViewingAs(null);
+                        setCurrentView('siteadmin');
+                        setLoadedConsultantId(null);
+                      }}
+                      style={{ 
+                        padding: '10px 20px', 
+                        background: '#f59e0b', 
+                        color: 'white', 
+                        border: 'none', 
+                        borderRadius: '8px', 
+                        fontSize: '14px', 
+                        fontWeight: '600', 
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      ← Return to Site Admin
+                    </button>
+                  </div>
+                </div>
+              )}
+              <ConsultantDashboard
+                currentUser={currentUser}
+                consultantDashboardTab={consultantDashboardTab}
+                setConsultantDashboardTab={setConsultantDashboardTab}
+                consultantTeamMembers={consultantTeamMembers}
+                showAddTeamMemberForm={showAddTeamMemberForm}
+                setShowAddTeamMemberForm={setShowAddTeamMemberForm}
+                newTeamMember={newTeamMember}
+                setNewTeamMember={setNewTeamMember}
+                addTeamMember={addTeamMember}
+                removeTeamMember={removeTeamMember}
+                companies={companies}
+                setCurrentView={setCurrentView}
+                setSelectedCompanyId={setSelectedCompanyId}
+                setAdminDashboardTab={setAdminDashboardTab}
+                setCompanyManagementSubTab={setCompanyManagementSubTab}
+                setCompanyToDelete={setCompanyToDelete}
+                setShowDeleteConfirmation={setShowDeleteConfirmation}
+                isLoading={isLoading}
+              />
+            </div>
           )}
 
           {/* Admin Dashboard */}
@@ -4624,6 +4672,7 @@ export default function FinancialScorePage() {
                   setCurrentUser(siteAdminViewingAs);
                   setSiteAdminViewingAs(null);
                   setCurrentView('siteadmin');
+                  setLoadedConsultantId(null); // Reset so companies reload for next consultant view
                 }}
                 style={{ 
                   padding: '10px 20px', 

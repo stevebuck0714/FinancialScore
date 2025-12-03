@@ -38,7 +38,7 @@ model Consultant {
 model Company {
   id                         String                 @id @default(cuid())
   name                       String
-  consultantId               String
+  consultantId               String?                // Optional - NULL for standalone businesses
   addressStreet              String?
   addressCity                String?
   addressState               String?
@@ -65,7 +65,7 @@ model Company {
   revenueRecords             RevenueRecord[]
   subscriptionEvents         SubscriptionEvent[]
   affiliate                  Affiliate?             @relation(fields: [affiliateId], references: [id])
-  consultant                 Consultant             @relation(fields: [consultantId], references: [id], onDelete: Cascade)
+  consultant                 Consultant?            @relation(fields: [consultantId], references: [id], onDelete: SetNull)
   profile                    CompanyProfile?
   financialRecords           FinancialRecord[]
   subscription               Subscription?

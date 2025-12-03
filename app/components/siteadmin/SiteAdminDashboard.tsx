@@ -345,9 +345,11 @@ export default function SiteAdminDashboard(props: any) {
                                     ...consultant.user,
                                     role: 'consultant',
                                     consultantId: consultant.id,
-                                    consultantType: consultant.type
+                                    consultantType: consultant.type,
+                                    consultantCompanyName: consultant.companyName || consultant.fullName,
+                                    isPrimaryContact: true // Site admin viewing as primary consultant
                                   });
-                                  setCurrentView('admin');
+                                  setCurrentView('consultant-dashboard');
                                   // Scroll main content to top
                                   setTimeout(() => {
                                     const mainElement = document.querySelector('main');
