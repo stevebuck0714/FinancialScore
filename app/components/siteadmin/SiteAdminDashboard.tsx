@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 import { US_STATES } from '@/app/constants';
@@ -180,7 +180,7 @@ export default function SiteAdminDashboard(props: any) {
                       cursor: 'pointer' 
                     }}
                   >
-                    {showAddConsultantForm ? '▲' : '▼'}
+                    {showAddConsultantForm ? '?' : '?'}
                   </button>
                 </div>
                 {showAddConsultantForm && (
@@ -320,7 +320,7 @@ export default function SiteAdminDashboard(props: any) {
 
               {consultants.filter(c => c.type !== 'business').length === 0 ? (
                 <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                  <div style={{ fontSize: '36px', marginBottom: '12px' }}>ðŸ‘¥</div>
+                  <div style={{ fontSize: '36px', marginBottom: '12px' }}>👥</div>
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No Consultants</h3>
                   <p style={{ fontSize: '13px', color: '#94a3b8' }}>Add your first consultant to get started</p>
                 </div>
@@ -576,7 +576,7 @@ export default function SiteAdminDashboard(props: any) {
                                       </span>
                                     </div>
                                     <div style={{ fontSize: '9px', color: '#92400e', marginTop: '4px' }}>
-                                      💡 This is the consultant's share of revenue from their companies. Default is 50%.
+                                      ℹ️ This is the consultant's share of revenue from their companies. Default is 50%.
                                     </div>
                                   </div>
                                   <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
@@ -696,7 +696,7 @@ export default function SiteAdminDashboard(props: any) {
                                               cursor: 'pointer' 
                                             }}
                                           >
-                                            {isCompanyExpanded ? '▲' : '▼'}
+                                            {isCompanyExpanded ? '?' : '?'}
                                           </button>
                                         </div>
                                       </div>
@@ -860,7 +860,7 @@ export default function SiteAdminDashboard(props: any) {
                         });
 
                         if (orphanedBusinesses.length === 0) {
-                          alert('✅ No orphaned business records found!');
+                          alert('? No orphaned business records found!');
                           return;
                         }
 
@@ -889,12 +889,12 @@ export default function SiteAdminDashboard(props: any) {
 
                           // Show results
                           if (errors.length === 0) {
-                            alert(`✅ Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
+                            alert(`? Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
                           } else {
-                            alert(`⚠️ Deleted ${deletedCount} of ${orphanedBusinesses.length} records.\n\nErrors:\n${errors.join('\n')}`);
+                            alert(`⚠️ Deleted ${deletedCount} of ${orphanedBusinesses.length} records.\n\nErrors:\n${errors.join('\n')}`);
                           }
                         } catch (error) {
-                          alert(`âŒ Error during cleanup: ${error instanceof ApiError ? error.message : 'Unknown error'}`);
+                          alert(`❌ Error during cleanup: ${error instanceof ApiError ? error.message : 'Unknown error'}`);
                         } finally {
                           setIsLoading(false);
                         }
@@ -915,13 +915,13 @@ export default function SiteAdminDashboard(props: any) {
                         opacity: isLoading ? 0.6 : 1
                       }}
                     >
-                      {isLoading ? '⏳ Cleaning...' : '🔄 Clean Up Orphaned Records'}
+                      {isLoading ? '⏳ Cleaning...' : '🧹 Clean Up Orphaned Records'}
                     </button>
                   </div>
 
                   {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                      <div style={{ fontSize: '36px', marginBottom: '12px' }}>ðŸ¢</div>
+                      <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses registered yet</h3>
                       <p style={{ fontSize: '13px', color: '#94a3b8' }}>Businesses will appear here once they register</p>
                     </div>
@@ -1414,19 +1414,19 @@ export default function SiteAdminDashboard(props: any) {
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px', color: '#475569', fontSize: '11px' }}>
                                   <span>${code.monthlyPrice}/mo</span>
-                                  <span>•</span>
+                                  <span>�</span>
                                   <span>${code.quarterlyPrice}/qtr</span>
-                                  <span>•</span>
+                                  <span>�</span>
                                   <span>${code.annualPrice}/yr</span>
                                   {code.maxUses && (
                                     <>
-                                      <span>•</span>
+                                      <span>�</span>
                                       <span>{code.currentUses || 0}/{code.maxUses} uses</span>
                                     </>
                                   )}
                                   {code.expiresAt && (
                                     <>
-                                      <span>•</span>
+                                      <span>�</span>
                                       <span>Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>
                                     </>
                                   )}
@@ -1435,7 +1435,7 @@ export default function SiteAdminDashboard(props: any) {
                             ))}
                           </div>
                           <p style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', marginBottom: 0 }}>
-                            💡 To add or edit codes, use the "See Codes & Pricing" section below after saving this affiliate.
+                            ℹ️ To add or edit codes, use the "See Codes & Pricing" section below after saving this affiliate.
                           </p>
                         </div>
                       )}
@@ -1534,7 +1534,7 @@ export default function SiteAdminDashboard(props: any) {
                                 onClick={() => setExpandedAffiliateId(expandedAffiliateId === affiliate.id ? null : affiliate.id)}
                                 style={{ padding: '6px 12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                               >
-                                {expandedAffiliateId === affiliate.id ? '▼ Hide Details' : '▶ See Codes & Pricing'}
+                                {expandedAffiliateId === affiliate.id ? '? Hide Details' : '? See Codes & Pricing'}
                               </button>
                             </div>
 
@@ -1630,7 +1630,7 @@ export default function SiteAdminDashboard(props: any) {
                                         type="number"
                                         value={newAffiliateCode.maxUses}
                                         onChange={(e) => setNewAffiliateCode({...newAffiliateCode, maxUses: e.target.value})}
-                                        placeholder="∞"
+                                        placeholder="8"
                                         style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                       />
                                     </div>
@@ -1773,7 +1773,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   type="number"
                                                   value={editingAffiliateCode.maxUses || ''}
                                                   onChange={(e) => setEditingAffiliateCode({...editingAffiliateCode, maxUses: e.target.value ? parseInt(e.target.value) : null})}
-                                                  placeholder="∞"
+                                                  placeholder="8"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
                                               </div>
@@ -1900,12 +1900,12 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                               </div>
                                               <div style={{ fontSize: '11px', color: '#64748b' }}>
-                                                {code.description && <span>{code.description} • </span>}
+                                                {code.description && <span>{code.description} � </span>}
                                                 <span>Uses: {code.currentUses}{code.maxUses ? `/${code.maxUses}` : ''}</span>
-                                                {code.expiresAt && <span> • Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>}
+                                                {code.expiresAt && <span> � Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>}
                                               </div>
                                               <div style={{ fontSize: '11px', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>
-                                                Pricing: ${code.monthlyPrice}/mo • ${code.quarterlyPrice}/qtr • ${code.annualPrice}/yr
+                                                Pricing: ${code.monthlyPrice}/mo � ${code.quarterlyPrice}/qtr � ${code.annualPrice}/yr
                                               </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '6px' }}>
@@ -2044,13 +2044,13 @@ export default function SiteAdminDashboard(props: any) {
                           });
                           
                           if (response.ok) {
-                            alert(`✅ Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
+                            alert(`? Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
                           } else {
-                            alert('âŒ Failed to save pricing. Please try again.');
+                            alert('❌ Failed to save pricing. Please try again.');
                           }
                         } catch (error) {
                           console.error('Error saving pricing:', error);
-                          alert('âŒ Error saving pricing. Please try again.');
+                          alert('❌ Error saving pricing. Please try again.');
                         }
                       }}
                       style={{
@@ -2072,7 +2072,7 @@ export default function SiteAdminDashboard(props: any) {
                   {/* Consultant Default Pricing */}
                   <div style={{ background: '#f0fdf4', border: '2px solid #10b981', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      👥 Default Consultant Pricing
+                      👤 Default Consultant Pricing
                     </h3>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
@@ -2139,13 +2139,13 @@ export default function SiteAdminDashboard(props: any) {
                           });
                           
                           if (response.ok) {
-                            alert(`✅ Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
+                            alert(`? Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
                           } else {
-                            alert('âŒ Failed to save pricing. Please try again.');
+                            alert('❌ Failed to save pricing. Please try again.');
                           }
                         } catch (error) {
                           console.error('Error saving pricing:', error);
-                          alert('âŒ Error saving pricing. Please try again.');
+                          alert('❌ Error saving pricing. Please try again.');
                         }
                       }}
                       style={{
@@ -2198,7 +2198,7 @@ export default function SiteAdminDashboard(props: any) {
                       cursor: 'pointer' 
                     }}
                   >
-                    {showAddSiteAdminForm ? 'â–²' : 'â–¼'}
+                    {showAddSiteAdminForm ? '▲' : '▼'}
                   </button>
                 </div>
                 {showAddSiteAdminForm && (
@@ -2268,18 +2268,18 @@ export default function SiteAdminDashboard(props: any) {
                             setNewSiteAdminEmail('');
                             setNewSiteAdminPassword('');
                             setShowAddSiteAdminForm(false);
-                            alert('✅ Site administrator added successfully!');
+                            alert('? Site administrator added successfully!');
                           } else {
                             const error = await response.json();
                             if (error.error && error.error.includes('Password does not meet requirements')) {
-                              alert('âŒ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+                              alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
                             } else {
-                              alert(`âŒ Failed to add site administrator: ${error.error || 'Unknown error'}`);
+                              alert(`❌ Failed to add site administrator: ${error.error || 'Unknown error'}`);
                             }
                           }
                         } catch (error) {
                           console.error('Error adding site administrator:', error);
-                          alert('âŒ Error adding site administrator. Please try again.');
+                          alert('❌ Error adding site administrator. Please try again.');
                         } finally {
                           setIsLoading(false);
                         }
@@ -2309,7 +2309,7 @@ export default function SiteAdminDashboard(props: any) {
                 
                 {siteAdmins.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>ðŸ‘¥</div>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>👥</div>
                     <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>No site administrators yet</p>
                     <p style={{ fontSize: '14px' }}>Add a new site administrator to get started</p>
                   </div>
@@ -2350,13 +2350,13 @@ export default function SiteAdminDashboard(props: any) {
 
                                 if (response.ok) {
                                   setSiteAdmins(siteAdmins.filter((a: any) => a.id !== admin.id));
-                                  alert('✅ Site administrator deleted successfully!');
+                                  alert('? Site administrator deleted successfully!');
                                 } else {
-                                  alert('âŒ Failed to delete site administrator');
+                                  alert('❌ Failed to delete site administrator');
                                 }
                               } catch (error) {
                                 console.error('Error deleting site administrator:', error);
-                                alert('âŒ Error deleting site administrator');
+                                alert('❌ Error deleting site administrator');
                               }
                             }}
                             style={{

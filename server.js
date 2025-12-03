@@ -3,6 +3,13 @@ const { parse } = require('url');
 const next = require('next');
 const { Server: SocketIOServer } = require('socket.io');
 
+// Load environment variables - .env.local takes precedence for development
+require('dotenv').config({ path: '.env.local' });
+require('dotenv').config(); // Fallback to .env for any missing vars
+
+// Log which database we're connecting to
+console.log('🔗 DATABASE:', process.env.DATABASE_URL?.includes('billowing-term') ? 'DEV (billowing-term)' : 'PROD (orange-poetry)');
+
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = parseInt(process.env.PORT || '3000', 10);

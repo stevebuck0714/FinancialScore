@@ -1349,6 +1349,9 @@ export default function FinancialScorePage() {
       // Only reload if consultant changed (handles site admin viewing as different consultants)
       if (loadedConsultantId === currentUser.consultantId) return;
       
+      // CRITICAL: Clear companies immediately to prevent showing wrong consultant's data
+      setCompanies([]);
+      
       try {
         const { companies: consultantCompanies } = await companiesApi.getAll(currentUser.consultantId);
         setCompanies(consultantCompanies || []);
@@ -4617,6 +4620,7 @@ export default function FinancialScorePage() {
                         setSiteAdminViewingAs(null);
                         setCurrentView('siteadmin');
                         setLoadedConsultantId(null);
+                        setCompanies([]); // Clear companies to prevent data leakage
                       }}
                       style={{ 
                         padding: '10px 20px', 
@@ -4673,6 +4677,7 @@ export default function FinancialScorePage() {
                   setSiteAdminViewingAs(null);
                   setCurrentView('siteadmin');
                   setLoadedConsultantId(null); // Reset so companies reload for next consultant view
+                  setCompanies([]); // Clear companies to prevent data leakage
                 }}
                 style={{ 
                   padding: '10px 20px', 
