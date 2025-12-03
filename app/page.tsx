@@ -32,6 +32,7 @@ import MAWelcomeView from './components/assessment/MAWelcomeView';
 import MAScoringGuideView from './components/assessment/MAScoringGuideView';
 import MAScoresSummaryView from './components/assessment/MAScoresSummaryView';
 import MAYourResultsView from './components/assessment/MAYourResultsView';
+import TextToSpeech from './components/common/TextToSpeech';
 
 // Constants (now imported from ./constants)
 
@@ -39,6 +40,11 @@ import MAYourResultsView from './components/assessment/MAYourResultsView';
 // Type definitions (now imported from ./types)
 
 // Helper functions (now imported from ./utils/*)
+
+// Format currency as $1,234,567 (no decimals, with commas)
+const formatDollar = (value: number): string => {
+  return '$' + Math.round(Math.abs(value)).toLocaleString('en-US');
+};
 
 export default function FinancialScorePage() {
   // State - Authentication
@@ -9073,6 +9079,19 @@ export default function FinancialScorePage() {
                 }}>
                 🖨️ Print
               </button>
+              <TextToSpeech 
+                targetElementId={
+                  mdaTab === 'executive-summary' ? 'mda-executive-summary-container' :
+                  mdaTab === 'strengths-insights' ? 'mda-strengths-insights-container' :
+                  'mda-key-metrics-container'
+                }
+                buttonLabel="Listen"
+                variant="primary"
+                style={{
+                  padding: '12px 24px',
+                  boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)'
+                }}
+              />
             </div>
           </div>
           
@@ -9216,15 +9235,15 @@ export default function FinancialScorePage() {
                     
                     return (
                       <>
-                        <strong>Current quarter</strong> revenue of <strong>${(currentQRev / 1000).toFixed(1)}K</strong> represents a {qRevChange > 0 ? 'increase' : 'decrease'} of <strong style={{ color: qRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qRevChange).toFixed(1)}%</strong> compared to four quarters ago (${(fourQAgoRev / 1000).toFixed(1)}K), 
-                        while total expenses of <strong>${(currentQExp / 1000).toFixed(1)}K</strong> {qExpChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: Math.abs(qExpChange) < Math.abs(qRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(qExpChange).toFixed(1)}%</strong> from ${(fourQAgoExp / 1000).toFixed(1)}K.
+                        <strong>Current quarter</strong> revenue of <strong>{formatDollar(currentQRev)}</strong> represents a {qRevChange > 0 ? 'increase' : 'decrease'} of <strong style={{ color: qRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qRevChange).toFixed(1)}%</strong> compared to four quarters ago ({formatDollar(fourQAgoRev)}), 
+                        while total expenses of <strong>{formatDollar(currentQExp)}</strong> {qExpChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: Math.abs(qExpChange) < Math.abs(qRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(qExpChange).toFixed(1)}%</strong> from {formatDollar(fourQAgoExp)}.
                         Quarterly profit margin {qMarginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: qMarginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qMarginChange).toFixed(1)}</strong> percentage points to <strong>{currentQMargin.toFixed(1)}%</strong>
                         {qMarginChange > 5 ? <span style={{ color: '#10b981' }}>, reflecting significant margin expansion and improving profitability</span> :
                          qMarginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
                          qMarginChange > -5 ? <span style={{ color: '#64748b' }}>, maintaining relatively stable profitability</span> :
                          <span style={{ color: '#ef4444' }}>, signaling substantial margin pressure requiring immediate management attention</span>}.
-                        {' '}<strong>Trailing twelve months (TTM)</strong> revenue of <strong>${(ttmRev / 1000).toFixed(1)}K</strong> shows {ttmRevChange > 0 ? 'growth' : 'decline'} of <strong style={{ color: ttmRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmRevChange).toFixed(1)}%</strong> compared to the prior twelve-month period (${(priorTTMRev / 1000).toFixed(1)}K), 
-                        with total expenses of <strong>${(ttmExp / 1000).toFixed(1)}K</strong> {ttmExpChange > 0 ? 'growing' : 'declining'} by <strong style={{ color: Math.abs(ttmExpChange) < Math.abs(ttmRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(ttmExpChange).toFixed(1)}%</strong> from ${(priorTTMExp / 1000).toFixed(1)}K.
+                        {' '}<strong>Trailing twelve months (TTM)</strong> revenue of <strong>{formatDollar(ttmRev)}</strong> shows {ttmRevChange > 0 ? 'growth' : 'decline'} of <strong style={{ color: ttmRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmRevChange).toFixed(1)}%</strong> compared to the prior twelve-month period ({formatDollar(priorTTMRev)}), 
+                        with total expenses of <strong>{formatDollar(ttmExp)}</strong> {ttmExpChange > 0 ? 'growing' : 'declining'} by <strong style={{ color: Math.abs(ttmExpChange) < Math.abs(ttmRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(ttmExpChange).toFixed(1)}%</strong> from {formatDollar(priorTTMExp)}.
                         Annual profit margin {ttmMarginChange > 0 ? 'improved' : 'deteriorated'} by <strong style={{ color: ttmMarginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmMarginChange).toFixed(1)}</strong> percentage points to <strong>{ttmMargin.toFixed(1)}%</strong>
                         {ttmExpChange < ttmRevChange ? <span style={{ color: '#10b981' }}>, with excellent operational leverage as expense growth is controlled relative to revenue expansion</span> :
                          ttmExpChange > ttmRevChange + 5 ? <span style={{ color: '#ef4444' }}>, indicating concerning expense growth outpacing revenue that requires cost management initiatives</span> :
@@ -9775,7 +9794,7 @@ export default function FinancialScorePage() {
                     
                     return (
                       <>
-                        <strong> Current position</strong> shows working capital of <strong style={{ color: currentWC > 0 ? '#10b981' : '#ef4444' }}>${(Math.abs(currentWC) / 1000).toFixed(1)}K</strong> ({currentWC > 0 ? 'positive' : 'negative'}), 
+                        <strong> Current position</strong> shows working capital of <strong style={{ color: currentWC > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(currentWC)}</strong> ({currentWC > 0 ? 'positive' : 'negative'}), 
                         representing <strong>{wcPctRevenue.toFixed(1)}%</strong> of trailing twelve-month revenue
                         {wcPctRevenue > 20 ? <span style={{ color: '#10b981' }}>, indicating strong liquidity cushion and operational flexibility</span> :
                          wcPctRevenue > 10 ? <span style={{ color: '#64748b' }}>, providing adequate working capital for normal operations</span> :
@@ -9783,38 +9802,38 @@ export default function FinancialScorePage() {
                          <span style={{ color: '#ef4444' }}>, indicating negative working capital position requiring immediate attention and potential financing needs</span>}.
                         The working capital ratio of <strong>{wcRatio.toFixed(2)}</strong> has {wcRatioChange > 0 ? 'improved' : wcRatioChange < 0 ? 'declined' : 'remained stable'} 
                         {Math.abs(wcRatioChange) > 5 ? <span> by <strong style={{ color: wcRatioChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(wcRatioChange).toFixed(1)}%</strong> from {priorWCRatio.toFixed(2)} a year ago</span> : ' over the past year'}
-                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assetsâ€”a concerning liquidity position</span> :
+                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assets—a concerning liquidity position</span> :
                          wcRatio < 1.5 ? <span style={{ color: '#f59e0b' }}>, suggesting tight liquidity that may limit operational flexibility</span> :
                          wcRatio > 3.0 ? <span style={{ color: '#10b981' }}>, reflecting exceptionally strong liquidity, though potentially excess capital that could be deployed more productively</span> :
                          ', indicating adequate short-term liquidity'}.
                         
-                        <strong> Component analysis</strong> reveals current assets totaling <strong>${(totalCA / 1000).toFixed(1)}K</strong>, comprised of 
-                        cash <strong>${(currentCash / 1000).toFixed(1)}K</strong> ({((currentCash / totalCA) * 100).toFixed(0)}%), 
-                        receivables <strong>${(currentAR / 1000).toFixed(1)}K</strong> ({((currentAR / totalCA) * 100).toFixed(0)}%), 
-                        inventory <strong>${(currentInv / 1000).toFixed(1)}K</strong> ({((currentInv / totalCA) * 100).toFixed(0)}%), 
-                        and other current assets <strong>${(currentOtherCA / 1000).toFixed(1)}K</strong> ({((currentOtherCA / totalCA) * 100).toFixed(0)}%), 
-                        against current liabilities of <strong>${(totalCL / 1000).toFixed(1)}K</strong> including 
-                        payables <strong>${(currentAP / 1000).toFixed(1)}K</strong> ({((currentAP / totalCL) * 100).toFixed(0)}%) 
-                        and other current liabilities <strong>${(currentOtherCL / 1000).toFixed(1)}K</strong> ({((currentOtherCL / totalCL) * 100).toFixed(0)}%)
+                        <strong> Component analysis</strong> reveals current assets totaling <strong>{formatDollar(totalCA)}</strong>, comprised of 
+                        cash <strong>{formatDollar(currentCash)}</strong> ({((currentCash / totalCA) * 100).toFixed(0)}%), 
+                        receivables <strong>{formatDollar(currentAR)}</strong> ({((currentAR / totalCA) * 100).toFixed(0)}%), 
+                        inventory <strong>{formatDollar(currentInv)}</strong> ({((currentInv / totalCA) * 100).toFixed(0)}%), 
+                        and other current assets <strong>{formatDollar(currentOtherCA)}</strong> ({((currentOtherCA / totalCA) * 100).toFixed(0)}%), 
+                        against current liabilities of <strong>{formatDollar(totalCL)}</strong> including 
+                        payables <strong>{formatDollar(currentAP)}</strong> ({((currentAP / totalCL) * 100).toFixed(0)}%) 
+                        and other current liabilities <strong>{formatDollar(currentOtherCL)}</strong> ({((currentOtherCL / totalCL) * 100).toFixed(0)}%)
                         {(currentCash / totalCA) > 0.4 ? <span style={{ color: '#10b981' }}>, with high cash composition providing excellent immediate liquidity</span> :
                          (currentCash / totalCA) < 0.15 ? <span style={{ color: '#f59e0b' }}>, with limited cash representing potential liquidity risk if receivables or inventory cannot be quickly converted</span> : ''}.
                         
                         {monthly.length >= 13 && (
                           <>
-                            <strong> Trend analysis</strong> shows working capital has {currentWC > priorWC ? 'increased' : 'decreased'} by <strong style={{ color: currentWC > priorWC ? '#10b981' : '#ef4444' }}>${(Math.abs(wcAbsChange) / 1000).toFixed(1)}K</strong> ({Math.abs(wcChange12Mo).toFixed(0)}%) 
-                            over the past 12 months from ${(priorWC / 1000).toFixed(1)}K to ${(currentWC / 1000).toFixed(1)}K
+                            <strong> Trend analysis</strong> shows working capital has {currentWC > priorWC ? 'increased' : 'decreased'} by <strong style={{ color: currentWC > priorWC ? '#10b981' : '#ef4444' }}>{formatDollar(wcAbsChange)}</strong> ({Math.abs(wcChange12Mo).toFixed(0)}%) 
+                            over the past 12 months from {formatDollar(priorWC)} to {formatDollar(currentWC)}
                             {Math.abs(wcChange12Mo) > 30 && currentWC < priorWC ? <span style={{ color: '#ef4444' }}>, representing significant deterioration that requires management attention</span> :
                              Math.abs(wcChange12Mo) > 30 && currentWC > priorWC ? <span style={{ color: '#10b981' }}>, demonstrating substantial strengthening of the liquidity position</span> :
                              Math.abs(wcChange12Mo) > 15 ? <span style={{ color: currentWC > priorWC ? '#10b981' : '#f59e0b' }}>, indicating {currentWC > priorWC ? 'improving' : 'tightening'} liquidity trends</span> :
                              ', maintaining relatively stable working capital levels'}.
                             Key drivers include: 
-                            cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#ef4444' }}>${(Math.abs(cashChange) / 1000).toFixed(1)}K</strong>
+                            cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(cashChange)}</strong>
                             {Math.abs(cashChange) > Math.abs(wcAbsChange) * 0.5 ? ' (primary driver)' : ''}, 
-                            receivables {arChange > 0 ? 'grew' : 'decreased'} by <strong style={{ color: arChange < 0 ? '#10b981' : '#64748b' }}>${(Math.abs(arChange) / 1000).toFixed(1)}K</strong>
+                            receivables {arChange > 0 ? 'grew' : 'decreased'} by <strong style={{ color: arChange < 0 ? '#10b981' : '#64748b' }}>{formatDollar(arChange)}</strong>
                             {arChange > last12Revenue * 0.1 ? <span style={{ color: '#f59e0b' }}> (significant increase tying up working capital)</span> : ''}, 
-                            inventory {invChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: invChange < 0 ? '#10b981' : '#64748b' }}>${(Math.abs(invChange) / 1000).toFixed(1)}K</strong>
+                            inventory {invChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: invChange < 0 ? '#10b981' : '#64748b' }}>{formatDollar(invChange)}</strong>
                             {invChange > last12Revenue * 0.08 ? <span style={{ color: '#f59e0b' }}> (substantial buildup requiring attention)</span> : ''}, 
-                            and payables {apChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: apChange > 0 ? '#10b981' : '#64748b' }}>${(Math.abs(apChange) / 1000).toFixed(1)}K</strong>
+                            and payables {apChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: apChange > 0 ? '#10b981' : '#64748b' }}>{formatDollar(apChange)}</strong>
                             {apChange > 0 && Math.abs(apChange) > Math.abs(wcAbsChange) * 0.3 ? ' (improving working capital through extended payables)' : ''}.
                           </>
                         )}
@@ -9967,31 +9986,31 @@ export default function FinancialScorePage() {
                     
                     return (
                       <>
-                        <strong> Operating activities</strong> generated <strong style={{ color: operatingCF > 0 ? '#10b981' : '#ef4444' }}>${(operatingCF / 1000).toFixed(1)}K</strong> over the past 12 months, 
+                        <strong> Operating activities</strong> generated <strong style={{ color: operatingCF > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(operatingCF)}</strong> over the past 12 months, 
                         representing an operating cash flow margin of <strong style={{ color: opCFMargin > 15 ? '#10b981' : opCFMargin > 5 ? '#64748b' : '#ef4444' }}>{opCFMargin.toFixed(1)}%</strong>
                         {opCFMargin > 15 ? <span style={{ color: '#10b981' }}>, demonstrating excellent cash conversion from operations</span> :
                          opCFMargin > 5 ? ', indicating healthy cash generation' :
                          opCFMargin > 0 ? <span style={{ color: '#f59e0b' }}>, suggesting opportunities to improve working capital efficiency</span> :
                          <span style={{ color: '#ef4444' }}>, indicating cash outflow from operations requiring immediate attention</span>}.
-                        Working capital changes {changeInWC > 0 ? 'contributed' : 'consumed'} <strong>${(Math.abs(changeInWC) / 1000).toFixed(1)}K</strong>
-                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capitalâ€”review receivables and inventory management</span> :
+                        Working capital changes {changeInWC > 0 ? 'contributed' : 'consumed'} <strong>{formatDollar(changeInWC)}</strong>
+                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capital—review receivables and inventory management</span> :
                          changeInWC > ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, with efficient working capital management releasing cash for other uses</span> :
                          ''}.
-                        <strong> Investing activities</strong> {investingCF < 0 ? 'deployed' : 'generated'} <strong style={{ color: '#667eea' }}>${(Math.abs(investingCF) / 1000).toFixed(1)}K</strong>
-                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flowâ€”monitor return on invested capital</span> :
+                        <strong> Investing activities</strong> {investingCF < 0 ? 'deployed' : 'generated'} <strong style={{ color: '#667eea' }}>{formatDollar(investingCF)}</strong>
+                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flow—monitor return on invested capital</span> :
                          capEx > 0 ? ', supporting maintenance and growth of the asset base' :
                          ', with minimal capital investment in fixed assets'}.
-                        <strong> Financing activities</strong> {financingCF > 0 ? 'provided' : 'consumed'} <strong style={{ color: financingCF > 0 ? '#667eea' : '#64748b' }}>${(Math.abs(financingCF) / 1000).toFixed(1)}K</strong>
-                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of ${(changeInDebt / 1000).toFixed(1)}Kâ€”monitor leverage ratios</span> :
-                         changeInDebt < -ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, reducing debt by ${(Math.abs(changeInDebt) / 1000).toFixed(1)}K and strengthening the balance sheet</span> :
+                        <strong> Financing activities</strong> {financingCF > 0 ? 'provided' : 'consumed'} <strong style={{ color: financingCF > 0 ? '#667eea' : '#64748b' }}>{formatDollar(financingCF)}</strong>
+                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of {formatDollar(changeInDebt)}—monitor leverage ratios</span> :
+                         changeInDebt < -ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, reducing debt by {formatDollar(changeInDebt)} and strengthening the balance sheet</span> :
                          ''}.
-                        <strong> Free cash flow</strong> of <strong style={{ color: freeCF > 0 ? '#10b981' : '#ef4444' }}>${(freeCF / 1000).toFixed(1)}K</strong>
+                        <strong> Free cash flow</strong> of <strong style={{ color: freeCF > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(freeCF)}</strong>
                         {freeCF > ltmNetIncome * 1.2 ? <span style={{ color: '#10b981' }}> (exceeding net income) provides strong financial flexibility for growth, debt reduction, or distributions</span> :
                          freeCF > 0 ? ' provides resources for strategic initiatives beyond operational requirements' :
                          <span style={{ color: '#ef4444' }}> indicates operations are not generating sufficient cash to cover capital needs</span>}.
-                        Net cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#f59e0b' }}>${(Math.abs(cashChange) / 1000).toFixed(1)}K</strong> to <strong>${(last12[last12.length - 1].cash / 1000).toFixed(1)}K</strong>
+                        Net cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#f59e0b' }}>{formatDollar(cashChange)}</strong> to <strong>{formatDollar(last12[last12.length - 1].cash)}</strong>
                         {cashChange / ltmRev > 0.15 ? <span style={{ color: '#10b981' }}>, building substantial cash reserves and financial resilience</span> :
-                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reservesâ€”monitor cash runway and funding needs</span> :
+                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reserves—monitor cash runway and funding needs</span> :
                          ''}.
                       </>
                     );
@@ -10178,7 +10197,7 @@ export default function FinancialScorePage() {
             
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#10b981', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>âœ“</span> Key Strengths & Competitive Advantages
+                <span style={{ fontSize: '20px' }}>✓</span> Key Strengths & Competitive Advantages
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.strengths.length > 0 ? (
@@ -10195,7 +10214,7 @@ export default function FinancialScorePage() {
 
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ef4444', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>âš </span> Areas Requiring Management Attention
+                <span style={{ fontSize: '20px' }}>⚠️</span> Areas Requiring Management Attention
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.weaknesses.length > 0 ? (
@@ -10212,7 +10231,7 @@ export default function FinancialScorePage() {
 
             <div>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#667eea', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>ðŸ’¡</span> Strategic Recommendations & Action Items
+                <span style={{ fontSize: '20px' }}>💡</span> Strategic Recommendations & Action Items
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.insights.length > 0 ? (
@@ -10231,7 +10250,7 @@ export default function FinancialScorePage() {
 
           {/* Strengths and Insights Tab */}
           {mdaTab === 'strengths-insights' && (
-          <div style={{ display: 'grid', gap: '24px' }}>
+          <div id="mda-strengths-insights-container" style={{ display: 'grid', gap: '24px' }}>
             {mdaAnalysis.strengths.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#10b981', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -10275,7 +10294,7 @@ export default function FinancialScorePage() {
 
           {/* Critical Review Items Tab */}
           {mdaTab === 'key-metrics' && monthly.length >= 12 && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div id="mda-key-metrics-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
               ⚠️ Critical Review Items
             </h2>
