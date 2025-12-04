@@ -13558,469 +13558,59 @@ export default function FinancialScorePage() {
                   }}
                 />
 
-                {/* Bottom Action Buttons */}
-                <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
-                          <>
-                            {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, idx) => (
-                              <th key={idx} style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '600', color: '#7c3aed', fontSize: '11px', background: '#f5f3ff', borderLeft: idx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: idx === linesOfBusiness.filter(l => l.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none' }}>
-                                {lob} %
-                              </th>
-                            ))}
-                            <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569', fontSize: '11px' }}>Total %</th>
-                          </>
-                        )}
-                        <th style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#475569' }}>Confidence</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {aiMappings.map((mapping, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '10px 12px', color: '#64748b', fontSize: '12px' }}>
-                            {mapping.qbAccountClassification || 'Unknown'}
-                          </td>
-                          <td style={{ padding: '10px 12px', color: '#1e293b', fontWeight: '500' }}>
-                            {mapping.qbAccount}
-                          </td>
-                          <td style={{ padding: '10px 12px', position: 'relative' }}>
-                            {/* Custom 2-Column Target Field Dropdown */}
-                            <div style={{ position: 'relative' }}>
-                              <button
-                                onClick={() => setOpenTargetFieldDropdown(openTargetFieldDropdown === idx ? null : idx)}
-                                style={{
-                                  width: '100%',
-                                  padding: '6px 10px',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: '4px',
-                                  fontSize: '13px',
-                                  background: mapping.targetField ? '#f0fdf4' : '#fef3c7',
-                                  cursor: 'pointer',
-                                  textAlign: 'left',
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center'
-                                }}
-                              >
-                                <span style={{ color: mapping.targetField ? '#1e293b' : '#94a3b8' }}>
-                                  {mapping.targetField ? {
-                                    revenue: 'Revenue', expense: 'Total Expense', cogsPayroll: 'COGS - Payroll',
-                                    cogsOwnerPay: 'COGS - Owner Pay', cogsContractors: 'COGS - Contractors',
-                                    cogsMaterials: 'COGS - Materials', cogsCommissions: 'COGS - Commissions',
-                                    cogsOther: 'COGS - Other', cogsTotal: 'COGS - Total', payroll: 'Payroll',
-                                    ownerBasePay: 'Owner Base Pay', benefits: 'Benefits', insurance: 'Insurance',
-                                    professionalFees: 'Professional Fees', subcontractors: 'Subcontractors',
-                                    rent: 'Rent', taxLicense: 'Tax & License', phoneComm: 'Phone & Comm',
-                                    infrastructure: 'Infrastructure', autoTravel: 'Auto & Travel',
-                                    salesExpense: 'Sales & Marketing', marketing: 'Marketing',
-                                    trainingCert: 'Training & Cert', mealsEntertainment: 'Meals & Entertainment',
-                                    interestExpense: 'Interest Expense', depreciationAmortization: 'Depreciation',
-                                    otherExpense: 'Other Expense', nonOperatingIncome: 'Non-Operating Income',
-                                    extraordinaryItems: 'Extraordinary Items', cash: 'Cash', ar: 'A/R',
-                                    inventory: 'Inventory', otherCA: 'Other Current Assets', tca: 'Total Current Assets',
-                                    fixedAssets: 'Fixed Assets', otherAssets: 'Other Assets', totalAssets: 'Total Assets',
-                                    ap: 'A/P', otherCL: 'Other Current Liab', tcl: 'Total Current Liab',
-                                    ltd: 'Long Term Debt', totalLiab: 'Total Liabilities',
-                                    ownersCapital: "Owner's Capital", ownersDraw: "Owner's Draw",
-                                    commonStock: 'Common Stock', preferredStock: 'Preferred Stock',
-                                    retainedEarnings: 'Retained Earnings', additionalPaidInCapital: 'Add. Paid-In Capital',
-                                    treasuryStock: 'Treasury Stock', totalEquity: 'Total Equity', totalLAndE: 'Total L&E'
-                                  }[mapping.targetField] || mapping.targetField : '-- Select Field --'}
-                                </span>
-                                <span style={{ fontSize: '10px', color: '#64748b' }}>{openTargetFieldDropdown === idx ? '▲' : '▼'}</span>
-                              </button>
-                              
-                              {openTargetFieldDropdown === idx && (
-                                <>
-                                  {/* Backdrop to close on click outside */}
-                                  <div 
-                                    onClick={() => setOpenTargetFieldDropdown(null)}
-                                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
-                                  />
-                                  {/* Dropdown Panel */}
-                                  <div style={{
-                                    position: 'absolute',
-                                    top: '100%',
-                                    left: 0,
-                                    zIndex: 100,
-                                    background: 'white',
-                                    border: '1px solid #e2e8f0',
-                                    borderRadius: '8px',
-                                    boxShadow: '0 10px 40px rgba(0,0,0,0.15)',
-                                    width: '500px',
-                                    maxHeight: '400px',
-                                    overflow: 'auto'
-                                  }}>
-                                    {/* Clear Selection */}
-                                    <div 
-                                      onClick={() => {
-                                        const updated = [...aiMappings];
-                                        updated[idx] = { ...mapping, targetField: '' };
-                                        setAiMappings(updated);
-                                        setOpenTargetFieldDropdown(null);
-                                      }}
-                                      style={{ padding: '8px 12px', cursor: 'pointer', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b' }}
-                                    >
-                                      ✕ Clear Selection
-                                    </div>
-                                    
-                                    {/* Two Column Layout */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-                                      {/* Income Statement Column */}
-                                      <div style={{ borderRight: '1px solid #e2e8f0' }}>
-                                        <div style={{ padding: '8px 12px', background: '#f0fdf4', fontWeight: '600', fontSize: '11px', color: '#065f46', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0 }}>
-                                          📊 INCOME STATEMENT
-                                        </div>
-                                        <div style={{ padding: '4px 0' }}>
-                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc' }}>Revenue</div>
-                                          {[
-                                            { value: 'revenue', label: 'Revenue' },
-                                            { value: 'nonOperatingIncome', label: 'Non-Operating Income' },
-                                          ].map(opt => (
-                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
-                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
-                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
-                                            >{opt.label}</div>
-                                          ))}
-                                          
-                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc', marginTop: '4px' }}>Cost of Goods Sold</div>
-                                          {[
-                                            { value: 'cogsPayroll', label: 'COGS - Payroll' },
-                                            { value: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-                                            { value: 'cogsContractors', label: 'COGS - Contractors' },
-                                            { value: 'cogsMaterials', label: 'COGS - Materials' },
-                                            { value: 'cogsCommissions', label: 'COGS - Commissions' },
-                                            { value: 'cogsOther', label: 'COGS - Other' },
-                                            { value: 'cogsTotal', label: 'COGS - Total' },
-                                          ].map(opt => (
-                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
-                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
-                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
-                                            >{opt.label}</div>
-                                          ))}
-                                          
-                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc', marginTop: '4px' }}>Operating Expenses</div>
-                                          {[
-                                            { value: 'payroll', label: 'Payroll' },
-                                            { value: 'ownerBasePay', label: 'Owner Base Pay' },
-                                            { value: 'benefits', label: 'Benefits' },
-                                            { value: 'insurance', label: 'Insurance' },
-                                            { value: 'professionalFees', label: 'Professional Fees' },
-                                            { value: 'subcontractors', label: 'Subcontractors' },
-                                            { value: 'rent', label: 'Rent' },
-                                            { value: 'taxLicense', label: 'Tax & License' },
-                                            { value: 'phoneComm', label: 'Phone & Comm' },
-                                            { value: 'infrastructure', label: 'Infrastructure/Utilities' },
-                                            { value: 'autoTravel', label: 'Auto & Travel' },
-                                            { value: 'salesExpense', label: 'Sales & Marketing' },
-                                            { value: 'marketing', label: 'Marketing' },
-                                            { value: 'trainingCert', label: 'Training & Cert' },
-                                            { value: 'mealsEntertainment', label: 'Meals & Entertainment' },
-                                            { value: 'interestExpense', label: 'Interest Expense' },
-                                            { value: 'depreciationAmortization', label: 'Depreciation & Amort' },
-                                            { value: 'otherExpense', label: 'Other Expense' },
-                                            { value: 'expense', label: 'Total Expense' },
-                                            { value: 'extraordinaryItems', label: 'Extraordinary Items' },
-                                          ].map(opt => (
-                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
-                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
-                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
-                                            >{opt.label}</div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                      
-                                      {/* Balance Sheet Column */}
-                                      <div>
-                                        <div style={{ padding: '8px 12px', background: '#ede9fe', fontWeight: '600', fontSize: '11px', color: '#5b21b6', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0 }}>
-                                          📋 BALANCE SHEET
-                                        </div>
-                                        <div style={{ padding: '4px 0' }}>
-                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc' }}>Assets</div>
-                                          {[
-                                            { value: 'cash', label: 'Cash' },
-                                            { value: 'ar', label: 'Accounts Receivable' },
-                                            { value: 'inventory', label: 'Inventory' },
-                                            { value: 'otherCA', label: 'Other Current Assets' },
-                                            { value: 'tca', label: 'Total Current Assets' },
-                                            { value: 'fixedAssets', label: 'Fixed Assets' },
-                                            { value: 'otherAssets', label: 'Other Assets' },
-                                            { value: 'totalAssets', label: 'Total Assets' },
-                                          ].map(opt => (
-                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
-                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
-                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
-                                            >{opt.label}</div>
-                                          ))}
-                                          
-                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc', marginTop: '4px' }}>Liabilities</div>
-                                          {[
-                                            { value: 'ap', label: 'Accounts Payable' },
-                                            { value: 'otherCL', label: 'Other Current Liabilities' },
-                                            { value: 'tcl', label: 'Total Current Liabilities' },
-                                            { value: 'ltd', label: 'Long Term Debt' },
-                                            { value: 'totalLiab', label: 'Total Liabilities' },
-                                          ].map(opt => (
-                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
-                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
-                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
-                                            >{opt.label}</div>
-                                          ))}
-                                          
-                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc', marginTop: '4px' }}>Equity</div>
-                                          {[
-                                            { value: 'ownersCapital', label: "Owner's Capital" },
-                                            { value: 'ownersDraw', label: "Owner's Draw" },
-                                            { value: 'commonStock', label: 'Common Stock' },
-                                            { value: 'preferredStock', label: 'Preferred Stock' },
-                                            { value: 'retainedEarnings', label: 'Retained Earnings' },
-                                            { value: 'additionalPaidInCapital', label: 'Add. Paid-In Capital' },
-                                            { value: 'treasuryStock', label: 'Treasury Stock' },
-                                            { value: 'totalEquity', label: 'Total Equity' },
-                                            { value: 'totalLAndE', label: 'Total Liabilities & Equity' },
-                                          ].map(opt => (
-                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
-                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
-                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
-                                            >{opt.label}</div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                          {linesOfBusiness.filter(lob => lob.trim() !== '').length > 0 && (
-                            <>
-                              {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, lobIdx) => {
-                                const lobAllocations = mapping.lobAllocations || {};
-                                const currentPercent = lobAllocations[lob] !== undefined ? lobAllocations[lob] : 0;
-                                const total = Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
-                                const isOverAllocated = total > 100;
-                                const isUnderAllocated = total < 100 && total > 0;
-                                
-                                return (
-                                  <td key={lobIdx} style={{ padding: '8px 4px', borderLeft: lobIdx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: lobIdx === linesOfBusiness.filter(l => l.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none', background: '#fafafa' }}>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="100"
-                                      value={currentPercent}
-                                      onChange={(e) => {
-                                        const newValue = parseInt(e.target.value) || 0;
-                                        const clamped = Math.min(Math.max(newValue, 0), 100);
-                                        const updated = aiMappings.map(m => 
-                                          m.qbAccount === mapping.qbAccount 
-                                            ? { 
-                                                ...m, 
-                                                lobAllocations: {
-                                                  ...(m.lobAllocations || {}),
-                                                  [lob]: clamped
-                                                }
-                                              }
-                                            : m
-                                        );
-                                        setAiMappings(updated);
-                                      }}
-                                      style={{
-                                        width: '50px',
-                                        padding: '4px 6px',
-                                        border: isOverAllocated ? '2px solid #ef4444' : isUnderAllocated ? '2px solid #f59e0b' : '1px solid #cbd5e1',
-                                        borderRadius: '4px',
-                                        fontSize: '12px',
-                                        color: '#1e293b',
-                                        textAlign: 'center',
-                                        background: 'white'
-                                      }}
-                                      title={isOverAllocated ? `Total allocation is ${total}% (exceeds 100%)` : isUnderAllocated ? `Total allocation is ${total}% (less than 100%)` : `Total allocation: ${total}%`}
-                                    />
-                                  </td>
-                                );
-                              })}
-                              <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                                {(() => {
-                                  const lobAllocations = mapping.lobAllocations || {};
-                                  const total = Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
-                                  const isOverAllocated = total > 100;
-                                  const isUnderAllocated = total < 100 && total > 0;
-                                  const isPerfect = total === 100;
-                                  
-                                  return (
-                                    <span style={{
-                                      padding: '4px 8px',
-                                      borderRadius: '4px',
-                                      fontSize: '12px',
-                                      fontWeight: '600',
-                                      background: isOverAllocated ? '#fee2e2' : isUnderAllocated ? '#fef3c7' : isPerfect ? '#dcfce7' : '#f1f5f9',
-                                      color: isOverAllocated ? '#dc2626' : isUnderAllocated ? '#d97706' : isPerfect ? '#16a34a' : '#64748b'
-                                    }}>
-                                      {total}%
-                                    </span>
-                                  );
-                                })()}
-                              </td>
-                            </>
-                          )}
-                          <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                            <span style={{
-                              padding: '2px 8px',
-                              borderRadius: '12px',
-                              fontSize: '11px',
-                              fontWeight: '600',
-                              background: mapping.confidence === 'high' ? '#dcfce7' : mapping.confidence === 'medium' ? '#fef3c7' : '#fee2e2',
-                              color: mapping.confidence === 'high' ? '#166534' : mapping.confidence === 'medium' ? '#92400e' : '#991b1b'
-                            }}>
-                              {mapping.confidence || 'low'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                
-                {/* Bottom Action Buttons */}
-                <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
-                  {/* Row 1: Save Mappings */}
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                {/* Save Mappings Section */}
+                <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
-                      <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Save your account-to-field mappings and LOB allocations</p>
+                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
+                      <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>Save your mappings to use them for future data processing.</p>
                     </div>
                     <button
                       onClick={async () => {
-                        setIsSavingMappings(true);
                         try {
+                          setIsSavingMappings(true);
                           const response = await fetch('/api/account-mappings', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                              companyId: selectedCompanyId,
-                              mappings: aiMappings.map(m => ({
-                                qbAccount: m.qbAccount,
-                                qbAccountId: null,
-                                qbAccountCode: null,
-                                qbAccountClassification: m.qbAccountClassification,
-                                targetField: m.targetField,
-                                confidence: m.confidence || 'medium',
-                                lobAllocations: m.lobAllocations || null,
-                              })),
-                              linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== ''),
+                              companyId: currentCompany?.id,
+                              mappings: aiMappings,
+                              linesOfBusiness: linesOfBusiness
                             })
                           });
 
-                          if (!response.ok) {
-                            throw new Error('Failed to save mappings');
+                          if (response.ok) {
+                            toast.success('Account mappings saved successfully!');
+                          } else {
+                            toast.error('Failed to save account mappings');
                           }
-
-                          alert('✅ Mappings saved successfully!');
-                        } catch (error: any) {
+                        } catch (error) {
                           console.error('Error saving mappings:', error);
-                          alert('Failed to save mappings: ' + error.message);
+                          toast.error('Failed to save account mappings');
                         } finally {
                           setIsSavingMappings(false);
                         }
                       }}
                       disabled={isSavingMappings}
                       style={{
-                        padding: '10px 24px',
-                        background: isSavingMappings ? '#94a3b8' : '#10b981',
+                        padding: '8px 16px',
+                        background: isSavingMappings ? '#9ca3af' : '#3b82f6',
                         color: 'white',
                         border: 'none',
                         borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        cursor: isSavingMappings ? 'not-allowed' : 'pointer',
-                        boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        cursor: isSavingMappings ? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
-                    </button>
-                  </div>
-
-                  {/* Row 2: Process Data */}
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Process Financial Data</h3>
-                      <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Process Trial Balance data using your saved mappings</p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        if (!aiMappings || aiMappings.length === 0) {
-                          alert('Please save account mappings first!');
-                          return;
-                        }
-                        
-                        if (!csvTrialBalanceData || !csvTrialBalanceData.dates || !csvTrialBalanceData.accounts) {
-                          alert('Please upload your Trial Balance CSV file first. The CSV data is required to process the mappings.');
-                          return;
-                        }
-                        
-                        setIsProcessingMonthlyData(true);
-                        try {
-                          const monthlyRecords = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
-                          
-                          if (monthlyRecords.length > 0) {
-                            const financialResponse = await fetch('/api/financials', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                companyId: selectedCompanyId,
-                                uploadedByUserId: currentUser?.id,
-                                fileName: csvTrialBalanceData.fileName || 'Trial Balance Import',
-                                rawData: csvTrialBalanceData,
-                                columnMapping: { source: 'CSV Trial Balance', method: 'Account Mapping' },
-                                monthlyData: monthlyRecords,
-                              })
-                            });
-
-                            if (financialResponse.ok) {
-                              setLoadedMonthlyData(monthlyRecords);
-                              alert(`✅ Successfully processed ${monthlyRecords.length} months of financial data!`);
-                              
-                              // Clear the CSV data since it's been processed
-                              setCsvTrialBalanceData(null);
-                              localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
-                              setAdminDashboardTab('data-review');
-                            } else {
-                              throw new Error('Failed to save financial data');
-                            }
-                          } else {
-                            alert('No monthly data could be processed. Check your mappings.');
-                          }
-                        } catch (error: any) {
-                          console.error('Error processing:', error);
-                          alert('Failed to process: ' + error.message);
-                        } finally {
-                          setIsProcessingMonthlyData(false);
-                        }
-                      }}
-                      disabled={isProcessingMonthlyData || aiMappings.length === 0}
-                      style={{
-                        padding: '10px 24px',
-                        background: isProcessingMonthlyData || aiMappings.length === 0 ? '#94a3b8' : '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
-                        boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
-                      }}
-                    >
-                      {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                      {isSavingMappings ? 'Saving...' : 'Save Mappings'}
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
+            {/* Process Monthly Data Section */}
             {/* Account Preview Section */}
             {hasCsvData && csvTrialBalanceData && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
