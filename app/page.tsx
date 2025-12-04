@@ -16467,19 +16467,26 @@ export default function FinancialScorePage() {
               // Helper function to group months by display period
               const groupMonthsByDisplay = () => {
                 if (statementDisplay === 'monthly') {
-                  return periodMonths.map(m => ({
-                    label: new Date(m.date || m.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-                    months: [m]
-                  }));
+                  return periodMonths.map(m => {
+                    const dateValue = m.date || m.month;
+                    const dateObj = dateValue ? new Date(dateValue) : new Date();
+                    const label = !isNaN(dateObj.getTime()) 
+                      ? dateObj.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                      : 'Unknown';
+                    return { label, months: [m] };
+                  });
                 } else if (statementDisplay === 'quarterly') {
                   const quarters: { [key: string]: any[] } = {};
                   periodMonths.forEach(m => {
-                    const date = new Date(m.date || m.month);
-                    const year = date.getFullYear();
-                    const quarter = Math.floor(date.getMonth() / 3) + 1;
-                    const key = `${year}-Q${quarter}`;
-                    if (!quarters[key]) quarters[key] = [];
-                    quarters[key].push(m);
+                    const dateValue = m.date || m.month;
+                    const date = dateValue ? new Date(dateValue) : new Date();
+                    if (!isNaN(date.getTime())) {
+                      const year = date.getFullYear();
+                      const quarter = Math.floor(date.getMonth() / 3) + 1;
+                      const key = `Q${quarter} ${year}`;
+                      if (!quarters[key]) quarters[key] = [];
+                      quarters[key].push(m);
+                    }
                   });
                   return Object.entries(quarters).map(([key, months]) => ({
                     label: key,
@@ -16488,9 +16495,13 @@ export default function FinancialScorePage() {
                 } else {
                   const years: { [key: string]: any[] } = {};
                   periodMonths.forEach(m => {
-                    const year = new Date(m.date || m.month).getFullYear().toString();
-                    if (!years[year]) years[year] = [];
-                    years[year].push(m);
+                    const dateValue = m.date || m.month;
+                    const date = dateValue ? new Date(dateValue) : new Date();
+                    if (!isNaN(date.getTime())) {
+                      const year = date.getFullYear().toString();
+                      if (!years[year]) years[year] = [];
+                      years[year].push(m);
+                    }
                   });
                   return Object.entries(years).map(([year, months]) => ({
                     label: year,
@@ -16552,9 +16563,9 @@ export default function FinancialScorePage() {
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
                       <div style={{ minWidth: `${200 + (periodsData.length * 110)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', fontSize: '13px' }}>
                           <div>Line Item</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{p.label}</div>)}
+                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>{p.label || 'N/A'}</div>)}
                         </div>
                         <Row label="Revenue" values={periodsData.map(p => p.revenue)} bold />
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Cost of Goods Sold</div>
@@ -19185,11 +19196,11 @@ export default function FinancialScorePage() {
               const additionalPaidInCapital = currentMonth.additionalPaidInCapital || 0;
               const treasuryStock = currentMonth.treasuryStock || 0;
               
-              // Calculate total equity from components or use imported value
-              const totalEquity = currentMonth.totalEquity || (ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock);
+              // Calculate total equity from components to match Data Review page (do NOT use imported totalEquity)
+              const totalEquity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
               
-              // Total L&E - Use imported value if available, otherwise calculate
-              const totalLAndE = currentMonth.totalLAndE || (totalLiabilities + totalEquity);
+              // Calculate Total Liabilities & Equity to match Data Review page (do NOT use imported totalLAndE)
+              const totalLAndE = totalLiabilities + totalEquity;
               
               return (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -19451,20 +19462,39 @@ export default function FinancialScorePage() {
               const groupMonthsByDisplay = () => {
                 if (statementDisplay === 'monthly') {
                   // Each month is its own period
-                  return periodMonths.map(m => ({
-                    label: new Date(m.date || m.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-                    months: [m]
-                  }));
+                  return periodMonths.map((m, idx) => {
+                    const dateValue = m.date || m.month;
+                    const dateObj = dateValue ? new Date(dateValue) : new Date();
+                    const label = !isNaN(dateObj.getTime()) 
+                      ? dateObj.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                      : 'Unknown';
+                    
+                    // DEBUG: Log first 3 periods
+                    if (idx < 3) {
+                      console.log(`🔍 Period ${idx}:`, { 
+                        dateValue, 
+                        dateObj, 
+                        isValid: !isNaN(dateObj.getTime()), 
+                        label,
+                        fullMonth: m
+                      });
+                    }
+                    
+                    return { label, months: [m] };
+                  });
                 } else if (statementDisplay === 'quarterly') {
                   // Group by quarter
                   const quarters: { [key: string]: any[] } = {};
                   periodMonths.forEach(m => {
-                    const date = new Date(m.date || m.month);
-                    const year = date.getFullYear();
-                    const quarter = Math.floor(date.getMonth() / 3) + 1;
-                    const key = `${year}-Q${quarter}`;
-                    if (!quarters[key]) quarters[key] = [];
-                    quarters[key].push(m);
+                    const dateValue = m.date || m.month;
+                    const date = dateValue ? new Date(dateValue) : new Date();
+                    if (!isNaN(date.getTime())) {
+                      const year = date.getFullYear();
+                      const quarter = Math.floor(date.getMonth() / 3) + 1;
+                      const key = `Q${quarter} ${year}`;
+                      if (!quarters[key]) quarters[key] = [];
+                      quarters[key].push(m);
+                    }
                   });
                   return Object.entries(quarters).map(([key, months]) => ({
                     label: key,
@@ -19474,9 +19504,13 @@ export default function FinancialScorePage() {
                   // Annual - group by year
                   const years: { [key: string]: any[] } = {};
                   periodMonths.forEach(m => {
-                    const year = new Date(m.date || m.month).getFullYear().toString();
-                    if (!years[year]) years[year] = [];
-                    years[year].push(m);
+                    const dateValue = m.date || m.month;
+                    const date = dateValue ? new Date(dateValue) : new Date();
+                    if (!isNaN(date.getTime())) {
+                      const year = date.getFullYear().toString();
+                      if (!years[year]) years[year] = [];
+                      years[year].push(m);
+                    }
                   });
                   return Object.entries(years).map(([year, months]) => ({
                     label: year,
@@ -19537,14 +19571,13 @@ export default function FinancialScorePage() {
                     autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, totalOpex,
                     operatingIncome, 
                     interestExpense, nonOperatingIncome, extraordinaryItems, 
-                    netIncome,
-                    label: ''
+                    netIncome
                   };
                 };
                   
                   const periodsData = displayPeriods.map(p => ({
-                    label: p.label,
-                    ...calculatePeriodData(p.months)
+                    ...calculatePeriodData(p.months),
+                    label: p.label
                   }));
                   
                   return (
@@ -19557,10 +19590,10 @@ export default function FinancialScorePage() {
                       {/* Table with multiple columns */}
                       <div style={{ minWidth: `${200 + (periodsData.length * 110)}px` }}>
                         {/* Header Row */}
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', position: 'sticky', top: 0, background: 'white' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', position: 'sticky', top: 0, background: 'white', fontSize: '13px' }}>
                           <div>Line Item</div>
                           {periodsData.map((p, i) => (
-                            <div key={i} style={{ textAlign: 'right' }}>{p.label}</div>
+                            <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>{p.label || 'N/A'}</div>
                           ))}
                         </div>
                         
@@ -20507,9 +20540,11 @@ export default function FinancialScorePage() {
                     const additionalPaidInCapital = latest.additionalPaidInCapital || 0;
                     const treasuryStock = latest.treasuryStock || 0;
                     const paidInCapital = latest.paidInCapital || 0;
-                    const totalEquity = latest.totalEquity || 0;  // Use imported total
+                    // Calculate Total Equity from detail fields to match Data Review page
+                    const totalEquity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
                     
-                    const totalLAndE = latest.totalLAndE || (totalLiabilities + totalEquity);  // Calculate if not imported
+                    // Calculate Total Liabilities & Equity to match Data Review page (do NOT use imported totalLAndE)
+                    const totalLAndE = totalLiabilities + totalEquity;
                     
                     return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, otherAssets, totalAssets, ap, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
                   });

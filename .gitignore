@@ -17,3 +17,5 @@ benchmark-data.sql
 benchmark-*.sql
 **/benchmark-data.*
 diff-output.txt
+
+CorelyticsUpdate_.csv
