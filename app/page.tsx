@@ -1300,7 +1300,9 @@ export default function FinancialScorePage() {
                 date: new Date(m.monthDate),
                 month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
                 revenue: m.revenue || 0,
+                revenueBreakdown: m.revenueBreakdown || null,
                 expense: m.expense || 0,
+                expenseBreakdown: m.expenseBreakdown || null,
                 cogsPayroll: m.cogsPayroll || 0,
                 cogsOwnerPay: m.cogsOwnerPay || 0,
                 cogsContractors: m.cogsContractors || 0,
@@ -1308,6 +1310,7 @@ export default function FinancialScorePage() {
                 cogsCommissions: m.cogsCommissions || 0,
                 cogsOther: m.cogsOther || 0,
                 cogsTotal: m.cogsTotal || 0,
+                cogsBreakdown: m.cogsBreakdown || null,
                 // Operating Expenses - map DB names to display names
                 payroll: m.payroll || 0,
                 ownerBasePay: m.ownerBasePay || 0,
@@ -1355,7 +1358,8 @@ export default function FinancialScorePage() {
                 additionalPaidInCapital: m.additionalPaidInCapital || 0,
                 treasuryStock: m.treasuryStock || 0,
                 totalEquity: m.totalEquity || 0,
-                totalLAndE: m.totalLAndE || 0
+                totalLAndE: m.totalLAndE || 0,
+                lobBreakdowns: m.lobBreakdowns || null
               }));
               setLoadedMonthlyData(convertedMonthly);
               console.log(`✅ Trial Balance monthly data loaded with ${convertedMonthly.length} months`);

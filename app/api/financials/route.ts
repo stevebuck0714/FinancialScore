@@ -75,7 +75,9 @@ export async function POST(request: NextRequest) {
             companyId: companyId,
             monthDate: parsedDate,
             revenue: month.revenue || 0,
+            revenueBreakdown: month.revenueBreakdown || null,
             expense: month.expense || 0,
+            expenseBreakdown: month.expenseBreakdown || null,
             cogsPayroll: month.cogsPayroll || 0,
             cogsOwnerPay: month.cogsOwnerPay || 0,
             cogsContractors: month.cogsContractors || 0,
@@ -83,6 +85,7 @@ export async function POST(request: NextRequest) {
             cogsCommissions: month.cogsCommissions || 0,
             cogsOther: month.cogsOther || 0,
             cogsTotal: month.cogsTotal || 0,
+            cogsBreakdown: month.cogsBreakdown || null,
             payroll: month.payroll || 0,
             ownerBasePay: month.ownerBasePay || 0,
             benefits: month.benefits || 0,
@@ -124,8 +127,9 @@ export async function POST(request: NextRequest) {
             additionalPaidInCapital: month.additionalPaidInCapital || 0,
             treasuryStock: month.treasuryStock || 0,
             totalEquity: month.totalEquity || 0,
-            totalLAndE: month.totalLAndE || 0
-          };})
+            totalLAndE: month.totalLAndE || 0,
+            lobBreakdowns: month.lobBreakdowns || null
+};})
         }
       },
       include: {

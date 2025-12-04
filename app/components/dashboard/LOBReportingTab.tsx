@@ -126,7 +126,7 @@ export default function LOBReportingTab({
     filteredMonthly = monthly.slice(-36);
   }
   
-  // Calculate LOB breakdowns on-the-fly from raw QB data
+  // Calculate LOB breakdowns from monthly data (CSV or QB)
   let lobRevenue = 0;
   let lobExpense = 0;
   let lobCOGS = 0;
@@ -152,251 +152,248 @@ export default function LOBReportingTab({
     return Object.values(detailedBreakdowns[fieldName]).reduce((sum: number, val: any) => sum + (Number(val) || 0), 0);
   };
   
-  // If we have QB raw data and account mappings, calculate from source
-  if (qbRawData && accountMappings && accountMappings.length > 0) {
+  // Build LOB allocation mapping from account mappings
+  // For each target field, determine how to allocate it across LOBs
+  const buildLOBAllocationMap = () => {
+    const lobAllocationByField: { [field: string]: { [lob: string]: number } } = {};
     
-    // Check QB column structure
-    const plColumns = qbRawData.profitAndLoss?.Columns?.Column || [];
-    
-    // Determine which columns to extract based on selected period
-    const now = new Date();
-    let columnIndicesToSum: number[] = [];
-    
-    if (statementPeriod === 'current-month') {
-      // Last column before "Total" (most recent month)
-      columnIndicesToSum = [plColumns.length - 2];
-    } else if (statementPeriod === 'current-quarter') {
-      // Last 3 months
-      const lastMonth = plColumns.length - 2;
-      columnIndicesToSum = [lastMonth - 2, lastMonth - 1, lastMonth];
-    } else if (statementPeriod === 'last-12-months') {
-      // Last 12 months
-      const lastMonth = plColumns.length - 2; // Skip "Total" column
-      const startIdx = Math.max(1, lastMonth - 11); // Don't go below column 1 (column 0 is "Account")
-      columnIndicesToSum = Array.from({ length: 12 }, (_, i) => startIdx + i).filter(idx => idx >= 1 && idx <= lastMonth);
-    } else if (statementPeriod === 'ytd') {
-      // All months in current year (2025)
-      const currentYear = now.getFullYear();
-      columnIndicesToSum = [];
-      for (let i = 1; i < plColumns.length - 1; i++) {
-        const colTitle = plColumns[i]?.ColTitle || '';
-        if (colTitle.includes(currentYear.toString())) {
-          columnIndicesToSum.push(i);
-        }
+    // Group mappings by target field
+    const mappingsByField: { [field: string]: any[] } = {};
+    accountMappings.forEach(mapping => {
+      const targetField = mapping.targetField;
+      if (!targetField) return;
+      
+      if (!mappingsByField[targetField]) {
+        mappingsByField[targetField] = [];
       }
-    } else if (statementPeriod === 'last-year') {
-      // All months in previous year (2024)
-      const lastYear = now.getFullYear() - 1;
-      columnIndicesToSum = [];
-      for (let i = 1; i < plColumns.length - 1; i++) {
-        const colTitle = plColumns[i]?.ColTitle || '';
-        if (colTitle.includes(lastYear.toString())) {
-          columnIndicesToSum.push(i);
-        }
+      mappingsByField[targetField].push(mapping);
+    });
+    
+    // For each target field, determine LOB allocation
+    Object.entries(mappingsByField).forEach(([field, mappings]) => {
+      // Check if all mappings have consistent LOB allocations
+      const lobAllocations: { [lob: string]: number }[] = mappings
+        .map(m => m.lobAllocations)
+        .filter(a => a && typeof a === 'object' && Object.keys(a).length > 0);
+      
+      if (lobAllocations.length > 0) {
+        // Use the first mapping's LOB allocation as the allocation for this field
+        // In the future, we could do weighted average if multiple accounts map to same field
+        lobAllocationByField[field] = lobAllocations[0];
       }
-    } else if (statementPeriod === 'last-3-years') {
-      // Last 36 months
-      const lastMonth = plColumns.length - 2;
-      const monthsToInclude = Math.min(36, lastMonth);
-      columnIndicesToSum = Array.from({ length: monthsToInclude }, (_, i) => lastMonth - monthsToInclude + 1 + i);
+    });
+    
+    return lobAllocationByField;
+  };
+  
+  const lobAllocationByField = buildLOBAllocationMap();
+  
+  // Helper to apply LOB allocation to a field value
+  const applyFieldAllocation = (fieldName: string, value: number): { [lob: string]: number } => {
+    const allocation = lobAllocationByField[fieldName];
+    const result: { [lob: string]: number } = {};
+    
+    if (!allocation || Object.keys(allocation).length === 0) {
+      // No allocation - put in "Unallocated"
+      result['Unallocated'] = value;
+    } else {
+      // Apply percentage allocation
+      Object.entries(allocation).forEach(([lobName, percentage]) => {
+        if (percentage > 0) {
+          result[lobName] = (value * percentage) / 100;
+        }
+      });
     }
     
-    if (columnIndicesToSum.length === 0) {
-      console.error('  ❌ ERROR: No columns selected! This will result in zero values.');
-    }
+    return result;
+  };
+  
+  // Process monthly data for LOB reporting
+  if (filteredMonthly && filteredMonthly.length > 0 && accountMappings && accountMappings.length > 0) {
     
-    // Extract account values from P&L report for specific columns
-    const extractAccountValues = (rows: any[], columnIndices: number[]): any[] => {
-      const accountValues: any[] = [];
+    // Process each month in the filtered monthly data
+    const allMonthlyData: any[] = [];
+    
+    // First, process month by month to build detailed data
+    filteredMonthly.forEach((monthData, idx) => {
+      const monthLabel = monthData.month || monthData.date || `Month ${idx + 1}`;
       
-      if (!rows || !Array.isArray(rows)) return accountValues;
-      if (!columnIndices || columnIndices.length === 0) {
-        console.warn('  ⚠️ extractAccountValues called with empty columnIndices');
-        return accountValues;
+      // All financial fields we want to track
+      const fields = {
+        revenue: monthData.revenue || 0,
+        cogs: monthData.cogsTotal || monthData.cogs || 0,
+        expense: monthData.expense || 0,
+        cash: monthData.cash || 0,
+        ar: monthData.ar || 0,
+        inventory: monthData.inventory || 0,
+        otherCA: monthData.otherCA || 0,
+        fixedAssets: monthData.fixedAssets || 0,
+        otherAssets: monthData.otherAssets || 0,
+        ap: monthData.ap || 0,
+        otherCL: monthData.otherCL || 0,
+        ltd: monthData.ltd || 0,
+        ownersCapital: monthData.ownersCapital || 0,
+        ownersDraw: monthData.ownersDraw || 0,
+        commonStock: monthData.commonStock || 0,
+        preferredStock: monthData.preferredStock || 0,
+        retainedEarnings: monthData.retainedEarnings || 0,
+        additionalPaidInCapital: monthData.additionalPaidInCapital || 0,
+        treasuryStock: monthData.treasuryStock || 0,
+      };
+      
+      // Check if we have pre-calculated LOB breakdowns from the database
+      let monthBreakdowns: any = {};
+      
+      if (monthData.lobBreakdowns && typeof monthData.lobBreakdowns === 'object') {
+        // Use pre-calculated breakdowns from database
+        monthBreakdowns = monthData.lobBreakdowns;
+      } else {
+        // Fallback: apply LOB allocations based on account mappings
+        Object.entries(fields).forEach(([fieldName, value]) => {
+          if (value !== 0) {
+            monthBreakdowns[fieldName] = applyFieldAllocation(fieldName, value);
+          }
+        });
       }
       
-      for (const row of rows) {
-        if (row.type === 'Data' && row.ColData) {
-          const accountName = row.ColData[0]?.value || '';
-          const accountId = row.ColData[0]?.id || '';
-          
-          // Sum values across the selected columns
-          let totalValue = 0;
-          for (const colIdx of columnIndices) {
-            if (row.ColData[colIdx] && row.ColData[colIdx].value) {
-              const colValue = parseFloat(row.ColData[colIdx].value);
-              if (!isNaN(colValue)) {
-                totalValue += Math.abs(colValue);
-              }
-            }
-          }
-          
-          if (accountName && totalValue > 0) {
-            accountValues.push({ accountName, accountId, value: totalValue });
-          }
-        } else if (row.type === 'Section' && row.Rows) {
-          const nestedRows = Array.isArray(row.Rows) ? row.Rows : (row.Rows.Row || []);
-          const nestedAccounts = extractAccountValues(nestedRows, columnIndices);
-          accountValues.push(...nestedAccounts);
+      // Extract values based on selected LOB
+      if (selectedLineOfBusiness === 'all') {
+        // Sum across all LOBs (use totals)
+        const cash = fields.cash;
+        const ar = fields.ar;
+        const inventory = fields.inventory;
+        const otherCA = fields.otherCA;
+        const tca = cash + ar + inventory + otherCA;
+        const fixedAssets = fields.fixedAssets;
+        const otherAssets = fields.otherAssets;
+        const totalAssets = tca + fixedAssets + otherAssets;
+        
+        const ap = fields.ap;
+        const otherCL = fields.otherCL;
+        const tcl = ap + otherCL;
+        const ltd = fields.ltd;
+        const totalLiab = tcl + ltd;
+        
+        const ownersCapital = fields.ownersCapital;
+        const ownersDraw = fields.ownersDraw;
+        const commonStock = fields.commonStock;
+        const preferredStock = fields.preferredStock;
+        const retainedEarnings = fields.retainedEarnings;
+        const additionalPaidInCapital = fields.additionalPaidInCapital;
+        const treasuryStock = fields.treasuryStock;
+        const equity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
+        
+        allMonthlyData.push({
+          month: monthLabel,
+          revenue: fields.revenue,
+          expense: fields.expense,
+          cogs: fields.cogs,
+          cash,
+          ar,
+          inventory,
+          otherCA,
+          tca,
+          fixedAssets,
+          otherAssets,
+          totalAssets,
+          ap,
+          otherCL,
+          tcl,
+          ltd,
+          totalLiab,
+          ownersCapital,
+          ownersDraw,
+          commonStock,
+          preferredStock,
+          retainedEarnings,
+          additionalPaidInCapital,
+          treasuryStock,
+          equity,
+          breakdowns: monthBreakdowns
+        });
+      } else {
+        // Specific LOB - extract values for this LOB only
+        const getLOBVal = (fieldName: string) => {
+          return monthBreakdowns[fieldName]?.[selectedLineOfBusiness] || 0;
+        };
+        
+        const cash = getLOBVal('cash');
+        const ar = getLOBVal('ar');
+        const inventory = getLOBVal('inventory');
+        const otherCA = getLOBVal('otherCA');
+        const tca = cash + ar + inventory + otherCA;
+        const fixedAssets = getLOBVal('fixedAssets');
+        const otherAssets = getLOBVal('otherAssets');
+        const totalAssets = tca + fixedAssets + otherAssets;
+        
+        const ap = getLOBVal('ap');
+        const otherCL = getLOBVal('otherCL');
+        const tcl = ap + otherCL;
+        const ltd = getLOBVal('ltd');
+        const totalLiab = tcl + ltd;
+        
+        const ownersCapital = getLOBVal('ownersCapital');
+        const ownersDraw = getLOBVal('ownersDraw');
+        const commonStock = getLOBVal('commonStock');
+        const preferredStock = getLOBVal('preferredStock');
+        const retainedEarnings = getLOBVal('retainedEarnings');
+        const additionalPaidInCapital = getLOBVal('additionalPaidInCapital');
+        const treasuryStock = getLOBVal('treasuryStock');
+        const equity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
+        
+        allMonthlyData.push({
+          month: monthLabel,
+          revenue: getLOBVal('revenue'),
+          expense: getLOBVal('expense'),
+          cogs: getLOBVal('cogs'),
+          cash,
+          ar,
+          inventory,
+          otherCA,
+          tca,
+          fixedAssets,
+          otherAssets,
+          totalAssets,
+          ap,
+          otherCL,
+          tcl,
+          ltd,
+          totalLiab,
+          ownersCapital,
+          ownersDraw,
+          commonStock,
+          preferredStock,
+          retainedEarnings,
+          additionalPaidInCapital,
+          treasuryStock,
+          equity,
+          breakdowns: monthBreakdowns
+        });
+      }
+    });
+    
+    // Calculate aggregated totals for summary cards
+    const aggregatedBreakdowns: any = {};
+    allMonthlyData.forEach(month => {
+      Object.entries(month.breakdowns || {}).forEach(([fieldName, lobBreakdown]: [string, any]) => {
+        if (!aggregatedBreakdowns[fieldName]) {
+          aggregatedBreakdowns[fieldName] = {};
         }
-      }
-      
-      return accountValues;
-    };
+        Object.entries(lobBreakdown).forEach(([lobName, value]) => {
+          if (!aggregatedBreakdowns[fieldName][lobName]) {
+            aggregatedBreakdowns[fieldName][lobName] = 0;
+          }
+          aggregatedBreakdowns[fieldName][lobName] += Number(value) || 0;
+        });
+      });
+    });
     
-    // Extract from P&L using selected columns
-    const plRows = qbRawData.profitAndLoss?.Rows?.Row || [];
-    const plAccountValues = extractAccountValues(plRows, columnIndicesToSum);
+    detailedBreakdowns = aggregatedBreakdowns;
     
-    // Extract from Balance Sheet (use last column only for balance sheet - it's a point in time)
-    const bsColumns = qbRawData.balanceSheet?.Columns?.Column || [];
-    const bsColumnIndex = bsColumns.length - 2; // Last month (before Total)
-    const bsRows = qbRawData.balanceSheet?.Rows?.Row || [];
-    const bsAccountValues = extractAccountValues(bsRows, [bsColumnIndex]);
-    
-    // Apply LOB allocations for AGGREGATED totals
-    const allAccountValues = [...plAccountValues, ...bsAccountValues];
-    const lobData = applyLOBAllocations(allAccountValues, accountMappings);
-    
-    // Store the full lobData for detailed line items
-    detailedBreakdowns = lobData.breakdowns || {};
-    
-    // NOW extract data MONTH BY MONTH for monthly/quarterly/annual display
+    // Now group by display type (monthly, quarterly, annual)
     if (statementDisplay === 'monthly' || statementDisplay === 'quarterly' || statementDisplay === 'annual') {
       
-      // First, get all monthly data
-      const allMonthlyData: any[] = [];
-      
-      for (const colIdx of columnIndicesToSum) {
-        const monthLabel = plColumns[colIdx]?.ColTitle || '';
-        
-        // Find matching BS column for this P&L month
-        let matchingBsColIdx = bsColumnIndex; // default to latest
-        for (let i = 1; i < bsColumns.length - 1; i++) {
-          if (bsColumns[i]?.ColTitle === monthLabel) {
-            matchingBsColIdx = i;
-            break;
-          }
-        }
-        
-        // Extract values for THIS MONTH ONLY
-        const monthPlValues = extractAccountValues(plRows, [colIdx]);
-        const monthBsValues = extractAccountValues(bsRows, [matchingBsColIdx]);
-        const monthAllValues = [...monthPlValues, ...monthBsValues];
-        const monthLobData = applyLOBAllocations(monthAllValues, accountMappings);
-        
-        if (selectedLineOfBusiness === 'all') {
-          const cash = monthLobData.totals?.cash || 0;
-          const ar = monthLobData.totals?.ar || 0;
-          const inventory = monthLobData.totals?.inventory || 0;
-          const otherCA = monthLobData.totals?.otherCA || 0;
-          const tca = cash + ar + inventory + otherCA;
-          const fixedAssets = monthLobData.totals?.fixedAssets || 0;
-          const otherAssets = monthLobData.totals?.otherAssets || 0;
-          const totalAssets = tca + fixedAssets + otherAssets;
-          
-          const ap = monthLobData.totals?.ap || 0;
-          const otherCL = monthLobData.totals?.otherCL || 0;
-          const tcl = ap + otherCL;
-          const ltd = monthLobData.totals?.ltd || 0;
-          const totalLiab = tcl + ltd;
-          
-          const ownersCapital = monthLobData.totals?.ownersCapital || 0;
-          const ownersDraw = monthLobData.totals?.ownersDraw || 0;
-          const commonStock = monthLobData.totals?.commonStock || 0;
-          const preferredStock = monthLobData.totals?.preferredStock || 0;
-          const retainedEarnings = monthLobData.totals?.retainedEarnings || 0;
-          const additionalPaidInCapital = monthLobData.totals?.additionalPaidInCapital || 0;
-          const treasuryStock = monthLobData.totals?.treasuryStock || 0;
-          const equity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
-          
-          allMonthlyData.push({
-            month: monthLabel,
-            colIdx: colIdx,
-            revenue: monthLobData.totals?.revenue || 0,
-            expense: monthLobData.totals?.expense || 0,
-            cogs: monthLobData.totals?.cogs || 0,
-            cash,
-            ar,
-            inventory,
-            otherCA,
-            tca,
-            fixedAssets,
-            otherAssets,
-            totalAssets,
-            ap,
-            otherCL,
-            tcl,
-            ltd,
-            totalLiab,
-            ownersCapital,
-            ownersDraw,
-            commonStock,
-            preferredStock,
-            retainedEarnings,
-            additionalPaidInCapital,
-            treasuryStock,
-            equity,
-            breakdowns: monthLobData.breakdowns || {}
-          });
-        } else {
-          const cash = monthLobData.breakdowns?.cash?.[selectedLineOfBusiness] || 0;
-          const ar = monthLobData.breakdowns?.ar?.[selectedLineOfBusiness] || 0;
-          const inventory = monthLobData.breakdowns?.inventory?.[selectedLineOfBusiness] || 0;
-          const otherCA = monthLobData.breakdowns?.otherCA?.[selectedLineOfBusiness] || 0;
-          const tca = cash + ar + inventory + otherCA;
-          const fixedAssets = monthLobData.breakdowns?.fixedAssets?.[selectedLineOfBusiness] || 0;
-          const otherAssets = monthLobData.breakdowns?.otherAssets?.[selectedLineOfBusiness] || 0;
-          const totalAssets = tca + fixedAssets + otherAssets;
-          
-          const ap = monthLobData.breakdowns?.ap?.[selectedLineOfBusiness] || 0;
-          const otherCL = monthLobData.breakdowns?.otherCL?.[selectedLineOfBusiness] || 0;
-          const tcl = ap + otherCL;
-          const ltd = monthLobData.breakdowns?.ltd?.[selectedLineOfBusiness] || 0;
-          const totalLiab = tcl + ltd;
-          
-          const ownersCapital = monthLobData.breakdowns?.ownersCapital?.[selectedLineOfBusiness] || 0;
-          const ownersDraw = monthLobData.breakdowns?.ownersDraw?.[selectedLineOfBusiness] || 0;
-          const commonStock = monthLobData.breakdowns?.commonStock?.[selectedLineOfBusiness] || 0;
-          const preferredStock = monthLobData.breakdowns?.preferredStock?.[selectedLineOfBusiness] || 0;
-          const retainedEarnings = monthLobData.breakdowns?.retainedEarnings?.[selectedLineOfBusiness] || 0;
-          const additionalPaidInCapital = monthLobData.breakdowns?.additionalPaidInCapital?.[selectedLineOfBusiness] || 0;
-          const treasuryStock = monthLobData.breakdowns?.treasuryStock?.[selectedLineOfBusiness] || 0;
-          const equity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
-          
-          allMonthlyData.push({
-            month: monthLabel,
-            colIdx: colIdx,
-            revenue: monthLobData.revenueBreakdown?.[selectedLineOfBusiness] || 0,
-            expense: monthLobData.expenseBreakdown?.[selectedLineOfBusiness] || 0,
-            cogs: monthLobData.cogsBreakdown?.[selectedLineOfBusiness] || 0,
-            cash,
-            ar,
-            inventory,
-            otherCA,
-            tca,
-            fixedAssets,
-            otherAssets,
-            totalAssets,
-            ap,
-            otherCL,
-            tcl,
-            ltd,
-            totalLiab,
-            ownersCapital,
-            ownersDraw,
-            commonStock,
-            preferredStock,
-            retainedEarnings,
-            additionalPaidInCapital,
-            treasuryStock,
-            equity,
-            breakdowns: monthLobData.breakdowns || {}
-          });
-        }
-      }
-      
-      // Now aggregate based on display type
+      // Aggregate based on display type
       if (statementDisplay === 'monthly') {
         monthlyLOBData = allMonthlyData;
         monthLabels = allMonthlyData.map(m => m.month);
@@ -408,25 +405,41 @@ export default function LOBReportingTab({
           const monthStr = m.month;
           let quarter = '';
           
-          // Determine quarter from month name
-          if (monthStr.includes('Jan') || monthStr.includes('Feb') || monthStr.includes('Mar')) {
+          // Parse month from format like "12/2024" or month names
+          const monthMatch = monthStr.match(/^(\d{1,2})\/(\d{4})$/); // MM/YYYY format
+          if (monthMatch) {
+            const monthNum = parseInt(monthMatch[1]);
+            const year = monthMatch[2];
+            
+            if (monthNum >= 1 && monthNum <= 3) {
+              quarter = `Q1 ${year}`;
+            } else if (monthNum >= 4 && monthNum <= 6) {
+              quarter = `Q2 ${year}`;
+            } else if (monthNum >= 7 && monthNum <= 9) {
+              quarter = `Q3 ${year}`;
+            } else if (monthNum >= 10 && monthNum <= 12) {
+              quarter = `Q4 ${year}`;
+            }
+          } else {
+            // Fallback for month names
             const year = monthStr.match(/\d{4}/)?.[0] || '';
-            quarter = `Q1 ${year}`;
-          } else if (monthStr.includes('Apr') || monthStr.includes('May') || monthStr.includes('Jun')) {
-            const year = monthStr.match(/\d{4}/)?.[0] || '';
-            quarter = `Q2 ${year}`;
-          } else if (monthStr.includes('Jul') || monthStr.includes('Aug') || monthStr.includes('Sep')) {
-            const year = monthStr.match(/\d{4}/)?.[0] || '';
-            quarter = `Q3 ${year}`;
-          } else if (monthStr.includes('Oct') || monthStr.includes('Nov') || monthStr.includes('Dec')) {
-            const year = monthStr.match(/\d{4}/)?.[0] || '';
-            quarter = `Q4 ${year}`;
+            if (monthStr.includes('Jan') || monthStr.includes('Feb') || monthStr.includes('Mar')) {
+              quarter = `Q1 ${year}`;
+            } else if (monthStr.includes('Apr') || monthStr.includes('May') || monthStr.includes('Jun')) {
+              quarter = `Q2 ${year}`;
+            } else if (monthStr.includes('Jul') || monthStr.includes('Aug') || monthStr.includes('Sep')) {
+              quarter = `Q3 ${year}`;
+            } else if (monthStr.includes('Oct') || monthStr.includes('Nov') || monthStr.includes('Dec')) {
+              quarter = `Q4 ${year}`;
+            }
           }
           
-          if (!quarterMap.has(quarter)) {
+          if (quarter && !quarterMap.has(quarter)) {
             quarterMap.set(quarter, []);
           }
-          quarterMap.get(quarter)!.push(m);
+          if (quarter) {
+            quarterMap.get(quarter)!.push(m);
+          }
         });
         
         // Aggregate quarterly data
@@ -595,46 +608,35 @@ export default function LOBReportingTab({
           monthLabels.push(year);
         });
       }
-      
     }
     
-    // Extract values for selected LOB (or sum all LOBs if "all" selected)
+    // Calculate summary totals for the selected period (for summary cards)
     if (selectedLineOfBusiness === 'all') {
       // Sum across all LOBs
-      lobRevenue = lobData.totals?.revenue || 0;
-      lobExpense = lobData.totals?.expense || 0;
-      lobCOGS = lobData.totals?.cogs || 0;
-      lobCash = lobData.totals?.cash || 0;
-      lobAR = lobData.totals?.ar || 0;
-      lobAP = lobData.totals?.ap || 0;
-      lobEquity = lobData.totals?.totalEquity || 0;
+      lobRevenue = allMonthlyData.reduce((sum, m) => sum + (m.revenue || 0), 0);
+      lobExpense = allMonthlyData.reduce((sum, m) => sum + (m.expense || 0), 0);
+      lobCOGS = allMonthlyData.reduce((sum, m) => sum + (m.cogs || 0), 0);
+      // Balance sheet items use the last month (point in time)
+      const lastMonth = allMonthlyData[allMonthlyData.length - 1];
+      lobCash = lastMonth?.cash || 0;
+      lobAR = lastMonth?.ar || 0;
+      lobAP = lastMonth?.ap || 0;
+      lobEquity = lastMonth?.equity || 0;
     } else {
       // Specific LOB
-      if (lobData.revenueBreakdown && lobData.revenueBreakdown[selectedLineOfBusiness]) {
-        lobRevenue = lobData.revenueBreakdown[selectedLineOfBusiness];
-      }
-      if (lobData.expenseBreakdown && lobData.expenseBreakdown[selectedLineOfBusiness]) {
-        lobExpense = lobData.expenseBreakdown[selectedLineOfBusiness];
-      }
-      if (lobData.cogsBreakdown && lobData.cogsBreakdown[selectedLineOfBusiness]) {
-        lobCOGS = lobData.cogsBreakdown[selectedLineOfBusiness];
-      }
-      if (lobData.breakdowns?.cash && lobData.breakdowns.cash[selectedLineOfBusiness]) {
-        lobCash = lobData.breakdowns.cash[selectedLineOfBusiness];
-      }
-      if (lobData.breakdowns?.ar && lobData.breakdowns.ar[selectedLineOfBusiness]) {
-        lobAR = lobData.breakdowns.ar[selectedLineOfBusiness];
-      }
-      if (lobData.breakdowns?.ap && lobData.breakdowns.ap[selectedLineOfBusiness]) {
-        lobAP = lobData.breakdowns.ap[selectedLineOfBusiness];
-      }
-      if (lobData.breakdowns?.totalEquity && lobData.breakdowns.totalEquity[selectedLineOfBusiness]) {
-        lobEquity = lobData.breakdowns.totalEquity[selectedLineOfBusiness];
-      }
+      lobRevenue = allMonthlyData.reduce((sum, m) => sum + (m.revenue || 0), 0);
+      lobExpense = allMonthlyData.reduce((sum, m) => sum + (m.expense || 0), 0);
+      lobCOGS = allMonthlyData.reduce((sum, m) => sum + (m.cogs || 0), 0);
+      // Balance sheet items use the last month (point in time)
+      const lastMonth = allMonthlyData[allMonthlyData.length - 1];
+      lobCash = lastMonth?.cash || 0;
+      lobAR = lastMonth?.ar || 0;
+      lobAP = lastMonth?.ap || 0;
+      lobEquity = lastMonth?.equity || 0;
     }
     
   } else {
-    console.log('⚠️ No QB raw data or account mappings - cannot calculate LOB breakdowns');
+    console.log('⚠️ No monthly data or account mappings - cannot calculate LOB breakdowns');
   }
   
   // Calculate metrics
@@ -643,8 +645,10 @@ export default function LOBReportingTab({
   const netIncome = lobRevenue - lobCOGS - lobExpense;
   const netMargin = lobRevenue > 0 ? (netIncome / lobRevenue) * 100 : 0;
   
-  // Check if we have any data to display
-  const hasData = lobRevenue > 0 || lobExpense > 0 || lobCOGS > 0;
+  // Check if we have any data to display (income statement OR balance sheet items)
+  const hasData = lobRevenue > 0 || lobExpense > 0 || lobCOGS > 0 || 
+                   lobCash > 0 || lobAR > 0 || lobAP > 0 || lobEquity !== 0 ||
+                   allMonthlyData.length > 0;
   
   // Format currency
   const fmt = (value: number) => {

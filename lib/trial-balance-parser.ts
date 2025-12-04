@@ -10,6 +10,8 @@
  * - Equity, Income, CostOfGoodsSold, Expense
  */
 
+import { applyLOBAllocations } from './lob-allocator';
+
 export interface TrialBalanceAccount {
   acctType: string;
   acctId: string;
@@ -251,6 +253,11 @@ export function processTrialBalanceToMonthly(
 ): any[] {
   const monthlyRecords: any[] = [];
   
+  // Count mappings with LOB allocations for validation
+  const mappingsWithLOB = accountMappings.filter(m => 
+    m.lobAllocations && typeof m.lobAllocations === 'object' && Object.keys(m.lobAllocations).length > 0
+  );
+  
   // Create a mapping lookup
   const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
   for (const mapping of accountMappings) {
@@ -338,7 +345,10 @@ export function processTrialBalanceToMonthly(
       totalLAndE: 0,
     };
     
-    // Sum up values based on mappings
+    // Build account values for LOB allocation processing
+    const accountValues: Array<{ accountName: string; accountId: string; value: number }> = [];
+    
+    // Sum up values based on mappings AND collect account values for LOB processing
     for (const account of parsedData.accounts) {
       const mapping = mappingLookup[account.description];
       const value = account.values[dateStr] || 0;
@@ -348,6 +358,13 @@ export function processTrialBalanceToMonthly(
         if (monthlyRecord[mapping.targetField] !== undefined) {
           monthlyRecord[mapping.targetField] += value;
         }
+        
+        // Collect account value for LOB allocation
+        accountValues.push({
+          accountName: account.description,
+          accountId: account.acctId,
+          value: value
+        });
       } else if (!mapping) {
         // Use default mapping based on account type
         const defaultField = ACCOUNT_TYPE_TO_TARGET_FIELD[account.acctType];
@@ -383,6 +400,17 @@ export function processTrialBalanceToMonthly(
     }
     
     monthlyRecord.totalLAndE = monthlyRecord.totalLiab + monthlyRecord.totalEquity;
+    
+    // Apply LOB allocations if we have account mappings with LOB data
+    if (accountValues.length > 0 && accountMappings.length > 0) {
+      const lobData = applyLOBAllocations(accountValues, accountMappings);
+      
+      // Store LOB breakdowns in the monthly record
+      monthlyRecord.lobBreakdowns = lobData.breakdowns || null;
+      monthlyRecord.revenueBreakdown = lobData.revenueBreakdown || null;
+      monthlyRecord.expenseBreakdown = lobData.expenseBreakdown || null;
+      monthlyRecord.cogsBreakdown = lobData.cogsBreakdown || null;
+    }
     
     monthlyRecords.push(monthlyRecord);
   }
