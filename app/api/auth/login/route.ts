@@ -5,6 +5,7 @@ import { verifyPassword } from '@/lib/auth';
 export async function POST(request: NextRequest) {
   try {
     console.log('🔐 Login attempt starting...');
+    console.log('🔗 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 60) + '...');
     const { email, password } = await request.json();
     console.log('📧 Email:', email);
 

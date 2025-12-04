@@ -69,6 +69,88 @@ const mappingRules = [
   { keywords: ['total liab and equity', 'total liabilities and equity'], targetField: 'totalLAndE', confidence: 'high' },
 ];
 
+// Account code ranges based on standard Chart of Accounts numbering
+const accountCodeRanges = [
+  // Assets (1000-1999)
+  { start: 1000, end: 1099, targetField: 'cash', confidence: 'high', category: 'Cash' },
+  { start: 1100, end: 1199, targetField: 'ar', confidence: 'high', category: 'Accounts Receivable' },
+  { start: 1200, end: 1299, targetField: 'inventory', confidence: 'high', category: 'Inventory' },
+  { start: 1300, end: 1499, targetField: 'otherCA', confidence: 'medium', category: 'Other Current Assets' },
+  { start: 1500, end: 1799, targetField: 'fixedAssets', confidence: 'high', category: 'Fixed Assets' },
+  { start: 1800, end: 1999, targetField: 'otherAssets', confidence: 'medium', category: 'Other Assets' },
+  
+  // Liabilities (2000-2999)
+  { start: 2000, end: 2099, targetField: 'ap', confidence: 'high', category: 'Accounts Payable' },
+  { start: 2100, end: 2499, targetField: 'otherCL', confidence: 'medium', category: 'Other Current Liabilities' },
+  { start: 2500, end: 2999, targetField: 'ltd', confidence: 'high', category: 'Long Term Debt' },
+  
+  // Equity (3000-3999)
+  { start: 3000, end: 3099, targetField: 'ownersCapital', confidence: 'high', category: 'Owner Capital' },
+  { start: 3100, end: 3199, targetField: 'retainedEarnings', confidence: 'high', category: 'Retained Earnings' },
+  { start: 3200, end: 3999, targetField: 'totalEquity', confidence: 'medium', category: 'Equity' },
+  
+  // Revenue/Income (4000-4999)
+  { start: 4000, end: 4899, targetField: 'revenue', confidence: 'high', category: 'Revenue' },
+  { start: 4900, end: 4999, targetField: 'nonOperatingIncome', confidence: 'medium', category: 'Other Income' },
+  
+  // Cost of Goods Sold (5000-5999)
+  { start: 5000, end: 5099, targetField: 'cogsMaterials', confidence: 'high', category: 'COGS Materials' },
+  { start: 5100, end: 5199, targetField: 'cogsPayroll', confidence: 'high', category: 'COGS Labor' },
+  { start: 5200, end: 5299, targetField: 'cogsContractors', confidence: 'high', category: 'COGS Contractors' },
+  { start: 5300, end: 5999, targetField: 'cogsOther', confidence: 'medium', category: 'COGS Other' },
+  
+  // Operating Expenses (6000-6999)
+  { start: 6000, end: 6099, targetField: 'autoTravel', confidence: 'high', category: 'Auto & Travel' },
+  { start: 6100, end: 6199, targetField: 'insurance', confidence: 'high', category: 'Insurance' },
+  { start: 6200, end: 6299, targetField: 'professionalFees', confidence: 'high', category: 'Professional Fees' },
+  { start: 6300, end: 6399, targetField: 'payroll', confidence: 'high', category: 'Payroll' },
+  { start: 6400, end: 6499, targetField: 'rent', confidence: 'high', category: 'Rent' },
+  { start: 6500, end: 6599, targetField: 'infrastructure', confidence: 'high', category: 'Utilities' },
+  { start: 6600, end: 6699, targetField: 'salesExpense', confidence: 'high', category: 'Marketing' },
+  { start: 6700, end: 6799, targetField: 'depreciationAmortization', confidence: 'high', category: 'Depreciation' },
+  { start: 6800, end: 6899, targetField: 'interestExpense', confidence: 'high', category: 'Interest' },
+  { start: 6900, end: 6999, targetField: 'otherExpense', confidence: 'medium', category: 'Other Expense' },
+];
+
+function extractNumericCode(accountCode: string): number | null {
+  if (!accountCode) return null;
+  
+  // Handle formats like "1-1005", "1005", "1-1005 JBP", etc.
+  // Extract the main account number (ignore prefix like "1-" or "2-")
+  const match = accountCode.match(/(\d+)-?(\d+)/);
+  if (match) {
+    // If format is "1-1005", use the second part "1005"
+    // If format is just "1005", use that
+    const num = match[2] ? parseInt(match[2]) : parseInt(match[1]);
+    return isNaN(num) ? null : num;
+  }
+  
+  // Try simple numeric extraction
+  const simpleMatch = accountCode.match(/(\d+)/);
+  if (simpleMatch) {
+    return parseInt(simpleMatch[1]);
+  }
+  
+  return null;
+}
+
+function mapAccountByCode(accountCode: string): { targetField: string; confidence: string; reasoning: string } | null {
+  const numericCode = extractNumericCode(accountCode);
+  if (numericCode === null) return null;
+  
+  for (const range of accountCodeRanges) {
+    if (numericCode >= range.start && numericCode <= range.end) {
+      return {
+        targetField: range.targetField,
+        confidence: range.confidence,
+        reasoning: `Account code ${accountCode} (${numericCode}) falls in ${range.category} range (${range.start}-${range.end})`
+      };
+    }
+  }
+  
+  return null;
+}
+
 function mapAccountToFieldKeyword(accountName: string): { targetField: string; confidence: string; reasoning: string } | null {
   const lowerAccount = accountName.toLowerCase();
   
@@ -124,21 +206,33 @@ export async function POST(request: NextRequest) {
       targetField: string;
       confidence: string;
       reasoning: string;
-      source: 'keyword' | 'learned' | 'similar';
+      source: 'keyword' | 'learned' | 'similar' | 'accountCode';
     }> = [];
 
     // Process each account
     for (const account of qbAccountsWithClass) {
       const accountName = typeof account === 'string' ? account : account.name;
       const classification = typeof account === 'string' ? '' : (account.classification || '');
+      const accountCode = typeof account === 'string' ? '' : (account.accountCode || '');
+      const accountType = typeof account === 'string' ? '' : (account.accountType || '');
 
       let bestMapping = null;
       let bestConfidence = 0;
-      let source: 'keyword' | 'learned' | 'similar' = 'keyword';
+      let source: 'keyword' | 'learned' | 'similar' | 'accountCode' = 'keyword';
 
-      // 1. Try keyword matching first
+      // 1. Try account code-based mapping first (most reliable for standard COA)
+      if (accountCode) {
+        const codeMatch = mapAccountByCode(accountCode);
+        if (codeMatch) {
+          bestMapping = codeMatch;
+          bestConfidence = confidenceToNumeric(codeMatch.confidence);
+          source = 'accountCode';
+        }
+      }
+
+      // 2. Try keyword matching if no code match or lower confidence
       const keywordMatch = mapAccountToFieldKeyword(accountName);
-      if (keywordMatch) {
+      if (keywordMatch && confidenceToNumeric(keywordMatch.confidence) > bestConfidence) {
         bestMapping = keywordMatch;
         bestConfidence = confidenceToNumeric(keywordMatch.confidence);
         source = 'keyword';
@@ -183,16 +277,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const accountCodeCount = mappings.filter(m => m.source === 'accountCode').length;
     const keywordCount = mappings.filter(m => m.source === 'keyword').length;
     const learnedCount = mappings.filter(m => m.source === 'learned').length;
     const similarCount = mappings.filter(m => m.source === 'similar').length;
 
-    console.log(`[Enhanced AI Mapping] Generated ${mappings.length} mappings: ${keywordCount} keyword, ${learnedCount} learned, ${similarCount} similar`);
+    console.log(`[Enhanced AI Mapping] Generated ${mappings.length} mappings: ${accountCodeCount} by account code, ${keywordCount} keyword, ${learnedCount} learned, ${similarCount} similar`);
 
     return NextResponse.json({ 
       mappings,
       stats: {
         total: mappings.length,
+        accountCode: accountCodeCount,
         keyword: keywordCount,
         learned: learnedCount,
         similar: similarCount

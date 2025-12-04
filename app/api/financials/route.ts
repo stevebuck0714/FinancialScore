@@ -60,9 +60,20 @@ export async function POST(request: NextRequest) {
         rawData,
         columnMapping,
         monthlyData: {
-          create: monthlyData.map((month: any) => ({
+          create: monthlyData.map((month: any) => {
+            // Handle date from monthDate or date field
+            const dateValue = month.monthDate || month.date;
+            const parsedDate = new Date(dateValue);
+            
+            // Validate the date is valid
+            if (isNaN(parsedDate.getTime())) {
+              console.error(`Invalid date for month record: ${dateValue}`, month);
+              throw new Error(`Invalid date: ${dateValue}`);
+            }
+            
+            return {
             companyId: companyId,
-            monthDate: new Date(month.monthDate),
+            monthDate: parsedDate,
             revenue: month.revenue || 0,
             expense: month.expense || 0,
             cogsPayroll: month.cogsPayroll || 0,
@@ -72,23 +83,23 @@ export async function POST(request: NextRequest) {
             cogsCommissions: month.cogsCommissions || 0,
             cogsOther: month.cogsOther || 0,
             cogsTotal: month.cogsTotal || 0,
-            payroll: month.opexPayroll || month.payroll || 0,
-            ownerBasePay: month.ownersBasePay || month.ownerBasePay || 0,
+            payroll: month.payroll || 0,
+            ownerBasePay: month.ownerBasePay || 0,
             benefits: month.benefits || 0,
             insurance: month.insurance || 0,
-            professionalFees: month.professionalServices || month.professionalFees || 0,
-            subcontractors: month.contractorsDistribution || month.subcontractors || 0,
-            rent: month.rentLease || month.rent || 0,
+            professionalFees: month.professionalFees || 0,
+            subcontractors: month.subcontractors || 0,
+            rent: month.rent || 0,
             taxLicense: month.taxLicense || 0,
             phoneComm: month.phoneComm || 0,
-            infrastructure: month.equipment || month.infrastructure || 0,
-            autoTravel: month.travel || month.autoTravel || 0,
-            salesExpense: month.opexSalesMarketing || month.salesExpense || 0,
-            marketing: month.opexOther || month.marketing || 0,
+            infrastructure: month.infrastructure || 0,
+            autoTravel: month.autoTravel || 0,
+            salesExpense: month.salesExpense || 0,
+            marketing: month.marketing || 0,
             trainingCert: month.trainingCert || 0,
             mealsEntertainment: month.mealsEntertainment || 0,
             interestExpense: month.interestExpense || 0,
-            depreciationAmortization: month.depreciationExpense || month.depreciationAmortization || 0,
+            depreciationAmortization: month.depreciationAmortization || 0,
             otherExpense: month.otherExpense || 0,
             nonOperatingIncome: month.nonOperatingIncome || 0,
             extraordinaryItems: month.extraordinaryItems || 0,
@@ -114,7 +125,7 @@ export async function POST(request: NextRequest) {
             treasuryStock: month.treasuryStock || 0,
             totalEquity: month.totalEquity || 0,
             totalLAndE: month.totalLAndE || 0
-          }))
+          };})
         }
       },
       include: {

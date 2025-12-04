@@ -42,7 +42,7 @@ export default function SiteAdminDashboard(props: any) {
     newConsultantCompanyZip, setNewConsultantCompanyZip,
     newConsultantCompanyWebsite, setNewConsultantCompanyWebsite,
     addConsultant, deleteConsultant, updateConsultantInfo, getConsultantCompanies,
-    setCurrentUser, setSiteAdminViewingAs, setCurrentView, currentUser,
+    setCurrentUser, setSiteAdminViewingAs, setCurrentView, setLoadedConsultantId, setCompanies, currentUser,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
     newSiteAdminEmail, setNewSiteAdminEmail,
@@ -340,6 +340,9 @@ export default function SiteAdminDashboard(props: any) {
                                 onClick={() => {
                                   // Save current admin user
                                   setSiteAdminViewingAs(currentUser);
+                                  // CRITICAL: Clear companies to prevent showing all companies
+                                  setCompanies([]);
+                                  setLoadedConsultantId(null);
                                   // Switch to viewing this consultant's dashboard
                                   setCurrentUser({
                                     ...consultant.user,
@@ -942,6 +945,9 @@ export default function SiteAdminDashboard(props: any) {
                                     onClick={() => {
                                       // Save current admin user
                                       setSiteAdminViewingAs(currentUser);
+                                      // CRITICAL: Clear companies to prevent showing all companies
+                                      setCompanies([]);
+                                      setLoadedConsultantId(null);
                                       // Switch to viewing this business's dashboard
                                       setCurrentUser({
                                         ...business.user,

@@ -49,8 +49,8 @@ export async function sendPasswordResetEmail({
 }: PasswordResetEmailProps) {
   const client = getResendClient();
   if (!client) {
-    console.log('⚠️ Skipping password reset email - Resend not configured');
-    return { success: false, skipped: true };
+    console.error('❌ RESEND_API_KEY not configured - cannot send password reset email');
+    throw new Error('Email service is not configured. Please contact support.');
   }
   
   try {
@@ -178,8 +178,8 @@ export async function sendConsultantRegistrationNotification({
 }: ConsultantRegistrationProps) {
   const client = getResendClient();
   if (!client) {
-    console.log('⚠️ Skipping consultant registration notification - Resend not configured');
-    return { success: false, skipped: true };
+    console.error('❌ RESEND_API_KEY not configured - cannot send consultant registration notification');
+    throw new Error('Email service is not configured. Please contact support.');
   }
   
   try {
@@ -221,8 +221,8 @@ export async function sendBusinessRegistrationNotification({
 }: BusinessRegistrationProps) {
   const client = getResendClient();
   if (!client) {
-    console.log('⚠️ Skipping business registration notification - Resend not configured');
-    return { success: false, skipped: true };
+    console.error('❌ RESEND_API_KEY not configured - cannot send business registration notification');
+    throw new Error('Email service is not configured. Please contact support.');
   }
   
   try {

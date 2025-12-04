@@ -33,6 +33,7 @@ import MAScoringGuideView from './components/assessment/MAScoringGuideView';
 import MAScoresSummaryView from './components/assessment/MAScoresSummaryView';
 import MAYourResultsView from './components/assessment/MAYourResultsView';
 import TextToSpeech from './components/common/TextToSpeech';
+import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
 
 // Constants (now imported from ./constants)
 
@@ -487,20 +488,19 @@ export default function FinancialScorePage() {
       'cogsMaterials': 'COGS Materials',
       'cogsCommissions': 'COGS Commissions',
       'cogsOther': 'COGS Other',
-      'opexSalesMarketing': 'Sales & Marketing',
-      'rentLease': 'Rent/Lease',
-      'utilities': 'Utilities',
-      'equipment': 'Equipment',
-      'travel': 'Travel',
-      'professionalServices': 'Professional Services',
+      'salesExpense': 'Sales & Marketing',
+      'rent': 'Rent/Lease',
+      'infrastructure': 'Infrastructure/Utilities',
+      'autoTravel': 'Auto & Travel',
+      'professionalFees': 'Professional Services',
       'insurance': 'Insurance',
-      'opexOther': 'OPEX Other',
-      'opexPayroll': 'OPEX Payroll',
-      'ownersBasePay': 'Owners Base Pay',
+      'marketing': 'OPEX Other',
+      'payroll': 'OPEX Payroll',
+      'ownerBasePay': 'Owners Base Pay',
       'ownersRetirement': 'Owners Retirement',
-      'contractorsDistribution': 'Contractors/Distribution',
+      'subcontractors': 'Contractors/Distribution',
       'interestExpense': 'Interest Expense',
-      'depreciationExpense': 'Depreciation Expense',
+      'depreciationAmortization': 'Depreciation Expense',
       'operatingExpenseTotal': 'Operating Expense Total',
       'nonOperatingIncome': 'Non-Operating Income',
       'extraordinaryItems': 'Extraordinary Items',
@@ -550,6 +550,9 @@ export default function FinancialScorePage() {
   // State - QuickBooks Raw Data
   const [qbRawData, setQbRawData] = useState<any>(null);
   const [dataRefreshKey, setDataRefreshKey] = useState(0);
+  
+  // State - CSV Trial Balance Data
+  const [csvTrialBalanceData, setCsvTrialBalanceData] = useState<any>(null);
 
   // State - QuickBooks Connection
   const [qbConnected, setQbConnected] = useState(false);
@@ -577,6 +580,7 @@ export default function FinancialScorePage() {
   const [linesOfBusiness, setLinesOfBusiness] = useState<string[]>(['', '', '', '', '']);
   const [showMappingSection, setShowMappingSection] = useState(false);
   const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
+  const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
   const [qbStatus, setQbStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
   const [qbLastSync, setQbLastSync] = useState<Date | null>(null);
   const [qbSyncing, setQbSyncing] = useState(false);
@@ -1000,6 +1004,57 @@ export default function FinancialScorePage() {
     }
   }, [selectedCompanyId]);
 
+  // Load saved account mappings and CSV data when company changes or data-mapping tab is visited
+  useEffect(() => {
+    if (selectedCompanyId && adminDashboardTab === 'data-mapping') {
+      console.log('📋 Loading saved data for company:', selectedCompanyId);
+      
+      // Load CSV Trial Balance data from localStorage
+      const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
+      if (savedCsvData && !csvTrialBalanceData) {
+        try {
+          const parsed = JSON.parse(savedCsvData);
+          if (parsed._companyId === selectedCompanyId) {
+            console.log('✅ Loaded CSV Trial Balance from localStorage:', parsed.fileName);
+            setCsvTrialBalanceData(parsed);
+          }
+        } catch (err) {
+          console.error('❌ Error parsing saved CSV data:', err);
+        }
+      }
+      
+      // Load account mappings from database
+      fetch(`/api/account-mappings?companyId=${selectedCompanyId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.mappings && data.mappings.length > 0) {
+            console.log(`✅ Loaded ${data.mappings.length} saved account mappings`);
+            // Convert to aiMappings format
+            const loadedMappings = data.mappings.map((m: any) => ({
+              qbAccount: m.qbAccount,
+              qbAccountId: m.qbAccountId,
+              qbAccountClassification: m.qbAccountClassification,
+              targetField: m.targetField,
+              confidence: m.confidence || 'medium',
+              lobAllocations: m.lobAllocations,
+            }));
+            setAiMappings(loadedMappings);
+            setShowMappingSection(true);
+          }
+          if (data.linesOfBusiness && data.linesOfBusiness.length > 0) {
+            console.log('✅ Loaded saved Lines of Business:', data.linesOfBusiness);
+            // Pad to 5 entries
+            const paddedLobs = [...data.linesOfBusiness];
+            while (paddedLobs.length < 5) paddedLobs.push('');
+            setLinesOfBusiness(paddedLobs);
+          }
+        })
+        .catch(err => {
+          console.error('❌ Error loading saved mappings:', err);
+        });
+    }
+  }, [selectedCompanyId, adminDashboardTab]);
+
   // Save dashboard widgets to localStorage whenever they change
   useEffect(() => {
     if (selectedCompanyId && selectedDashboardWidgets) {
@@ -1203,18 +1258,7 @@ export default function FinancialScorePage() {
               nonOperatingIncome: m.nonOperatingIncome || 0,
               extraordinaryItems: m.extraordinaryItems || 0,
               netProfit: m.netProfit || 0,
-              opexSalesMarketing: m.salesExpense || 0,
-              rentLease: m.rent || 0,
-              utilities: m.infrastructure || 0,
-              equipment: m.infrastructure || 0,
-              travel: m.autoTravel || 0,
-              professionalServices: m.professionalFees || 0,
-              opexOther: m.otherExpense || 0,
-              opexPayroll: m.payroll || 0,
-              ownersBasePay: m.ownerBasePay || 0,
               ownersRetirement: 0,
-              contractorsDistribution: m.subcontractors || 0,
-              depreciationExpense: m.depreciationAmortization || 0,
               operatingExpenseTotal: m.expense || 0,
               cash: m.cash || 0,
               ar: m.ar || 0,
@@ -1246,13 +1290,83 @@ export default function FinancialScorePage() {
             }));
             setLoadedMonthlyData(convertedMonthly);
           } else {
-            // CSV data - set rawRows for processing
+            // CSV/Trial Balance data - check if it has processed monthly data
             setQbRawData(null);
-            setRawRows(latestRecord.rawData);
-            setMapping(latestRecord.columnMapping);
-            setFile({ name: latestRecord.fileName } as File);
-            setColumns(Object.keys(latestRecord.rawData[0] || {}));
-            setLoadedMonthlyData([]); // Clear loaded data for CSV
+            
+            // If this record has monthlyData, it's a processed Trial Balance - load it like QB data
+            if (latestRecord.monthlyData && latestRecord.monthlyData.length > 0) {
+              console.log(`📊 Loading processed Trial Balance data: ${latestRecord.monthlyData.length} months`);
+              const convertedMonthly = latestRecord.monthlyData.map((m: any) => ({
+                date: new Date(m.monthDate),
+                month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
+                revenue: m.revenue || 0,
+                expense: m.expense || 0,
+                cogsPayroll: m.cogsPayroll || 0,
+                cogsOwnerPay: m.cogsOwnerPay || 0,
+                cogsContractors: m.cogsContractors || 0,
+                cogsMaterials: m.cogsMaterials || 0,
+                cogsCommissions: m.cogsCommissions || 0,
+                cogsOther: m.cogsOther || 0,
+                cogsTotal: m.cogsTotal || 0,
+                // Operating Expenses - map DB names to display names
+                payroll: m.payroll || 0,
+                ownerBasePay: m.ownerBasePay || 0,
+                ownersRetirement: 0,
+                benefits: m.benefits || 0,
+                insurance: m.insurance || 0,
+                professionalFees: m.professionalFees || 0,
+                subcontractors: m.subcontractors || 0,
+                rent: m.rent || 0,
+                taxLicense: m.taxLicense || 0,
+                phoneComm: m.phoneComm || 0,
+                infrastructure: m.infrastructure || 0,
+                autoTravel: m.autoTravel || 0,
+                salesExpense: m.salesExpense || 0,
+                marketing: m.marketing || m.otherExpense || 0,
+                trainingCert: m.trainingCert || 0,
+                mealsEntertainment: m.mealsEntertainment || 0,
+                interestExpense: m.interestExpense || 0,
+                depreciationAmortization: m.depreciationAmortization || 0,
+                otherExpense: m.otherExpense || 0,
+                operatingExpenseTotal: m.expense || 0,
+                nonOperatingIncome: m.nonOperatingIncome || 0,
+                extraordinaryItems: m.extraordinaryItems || 0,
+                netProfit: m.netProfit || 0,
+                // Balance Sheet
+                cash: m.cash || 0,
+                ar: m.ar || 0,
+                inventory: m.inventory || 0,
+                otherCA: m.otherCA || 0,
+                tca: m.tca || 0,
+                fixedAssets: m.fixedAssets || 0,
+                otherAssets: m.otherAssets || 0,
+                totalAssets: m.totalAssets || 0,
+                ap: m.ap || 0,
+                otherCL: m.otherCL || 0,
+                tcl: m.tcl || 0,
+                ltd: m.ltd || 0,
+                totalLiab: m.totalLiab || 0,
+                // Equity
+                ownersCapital: m.ownersCapital || 0,
+                ownersDraw: m.ownersDraw || 0,
+                commonStock: m.commonStock || 0,
+                preferredStock: m.preferredStock || 0,
+                retainedEarnings: m.retainedEarnings || 0,
+                additionalPaidInCapital: m.additionalPaidInCapital || 0,
+                treasuryStock: m.treasuryStock || 0,
+                totalEquity: m.totalEquity || 0,
+                totalLAndE: m.totalLAndE || 0
+              }));
+              setLoadedMonthlyData(convertedMonthly);
+              console.log(`✅ Trial Balance monthly data loaded with ${convertedMonthly.length} months`);
+            } else {
+              // Legacy CSV upload - set rawRows for manual processing
+              setRawRows(latestRecord.rawData);
+              setMapping(latestRecord.columnMapping);
+              setFile({ name: latestRecord.fileName } as File);
+              setColumns(Object.keys(latestRecord.rawData[0] || {}));
+              setLoadedMonthlyData([]); // Only clear for legacy CSV that needs processing
+            }
           }
         }
         
@@ -1464,26 +1578,32 @@ export default function FinancialScorePage() {
             cogsCommissions: m.cogsCommissions || 0,
             cogsOther: m.cogsOther || 0,
             cogsTotal: m.cogsTotal || 0,
-            opexSalesMarketing: m.salesExpense || m.opexSalesMarketing || 0,
-            rentLease: m.rent || m.rentLease || 0,
-            utilities: m.utilities || 0,
-            equipment: m.infrastructure || m.equipment || 0,
-            travel: m.autoTravel || m.travel || 0,
-            professionalServices: m.professionalFees || m.professionalServices || 0,
-            insurance: m.insurance || 0,
-            opexOther: m.marketing || m.opexOther || 0,
-            opexPayroll: m.payroll || m.opexPayroll || 0,
-            ownersBasePay: m.ownerBasePay || m.ownersBasePay || 0,
+            // Operating Expenses - map DB field names to display field names
+            payroll: m.payroll || m.payroll || 0,
+            ownerBasePay: m.ownerBasePay || m.ownerBasePay || 0,
             ownersRetirement: m.ownersRetirement || 0,
-            contractorsDistribution: m.subcontractors || m.contractorsDistribution || 0,
+            benefits: m.benefits || 0,
+            insurance: m.insurance || 0,
+            professionalFees: m.professionalFees || m.professionalFees || 0,
+            subcontractors: m.subcontractors || m.subcontractors || 0,
+            rent: m.rent || 0,
+            taxLicense: m.taxLicense || 0,
+            phoneComm: m.phoneComm || 0,
+            infrastructure: m.infrastructure || 0,
+            autoTravel: m.autoTravel || 0,
+            salesExpense: m.salesExpense || 0,
+            marketing: m.marketing || m.otherExpense || m.marketing || 0,
+            trainingCert: m.trainingCert || 0,
+            mealsEntertainment: m.mealsEntertainment || 0,
             interestExpense: m.interestExpense || 0,
-            depreciationExpense: m.depreciationAmortization || m.depreciationExpense || 0,
-            operatingExpenseTotal: m.operatingExpenseTotal || 0,
+            depreciationAmortization: m.depreciationAmortization || m.depreciationAmortization || 0,
+            otherExpense: m.otherExpense || 0,
+            operatingExpenseTotal: m.operatingExpenseTotal || m.expense || 0,
             nonOperatingIncome: m.nonOperatingIncome || 0,
             extraordinaryItems: m.extraordinaryItems || 0,
             netProfit: m.netProfit || 0,
+            // Balance Sheet - Assets
             totalAssets: m.totalAssets || 0,
-            totalLiab: m.totalLiab || 0,
             cash: m.cash || 0,
             ar: m.ar || 0,
             inventory: m.inventory || 0,
@@ -1491,27 +1611,45 @@ export default function FinancialScorePage() {
             tca: m.tca || 0,
             fixedAssets: m.fixedAssets || 0,
             otherAssets: m.otherAssets || 0,
+            // Balance Sheet - Liabilities
             ap: m.ap || 0,
             otherCL: m.otherCL || 0,
             tcl: m.tcl || 0,
             ltd: m.ltd || 0,
+            totalLiab: m.totalLiab || 0,
+            // Balance Sheet - Equity (detailed)
+            ownersCapital: m.ownersCapital || 0,
+            ownersDraw: m.ownersDraw || 0,
+            commonStock: m.commonStock || 0,
+            preferredStock: m.preferredStock || 0,
+            retainedEarnings: m.retainedEarnings || 0,
+            additionalPaidInCapital: m.additionalPaidInCapital || 0,
+            treasuryStock: m.treasuryStock || 0,
             totalEquity: m.totalEquity || 0,
             totalLAndE: m.totalLAndE || 0
           }));
           
           console.log('✅ Loaded', formattedData.length, 'months of financial data from database');
-          console.log('ðŸ“Š RAW from database (sample):', {
-            revenue: monthlyData[0]?.revenue,
-            payroll: monthlyData[0]?.payroll,
-            professionalFees: monthlyData[0]?.professionalFees,
-            rent: monthlyData[0]?.rent
-          });
-          console.log('ðŸ“Š FORMATTED for display (sample):', {
-            revenue: formattedData[0]?.revenue,
-            opexPayroll: formattedData[0]?.opexPayroll,
-            professionalServices: formattedData[0]?.professionalServices,
-            rentLease: formattedData[0]?.rentLease
-          });
+          console.log('📊 RAW from database (sample):', monthlyData[0] ? {
+            revenue: monthlyData[0].revenue,
+            payroll: monthlyData[0].payroll,
+            professionalFees: monthlyData[0].professionalFees,
+            rent: monthlyData[0].rent,
+            insurance: monthlyData[0].insurance,
+            infrastructure: monthlyData[0].infrastructure,
+            retainedEarnings: monthlyData[0].retainedEarnings,
+            ownersDraw: monthlyData[0].ownersDraw
+          } : 'no data');
+          console.log('📊 FORMATTED for display (sample):', formattedData[0] ? {
+            revenue: formattedData[0].revenue,
+            payroll: formattedData[0].payroll,
+            professionalFees: formattedData[0].professionalFees,
+            rent: formattedData[0].rent,
+            insurance: formattedData[0].insurance,
+            utilities: formattedData[0].infrastructure,
+            retainedEarnings: formattedData[0].retainedEarnings,
+            ownersDraw: formattedData[0].ownersDraw
+          } : 'no data');
           setLoadedMonthlyData(formattedData);
         } else {
           console.log('No monthly data in response');
@@ -1564,20 +1702,19 @@ export default function FinancialScorePage() {
           cogsCommissions: parseFloat(row[mapping.cogsCommissions!]) || 0,
           cogsOther: parseFloat(row[mapping.cogsOther!]) || 0,
           cogsTotal: parseFloat(row[mapping.cogsTotal!]) || 0,
-          opexSalesMarketing: parseFloat(row[mapping.opexSalesMarketing!]) || 0,
-          rentLease: parseFloat(row[mapping.rentLease!]) || 0,
-          utilities: parseFloat(row[mapping.utilities!]) || 0,
-          equipment: parseFloat(row[mapping.equipment!]) || 0,
-          travel: parseFloat(row[mapping.travel!]) || 0,
-          professionalServices: parseFloat(row[mapping.professionalServices!]) || 0,
+          salesExpense: parseFloat(row[mapping.salesExpense!]) || 0,
+          rent: parseFloat(row[mapping.rent!]) || 0,
+          infrastructure: parseFloat(row[mapping.infrastructure!]) || 0,
+          autoTravel: parseFloat(row[mapping.autoTravel!]) || 0,
+          professionalFees: parseFloat(row[mapping.professionalFees!]) || 0,
           insurance: parseFloat(row[mapping.insurance!]) || 0,
-          opexOther: parseFloat(row[mapping.opexOther!]) || 0,
-          opexPayroll: parseFloat(row[mapping.opexPayroll!]) || 0,
-          ownersBasePay: parseFloat(row[mapping.ownersBasePay!]) || 0,
+          marketing: parseFloat(row[mapping.marketing!]) || 0,
+          payroll: parseFloat(row[mapping.payroll!]) || 0,
+          ownerBasePay: parseFloat(row[mapping.ownerBasePay!]) || 0,
           ownersRetirement: parseFloat(row[mapping.ownersRetirement!]) || 0,
-          contractorsDistribution: parseFloat(row[mapping.contractorsDistribution!]) || 0,
+          subcontractors: parseFloat(row[mapping.subcontractors!]) || 0,
           interestExpense: parseFloat(row[mapping.interestExpense!]) || 0,
-          depreciationExpense: parseFloat(row[mapping.depreciationExpense!]) || 0,
+          depreciationAmortization: parseFloat(row[mapping.depreciationAmortization!]) || 0,
           operatingExpenseTotal: parseFloat(row[mapping.operatingExpenseTotal!]) || 0,
           nonOperatingIncome: parseFloat(row[mapping.nonOperatingIncome!]) || 0,
           extraordinaryItems: parseFloat(row[mapping.extraordinaryItems!]) || 0,
@@ -1611,13 +1748,13 @@ export default function FinancialScorePage() {
         console.log('ðŸ“Š Sample Excel values from row 0:', { 
           revenue: rawRows[0]?.[mapping.revenue!], 
           expense: rawRows[0]?.[mapping.expense!],
-          professionalServices: rawRows[0]?.[mapping.professionalServices!]
+          professionalFees: rawRows[0]?.[mapping.professionalFees!]
         });
         console.log('ðŸ“Š First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
           month: m.month, 
           revenue: m.revenue, 
           expense: m.expense,
-          professionalServices: m.professionalServices
+          professionalFees: m.professionalFees
         })));
         
         const result = await financialsApi.upload({
@@ -1652,7 +1789,7 @@ export default function FinancialScorePage() {
   // Auto-map columns
   const autoMapColumns = (columnNames: string[]): Mappings => {
     const mapping: Mappings = { date: '' };
-    const normalize = (str: string) => str.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+    const normalize = (str: string | number | null | undefined) => String(str ?? '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
     
     columnNames.forEach(col => {
       const n = normalize(col);
@@ -1671,22 +1808,21 @@ export default function FinancialScorePage() {
       if (!mapping.cogsTotal && n.includes('cogs') && n.includes('total')) mapping.cogsTotal = col;
       
       // OPEX
-      if (!mapping.opexSalesMarketing && ((n.includes('opex') && (n.includes('sales') || n.includes('marketing'))) || (n === 'salesandmarketing' || n === 'salesmarketing'))) mapping.opexSalesMarketing = col;
-      if (!mapping.rentLease && (n.includes('rent') || n.includes('lease'))) mapping.rentLease = col;
-      if (!mapping.utilities && n.includes('utilit')) mapping.utilities = col;
-      if (!mapping.equipment && n.includes('equipment')) mapping.equipment = col;
-      if (!mapping.travel && n.includes('travel')) mapping.travel = col;
-      if (!mapping.professionalServices && n.includes('professional')) mapping.professionalServices = col;
+      if (!mapping.salesExpense && ((n.includes('opex') && (n.includes('sales') || n.includes('marketing'))) || (n === 'salesandmarketing' || n === 'salesmarketing'))) mapping.salesExpense = col;
+      if (!mapping.rent && (n.includes('rent') || n.includes('lease'))) mapping.rent = col;
+      if (!mapping.infrastructure && (n.includes('utilit') || n.includes('equipment') || n.includes('infrastructure'))) mapping.infrastructure = col;
+      if (!mapping.autoTravel && n.includes('travel')) mapping.autoTravel = col;
+      if (!mapping.professionalFees && n.includes('professional')) mapping.professionalFees = col;
       if (!mapping.insurance && n.includes('insurance')) mapping.insurance = col;
-      if (!mapping.opexOther && ((n.includes('opex') && n.includes('other')) || n === 'otheropex')) mapping.opexOther = col;
-      if (!mapping.opexPayroll && ((n.includes('opex') && n.includes('payroll')) || (n === 'payroll' && !n.includes('cogs')))) mapping.opexPayroll = col;
+      if (!mapping.marketing && ((n.includes('opex') && n.includes('other')) || n === 'otheropex')) mapping.marketing = col;
+      if (!mapping.payroll && ((n.includes('opex') && n.includes('payroll')) || (n === 'payroll' && !n.includes('cogs')))) mapping.payroll = col;
       
       // Owners & Other Expenses
-      if (!mapping.ownersBasePay && n.includes('owners') && n.includes('base')) mapping.ownersBasePay = col;
+      if (!mapping.ownerBasePay && n.includes('owners') && n.includes('base')) mapping.ownerBasePay = col;
       if (!mapping.ownersRetirement && n.includes('owners') && n.includes('retirement')) mapping.ownersRetirement = col;
-      if (!mapping.contractorsDistribution && n.includes('contractors') && n.includes('distribution')) mapping.contractorsDistribution = col;
+      if (!mapping.subcontractors && n.includes('contractors') && n.includes('distribution')) mapping.subcontractors = col;
       if (!mapping.interestExpense && n.includes('interest')) mapping.interestExpense = col;
-      if (!mapping.depreciationExpense && n.includes('depreciation')) mapping.depreciationExpense = col;
+      if (!mapping.depreciationAmortization && n.includes('depreciation')) mapping.depreciationAmortization = col;
       if (!mapping.operatingExpenseTotal && n.includes('operating') && n.includes('expense') && n.includes('total')) mapping.operatingExpenseTotal = col;
       if (!mapping.nonOperatingIncome && (n.includes('nonoperating') || n.includes('nonoperatng')) && n.includes('income')) mapping.nonOperatingIncome = col;
       if (!mapping.extraordinaryItems && (n.includes('extraordinary') || n.includes('extraordinaryitems'))) mapping.extraordinaryItems = col;
@@ -2639,20 +2775,19 @@ export default function FinancialScorePage() {
       cogsCommissions: parseFloat(row[mapping.cogsCommissions!]) || 0,
       cogsOther: parseFloat(row[mapping.cogsOther!]) || 0,
       cogsTotal: parseFloat(row[mapping.cogsTotal!]) || 0,
-      opexSalesMarketing: parseFloat(row[mapping.opexSalesMarketing!]) || 0,
-      rentLease: parseFloat(row[mapping.rentLease!]) || 0,
-      utilities: parseFloat(row[mapping.utilities!]) || 0,
-      equipment: parseFloat(row[mapping.equipment!]) || 0,
-      travel: parseFloat(row[mapping.travel!]) || 0,
-      professionalServices: parseFloat(row[mapping.professionalServices!]) || 0,
+      salesExpense: parseFloat(row[mapping.salesExpense!]) || 0,
+      rent: parseFloat(row[mapping.rent!]) || 0,
+      infrastructure: parseFloat(row[mapping.infrastructure!]) || 0,
+      autoTravel: parseFloat(row[mapping.autoTravel!]) || 0,
+      professionalFees: parseFloat(row[mapping.professionalFees!]) || 0,
       insurance: parseFloat(row[mapping.insurance!]) || 0,
-      opexOther: parseFloat(row[mapping.opexOther!]) || 0,
-      opexPayroll: parseFloat(row[mapping.opexPayroll!]) || 0,
-      ownersBasePay: parseFloat(row[mapping.ownersBasePay!]) || 0,
+      marketing: parseFloat(row[mapping.marketing!]) || 0,
+      payroll: parseFloat(row[mapping.payroll!]) || 0,
+      ownerBasePay: parseFloat(row[mapping.ownerBasePay!]) || 0,
       ownersRetirement: parseFloat(row[mapping.ownersRetirement!]) || 0,
-      contractorsDistribution: parseFloat(row[mapping.contractorsDistribution!]) || 0,
+      subcontractors: parseFloat(row[mapping.subcontractors!]) || 0,
       interestExpense: parseFloat(row[mapping.interestExpense!]) || 0,
-      depreciationExpense: parseFloat(row[mapping.depreciationExpense!]) || 0,
+      depreciationAmortization: parseFloat(row[mapping.depreciationAmortization!]) || 0,
       operatingExpenseTotal: parseFloat(row[mapping.operatingExpenseTotal!]) || 0,
       nonOperatingIncome: parseFloat(row[mapping.nonOperatingIncome!]) || 0,
       extraordinaryItems: parseFloat(row[mapping.extraordinaryItems!]) || 0,
@@ -2688,14 +2823,14 @@ export default function FinancialScorePage() {
     const cogsTotal = m.cogsTotal || 0;
     const expense = m.expense || 0;
     const interestExpense = m.interestExpense || 0;
-    const depreciationExpense = m.depreciationExpense || 0;
+    const depreciationAmortization = m.depreciationAmortization || 0;
     
     // Gross Profit = Revenue - COGS
     const grossProfit = revenue - cogsTotal;
     // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add back interest)
     const ebit = revenue - cogsTotal - expense + interestExpense;
     // EBITDA = EBIT + Depreciation
-    const ebitda = ebit + depreciationExpense;
+    const ebitda = ebit + depreciationAmortization;
     
     return {
       ...m,
@@ -2914,7 +3049,7 @@ export default function FinancialScorePage() {
       // EBIT and EBITDA Margins: Income statement / Income statement = use current month values
       // EBIT = Earnings Before Interest and Taxes, so add back interest expense
       const currentMonthEBIT = (cur.revenue || 0) - (cur.cogsTotal || 0) - (cur.expense || 0) + (cur.interestExpense || 0);
-      const currentMonthEBITDA = currentMonthEBIT + (cur.depreciationExpense || 0);
+      const currentMonthEBITDA = currentMonthEBIT + (cur.depreciationAmortization || 0);
       const ebitMargin = (cur.revenue || 0) > 0 ? currentMonthEBIT / cur.revenue : 0;
       const ebitdaMargin = (cur.revenue || 0) > 0 ? currentMonthEBITDA / cur.revenue : 0;
       
@@ -4593,6 +4728,8 @@ export default function FinancialScorePage() {
               setCurrentUser={setCurrentUser}
               setSiteAdminViewingAs={setSiteAdminViewingAs}
               setCurrentView={setCurrentView}
+              setLoadedConsultantId={setLoadedConsultantId}
+              setCompanies={setCompanies}
               currentUser={currentUser}
               newSiteAdminFirstName={newSiteAdminFirstName}
               setNewSiteAdminFirstName={setNewSiteAdminFirstName}
@@ -4735,23 +4872,6 @@ export default function FinancialScorePage() {
               Payments
             </button>
             <button
-              onClick={() => handleAdminTabNavigation('import-financials')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'import-financials' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'import-financials' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'import-financials' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Excel Import
-            </button>
-            <button
               onClick={() => handleAdminTabNavigation('api-connections')}
               style={{
                 padding: '12px 24px',
@@ -4769,23 +4889,6 @@ export default function FinancialScorePage() {
               Accounting API Connections
             </button>
             <button
-              onClick={() => handleAdminTabNavigation('data-review')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'data-review' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'data-review' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'data-review' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Data Review
-            </button>
-            <button
               onClick={() => handleAdminTabNavigation('data-mapping')}
               style={{
                 padding: '12px 24px',
@@ -4801,6 +4904,23 @@ export default function FinancialScorePage() {
               }}
             >
               Data Mapping
+            </button>
+            <button
+              onClick={() => handleAdminTabNavigation('data-review')}
+              style={{
+                padding: '12px 24px',
+                background: adminDashboardTab === 'data-review' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'data-review' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'data-review' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Data Review
             </button>
           </div>
           
@@ -5013,24 +5133,23 @@ export default function FinancialScorePage() {
                     
                     <div>
                       <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Operating Expenses</h4>
-                      {renderColumnSelector('Sales & Marketing', 'opexSalesMarketing')}
-                      {renderColumnSelector('Rent/Lease', 'rentLease')}
-                      {renderColumnSelector('Utilities', 'utilities')}
-                      {renderColumnSelector('Equipment', 'equipment')}
-                      {renderColumnSelector('Travel', 'travel')}
-                      {renderColumnSelector('Professional Services', 'professionalServices')}
+                      {renderColumnSelector('Sales & Marketing', 'salesExpense')}
+                      {renderColumnSelector('Rent/Lease', 'rent')}
+                      {renderColumnSelector('Infrastructure/Utilities', 'infrastructure')}
+                      {renderColumnSelector('Auto & Travel', 'autoTravel')}
+                      {renderColumnSelector('Professional Services', 'professionalFees')}
                       {renderColumnSelector('Insurance', 'insurance')}
-                      {renderColumnSelector('OPEX Other', 'opexOther')}
+                      {renderColumnSelector('OPEX Other', 'marketing')}
                     </div>
                     
                     <div>
                       <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Payroll & Owners</h4>
-                      {renderColumnSelector('OPEX Payroll', 'opexPayroll')}
-                      {renderColumnSelector('Owners Base Pay', 'ownersBasePay')}
+                      {renderColumnSelector('OPEX Payroll', 'payroll')}
+                      {renderColumnSelector('Owners Base Pay', 'ownerBasePay')}
                       {renderColumnSelector('Owners Retirement', 'ownersRetirement')}
-                      {renderColumnSelector('Contractors/Distribution', 'contractorsDistribution')}
+                      {renderColumnSelector('Contractors/Distribution', 'subcontractors')}
                       {renderColumnSelector('Interest Expense', 'interestExpense')}
-                      {renderColumnSelector('Depreciation Expense', 'depreciationExpense')}
+                      {renderColumnSelector('Depreciation Expense', 'depreciationAmortization')}
                       {renderColumnSelector('Operating Expense Total', 'operatingExpenseTotal')}
                       {renderColumnSelector('Non-Operating Income', 'nonOperatingIncome')}
                       {renderColumnSelector('Extraordinary Items', 'extraordinaryItems')}
@@ -5067,6 +5186,130 @@ export default function FinancialScorePage() {
                 </div>
               )}
             </div>
+
+              {/* Trial Balance Import Section */}
+              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📊 Trial Balance Import</h2>
+                
+                <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
+                  <p style={{ fontSize: '14px', color: '#065f46', lineHeight: '1.6', margin: 0 }}>
+                    <strong>Trial Balance Format:</strong> Upload a CSV with columns: Acct Type, Acct ID, Description, then date columns (e.g., 12/31/2022, 1/31/2023, ...).
+                    This format supports QuickBooks-style account types and routes through Data Mapping for precise account classification.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Trial Balance CSV</h3>
+                  <input 
+                    type="file" 
+                    accept=".csv" 
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      try {
+                        const text = await file.text();
+                        const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
+                        const csvData = {
+                          ...parsed,
+                          _companyId: selectedCompanyId,
+                          fileName: file.name,
+                        };
+                        setCsvTrialBalanceData(csvData);
+                        // Save to localStorage for persistence across sessions
+                        localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
+                        setError(null);
+                        alert(`✓ Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
+                      } catch (err: any) {
+                        setError(`Failed to parse Trial Balance CSV: ${err.message}`);
+                        setCsvTrialBalanceData(null);
+                      }
+                    }} 
+                    style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #10b981', borderRadius: '8px', width: '100%', cursor: 'pointer', background: '#f0fdf4' }} 
+                  />
+                  {error && error.includes('Trial Balance') && (
+                    <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>
+                  )}
+                </div>
+
+                {csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId && (
+                  <div style={{ background: '#f0fdf4', border: '2px solid #10b981', borderRadius: '8px', padding: '16px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '12px' }}>
+                      ✓ Trial Balance Loaded: {csvTrialBalanceData.fileName}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                      <div style={{ background: 'white', padding: '12px', borderRadius: '6px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>{csvTrialBalanceData.accounts?.length || 0}</div>
+                        <div style={{ fontSize: '12px', color: '#065f46' }}>Accounts</div>
+                      </div>
+                      <div style={{ background: 'white', padding: '12px', borderRadius: '6px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>{csvTrialBalanceData.dates?.length || 0}</div>
+                        <div style={{ fontSize: '12px', color: '#3730a3' }}>Periods</div>
+                      </div>
+                      <div style={{ background: 'white', padding: '12px', borderRadius: '6px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>{Object.keys(csvTrialBalanceData.accountsByType || {}).length}</div>
+                        <div style={{ fontSize: '12px', color: '#92400e' }}>Account Types</div>
+                      </div>
+                    </div>
+                    
+                    {/* Account Types Summary */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Account Types Found:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {Object.entries(csvTrialBalanceData.accountsByType || {}).map(([type, accounts]: [string, any]) => (
+                          <span key={type} style={{ 
+                            padding: '4px 10px', 
+                            background: 'white', 
+                            borderRadius: '12px', 
+                            fontSize: '12px', 
+                            color: '#065f46',
+                            border: '1px solid #86efac'
+                          }}>
+                            {type}: {accounts.length}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <button
+                        onClick={() => setAdminDashboardTab('data-mapping')}
+                        style={{
+                          padding: '12px 24px',
+                          background: '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 6px rgba(102, 126, 234, 0.3)'
+                        }}
+                      >
+                        → Go to Data Mapping
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCsvTrialBalanceData(null);
+                          localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
+                        }}
+                        style={{
+                          padding: '12px 24px',
+                          background: 'white',
+                          color: '#64748b',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
           
@@ -5994,25 +6237,80 @@ export default function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No QuickBooks Data</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '16px' }}>Please sync QuickBooks data first from the Accounting API Connections tab.</p>
-              <button
-                onClick={() => setAdminDashboardTab('api-connections')}
-                style={{
-                  padding: '12px 24px',
-                  background: '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Go to API Connections
-              </button>
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && !csvTrialBalanceData && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '32px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
+                <p style={{ fontSize: '14px', color: '#94a3b8' }}>Sync QuickBooks data or upload a Trial Balance CSV to map accounts.</p>
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', maxWidth: '800px', margin: '0 auto' }}>
+                {/* QuickBooks Option */}
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>📊</div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks API</div>
+                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
+                  <button
+                    onClick={() => setAdminDashboardTab('api-connections')}
+                    style={{
+                      padding: '10px 20px',
+                      background: '#667eea',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Connect QuickBooks
+                  </button>
+                </div>
+                
+                {/* Trial Balance Upload Option */}
+                <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '24px', border: '2px solid #86efac' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '12px', textAlign: 'center' }}>📁</div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '8px', textAlign: 'center' }}>Trial Balance CSV</div>
+                  <p style={{ fontSize: '13px', color: '#047857', marginBottom: '16px', textAlign: 'center' }}>Upload a CSV with Acct Type, Acct ID, Description, and date columns.</p>
+                  <input 
+                    type="file" 
+                    accept=".csv" 
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      try {
+                        const text = await file.text();
+                        const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
+                        const csvData = {
+                          ...parsed,
+                          _companyId: selectedCompanyId,
+                          fileName: file.name,
+                        };
+                        setCsvTrialBalanceData(csvData);
+                        // Save to localStorage for persistence across sessions
+                        localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
+                        setError(null);
+                      } catch (err: any) {
+                        setError(`Failed to parse Trial Balance CSV: ${err.message}`);
+                        setCsvTrialBalanceData(null);
+                      }
+                    }} 
+                    style={{ 
+                      padding: '12px', 
+                      border: '2px dashed #10b981', 
+                      borderRadius: '8px', 
+                      width: '100%', 
+                      cursor: 'pointer', 
+                      background: 'white',
+                      fontSize: '13px'
+                    }} 
+                  />
+                  {error && error.includes('Trial Balance') && (
+                    <div style={{ padding: '8px', background: '#fee2e2', color: '#991b1b', borderRadius: '6px', marginTop: '12px', fontSize: '12px' }}>{error}</div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -6050,7 +6348,7 @@ export default function FinancialScorePage() {
 
       {/* Data Review Tab */}
       {currentView === 'admin' && adminDashboardTab === 'data-review' && selectedCompanyId && (
-        <DataReviewTab monthly={monthly} companyName={companyName} />
+        <DataReviewTab monthly={monthly} companyName={companyName} accountMappings={aiMappings} />
       )}
 
       {/* Trend Analysis View */}
@@ -6126,20 +6424,19 @@ export default function FinancialScorePage() {
                     {mapping.cogsCommissions && <option value="cogsCommissions">COGS Commissions</option>}
                     {mapping.cogsOther && <option value="cogsOther">COGS Other</option>}
                     <option value="grossProfit">Gross Profit</option>
-                    {mapping.opexSalesMarketing && <option value="opexSalesMarketing">Sales & Marketing</option>}
-                    {mapping.rentLease && <option value="rentLease">Rent/Lease</option>}
-                    {mapping.utilities && <option value="utilities">Utilities</option>}
-                    {mapping.equipment && <option value="equipment">Equipment</option>}
-                    {mapping.travel && <option value="travel">Travel</option>}
-                    {mapping.professionalServices && <option value="professionalServices">Professional Services</option>}
+                    {mapping.salesExpense && <option value="salesExpense">Sales & Marketing</option>}
+                    {mapping.rent && <option value="rent">Rent/Lease</option>}
+                    {mapping.infrastructure && <option value="infrastructure">Infrastructure/Utilities</option>}
+                    {mapping.autoTravel && <option value="autoTravel">Auto & Travel</option>}
+                    {mapping.professionalFees && <option value="professionalFees">Professional Fees</option>}
                     {mapping.insurance && <option value="insurance">Insurance</option>}
-                    {mapping.opexOther && <option value="opexOther">OPEX Other</option>}
-                    {mapping.opexPayroll && <option value="opexPayroll">OPEX Payroll</option>}
-                    {mapping.ownersBasePay && <option value="ownersBasePay">Owners Base Pay</option>}
+                    {mapping.marketing && <option value="marketing">OPEX Other</option>}
+                    {mapping.payroll && <option value="payroll">OPEX Payroll</option>}
+                    {mapping.ownerBasePay && <option value="ownerBasePay">Owners Base Pay</option>}
                     {mapping.ownersRetirement && <option value="ownersRetirement">Owners Retirement</option>}
-                    {mapping.contractorsDistribution && <option value="contractorsDistribution">Contractors/Distribution</option>}
+                    {mapping.subcontractors && <option value="subcontractors">Contractors/Distribution</option>}
                     {mapping.interestExpense && <option value="interestExpense">Interest Expense</option>}
-                    {mapping.depreciationExpense && <option value="depreciationExpense">Depreciation Expense</option>}
+                    {mapping.depreciationAmortization && <option value="depreciationAmortization">Depreciation Expense</option>}
                     {mapping.operatingExpenseTotal && <option value="operatingExpenseTotal">Operating Expense Total</option>}
                     {mapping.nonOperatingIncome && <option value="nonOperatingIncome">Non-Operating Income</option>}
                     {mapping.extraordinaryItems && <option value="extraordinaryItems">Extraordinary Items</option>}
@@ -6262,9 +6559,9 @@ export default function FinancialScorePage() {
                           if (item === 'expense') {
                         // Sum all operating expense goals (not COGS)
                         const opexCategories = [
-                          'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
-                          'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
-                          'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                          'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
+                          'insurance', 'rent', 'infrastructure', 'autoTravel', 
+                          'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
                         ];
                         const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
                         
@@ -6279,9 +6576,9 @@ export default function FinancialScorePage() {
                       // Check if selected item is an expense category with a goal
                       const expenseCategories = [
                         'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                        'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 'insurance', 
-                        'rentLease', 'utilities', 'equipment', 'travel', 'opexSalesMarketing', 'opexOther', 
-                        'depreciationExpense', 'interestExpense'
+                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 'insurance', 
+                        'rent', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
+                        'depreciationAmortization', 'interestExpense'
                       ];
                       
                       if (expenseCategories.includes(item) && expenseGoals[item]) {
@@ -6352,9 +6649,9 @@ export default function FinancialScorePage() {
                       // Check if "expense" (Total Expenses) is selected
                           if (item === 'expense') {
                         const opexCategories = [
-                          'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
-                          'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
-                          'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                          'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
+                          'insurance', 'rent', 'infrastructure', 'autoTravel', 
+                          'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
                         ];
                         const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
                         
@@ -6376,9 +6673,9 @@ export default function FinancialScorePage() {
                       
                       const expenseCategories = [
                         'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                        'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 'insurance', 
-                        'rentLease', 'utilities', 'equipment', 'travel', 'opexSalesMarketing', 'opexOther', 
-                        'depreciationExpense', 'interestExpense'
+                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 'insurance', 
+                        'rent', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
+                        'depreciationAmortization', 'interestExpense'
                       ];
                       
                           if (expenseCategories.includes(item) && expenseGoals[item]) {
@@ -6433,9 +6730,9 @@ export default function FinancialScorePage() {
                   goalLineData={(() => {
                     // Sum all operating expense goals (not COGS)
                     const opexCategories = [
-                      'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
-                      'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
-                      'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                      'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
+                      'insurance', 'rent', 'infrastructure', 'autoTravel', 
+                      'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
                     ];
                     const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
                     return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
@@ -6571,9 +6868,9 @@ export default function FinancialScorePage() {
                     goalLineData={(() => {
                       // Sum all operating expense goals (not COGS)
                       const opexCategories = [
-                        'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
-                        'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
-                        'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
+                        'insurance', 'rent', 'infrastructure', 'autoTravel', 
+                        'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
                       ];
                       const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
                       return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
@@ -6581,115 +6878,99 @@ export default function FinancialScorePage() {
                   />
                 )}
                 
-                {mapping.opexPayroll && (
+                {mapping.payroll && (
                   <LineChart 
                     title="OPEX Payroll (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.opexPayroll || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.payroll || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#60a5fa"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.opexPayroll ? monthly.map(() => expenseGoals.opexPayroll) : undefined}
+                    goalLineData={expenseGoals.payroll ? monthly.map(() => expenseGoals.payroll) : undefined}
                   />
                 )}
                 
-                {mapping.opexSalesMarketing && (
+                {mapping.salesExpense && (
                   <LineChart 
                     title="Sales & Marketing (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.opexSalesMarketing || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.salesExpense || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#93c5fd"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.opexSalesMarketing ? monthly.map(() => expenseGoals.opexSalesMarketing) : undefined}
+                    goalLineData={expenseGoals.salesExpense ? monthly.map(() => expenseGoals.salesExpense) : undefined}
                   />
                 )}
                 
-                {mapping.rentLease && (
+                {mapping.rent && (
                   <LineChart 
                     title="Rent/Lease (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.rentLease || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.rent || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#8b5cf6"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.rentLease ? monthly.map(() => expenseGoals.rentLease) : undefined}
+                    goalLineData={expenseGoals.rent ? monthly.map(() => expenseGoals.rent) : undefined}
                   />
                 )}
                 
-                {mapping.utilities && (
+                {mapping.infrastructure && (
                   <LineChart 
-                    title="Utilities (% of Revenue)"
+                    title="Infrastructure/Utilities (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.utilities || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.infrastructure || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#a78bfa"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.utilities ? monthly.map(() => expenseGoals.utilities) : undefined}
+                    goalLineData={expenseGoals.infrastructure ? monthly.map(() => expenseGoals.infrastructure) : undefined}
                   />
                 )}
                 
-                {mapping.equipment && (
+                {mapping.autoTravel && (
                   <LineChart 
-                    title="Equipment (% of Revenue)"
+                    title="Auto & Travel (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.equipment || 0) / m.revenue) * 100 : 0 
-                    }))}
-                    color="#c4b5fd"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.equipment ? monthly.map(() => expenseGoals.equipment) : undefined}
-                  />
-                )}
-                
-                {mapping.travel && (
-                  <LineChart 
-                    title="Travel (% of Revenue)"
-                    data={monthly.map(m => ({ 
-                      month: m.month, 
-                      value: m.revenue > 0 ? ((m.travel || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.autoTravel || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#ec4899"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.travel ? monthly.map(() => expenseGoals.travel) : undefined}
+                    goalLineData={expenseGoals.autoTravel ? monthly.map(() => expenseGoals.autoTravel) : undefined}
                   />
                 )}
                 
-                {mapping.professionalServices && (
+                {mapping.professionalFees && (
                   <LineChart 
                     title="Professional Services (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.professionalServices || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.professionalFees || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#f472b6"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.professionalServices ? monthly.map(() => expenseGoals.professionalServices) : undefined}
+                    goalLineData={expenseGoals.professionalFees ? monthly.map(() => expenseGoals.professionalFees) : undefined}
                   />
                 )}
                 
@@ -6709,19 +6990,19 @@ export default function FinancialScorePage() {
                   />
                 )}
                 
-                {mapping.ownersBasePay && (
+                {mapping.ownerBasePay && (
                   <LineChart 
                     title="Owners Base Pay (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.ownersBasePay || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.ownerBasePay || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#14b8a6"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.ownersBasePay ? monthly.map(() => expenseGoals.ownersBasePay) : undefined}
+                    goalLineData={expenseGoals.ownerBasePay ? monthly.map(() => expenseGoals.ownerBasePay) : undefined}
                   />
                 )}
                 
@@ -6740,19 +7021,19 @@ export default function FinancialScorePage() {
                   />
                 )}
                 
-                {mapping.contractorsDistribution && (
+                {mapping.subcontractors && (
                   <LineChart 
                     title="Contractors/Distribution (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.contractorsDistribution || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.subcontractors || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#5eead4"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.contractorsDistribution ? monthly.map(() => expenseGoals.contractorsDistribution) : undefined}
+                    goalLineData={expenseGoals.subcontractors ? monthly.map(() => expenseGoals.subcontractors) : undefined}
                   />
                 )}
                 
@@ -6772,35 +7053,35 @@ export default function FinancialScorePage() {
                   />
                 )}
                 
-                {mapping.depreciationExpense && (
+                {mapping.depreciationAmortization && (
                   <LineChart 
                     title="Depreciation Expense (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.depreciationExpense || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.depreciationAmortization || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#fca5a5"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.depreciationExpense ? monthly.map(() => expenseGoals.depreciationExpense) : undefined}
+                    goalLineData={expenseGoals.depreciationAmortization ? monthly.map(() => expenseGoals.depreciationAmortization) : undefined}
                   />
                 )}
                 
-                {mapping.opexOther && (
+                {mapping.marketing && (
                   <LineChart 
                     title="OPEX Other (% of Revenue)"
                     data={monthly.map(m => ({ 
                       month: m.month, 
-                      value: m.revenue > 0 ? ((m.opexOther || 0) / m.revenue) * 100 : 0 
+                      value: m.revenue > 0 ? ((m.marketing || 0) / m.revenue) * 100 : 0 
                     }))}
                     color="#fecaca"
                     compact
                     showTable={true}
                     labelFormat="quarterly"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.opexOther ? monthly.map(() => expenseGoals.opexOther) : undefined}
+                    goalLineData={expenseGoals.marketing ? monthly.map(() => expenseGoals.marketing) : undefined}
                   />
                 )}
               </div>
@@ -7635,20 +7916,19 @@ export default function FinancialScorePage() {
                           <option value="cogsMaterials">COGS Materials</option>
                           <option value="cogsCommissions">COGS Commissions</option>
                           <option value="cogsOther">COGS Other</option>
-                          <option value="opexSalesMarketing">Sales & Marketing</option>
-                          <option value="rentLease">Rent/Lease</option>
-                          <option value="utilities">Utilities</option>
-                          <option value="equipment">Equipment</option>
-                          <option value="travel">Travel</option>
-                          <option value="professionalServices">Professional Services</option>
+                          <option value="salesExpense">Sales & Marketing</option>
+                          <option value="rent">Rent/Lease</option>
+                          <option value="infrastructure">Infrastructure/Utilities</option>
+                          <option value="autoTravel">Auto & Travel</option>
+                          <option value="professionalFees">Professional Services</option>
                           <option value="insurance">Insurance</option>
-                          <option value="opexOther">OPEX Other</option>
-                          <option value="opexPayroll">OPEX Payroll</option>
-                          <option value="ownersBasePay">Owners Base Pay</option>
+                          <option value="marketing">OPEX Other</option>
+                          <option value="payroll">OPEX Payroll</option>
+                          <option value="ownerBasePay">Owners Base Pay</option>
                           <option value="ownersRetirement">Owners Retirement</option>
-                          <option value="contractorsDistribution">Contractors/Distribution</option>
+                          <option value="subcontractors">Contractors/Distribution</option>
                           <option value="interestExpense">Interest Expense</option>
-                          <option value="depreciationExpense">Depreciation Expense</option>
+                          <option value="depreciationAmortization">Depreciation Expense</option>
                           <option value="operatingExpenseTotal">Operating Expense Total</option>
                           <option value="nonOperatingIncome">Non-Operating Income</option>
                           <option value="extraordinaryItems">Extraordinary Items</option>
@@ -7717,9 +7997,8 @@ export default function FinancialScorePage() {
                         <option value="Expense % - Professional Services">Professional Services</option>
                         <option value="Expense % - Insurance">Insurance</option>
                         <option value="Expense % - Rent/Lease">Rent/Lease</option>
-                        <option value="Expense % - Utilities">Utilities</option>
-                        <option value="Expense % - Equipment">Equipment</option>
-                        <option value="Expense % - Travel">Travel</option>
+                        <option value="Expense % - Infrastructure">Infrastructure/Utilities</option>
+                        <option value="Expense % - Auto & Travel">Auto & Travel</option>
                         <option value="Expense % - Sales & Marketing">Sales & Marketing</option>
                         <option value="Expense % - Other">Other Expenses</option>
                         <option value="Expense % - Depreciation">Depreciation</option>
@@ -7731,8 +8010,8 @@ export default function FinancialScorePage() {
                   {/* Display selected trend analysis items */}
                   {selectedDashboardWidgets.filter(w => 
                     ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
-                     'opexSalesMarketing', 'rentLease', 'utilities', 'equipment', 'travel', 'professionalServices', 'insurance', 'opexOther', 
-                     'opexPayroll', 'ownersBasePay', 'ownersRetirement', 'contractorsDistribution', 'interestExpense', 'depreciationExpense', 
+                     'salesExpense', 'rent', 'infrastructure', 'autoTravel', 'professionalFees', 'insurance', 'marketing', 
+                     'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors', 'interestExpense', 'depreciationAmortization', 
                      'operatingExpenseTotal', 'nonOperatingIncome', 'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 
                      'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'].includes(w) ||
                      w.startsWith('Expense % - ')
@@ -7742,8 +8021,8 @@ export default function FinancialScorePage() {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {selectedDashboardWidgets.filter(w => 
                           ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
-                           'opexSalesMarketing', 'rentLease', 'utilities', 'equipment', 'travel', 'professionalServices', 'insurance', 'opexOther', 
-                           'opexPayroll', 'ownersBasePay', 'ownersRetirement', 'contractorsDistribution', 'interestExpense', 'depreciationExpense', 
+                           'salesExpense', 'rent', 'infrastructure', 'autoTravel', 'professionalFees', 'insurance', 'marketing', 
+                           'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors', 'interestExpense', 'depreciationAmortization', 
                            'operatingExpenseTotal', 'nonOperatingIncome', 'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 
                            'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'].includes(w) ||
                            w.startsWith('Expense % - ')
@@ -8083,11 +8362,11 @@ export default function FinancialScorePage() {
                     const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
                     const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
                     const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
-                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
                     const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                     const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
                     const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
-                    const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                    const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
                     const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
                     const sdeValuation = ttmSDE * sdeMultiplier;
                     const ebitdaValuation = ttmEBITDA * ebitdaMultiplier;
@@ -8227,9 +8506,9 @@ export default function FinancialScorePage() {
                 
                 // Handle Item Trends from dropdown (specific financial metrics)
                 const itemTrendFields = ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 
-                  'cogsMaterials', 'cogsCommissions', 'cogsOther', 'opexSalesMarketing', 'rentLease', 'utilities', 'equipment', 
-                  'travel', 'professionalServices', 'insurance', 'opexOther', 'opexPayroll', 'ownersBasePay', 'ownersRetirement', 
-                  'contractorsDistribution', 'interestExpense', 'depreciationExpense', 'operatingExpenseTotal', 'nonOperatingIncome', 
+                  'cogsMaterials', 'cogsCommissions', 'cogsOther', 'salesExpense', 'rent', 'utilities', 'equipment', 
+                  'travel', 'professionalFees', 'insurance', 'marketing', 'payroll', 'ownerBasePay', 'ownersRetirement', 
+                  'subcontractors', 'interestExpense', 'depreciationAmortization', 'operatingExpenseTotal', 'nonOperatingIncome', 
                   'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 
                   'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'];
                 
@@ -8254,18 +8533,18 @@ export default function FinancialScorePage() {
                   const expenseFieldMap: {[key: string]: string} = {
                     'Total Expenses': 'expense',
                     'COGS Total': 'cogsTotal',
-                    'OPEX Payroll': 'opexPayroll',
-                    'Owners Base Pay': 'ownersBasePay',
-                    'Contractors': 'contractorsDistribution',
-                    'Professional Services': 'professionalServices',
+                    'OPEX Payroll': 'payroll',
+                    'Owners Base Pay': 'ownerBasePay',
+                    'Contractors': 'subcontractors',
+                    'Professional Services': 'professionalFees',
                     'Insurance': 'insurance',
-                    'Rent/Lease': 'rentLease',
+                    'Rent/Lease': 'rent',
                     'Utilities': 'utilities',
                     'Equipment': 'equipment',
                     'Travel': 'travel',
-                    'Sales & Marketing': 'opexSalesMarketing',
-                    'Other': 'opexOther',
-                    'Depreciation': 'depreciationExpense',
+                    'Sales & Marketing': 'salesExpense',
+                    'Other': 'marketing',
+                    'Depreciation': 'depreciationAmortization',
                     'Interest': 'interestExpense'
                   };
                   
@@ -9704,8 +9983,8 @@ export default function FinancialScorePage() {
                         {/* Analyze Dashboard-selected income statement items */}
                         {monthly.length >= 13 && (() => {
                           const incomeStatementItems = ['cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
-                            'opexSalesMarketing', 'rentLease', 'utilities', 'equipment', 'travel', 'professionalServices', 'insurance', 'opexOther', 'opexPayroll', 
-                            'ownersBasePay', 'ownersRetirement', 'contractorsDistribution', 'interestExpense', 'depreciationExpense', 'operatingExpenseTotal', 
+                            'salesExpense', 'rent', 'infrastructure', 'autoTravel', 'professionalFees', 'insurance', 'marketing', 'payroll', 
+                            'ownerBasePay', 'ownersRetirement', 'subcontractors', 'interestExpense', 'depreciationAmortization', 'operatingExpenseTotal', 
                             'nonOperatingIncome', 'extraordinaryItems', 'netProfit'];
                           
                           const dashboardIncomeItems = selectedDashboardWidgets.filter(w => incomeStatementItems.includes(w));
@@ -10014,7 +10293,7 @@ export default function FinancialScorePage() {
                     
                     // Operating Cash Flow
                     const ltmNetIncome = last12.reduce((sum, m) => sum + (m.revenue - m.expense), 0);
-                    const ltmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+                    const ltmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
                     const changeInAR = last12[last12.length - 1].ar - prior.ar;
                     const changeInInv = last12[last12.length - 1].inventory - prior.inventory;
                     const changeInAP = last12[last12.length - 1].ap - prior.ap;
@@ -10077,11 +10356,11 @@ export default function FinancialScorePage() {
                     
                     // Major expense categories to analyze
                     const majorCategories = [
-                      { key: 'opexPayroll', label: 'Payroll' },
-                      { key: 'ownersBasePay', label: 'Owner Compensation' },
-                      { key: 'rentLease', label: 'Rent/Lease' },
-                      { key: 'professionalServices', label: 'Professional Services' },
-                      { key: 'opexSalesMarketing', label: 'Sales & Marketing' },
+                      { key: 'payroll', label: 'Payroll' },
+                      { key: 'ownerBasePay', label: 'Owner Compensation' },
+                      { key: 'rent', label: 'Rent/Lease' },
+                      { key: 'professionalFees', label: 'Professional Services' },
+                      { key: 'salesExpense', label: 'Sales & Marketing' },
                       { key: 'insurance', label: 'Insurance' }
                     ];
                     
@@ -10184,11 +10463,11 @@ export default function FinancialScorePage() {
                     const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
                     const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
                     const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
-                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
                     const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                     const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
                     const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
-                    const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                    const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
                     const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
                     
                     // Valuation calculations
@@ -10611,10 +10890,10 @@ export default function FinancialScorePage() {
                 { key: 'cogsTotal', name: 'COGS Total', threshold: 70 },
                 { key: 'cogsPayroll', name: 'COGS Payroll', threshold: 35 },
                 { key: 'operatingExpenseTotal', name: 'Operating Expenses', threshold: 40 },
-                { key: 'opexPayroll', name: 'OPEX Payroll', threshold: 25 },
-                { key: 'opexSalesMarketing', name: 'Sales & Marketing', threshold: 15 },
-                { key: 'rentLease', name: 'Rent/Lease', threshold: 10 },
-                { key: 'professionalServices', name: 'Professional Services', threshold: 8 }
+                { key: 'payroll', name: 'OPEX Payroll', threshold: 25 },
+                { key: 'salesExpense', name: 'Sales & Marketing', threshold: 15 },
+                { key: 'rent', name: 'Rent/Lease', threshold: 10 },
+                { key: 'professionalFees', name: 'Professional Services', threshold: 8 }
               ];
 
               expenseCategories.forEach(cat => {
@@ -11098,18 +11377,18 @@ export default function FinancialScorePage() {
                     { key: 'cogsMaterials', label: 'COGS Materials' },
                     { key: 'cogsCommissions', label: 'COGS Commissions' },
                     { key: 'cogsOther', label: 'COGS Other' },
-                    { key: 'opexPayroll', label: 'Payroll' },
-                    { key: 'ownersBasePay', label: 'Owner Base Pay' },
-                    { key: 'contractorsDistribution', label: 'Contractors' },
-                    { key: 'professionalServices', label: 'Professional Services' },
+                    { key: 'payroll', label: 'Payroll' },
+                    { key: 'ownerBasePay', label: 'Owner Base Pay' },
+                    { key: 'subcontractors', label: 'Contractors' },
+                    { key: 'professionalFees', label: 'Professional Services' },
                     { key: 'insurance', label: 'Insurance' },
-                    { key: 'rentLease', label: 'Rent/Lease' },
+                    { key: 'rent', label: 'Rent/Lease' },
                     { key: 'utilities', label: 'Utilities' },
                     { key: 'equipment', label: 'Equipment' },
                     { key: 'travel', label: 'Travel' },
-                    { key: 'opexSalesMarketing', label: 'Sales & Marketing' },
-                    { key: 'opexOther', label: 'Other Operating Expenses' },
-                    { key: 'depreciationExpense', label: 'Depreciation & Amortization' },
+                    { key: 'salesExpense', label: 'Sales & Marketing' },
+                    { key: 'marketing', label: 'Other Operating Expenses' },
+                    { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
                     { key: 'interestExpense', label: 'Interest Expense' }
                   ];
 
@@ -11185,9 +11464,9 @@ export default function FinancialScorePage() {
                 {(() => {
                   const last6 = monthly.slice(-6);
                   const opexCategories = [
-                    'opexPayroll', 'ownersBasePay', 'contractorsDistribution', 'professionalServices', 
-                    'insurance', 'rentLease', 'utilities', 'equipment', 'travel', 
-                    'opexSalesMarketing', 'opexOther', 'depreciationExpense', 'interestExpense'
+                    'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
+                    'insurance', 'rent', 'infrastructure', 'autoTravel', 
+                    'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
                   ];
                   
                   // Calculate totals for each month
@@ -11831,7 +12110,7 @@ export default function FinancialScorePage() {
             const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
             const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
             const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
-            const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
+            const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
             const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
             
             // Calculate Net Income correctly: Revenue - COGS - Operating Expenses
@@ -11843,7 +12122,7 @@ export default function FinancialScorePage() {
             // Note: We don't have a separate tax field, so this is technically EBIT if taxes are in 'expense'
             
             // Calculate SDE using ACTUAL Owner Base Pay from income statement
-            const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+            const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
             const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
             
             // Calculate valuations
@@ -12602,7 +12881,7 @@ export default function FinancialScorePage() {
               
               // Operating Activities
               const netIncome = curr.revenue - curr.cogsTotal - curr.expense;
-              const depreciation = curr.depreciationExpense || 0; // Depreciation and amortization expense
+              const depreciation = curr.depreciationAmortization || 0; // Depreciation and amortization expense
               const changeInAR = curr.ar - prev.ar;
               const changeInInventory = curr.inventory - prev.inventory;
               const changeInAP = curr.ap - prev.ap;
@@ -12746,7 +13025,7 @@ export default function FinancialScorePage() {
             const last12MonthsData = monthly.slice(-12).map((curr, idx) => {
               const prev = idx === 0 && monthly.length > 12 ? monthly[monthly.length - 13] : (idx > 0 ? monthly.slice(-12)[idx - 1] : curr);
               const netIncome = curr.revenue - curr.cogsTotal - curr.expense;
-              const depreciation = curr.depreciationExpense || 0;
+              const depreciation = curr.depreciationAmortization || 0;
               const changeInAR = curr.ar - prev.ar;
               const changeInInventory = curr.inventory - prev.inventory;
               const changeInAP = curr.ap - prev.ap;
@@ -13090,6 +13369,695 @@ export default function FinancialScorePage() {
           })()}
         </div>
       )}
+
+      {/* CSV Trial Balance Data Mapping View - Show when CSV data is loaded OR when there are saved mappings */}
+      {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && (csvTrialBalanceData?._companyId === selectedCompanyId || (aiMappings.length > 0 && showMappingSection))) && (() => {
+        const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+        
+        // Get accounts for mapping from CSV data (if available)
+        const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
+        const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
+        
+        return (
+          <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>📊 Account Mapping</h1>
+              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+            </div>
+            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+              {hasCsvData 
+                ? `Map Trial Balance accounts to your standardized financial fields • Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} • ${csvTrialBalanceData.dates?.length || 0} periods`
+                : `${aiMappings.length} saved account mappings loaded from database`
+              }
+            </p>
+
+            {/* Lines of Business Section */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                  Lines of Business
+                </h2>
+                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
+                  Define up to 5 lines of business to allocate revenue and expenses for detailed reporting
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                  {linesOfBusiness.map((lob, index) => (
+                    <div key={index}>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                        Line of Business {index + 1}
+                      </label>
+                      <input
+                        type="text"
+                        value={lob}
+                        onChange={(e) => {
+                          const updated = [...linesOfBusiness];
+                          updated[index] = e.target.value;
+                          setLinesOfBusiness(updated);
+                        }}
+                        placeholder={`e.g., ${index === 0 ? 'Consulting' : index === 1 ? 'Products' : index === 2 ? 'Services' : index === 3 ? 'Training' : 'Other'}`}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          color: '#1e293b'
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* AI-Assisted Mapping Section for CSV */}
+            {hasCsvData && (
+            <div style={{ marginBottom: '32px' }}>
+              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div>
+                    <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                      AI-Assisted Account Mapping
+                    </h2>
+                    <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+                      Use AI to automatically suggest mappings from Trial Balance accounts ({csvAccountsForMapping.length} accounts) to your standardized financial fields
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setIsGeneratingMappings(true);
+                      try {
+                        // Convert CSV accounts to format expected by AI mapping
+                        const qbAccountsWithClass = csvAccountsForMapping.map(acc => ({
+                          name: acc.name,
+                          classification: acc.classification,
+                          accountCode: acc.acctId,  // Include account code for better AI mapping
+                          accountType: acc.acctType,
+                        }));
+
+                        console.log('📊 CSV accounts to map:', qbAccountsWithClass.length);
+                        console.log('📊 First 10 accounts:', qbAccountsWithClass.slice(0, 10));
+
+                        const response = await fetch('/api/ai-mapping/enhanced', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ 
+                            qbAccountsWithClass,
+                            companyId: selectedCompanyId,
+                            targetFields: []
+                          })
+                        });
+
+                        if (!response.ok) {
+                          throw new Error('Failed to generate mappings');
+                        }
+
+                        const data = await response.json();
+                        setAiMappings(data.mappings || []);
+                        setShowMappingSection(true);
+                      } catch (error: any) {
+                        console.error('Error generating mappings:', error);
+                        alert('Failed to generate AI mappings: ' + error.message);
+                      } finally {
+                        setIsGeneratingMappings(false);
+                      }
+                    }}
+                    disabled={isGeneratingMappings || csvAccountsForMapping.length === 0}
+                    style={{
+                      padding: '12px 24px',
+                      background: isGeneratingMappings ? '#94a3b8' : '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: isGeneratingMappings ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {isGeneratingMappings ? (
+                      <>
+                        <span>⏳</span>
+                        <span>Generating Mappings...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🤖</span>
+                        <span>Generate AI Mappings</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Account Summary by Type */}
+                <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Type:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {Object.entries(csvTrialBalanceData.accountsByType || {}).map(([type, accounts]: [string, any]) => (
+                      <span key={type} style={{
+                        padding: '4px 12px',
+                        background: 'white',
+                        borderRadius: '16px',
+                        fontSize: '12px',
+                        color: '#065f46',
+                        border: '1px solid #86efac'
+                      }}>
+                        {type}: {accounts.length}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            )}
+
+            {/* Mapping Results Section */}
+            {showMappingSection && aiMappings.length > 0 && (
+              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '32px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                    Account Mappings ({aiMappings.length} accounts)
+                  </h2>
+                </div>
+
+                {/* Mapping Table */}
+                <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                    <thead style={{ position: 'sticky', top: 0, background: 'white', zIndex: 10 }}>
+                      <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Account Type</th>
+                        <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Account Name</th>
+                        <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
+                        {linesOfBusiness.filter(lob => lob.trim() !== '').length > 0 && (
+                          <>
+                            {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, idx) => (
+                              <th key={idx} style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '600', color: '#7c3aed', fontSize: '11px', background: '#f5f3ff', borderLeft: idx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: idx === linesOfBusiness.filter(l => l.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none' }}>
+                                {lob} %
+                              </th>
+                            ))}
+                            <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569', fontSize: '11px' }}>Total %</th>
+                          </>
+                        )}
+                        <th style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#475569' }}>Confidence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {aiMappings.map((mapping, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '10px 12px', color: '#64748b', fontSize: '12px' }}>
+                            {mapping.qbAccountClassification || 'Unknown'}
+                          </td>
+                          <td style={{ padding: '10px 12px', color: '#1e293b', fontWeight: '500' }}>
+                            {mapping.qbAccount}
+                          </td>
+                          <td style={{ padding: '10px 12px', position: 'relative' }}>
+                            {/* Custom 2-Column Target Field Dropdown */}
+                            <div style={{ position: 'relative' }}>
+                              <button
+                                onClick={() => setOpenTargetFieldDropdown(openTargetFieldDropdown === idx ? null : idx)}
+                                style={{
+                                  width: '100%',
+                                  padding: '6px 10px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  fontSize: '13px',
+                                  background: mapping.targetField ? '#f0fdf4' : '#fef3c7',
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <span style={{ color: mapping.targetField ? '#1e293b' : '#94a3b8' }}>
+                                  {mapping.targetField ? {
+                                    revenue: 'Revenue', expense: 'Total Expense', cogsPayroll: 'COGS - Payroll',
+                                    cogsOwnerPay: 'COGS - Owner Pay', cogsContractors: 'COGS - Contractors',
+                                    cogsMaterials: 'COGS - Materials', cogsCommissions: 'COGS - Commissions',
+                                    cogsOther: 'COGS - Other', cogsTotal: 'COGS - Total', payroll: 'Payroll',
+                                    ownerBasePay: 'Owner Base Pay', benefits: 'Benefits', insurance: 'Insurance',
+                                    professionalFees: 'Professional Fees', subcontractors: 'Subcontractors',
+                                    rent: 'Rent', taxLicense: 'Tax & License', phoneComm: 'Phone & Comm',
+                                    infrastructure: 'Infrastructure', autoTravel: 'Auto & Travel',
+                                    salesExpense: 'Sales & Marketing', marketing: 'Marketing',
+                                    trainingCert: 'Training & Cert', mealsEntertainment: 'Meals & Entertainment',
+                                    interestExpense: 'Interest Expense', depreciationAmortization: 'Depreciation',
+                                    otherExpense: 'Other Expense', nonOperatingIncome: 'Non-Operating Income',
+                                    extraordinaryItems: 'Extraordinary Items', cash: 'Cash', ar: 'A/R',
+                                    inventory: 'Inventory', otherCA: 'Other Current Assets', tca: 'Total Current Assets',
+                                    fixedAssets: 'Fixed Assets', otherAssets: 'Other Assets', totalAssets: 'Total Assets',
+                                    ap: 'A/P', otherCL: 'Other Current Liab', tcl: 'Total Current Liab',
+                                    ltd: 'Long Term Debt', totalLiab: 'Total Liabilities',
+                                    ownersCapital: "Owner's Capital", ownersDraw: "Owner's Draw",
+                                    commonStock: 'Common Stock', preferredStock: 'Preferred Stock',
+                                    retainedEarnings: 'Retained Earnings', additionalPaidInCapital: 'Add. Paid-In Capital',
+                                    treasuryStock: 'Treasury Stock', totalEquity: 'Total Equity', totalLAndE: 'Total L&E'
+                                  }[mapping.targetField] || mapping.targetField : '-- Select Field --'}
+                                </span>
+                                <span style={{ fontSize: '10px', color: '#64748b' }}>{openTargetFieldDropdown === idx ? '▲' : '▼'}</span>
+                              </button>
+                              
+                              {openTargetFieldDropdown === idx && (
+                                <>
+                                  {/* Backdrop to close on click outside */}
+                                  <div 
+                                    onClick={() => setOpenTargetFieldDropdown(null)}
+                                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
+                                  />
+                                  {/* Dropdown Panel */}
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    zIndex: 100,
+                                    background: 'white',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '8px',
+                                    boxShadow: '0 10px 40px rgba(0,0,0,0.15)',
+                                    width: '500px',
+                                    maxHeight: '400px',
+                                    overflow: 'auto'
+                                  }}>
+                                    {/* Clear Selection */}
+                                    <div 
+                                      onClick={() => {
+                                        const updated = [...aiMappings];
+                                        updated[idx] = { ...mapping, targetField: '' };
+                                        setAiMappings(updated);
+                                        setOpenTargetFieldDropdown(null);
+                                      }}
+                                      style={{ padding: '8px 12px', cursor: 'pointer', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b' }}
+                                    >
+                                      ✕ Clear Selection
+                                    </div>
+                                    
+                                    {/* Two Column Layout */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                                      {/* Income Statement Column */}
+                                      <div style={{ borderRight: '1px solid #e2e8f0' }}>
+                                        <div style={{ padding: '8px 12px', background: '#f0fdf4', fontWeight: '600', fontSize: '11px', color: '#065f46', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0 }}>
+                                          📊 INCOME STATEMENT
+                                        </div>
+                                        <div style={{ padding: '4px 0' }}>
+                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc' }}>Revenue</div>
+                                          {[
+                                            { value: 'revenue', label: 'Revenue' },
+                                            { value: 'nonOperatingIncome', label: 'Non-Operating Income' },
+                                          ].map(opt => (
+                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
+                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
+                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
+                                            >{opt.label}</div>
+                                          ))}
+                                          
+                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc', marginTop: '4px' }}>Cost of Goods Sold</div>
+                                          {[
+                                            { value: 'cogsPayroll', label: 'COGS - Payroll' },
+                                            { value: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
+                                            { value: 'cogsContractors', label: 'COGS - Contractors' },
+                                            { value: 'cogsMaterials', label: 'COGS - Materials' },
+                                            { value: 'cogsCommissions', label: 'COGS - Commissions' },
+                                            { value: 'cogsOther', label: 'COGS - Other' },
+                                            { value: 'cogsTotal', label: 'COGS - Total' },
+                                          ].map(opt => (
+                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
+                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
+                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
+                                            >{opt.label}</div>
+                                          ))}
+                                          
+                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc', marginTop: '4px' }}>Operating Expenses</div>
+                                          {[
+                                            { value: 'payroll', label: 'Payroll' },
+                                            { value: 'ownerBasePay', label: 'Owner Base Pay' },
+                                            { value: 'benefits', label: 'Benefits' },
+                                            { value: 'insurance', label: 'Insurance' },
+                                            { value: 'professionalFees', label: 'Professional Fees' },
+                                            { value: 'subcontractors', label: 'Subcontractors' },
+                                            { value: 'rent', label: 'Rent' },
+                                            { value: 'taxLicense', label: 'Tax & License' },
+                                            { value: 'phoneComm', label: 'Phone & Comm' },
+                                            { value: 'infrastructure', label: 'Infrastructure/Utilities' },
+                                            { value: 'autoTravel', label: 'Auto & Travel' },
+                                            { value: 'salesExpense', label: 'Sales & Marketing' },
+                                            { value: 'marketing', label: 'Marketing' },
+                                            { value: 'trainingCert', label: 'Training & Cert' },
+                                            { value: 'mealsEntertainment', label: 'Meals & Entertainment' },
+                                            { value: 'interestExpense', label: 'Interest Expense' },
+                                            { value: 'depreciationAmortization', label: 'Depreciation & Amort' },
+                                            { value: 'otherExpense', label: 'Other Expense' },
+                                            { value: 'expense', label: 'Total Expense' },
+                                            { value: 'extraordinaryItems', label: 'Extraordinary Items' },
+                                          ].map(opt => (
+                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
+                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
+                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
+                                            >{opt.label}</div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Balance Sheet Column */}
+                                      <div>
+                                        <div style={{ padding: '8px 12px', background: '#ede9fe', fontWeight: '600', fontSize: '11px', color: '#5b21b6', borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0 }}>
+                                          📋 BALANCE SHEET
+                                        </div>
+                                        <div style={{ padding: '4px 0' }}>
+                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc' }}>Assets</div>
+                                          {[
+                                            { value: 'cash', label: 'Cash' },
+                                            { value: 'ar', label: 'Accounts Receivable' },
+                                            { value: 'inventory', label: 'Inventory' },
+                                            { value: 'otherCA', label: 'Other Current Assets' },
+                                            { value: 'tca', label: 'Total Current Assets' },
+                                            { value: 'fixedAssets', label: 'Fixed Assets' },
+                                            { value: 'otherAssets', label: 'Other Assets' },
+                                            { value: 'totalAssets', label: 'Total Assets' },
+                                          ].map(opt => (
+                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
+                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
+                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
+                                            >{opt.label}</div>
+                                          ))}
+                                          
+                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc', marginTop: '4px' }}>Liabilities</div>
+                                          {[
+                                            { value: 'ap', label: 'Accounts Payable' },
+                                            { value: 'otherCL', label: 'Other Current Liabilities' },
+                                            { value: 'tcl', label: 'Total Current Liabilities' },
+                                            { value: 'ltd', label: 'Long Term Debt' },
+                                            { value: 'totalLiab', label: 'Total Liabilities' },
+                                          ].map(opt => (
+                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
+                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
+                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
+                                            >{opt.label}</div>
+                                          ))}
+                                          
+                                          <div style={{ padding: '4px 12px', fontSize: '10px', fontWeight: '600', color: '#64748b', background: '#f8fafc', marginTop: '4px' }}>Equity</div>
+                                          {[
+                                            { value: 'ownersCapital', label: "Owner's Capital" },
+                                            { value: 'ownersDraw', label: "Owner's Draw" },
+                                            { value: 'commonStock', label: 'Common Stock' },
+                                            { value: 'preferredStock', label: 'Preferred Stock' },
+                                            { value: 'retainedEarnings', label: 'Retained Earnings' },
+                                            { value: 'additionalPaidInCapital', label: 'Add. Paid-In Capital' },
+                                            { value: 'treasuryStock', label: 'Treasury Stock' },
+                                            { value: 'totalEquity', label: 'Total Equity' },
+                                            { value: 'totalLAndE', label: 'Total Liabilities & Equity' },
+                                          ].map(opt => (
+                                            <div key={opt.value} onClick={() => { const updated = [...aiMappings]; updated[idx] = { ...mapping, targetField: opt.value }; setAiMappings(updated); setOpenTargetFieldDropdown(null); }}
+                                              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: '12px', color: '#1e293b', background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' }}
+                                              onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                                              onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
+                                            >{opt.label}</div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          {linesOfBusiness.filter(lob => lob.trim() !== '').length > 0 && (
+                            <>
+                              {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, lobIdx) => {
+                                const lobAllocations = mapping.lobAllocations || {};
+                                const currentPercent = lobAllocations[lob] !== undefined ? lobAllocations[lob] : 0;
+                                const total = Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
+                                const isOverAllocated = total > 100;
+                                const isUnderAllocated = total < 100 && total > 0;
+                                
+                                return (
+                                  <td key={lobIdx} style={{ padding: '8px 4px', borderLeft: lobIdx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: lobIdx === linesOfBusiness.filter(l => l.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none', background: '#fafafa' }}>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={currentPercent}
+                                      onChange={(e) => {
+                                        const newValue = parseInt(e.target.value) || 0;
+                                        const clamped = Math.min(Math.max(newValue, 0), 100);
+                                        const updated = aiMappings.map(m => 
+                                          m.qbAccount === mapping.qbAccount 
+                                            ? { 
+                                                ...m, 
+                                                lobAllocations: {
+                                                  ...(m.lobAllocations || {}),
+                                                  [lob]: clamped
+                                                }
+                                              }
+                                            : m
+                                        );
+                                        setAiMappings(updated);
+                                      }}
+                                      style={{
+                                        width: '50px',
+                                        padding: '4px 6px',
+                                        border: isOverAllocated ? '2px solid #ef4444' : isUnderAllocated ? '2px solid #f59e0b' : '1px solid #cbd5e1',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        color: '#1e293b',
+                                        textAlign: 'center',
+                                        background: 'white'
+                                      }}
+                                      title={isOverAllocated ? `Total allocation is ${total}% (exceeds 100%)` : isUnderAllocated ? `Total allocation is ${total}% (less than 100%)` : `Total allocation: ${total}%`}
+                                    />
+                                  </td>
+                                );
+                              })}
+                              <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                {(() => {
+                                  const lobAllocations = mapping.lobAllocations || {};
+                                  const total = Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
+                                  const isOverAllocated = total > 100;
+                                  const isUnderAllocated = total < 100 && total > 0;
+                                  const isPerfect = total === 100;
+                                  
+                                  return (
+                                    <span style={{
+                                      padding: '4px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      fontWeight: '600',
+                                      background: isOverAllocated ? '#fee2e2' : isUnderAllocated ? '#fef3c7' : isPerfect ? '#dcfce7' : '#f1f5f9',
+                                      color: isOverAllocated ? '#dc2626' : isUnderAllocated ? '#d97706' : isPerfect ? '#16a34a' : '#64748b'
+                                    }}>
+                                      {total}%
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                            </>
+                          )}
+                          <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              background: mapping.confidence === 'high' ? '#dcfce7' : mapping.confidence === 'medium' ? '#fef3c7' : '#fee2e2',
+                              color: mapping.confidence === 'high' ? '#166534' : mapping.confidence === 'medium' ? '#92400e' : '#991b1b'
+                            }}>
+                              {mapping.confidence || 'low'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Bottom Action Buttons */}
+                <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+                  {/* Row 1: Save Mappings */}
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
+                      <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Save your account-to-field mappings and LOB allocations</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setIsSavingMappings(true);
+                        try {
+                          const response = await fetch('/api/account-mappings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              companyId: selectedCompanyId,
+                              mappings: aiMappings.map(m => ({
+                                qbAccount: m.qbAccount,
+                                qbAccountId: null,
+                                qbAccountCode: null,
+                                qbAccountClassification: m.qbAccountClassification,
+                                targetField: m.targetField,
+                                confidence: m.confidence || 'medium',
+                                lobAllocations: m.lobAllocations || null,
+                              })),
+                              linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== ''),
+                            })
+                          });
+
+                          if (!response.ok) {
+                            throw new Error('Failed to save mappings');
+                          }
+
+                          alert('✅ Mappings saved successfully!');
+                        } catch (error: any) {
+                          console.error('Error saving mappings:', error);
+                          alert('Failed to save mappings: ' + error.message);
+                        } finally {
+                          setIsSavingMappings(false);
+                        }
+                      }}
+                      disabled={isSavingMappings}
+                      style={{
+                        padding: '10px 24px',
+                        background: isSavingMappings ? '#94a3b8' : '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: isSavingMappings ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                      }}
+                    >
+                      {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                    </button>
+                  </div>
+
+                  {/* Row 2: Process Data */}
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Process Financial Data</h3>
+                      <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Process Trial Balance data using your saved mappings</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (!aiMappings || aiMappings.length === 0) {
+                          alert('Please save account mappings first!');
+                          return;
+                        }
+                        
+                        if (!csvTrialBalanceData || !csvTrialBalanceData.dates || !csvTrialBalanceData.accounts) {
+                          alert('Please upload your Trial Balance CSV file first. The CSV data is required to process the mappings.');
+                          return;
+                        }
+                        
+                        setIsProcessingMonthlyData(true);
+                        try {
+                          const monthlyRecords = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
+                          
+                          if (monthlyRecords.length > 0) {
+                            const financialResponse = await fetch('/api/financials', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                companyId: selectedCompanyId,
+                                uploadedByUserId: currentUser?.id,
+                                fileName: csvTrialBalanceData.fileName || 'Trial Balance Import',
+                                rawData: csvTrialBalanceData,
+                                columnMapping: { source: 'CSV Trial Balance', method: 'Account Mapping' },
+                                monthlyData: monthlyRecords,
+                              })
+                            });
+
+                            if (financialResponse.ok) {
+                              setLoadedMonthlyData(monthlyRecords);
+                              alert(`✅ Successfully processed ${monthlyRecords.length} months of financial data!`);
+                              
+                              // Clear the CSV data since it's been processed
+                              setCsvTrialBalanceData(null);
+                              localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
+                              setAdminDashboardTab('data-review');
+                            } else {
+                              throw new Error('Failed to save financial data');
+                            }
+                          } else {
+                            alert('No monthly data could be processed. Check your mappings.');
+                          }
+                        } catch (error: any) {
+                          console.error('Error processing:', error);
+                          alert('Failed to process: ' + error.message);
+                        } finally {
+                          setIsProcessingMonthlyData(false);
+                        }
+                      }}
+                      disabled={isProcessingMonthlyData || aiMappings.length === 0}
+                      style={{
+                        padding: '10px 24px',
+                        background: isProcessingMonthlyData || aiMappings.length === 0 ? '#94a3b8' : '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
+                      }}
+                    >
+                      {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Account Preview Section */}
+            {hasCsvData && csvTrialBalanceData && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+                Account Preview (First 20 accounts)
+              </h2>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#f8fafc' }}>
+                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>Type</th>
+                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>ID</th>
+                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>Description</th>
+                      <th style={{ textAlign: 'right', padding: '10px', fontWeight: '600', color: '#475569' }}>Latest Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {csvTrialBalanceData.accounts?.slice(0, 20).map((account: any, idx: number) => {
+                      const latestDate = csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1];
+                      const latestValue = latestDate ? account.values[latestDate] : 0;
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '12px' }}>{account.acctType}</td>
+                          <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '12px' }}>{account.acctId}</td>
+                          <td style={{ padding: '8px 10px', color: '#1e293b' }}>{account.description}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
+                            ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {latestValue < 0 && ' (CR)'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {csvTrialBalanceData.accounts?.length > 20 && (
+                <p style={{ fontSize: '13px', color: '#64748b', marginTop: '12px', textAlign: 'center' }}>
+                  ... and {csvTrialBalanceData.accounts.length - 20} more accounts
+                </p>
+              )}
+            </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Data Mapping View - AI-Assisted Mapping Interface */}
       {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && qbRawData) && (() => {
@@ -14684,23 +15652,22 @@ export default function FinancialScorePage() {
                 const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
                 
                 // Operating Expenses
-                const opexPayroll = currentMonth.opexPayroll || 0;
-                const ownersBasePay = currentMonth.ownersBasePay || 0;
+                const payroll = currentMonth.payroll || 0;
+                const ownerBasePay = currentMonth.ownerBasePay || 0;
                 const ownersRetirement = currentMonth.ownersRetirement || 0;
-                const professionalServices = currentMonth.professionalServices || 0;
-                const rentLease = currentMonth.rentLease || 0;
-                const utilities = currentMonth.utilities || 0;
-                const equipment = currentMonth.equipment || 0;
-                const travel = currentMonth.travel || 0;
+                const professionalFees = currentMonth.professionalFees || 0;
+                const rent = currentMonth.rent || 0;
+                const infrastructure = currentMonth.infrastructure || 0;
+                const autoTravel = currentMonth.autoTravel || 0;
                 const insurance = currentMonth.insurance || 0;
-                const opexSalesMarketing = currentMonth.opexSalesMarketing || 0;
-                const contractorsDistribution = currentMonth.contractorsDistribution || 0;
-                const depreciationExpense = currentMonth.depreciationExpense || 0;
-                const opexOther = currentMonth.opexOther || 0;
+                const salesExpense = currentMonth.salesExpense || 0;
+                const subcontractors = currentMonth.subcontractors || 0;
+                const depreciationAmortization = currentMonth.depreciationAmortization || 0;
+                const marketing = currentMonth.marketing || 0;
                 
-                const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                 rentLease + utilities + equipment + travel + insurance + 
-                                 opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                                 rent + infrastructure + autoTravel + insurance + 
+                                 salesExpense + subcontractors + depreciationAmortization + marketing;
                 
                 const operatingIncome = grossProfit - totalOpex;
                 const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -14787,16 +15754,16 @@ export default function FinancialScorePage() {
                       {/* Operating Expenses */}
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                        {opexPayroll > 0 && (
+                        {payroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Payroll</span>
-                            <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {ownersBasePay > 0 && (
+                        {ownerBasePay > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                            <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {ownersRetirement > 0 && (
@@ -14805,34 +15772,28 @@ export default function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {professionalServices > 0 && (
+                        {professionalFees > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Professional Services</span>
-                            <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {rentLease > 0 && (
+                        {rent > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Rent/Lease</span>
-                            <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {utilities > 0 && (
+                        {infrastructure > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Utilities</span>
-                            <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>Infrastructure</span>
+                            <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {equipment > 0 && (
+                        {autoTravel > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Equipment</span>
-                            <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {travel > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Travel</span>
-                            <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>Auto & Travel</span>
+                            <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {insurance > 0 && (
@@ -14841,28 +15802,28 @@ export default function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {opexSalesMarketing > 0 && (
+                        {salesExpense > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                            <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {contractorsDistribution > 0 && (
+                        {subcontractors > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Contractors Distribution</span>
-                            <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {depreciationExpense > 0 && (
+                        {depreciationAmortization > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                            <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {opexOther > 0 && (
+                        {marketing > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                            <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -14944,23 +15905,22 @@ export default function FinancialScorePage() {
                 const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
                 
                 // Operating Expenses
-                const opexPayroll = currentMonth.opexPayroll || 0;
-                const ownersBasePay = currentMonth.ownersBasePay || 0;
+                const payroll = currentMonth.payroll || 0;
+                const ownerBasePay = currentMonth.ownerBasePay || 0;
                 const ownersRetirement = currentMonth.ownersRetirement || 0;
-                const professionalServices = currentMonth.professionalServices || 0;
-                const rentLease = currentMonth.rentLease || 0;
-                const utilities = currentMonth.utilities || 0;
-                const equipment = currentMonth.equipment || 0;
-                const travel = currentMonth.travel || 0;
+                const professionalFees = currentMonth.professionalFees || 0;
+                const rent = currentMonth.rent || 0;
+                const infrastructure = currentMonth.infrastructure || 0;
+                const autoTravel = currentMonth.autoTravel || 0;
                 const insurance = currentMonth.insurance || 0;
-                const opexSalesMarketing = currentMonth.opexSalesMarketing || 0;
-                const contractorsDistribution = currentMonth.contractorsDistribution || 0;
-                const depreciationExpense = currentMonth.depreciationExpense || 0;
-                const opexOther = currentMonth.opexOther || 0;
+                const salesExpense = currentMonth.salesExpense || 0;
+                const subcontractors = currentMonth.subcontractors || 0;
+                const depreciationAmortization = currentMonth.depreciationAmortization || 0;
+                const marketing = currentMonth.marketing || 0;
                 
-                const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                 rentLease + utilities + equipment + travel + insurance + 
-                                 opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                                 rent + infrastructure + autoTravel + insurance + 
+                                 salesExpense + subcontractors + depreciationAmortization + marketing;
                 
                 const operatingIncome = grossProfit - totalOpex;
                 const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -15063,18 +16023,18 @@ export default function FinancialScorePage() {
                     {/* Operating Expenses */}
                     <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Operating Expenses</div>
-                      {opexPayroll > 0 && (
+                      {payroll > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Payroll</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(opexPayroll).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(payroll).toFixed(1)}%</span>
                         </div>
                       )}
-                      {ownersBasePay > 0 && (
+                      {ownerBasePay > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner's Base Pay</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownersBasePay).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownerBasePay).toFixed(1)}%</span>
                         </div>
                       )}
                       {ownersRetirement > 0 && (
@@ -15084,39 +16044,32 @@ export default function FinancialScorePage() {
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownersRetirement).toFixed(1)}%</span>
                         </div>
                       )}
-                      {professionalServices > 0 && (
+                      {professionalFees > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Professional Services</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalServices).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
                         </div>
                       )}
-                      {rentLease > 0 && (
+                      {rent > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Rent/Lease</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rentLease).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rent).toFixed(1)}%</span>
                         </div>
                       )}
-                      {utilities > 0 && (
+                      {infrastructure > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Utilities</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(utilities).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(infrastructure).toFixed(1)}%</span>
                         </div>
                       )}
-                      {equipment > 0 && (
+                      {autoTravel > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Equipment</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(equipment).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {travel > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Travel</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(travel).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Auto & Travel</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(autoTravel).toFixed(1)}%</span>
                         </div>
                       )}
                       {insurance > 0 && (
@@ -15126,32 +16079,32 @@ export default function FinancialScorePage() {
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(insurance).toFixed(1)}%</span>
                         </div>
                       )}
-                      {opexSalesMarketing > 0 && (
+                      {salesExpense > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Sales & Marketing</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(opexSalesMarketing).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(salesExpense).toFixed(1)}%</span>
                         </div>
                       )}
-                      {contractorsDistribution > 0 && (
+                      {subcontractors > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Contractors Distribution</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(contractorsDistribution).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
                         </div>
                       )}
-                      {depreciationExpense > 0 && (
+                      {depreciationAmortization > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Depreciation & Amortization</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(depreciationExpense).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(depreciationAmortization).toFixed(1)}%</span>
                         </div>
                       )}
-                      {opexOther > 0 && (
+                      {marketing > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Operating Expenses</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(opexOther).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(marketing).toFixed(1)}%</span>
                         </div>
                       )}
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -15561,29 +16514,28 @@ export default function FinancialScorePage() {
                     const cogsMaterials = calc(m, 'cogsMaterials');
                     const cogsCommissions = calc(m, 'cogsCommissions');
                     const cogsOther = calc(m, 'cogsOther');
-                    const opexPayroll = calc(m, 'opexPayroll');
-                    const ownersBasePay = calc(m, 'ownersBasePay');
+                    const payroll = calc(m, 'payroll');
+                    const ownerBasePay = calc(m, 'ownerBasePay');
                     const ownersRetirement = calc(m, 'ownersRetirement');
-                    const professionalServices = calc(m, 'professionalServices');
-                    const rentLease = calc(m, 'rentLease');
-                    const utilities = calc(m, 'utilities');
-                    const equipment = calc(m, 'equipment');
-                    const travel = calc(m, 'travel');
+                    const professionalFees = calc(m, 'professionalFees');
+                    const rent = calc(m, 'rent');
+                    const infrastructure = calc(m, 'utilities');
+                    const autoTravel = calc(m, 'travel');
                     const insurance = calc(m, 'insurance');
-                    const opexSalesMarketing = calc(m, 'opexSalesMarketing');
-                    const contractorsDistribution = calc(m, 'contractorsDistribution');
-                    const depreciationExpense = calc(m, 'depreciationExpense');
-                    const opexOther = calc(m, 'opexOther');
+                    const salesExpense = calc(m, 'salesExpense');
+                    const subcontractors = calc(m, 'subcontractors');
+                    const depreciationAmortization = calc(m, 'depreciationAmortization');
+                    const marketing = calc(m, 'marketing');
                     const revenue = calc(m, 'revenue');
                     const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
                     const grossProfit = revenue - cogs;
-                    const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + rentLease + utilities + equipment + travel + insurance + opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                    const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing;
                     const operatingIncome = grossProfit - totalOpex;
                     const interestExpense = calc(m, 'interestExpense');
                     const nonOperatingIncome = calc(m, 'nonOperatingIncome');
                     const extraordinaryItems = calc(m, 'extraordinaryItems');
                     const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, opexPayroll, ownersBasePay, ownersRetirement, professionalServices, rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution, depreciationExpense, opexOther, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
+                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
                   });
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -15618,19 +16570,18 @@ export default function FinancialScorePage() {
                           {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                        {periodsData.some(p => p.opexPayroll > 0) && <Row label="Payroll" values={periodsData.map(p => p.opexPayroll)} indent={20} />}
-                        {periodsData.some(p => p.ownersBasePay > 0) && <Row label="Owner's Base Pay" values={periodsData.map(p => p.ownersBasePay)} indent={20} />}
+                        {periodsData.some(p => p.payroll > 0) && <Row label="Payroll" values={periodsData.map(p => p.payroll)} indent={20} />}
+                        {periodsData.some(p => p.ownerBasePay > 0) && <Row label="Owner's Base Pay" values={periodsData.map(p => p.ownerBasePay)} indent={20} />}
                         {periodsData.some(p => p.ownersRetirement > 0) && <Row label="Owner's Retirement" values={periodsData.map(p => p.ownersRetirement)} indent={20} />}
-                        {periodsData.some(p => p.professionalServices > 0) && <Row label="Professional Services" values={periodsData.map(p => p.professionalServices)} indent={20} />}
-                        {periodsData.some(p => p.rentLease > 0) && <Row label="Rent/Lease" values={periodsData.map(p => p.rentLease)} indent={20} />}
-                        {periodsData.some(p => p.utilities > 0) && <Row label="Utilities" values={periodsData.map(p => p.utilities)} indent={20} />}
-                        {periodsData.some(p => p.equipment > 0) && <Row label="Equipment" values={periodsData.map(p => p.equipment)} indent={20} />}
-                        {periodsData.some(p => p.travel > 0) && <Row label="Travel" values={periodsData.map(p => p.travel)} indent={20} />}
+                        {periodsData.some(p => p.professionalFees > 0) && <Row label="Professional Services" values={periodsData.map(p => p.professionalFees)} indent={20} />}
+                        {periodsData.some(p => p.rent > 0) && <Row label="Rent/Lease" values={periodsData.map(p => p.rent)} indent={20} />}
+                        {periodsData.some(p => p.infrastructure > 0) && <Row label="Infrastructure/Utilities" values={periodsData.map(p => p.infrastructure)} indent={20} />}
+                        {periodsData.some(p => p.autoTravel > 0) && <Row label="Auto & Travel" values={periodsData.map(p => p.autoTravel)} indent={20} />}
                         {periodsData.some(p => p.insurance > 0) && <Row label="Insurance" values={periodsData.map(p => p.insurance)} indent={20} />}
-                        {periodsData.some(p => p.opexSalesMarketing > 0) && <Row label="Sales & Marketing" values={periodsData.map(p => p.opexSalesMarketing)} indent={20} />}
-                        {periodsData.some(p => p.contractorsDistribution > 0) && <Row label="Contractors - Distribution" values={periodsData.map(p => p.contractorsDistribution)} indent={20} />}
-                        {periodsData.some(p => p.depreciationExpense > 0) && <Row label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
-                        {periodsData.some(p => p.opexOther > 0) && <Row label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
+                        {periodsData.some(p => p.salesExpense > 0) && <Row label="Sales & Marketing" values={periodsData.map(p => p.salesExpense)} indent={20} />}
+                        {periodsData.some(p => p.subcontractors > 0) && <Row label="Contractors - Distribution" values={periodsData.map(p => p.subcontractors)} indent={20} />}
+                        {periodsData.some(p => p.depreciationAmortization > 0) && <Row label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationAmortization)} indent={20} />}
+                        {periodsData.some(p => p.marketing > 0) && <Row label="Other Operating Expenses" values={periodsData.map(p => p.marketing)} indent={20} />}
                         <Row label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Operating Income</div>
@@ -15671,23 +16622,22 @@ export default function FinancialScorePage() {
                   const grossProfit = revenue - cogs;
                   const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
                   
-                  const opexPayroll = periodMonths.reduce((sum, m) => sum + (m.opexPayroll || 0), 0);
-                  const ownersBasePay = periodMonths.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                  const payroll = periodMonths.reduce((sum, m) => sum + (m.payroll || 0), 0);
+                  const ownerBasePay = periodMonths.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
                   const ownersRetirement = periodMonths.reduce((sum, m) => sum + (m.ownersRetirement || 0), 0);
-                  const professionalServices = periodMonths.reduce((sum, m) => sum + (m.professionalServices || 0), 0);
-                  const rentLease = periodMonths.reduce((sum, m) => sum + (m.rentLease || 0), 0);
-                  const utilities = periodMonths.reduce((sum, m) => sum + (m.utilities || 0), 0);
-                  const equipment = periodMonths.reduce((sum, m) => sum + (m.equipment || 0), 0);
-                  const travel = periodMonths.reduce((sum, m) => sum + (m.travel || 0), 0);
+                  const professionalFees = periodMonths.reduce((sum, m) => sum + (m.professionalFees || 0), 0);
+                  const rent = periodMonths.reduce((sum, m) => sum + (m.rent || 0), 0);
+                  const infrastructure = periodMonths.reduce((sum, m) => sum + (m.infrastructure || 0), 0);
+                  const autoTravel = periodMonths.reduce((sum, m) => sum + (m.autoTravel || 0), 0);
                   const insurance = periodMonths.reduce((sum, m) => sum + (m.insurance || 0), 0);
-                  const opexSalesMarketing = periodMonths.reduce((sum, m) => sum + (m.opexSalesMarketing || 0), 0);
-                  const contractorsDistribution = periodMonths.reduce((sum, m) => sum + (m.contractorsDistribution || 0), 0);
-                  const depreciationExpense = periodMonths.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
-                  const opexOther = periodMonths.reduce((sum, m) => sum + (m.opexOther || 0), 0);
+                  const salesExpense = periodMonths.reduce((sum, m) => sum + (m.salesExpense || 0), 0);
+                  const subcontractors = periodMonths.reduce((sum, m) => sum + (m.subcontractors || 0), 0);
+                  const depreciationAmortization = periodMonths.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
+                  const marketing = periodMonths.reduce((sum, m) => sum + (m.marketing || 0), 0);
                   
-                  const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                   rentLease + utilities + equipment + travel + insurance + 
-                                   opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                  const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                                   rent + infrastructure + autoTravel + insurance + 
+                                   salesExpense + subcontractors + depreciationAmortization + marketing;
                   
                   const operatingIncome = grossProfit - totalOpex;
                   const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -15773,16 +16723,16 @@ export default function FinancialScorePage() {
                         {/* Operating Expenses */}
                         <div style={{ marginBottom: '12px' }}>
                           <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                          {opexPayroll > 0 && (
+                          {payroll > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Payroll</span>
-                              <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {ownersBasePay > 0 && (
+                          {ownerBasePay > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                              <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {ownersRetirement > 0 && (
@@ -15791,34 +16741,28 @@ export default function FinancialScorePage() {
                               <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {professionalServices > 0 && (
+                          {professionalFees > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Professional Services</span>
-                              <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {rentLease > 0 && (
+                          {rent > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Rent/Lease</span>
-                              <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {utilities > 0 && (
+                          {infrastructure > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Utilities</span>
-                              <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>Infrastructure</span>
+                              <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {equipment > 0 && (
+                          {autoTravel > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Equipment</span>
-                              <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {travel > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Travel</span>
-                              <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>Auto & Travel</span>
+                              <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           {insurance > 0 && (
@@ -15827,28 +16771,28 @@ export default function FinancialScorePage() {
                               <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {opexSalesMarketing > 0 && (
+                          {salesExpense > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                              <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {contractorsDistribution > 0 && (
+                          {subcontractors > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Contractors - Distribution</span>
-                              <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {depreciationExpense > 0 && (
+                          {depreciationAmortization > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                              <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
-                          {opexOther > 0 && (
+                          {marketing > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                               <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                              <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                              <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -15921,28 +16865,27 @@ export default function FinancialScorePage() {
                       const cogsMaterials = calc(m, 'cogsMaterials');
                       const cogsCommissions = calc(m, 'cogsCommissions');
                       const cogsOther = calc(m, 'cogsOther');
-                      const opexPayroll = calc(m, 'opexPayroll');
-                      const ownersBasePay = calc(m, 'ownersBasePay');
+                      const payroll = calc(m, 'payroll');
+                      const ownerBasePay = calc(m, 'ownerBasePay');
                       const ownersRetirement = calc(m, 'ownersRetirement');
-                      const professionalServices = calc(m, 'professionalServices');
-                      const rentLease = calc(m, 'rentLease');
-                      const utilities = calc(m, 'utilities');
-                      const equipment = calc(m, 'equipment');
-                      const travel = calc(m, 'travel');
+                      const professionalFees = calc(m, 'professionalFees');
+                      const rent = calc(m, 'rent');
+                      const infrastructure = calc(m, 'utilities');
+                      const autoTravel = calc(m, 'travel');
                       const insurance = calc(m, 'insurance');
-                      const opexSalesMarketing = calc(m, 'opexSalesMarketing');
-                      const contractorsDistribution = calc(m, 'contractorsDistribution');
-                      const depreciationExpense = calc(m, 'depreciationExpense');
-                      const opexOther = calc(m, 'opexOther');
+                      const salesExpense = calc(m, 'salesExpense');
+                      const subcontractors = calc(m, 'subcontractors');
+                      const depreciationAmortization = calc(m, 'depreciationAmortization');
+                      const marketing = calc(m, 'marketing');
                       const interestExpense = calc(m, 'interestExpense');
                       const nonOperatingIncome = calc(m, 'nonOperatingIncome');
                       const extraordinaryItems = calc(m, 'extraordinaryItems');
                       const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                      const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + rentLease + utilities + equipment + travel + insurance + opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                      const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing;
                       const grossProfit = revenue - cogs;
                       const operatingIncome = grossProfit - totalOpex;
                       const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                      return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, opexPayroll, ownersBasePay, ownersRetirement, professionalServices, rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution, depreciationExpense, opexOther, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
+                      return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
                     });
                     const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
                       <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -15996,19 +16939,18 @@ export default function FinancialScorePage() {
                             })}
                           </div>
                           <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                          {periodsData.some(p => p.opexPayroll > 0) && <RowWithPercent label="Payroll" values={periodsData.map(p => p.opexPayroll)} indent={20} />}
-                          {periodsData.some(p => p.ownersBasePay > 0) && <RowWithPercent label="Owner's Base Pay" values={periodsData.map(p => p.ownersBasePay)} indent={20} />}
+                          {periodsData.some(p => p.payroll > 0) && <RowWithPercent label="Payroll" values={periodsData.map(p => p.payroll)} indent={20} />}
+                          {periodsData.some(p => p.ownerBasePay > 0) && <RowWithPercent label="Owner's Base Pay" values={periodsData.map(p => p.ownerBasePay)} indent={20} />}
                           {periodsData.some(p => p.ownersRetirement > 0) && <RowWithPercent label="Owner's Retirement" values={periodsData.map(p => p.ownersRetirement)} indent={20} />}
-                          {periodsData.some(p => p.professionalServices > 0) && <RowWithPercent label="Professional Services" values={periodsData.map(p => p.professionalServices)} indent={20} />}
-                          {periodsData.some(p => p.rentLease > 0) && <RowWithPercent label="Rent/Lease" values={periodsData.map(p => p.rentLease)} indent={20} />}
-                          {periodsData.some(p => p.utilities > 0) && <RowWithPercent label="Utilities" values={periodsData.map(p => p.utilities)} indent={20} />}
-                          {periodsData.some(p => p.equipment > 0) && <RowWithPercent label="Equipment" values={periodsData.map(p => p.equipment)} indent={20} />}
-                          {periodsData.some(p => p.travel > 0) && <RowWithPercent label="Travel" values={periodsData.map(p => p.travel)} indent={20} />}
+                          {periodsData.some(p => p.professionalFees > 0) && <RowWithPercent label="Professional Services" values={periodsData.map(p => p.professionalFees)} indent={20} />}
+                          {periodsData.some(p => p.rent > 0) && <RowWithPercent label="Rent/Lease" values={periodsData.map(p => p.rent)} indent={20} />}
+                          {periodsData.some(p => p.infrastructure > 0) && <RowWithPercent label="Infrastructure/Utilities" values={periodsData.map(p => p.infrastructure)} indent={20} />}
+                          {periodsData.some(p => p.autoTravel > 0) && <RowWithPercent label="Auto & Travel" values={periodsData.map(p => p.autoTravel)} indent={20} />}
                           {periodsData.some(p => p.insurance > 0) && <RowWithPercent label="Insurance" values={periodsData.map(p => p.insurance)} indent={20} />}
-                          {periodsData.some(p => p.opexSalesMarketing > 0) && <RowWithPercent label="Sales & Marketing" values={periodsData.map(p => p.opexSalesMarketing)} indent={20} />}
-                          {periodsData.some(p => p.contractorsDistribution > 0) && <RowWithPercent label="Contractors - Distribution" values={periodsData.map(p => p.contractorsDistribution)} indent={20} />}
-                          {periodsData.some(p => p.depreciationExpense > 0) && <RowWithPercent label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
-                          {periodsData.some(p => p.opexOther > 0) && <RowWithPercent label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
+                          {periodsData.some(p => p.salesExpense > 0) && <RowWithPercent label="Sales & Marketing" values={periodsData.map(p => p.salesExpense)} indent={20} />}
+                          {periodsData.some(p => p.subcontractors > 0) && <RowWithPercent label="Contractors - Distribution" values={periodsData.map(p => p.subcontractors)} indent={20} />}
+                          {periodsData.some(p => p.depreciationAmortization > 0) && <RowWithPercent label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationAmortization)} indent={20} />}
+                          {periodsData.some(p => p.marketing > 0) && <RowWithPercent label="Other Operating Expenses" values={periodsData.map(p => p.marketing)} indent={20} />}
                           <RowWithPercent label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                             <div>Operating Income</div>
@@ -16061,23 +17003,22 @@ export default function FinancialScorePage() {
                   
                   const grossProfit = revenue - cogs;
                   
-                  const opexPayroll = periodMonths.reduce((sum, m) => sum + (m.opexPayroll || 0), 0);
-                  const ownersBasePay = periodMonths.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                  const payroll = periodMonths.reduce((sum, m) => sum + (m.payroll || 0), 0);
+                  const ownerBasePay = periodMonths.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
                   const ownersRetirement = periodMonths.reduce((sum, m) => sum + (m.ownersRetirement || 0), 0);
-                  const professionalServices = periodMonths.reduce((sum, m) => sum + (m.professionalServices || 0), 0);
-                  const rentLease = periodMonths.reduce((sum, m) => sum + (m.rentLease || 0), 0);
-                  const utilities = periodMonths.reduce((sum, m) => sum + (m.utilities || 0), 0);
-                  const equipment = periodMonths.reduce((sum, m) => sum + (m.equipment || 0), 0);
-                  const travel = periodMonths.reduce((sum, m) => sum + (m.travel || 0), 0);
+                  const professionalFees = periodMonths.reduce((sum, m) => sum + (m.professionalFees || 0), 0);
+                  const rent = periodMonths.reduce((sum, m) => sum + (m.rent || 0), 0);
+                  const infrastructure = periodMonths.reduce((sum, m) => sum + (m.infrastructure || 0), 0);
+                  const autoTravel = periodMonths.reduce((sum, m) => sum + (m.autoTravel || 0), 0);
                   const insurance = periodMonths.reduce((sum, m) => sum + (m.insurance || 0), 0);
-                  const opexSalesMarketing = periodMonths.reduce((sum, m) => sum + (m.opexSalesMarketing || 0), 0);
-                  const contractorsDistribution = periodMonths.reduce((sum, m) => sum + (m.contractorsDistribution || 0), 0);
-                  const depreciationExpense = periodMonths.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
-                  const opexOther = periodMonths.reduce((sum, m) => sum + (m.opexOther || 0), 0);
+                  const salesExpense = periodMonths.reduce((sum, m) => sum + (m.salesExpense || 0), 0);
+                  const subcontractors = periodMonths.reduce((sum, m) => sum + (m.subcontractors || 0), 0);
+                  const depreciationAmortization = periodMonths.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
+                  const marketing = periodMonths.reduce((sum, m) => sum + (m.marketing || 0), 0);
                   
-                  const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                   rentLease + utilities + equipment + travel + insurance + 
-                                   opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                  const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                                   rent + infrastructure + autoTravel + insurance + 
+                                   salesExpense + subcontractors + depreciationAmortization + marketing;
                   
                   const operatingIncome = grossProfit - totalOpex;
                   
@@ -16172,18 +17113,18 @@ export default function FinancialScorePage() {
                         {/* Operating Expenses */}
                         <div style={{ marginTop: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Operating Expenses</div>
-                          {opexPayroll > 0 && (
+                          {payroll > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Payroll</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexPayroll)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(payroll)}</div>
                             </div>
                           )}
-                          {ownersBasePay > 0 && (
+                          {ownerBasePay > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Owner's Base Pay</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersBasePay)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownerBasePay)}</div>
                             </div>
                           )}
                           {ownersRetirement > 0 && (
@@ -16193,38 +17134,38 @@ export default function FinancialScorePage() {
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersRetirement)}</div>
                             </div>
                           )}
-                          {professionalServices > 0 && (
+                          {professionalFees > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Professional Services</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalServices)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalFees)}</div>
                             </div>
                           )}
-                          {rentLease > 0 && (
+                          {rent > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Rent/Lease</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rentLease)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rent)}</div>
                             </div>
                           )}
-                          {utilities > 0 && (
+                          {infrastructure > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Utilities</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ color: '#64748b' }}>Infrastructure</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(utilities)}</div>
                             </div>
                           )}
-                          {equipment > 0 && (
+                          {infrastructure > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Equipment</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ color: '#64748b' }}>Infrastructure</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(equipment)}</div>
                             </div>
                           )}
-                          {travel > 0 && (
+                          {autoTravel > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Travel</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ color: '#64748b' }}>Auto & Travel</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(travel)}</div>
                             </div>
                           )}
@@ -16235,32 +17176,32 @@ export default function FinancialScorePage() {
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(insurance)}</div>
                             </div>
                           )}
-                          {opexSalesMarketing > 0 && (
+                          {salesExpense > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Sales & Marketing</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexSalesMarketing)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(salesExpense)}</div>
                             </div>
                           )}
-                          {contractorsDistribution > 0 && (
+                          {subcontractors > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Contractors - Distribution</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(contractorsDistribution)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(subcontractors)}</div>
                             </div>
                           )}
-                          {depreciationExpense > 0 && (
+                          {depreciationAmortization > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Depreciation & Amortization</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationExpense)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationAmortization)}</div>
                             </div>
                           )}
-                          {opexOther > 0 && (
+                          {marketing > 0 && (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                               <div style={{ color: '#64748b' }}>Other Operating Expenses</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexOther)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(marketing)}</div>
                             </div>
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
@@ -17680,23 +18621,22 @@ export default function FinancialScorePage() {
               const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
               
               // Operating Expenses
-              const opexPayroll = currentMonth.opexPayroll || 0;
-              const ownersBasePay = currentMonth.ownersBasePay || 0;
+              const payroll = currentMonth.payroll || 0;
+              const ownerBasePay = currentMonth.ownerBasePay || 0;
               const ownersRetirement = currentMonth.ownersRetirement || 0;
-              const professionalServices = currentMonth.professionalServices || 0;
-              const rentLease = currentMonth.rentLease || 0;
-              const utilities = currentMonth.utilities || 0;
-              const equipment = currentMonth.equipment || 0;
-              const travel = currentMonth.travel || 0;
+              const professionalFees = currentMonth.professionalFees || 0;
+              const rent = currentMonth.rent || 0;
+              const infrastructure = currentMonth.infrastructure || 0;
+              const autoTravel = currentMonth.autoTravel || 0;
               const insurance = currentMonth.insurance || 0;
-              const opexSalesMarketing = currentMonth.opexSalesMarketing || 0;
-              const contractorsDistribution = currentMonth.contractorsDistribution || 0;
-              const depreciationExpense = currentMonth.depreciationExpense || 0;
-              const opexOther = currentMonth.opexOther || 0;
+              const salesExpense = currentMonth.salesExpense || 0;
+              const subcontractors = currentMonth.subcontractors || 0;
+              const depreciationAmortization = currentMonth.depreciationAmortization || 0;
+              const marketing = currentMonth.marketing || 0;
               
-              const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                               rentLease + utilities + equipment + travel + insurance + 
-                               opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+              const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                               rent + infrastructure + autoTravel + insurance + 
+                               salesExpense + subcontractors + depreciationAmortization + marketing;
               
               const operatingIncome = grossProfit - totalOpex;
               const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -17783,16 +18723,16 @@ export default function FinancialScorePage() {
                   {/* Operating Expenses */}
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                    {opexPayroll > 0 && (
+                    {payroll > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Payroll</span>
-                        <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {ownersBasePay > 0 && (
+                    {ownerBasePay > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                        <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {ownersRetirement > 0 && (
@@ -17801,34 +18741,34 @@ export default function FinancialScorePage() {
                         <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {professionalServices > 0 && (
+                    {professionalFees > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Professional Services</span>
-                        <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {rentLease > 0 && (
+                    {rent > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Rent/Lease</span>
-                        <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {utilities > 0 && (
+                    {infrastructure > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>Utilities</span>
-                        <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>Infrastructure</span>
+                        <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {equipment > 0 && (
+                    {infrastructure > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>Equipment</span>
-                        <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>Infrastructure</span>
+                        <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {travel > 0 && (
+                    {autoTravel > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>Travel</span>
-                        <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>Auto & Travel</span>
+                        <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {insurance > 0 && (
@@ -17837,28 +18777,28 @@ export default function FinancialScorePage() {
                         <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {opexSalesMarketing > 0 && (
+                    {salesExpense > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                        <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {contractorsDistribution > 0 && (
+                    {subcontractors > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Contractors Distribution</span>
-                        <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {depreciationExpense > 0 && (
+                    {depreciationAmortization > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                        <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
-                    {opexOther > 0 && (
+                    {marketing > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                        <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -17941,23 +18881,22 @@ export default function FinancialScorePage() {
               const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
               
               // Operating Expenses
-              const opexPayroll = currentMonth.opexPayroll || 0;
-              const ownersBasePay = currentMonth.ownersBasePay || 0;
+              const payroll = currentMonth.payroll || 0;
+              const ownerBasePay = currentMonth.ownerBasePay || 0;
               const ownersRetirement = currentMonth.ownersRetirement || 0;
-              const professionalServices = currentMonth.professionalServices || 0;
-              const rentLease = currentMonth.rentLease || 0;
-              const utilities = currentMonth.utilities || 0;
-              const equipment = currentMonth.equipment || 0;
-              const travel = currentMonth.travel || 0;
+              const professionalFees = currentMonth.professionalFees || 0;
+              const rent = currentMonth.rent || 0;
+              const infrastructure = currentMonth.infrastructure || 0;
+              const autoTravel = currentMonth.autoTravel || 0;
               const insurance = currentMonth.insurance || 0;
-              const opexSalesMarketing = currentMonth.opexSalesMarketing || 0;
-              const contractorsDistribution = currentMonth.contractorsDistribution || 0;
-              const depreciationExpense = currentMonth.depreciationExpense || 0;
-              const opexOther = currentMonth.opexOther || 0;
+              const salesExpense = currentMonth.salesExpense || 0;
+              const subcontractors = currentMonth.subcontractors || 0;
+              const depreciationAmortization = currentMonth.depreciationAmortization || 0;
+              const marketing = currentMonth.marketing || 0;
               
-              const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                               rentLease + utilities + equipment + travel + insurance + 
-                               opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+              const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                               rent + infrastructure + autoTravel + insurance + 
+                               salesExpense + subcontractors + depreciationAmortization + marketing;
               
               const operatingIncome = grossProfit - totalOpex;
               const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -18060,18 +18999,18 @@ export default function FinancialScorePage() {
                   {/* Operating Expenses */}
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Operating Expenses</div>
-                    {opexPayroll > 0 && (
+                    {payroll > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Payroll</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(opexPayroll).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(payroll).toFixed(1)}%</span>
                       </div>
                     )}
-                    {ownersBasePay > 0 && (
+                    {ownerBasePay > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner's Base Pay</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownersBasePay).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownerBasePay).toFixed(1)}%</span>
                       </div>
                     )}
                     {ownersRetirement > 0 && (
@@ -18081,38 +19020,38 @@ export default function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownersRetirement).toFixed(1)}%</span>
                       </div>
                     )}
-                    {professionalServices > 0 && (
+                    {professionalFees > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Professional Services</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalServices).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
                       </div>
                     )}
-                    {rentLease > 0 && (
+                    {rent > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Rent/Lease</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rentLease).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rent).toFixed(1)}%</span>
                       </div>
                     )}
-                    {utilities > 0 && (
+                    {infrastructure > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Utilities</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(utilities).toFixed(1)}%</span>
                       </div>
                     )}
-                    {equipment > 0 && (
+                    {infrastructure > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Equipment</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(equipment).toFixed(1)}%</span>
                       </div>
                     )}
-                    {travel > 0 && (
+                    {autoTravel > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Travel</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Auto & Travel</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(travel).toFixed(1)}%</span>
                       </div>
                     )}
@@ -18123,32 +19062,32 @@ export default function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(insurance).toFixed(1)}%</span>
                       </div>
                     )}
-                    {opexSalesMarketing > 0 && (
+                    {salesExpense > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Sales & Marketing</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(opexSalesMarketing).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(salesExpense).toFixed(1)}%</span>
                       </div>
                     )}
-                    {contractorsDistribution > 0 && (
+                    {subcontractors > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Contractors Distribution</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(contractorsDistribution).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
                       </div>
                     )}
-                    {depreciationExpense > 0 && (
+                    {depreciationAmortization > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Depreciation & Amortization</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(depreciationExpense).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(depreciationAmortization).toFixed(1)}%</span>
                       </div>
                     )}
-                    {opexOther > 0 && (
+                    {marketing > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Operating Expenses</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(opexOther).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(marketing).toFixed(1)}%</span>
                       </div>
                     )}
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -18567,22 +19506,21 @@ export default function FinancialScorePage() {
                   const grossProfit = revenue - cogs;
                   
                   // Operating Expenses detailed
-                  const opexPayroll = months.reduce((sum, m) => sum + (m.opexPayroll || 0), 0);
-                  const ownersBasePay = months.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                  const payroll = months.reduce((sum, m) => sum + (m.payroll || 0), 0);
+                  const ownerBasePay = months.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
                   const ownersRetirement = months.reduce((sum, m) => sum + (m.ownersRetirement || 0), 0);
-                  const professionalServices = months.reduce((sum, m) => sum + (m.professionalServices || 0), 0);
-                  const rentLease = months.reduce((sum, m) => sum + (m.rentLease || 0), 0);
-                  const utilities = months.reduce((sum, m) => sum + (m.utilities || 0), 0);
-                  const equipment = months.reduce((sum, m) => sum + (m.equipment || 0), 0);
-                  const travel = months.reduce((sum, m) => sum + (m.travel || 0), 0);
+                  const professionalFees = months.reduce((sum, m) => sum + (m.professionalFees || 0), 0);
+                  const rent = months.reduce((sum, m) => sum + (m.rent || 0), 0);
+                  const infrastructure = months.reduce((sum, m) => sum + (m.infrastructure || 0), 0);
+                  const autoTravel = months.reduce((sum, m) => sum + (m.autoTravel || 0), 0);
                   const insurance = months.reduce((sum, m) => sum + (m.insurance || 0), 0);
-                  const opexSalesMarketing = months.reduce((sum, m) => sum + (m.opexSalesMarketing || 0), 0);
-                  const contractorsDistribution = months.reduce((sum, m) => sum + (m.contractorsDistribution || 0), 0);
-                  const depreciationExpense = months.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
-                  const opexOther = months.reduce((sum, m) => sum + (m.opexOther || 0), 0);
-                  const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                   rentLease + utilities + equipment + travel + insurance + 
-                                   opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                  const salesExpense = months.reduce((sum, m) => sum + (m.salesExpense || 0), 0);
+                  const subcontractors = months.reduce((sum, m) => sum + (m.subcontractors || 0), 0);
+                  const depreciationAmortization = months.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
+                  const marketing = months.reduce((sum, m) => sum + (m.marketing || 0), 0);
+                  const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                                   rent + infrastructure + autoTravel + insurance + 
+                                   salesExpense + subcontractors + depreciationAmortization + marketing;
                   const operatingIncome = grossProfit - totalOpex;
                   
                   // Other Income/Expense
@@ -18595,11 +19533,12 @@ export default function FinancialScorePage() {
                     revenue, 
                     cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, 
                     grossProfit, 
-                    opexPayroll, ownersBasePay, ownersRetirement, professionalServices, rentLease, utilities, 
-                    equipment, travel, insurance, opexSalesMarketing, contractorsDistribution, depreciationExpense, opexOther, totalOpex,
+                    payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, 
+                    autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, totalOpex,
                     operatingIncome, 
                     interestExpense, nonOperatingIncome, extraordinaryItems, 
-                    netIncome 
+                    netIncome,
+                    label: ''
                   };
                 };
                   
@@ -18710,19 +19649,19 @@ export default function FinancialScorePage() {
                         </div>
                         
                         {/* Operating Expenses Details */}
-                        {periodsData.some(p => p.opexPayroll > 0) && (
+                        {periodsData.some(p => p.payroll > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Payroll</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.ownersBasePay > 0) && (
+                        {periodsData.some(p => p.ownerBasePay > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Base Pay</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
@@ -18734,43 +19673,43 @@ export default function FinancialScorePage() {
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.professionalServices > 0) && (
+                        {periodsData.some(p => p.professionalFees > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Professional Services</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.rentLease > 0) && (
+                        {periodsData.some(p => p.rent > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Rent/Lease</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.utilities > 0) && (
+                        {periodsData.some(p => p.infrastructure > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Utilities</div>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Infrastructure</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.equipment > 0) && (
+                        {periodsData.some(p => p.infrastructure > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Equipment</div>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Infrastructure</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.travel > 0) && (
+                        {periodsData.some(p => p.autoTravel > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Travel</div>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>Auto & Travel</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
@@ -18782,35 +19721,35 @@ export default function FinancialScorePage() {
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.opexSalesMarketing > 0) && (
+                        {periodsData.some(p => p.salesExpense > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Sales & Marketing</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.contractorsDistribution > 0) && (
+                        {periodsData.some(p => p.subcontractors > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Contractors - Distribution</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.depreciationExpense > 0) && (
+                        {periodsData.some(p => p.depreciationAmortization > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Depreciation & Amortization</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
-                        {periodsData.some(p => p.opexOther > 0) && (
+                        {periodsData.some(p => p.marketing > 0) && (
                           <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                             <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Operating Expenses</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             ))}
                           </div>
                         )}
@@ -18893,23 +19832,22 @@ export default function FinancialScorePage() {
                 const grossProfit = revenue - cogs;
                 const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
                 
-                const opexPayroll = periodMonths.reduce((sum, m) => sum + (m.opexPayroll || 0), 0);
-                const ownersBasePay = periodMonths.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                const payroll = periodMonths.reduce((sum, m) => sum + (m.payroll || 0), 0);
+                const ownerBasePay = periodMonths.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
                 const ownersRetirement = periodMonths.reduce((sum, m) => sum + (m.ownersRetirement || 0), 0);
-                const professionalServices = periodMonths.reduce((sum, m) => sum + (m.professionalServices || 0), 0);
-                const rentLease = periodMonths.reduce((sum, m) => sum + (m.rentLease || 0), 0);
-                const utilities = periodMonths.reduce((sum, m) => sum + (m.utilities || 0), 0);
-                const equipment = periodMonths.reduce((sum, m) => sum + (m.equipment || 0), 0);
-                const travel = periodMonths.reduce((sum, m) => sum + (m.travel || 0), 0);
+                const professionalFees = periodMonths.reduce((sum, m) => sum + (m.professionalFees || 0), 0);
+                const rent = periodMonths.reduce((sum, m) => sum + (m.rent || 0), 0);
+                const infrastructure = periodMonths.reduce((sum, m) => sum + (m.infrastructure || 0), 0);
+                const autoTravel = periodMonths.reduce((sum, m) => sum + (m.autoTravel || 0), 0);
                 const insurance = periodMonths.reduce((sum, m) => sum + (m.insurance || 0), 0);
-                const opexSalesMarketing = periodMonths.reduce((sum, m) => sum + (m.opexSalesMarketing || 0), 0);
-                const contractorsDistribution = periodMonths.reduce((sum, m) => sum + (m.contractorsDistribution || 0), 0);
-                const depreciationExpense = periodMonths.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
-                const opexOther = periodMonths.reduce((sum, m) => sum + (m.opexOther || 0), 0);
+                const salesExpense = periodMonths.reduce((sum, m) => sum + (m.salesExpense || 0), 0);
+                const subcontractors = periodMonths.reduce((sum, m) => sum + (m.subcontractors || 0), 0);
+                const depreciationAmortization = periodMonths.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
+                const marketing = periodMonths.reduce((sum, m) => sum + (m.marketing || 0), 0);
                 
-                const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                 rentLease + utilities + equipment + travel + insurance + 
-                                 opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                                 rent + infrastructure + autoTravel + insurance + 
+                                 salesExpense + subcontractors + depreciationAmortization + marketing;
                 
                 const operatingIncome = grossProfit - totalOpex;
                 const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -18995,16 +19933,16 @@ export default function FinancialScorePage() {
                       {/* Operating Expenses */}
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                        {opexPayroll > 0 && (
+                        {payroll > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Payroll</span>
-                            <span style={{ color: '#475569' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {ownersBasePay > 0 && (
+                        {ownerBasePay > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                            <span style={{ color: '#475569' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {ownersRetirement > 0 && (
@@ -19013,34 +19951,28 @@ export default function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {professionalServices > 0 && (
+                        {professionalFees > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Professional Services</span>
-                            <span style={{ color: '#475569' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {rentLease > 0 && (
+                        {rent > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Rent/Lease</span>
-                            <span style={{ color: '#475569' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {utilities > 0 && (
+                        {infrastructure > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Utilities</span>
-                            <span style={{ color: '#475569' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>Infrastructure</span>
+                            <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {equipment > 0 && (
+                        {autoTravel > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Equipment</span>
-                            <span style={{ color: '#475569' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {travel > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Travel</span>
-                            <span style={{ color: '#475569' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>Auto & Travel</span>
+                            <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {insurance > 0 && (
@@ -19049,28 +19981,28 @@ export default function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {opexSalesMarketing > 0 && (
+                        {salesExpense > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                            <span style={{ color: '#475569' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {contractorsDistribution > 0 && (
+                        {subcontractors > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Contractors - Distribution</span>
-                            <span style={{ color: '#475569' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {depreciationExpense > 0 && (
+                        {depreciationAmortization > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                            <span style={{ color: '#475569' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {opexOther > 0 && (
+                        {marketing > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                            <span style={{ color: '#475569' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -19143,28 +20075,27 @@ export default function FinancialScorePage() {
                     const cogsMaterials = calc(m, 'cogsMaterials');
                     const cogsCommissions = calc(m, 'cogsCommissions');
                     const cogsOther = calc(m, 'cogsOther');
-                    const opexPayroll = calc(m, 'opexPayroll');
-                    const ownersBasePay = calc(m, 'ownersBasePay');
+                    const payroll = calc(m, 'payroll');
+                    const ownerBasePay = calc(m, 'ownerBasePay');
                     const ownersRetirement = calc(m, 'ownersRetirement');
-                    const professionalServices = calc(m, 'professionalServices');
-                    const rentLease = calc(m, 'rentLease');
-                    const utilities = calc(m, 'utilities');
-                    const equipment = calc(m, 'equipment');
-                    const travel = calc(m, 'travel');
+                    const professionalFees = calc(m, 'professionalFees');
+                    const rent = calc(m, 'rent');
+                    const infrastructure = calc(m, 'utilities');
+                    const autoTravel = calc(m, 'travel');
                     const insurance = calc(m, 'insurance');
-                    const opexSalesMarketing = calc(m, 'opexSalesMarketing');
-                    const contractorsDistribution = calc(m, 'contractorsDistribution');
-                    const depreciationExpense = calc(m, 'depreciationExpense');
-                    const opexOther = calc(m, 'opexOther');
+                    const salesExpense = calc(m, 'salesExpense');
+                    const subcontractors = calc(m, 'subcontractors');
+                    const depreciationAmortization = calc(m, 'depreciationAmortization');
+                    const marketing = calc(m, 'marketing');
                     const interestExpense = calc(m, 'interestExpense');
                     const nonOperatingIncome = calc(m, 'nonOperatingIncome');
                     const extraordinaryItems = calc(m, 'extraordinaryItems');
                     const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                    const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + rentLease + utilities + equipment + travel + insurance + opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                    const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing;
                     const grossProfit = revenue - cogs;
                     const operatingIncome = grossProfit - totalOpex;
                     const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, opexPayroll, ownersBasePay, ownersRetirement, professionalServices, rentLease, utilities, equipment, travel, insurance, opexSalesMarketing, contractorsDistribution, depreciationExpense, opexOther, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
+                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
                   });
                   const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -19218,19 +20149,18 @@ export default function FinancialScorePage() {
                           })}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                        {periodsData.some(p => p.opexPayroll > 0) && <RowWithPercent label="Payroll" values={periodsData.map(p => p.opexPayroll)} indent={20} />}
-                        {periodsData.some(p => p.ownersBasePay > 0) && <RowWithPercent label="Owner's Base Pay" values={periodsData.map(p => p.ownersBasePay)} indent={20} />}
+                        {periodsData.some(p => p.payroll > 0) && <RowWithPercent label="Payroll" values={periodsData.map(p => p.payroll)} indent={20} />}
+                        {periodsData.some(p => p.ownerBasePay > 0) && <RowWithPercent label="Owner's Base Pay" values={periodsData.map(p => p.ownerBasePay)} indent={20} />}
                         {periodsData.some(p => p.ownersRetirement > 0) && <RowWithPercent label="Owner's Retirement" values={periodsData.map(p => p.ownersRetirement)} indent={20} />}
-                        {periodsData.some(p => p.professionalServices > 0) && <RowWithPercent label="Professional Services" values={periodsData.map(p => p.professionalServices)} indent={20} />}
-                        {periodsData.some(p => p.rentLease > 0) && <RowWithPercent label="Rent/Lease" values={periodsData.map(p => p.rentLease)} indent={20} />}
-                        {periodsData.some(p => p.utilities > 0) && <RowWithPercent label="Utilities" values={periodsData.map(p => p.utilities)} indent={20} />}
-                        {periodsData.some(p => p.equipment > 0) && <RowWithPercent label="Equipment" values={periodsData.map(p => p.equipment)} indent={20} />}
-                        {periodsData.some(p => p.travel > 0) && <RowWithPercent label="Travel" values={periodsData.map(p => p.travel)} indent={20} />}
+                        {periodsData.some(p => p.professionalFees > 0) && <RowWithPercent label="Professional Services" values={periodsData.map(p => p.professionalFees)} indent={20} />}
+                        {periodsData.some(p => p.rent > 0) && <RowWithPercent label="Rent/Lease" values={periodsData.map(p => p.rent)} indent={20} />}
+                        {periodsData.some(p => p.infrastructure > 0) && <RowWithPercent label="Infrastructure/Utilities" values={periodsData.map(p => p.infrastructure)} indent={20} />}
+                        {periodsData.some(p => p.autoTravel > 0) && <RowWithPercent label="Auto & Travel" values={periodsData.map(p => p.autoTravel)} indent={20} />}
                         {periodsData.some(p => p.insurance > 0) && <RowWithPercent label="Insurance" values={periodsData.map(p => p.insurance)} indent={20} />}
-                        {periodsData.some(p => p.opexSalesMarketing > 0) && <RowWithPercent label="Sales & Marketing" values={periodsData.map(p => p.opexSalesMarketing)} indent={20} />}
-                        {periodsData.some(p => p.contractorsDistribution > 0) && <RowWithPercent label="Contractors - Distribution" values={periodsData.map(p => p.contractorsDistribution)} indent={20} />}
-                        {periodsData.some(p => p.depreciationExpense > 0) && <RowWithPercent label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationExpense)} indent={20} />}
-                        {periodsData.some(p => p.opexOther > 0) && <RowWithPercent label="Other Operating Expenses" values={periodsData.map(p => p.opexOther)} indent={20} />}
+                        {periodsData.some(p => p.salesExpense > 0) && <RowWithPercent label="Sales & Marketing" values={periodsData.map(p => p.salesExpense)} indent={20} />}
+                        {periodsData.some(p => p.subcontractors > 0) && <RowWithPercent label="Contractors - Distribution" values={periodsData.map(p => p.subcontractors)} indent={20} />}
+                        {periodsData.some(p => p.depreciationAmortization > 0) && <RowWithPercent label="Depreciation & Amortization" values={periodsData.map(p => p.depreciationAmortization)} indent={20} />}
+                        {periodsData.some(p => p.marketing > 0) && <RowWithPercent label="Other Operating Expenses" values={periodsData.map(p => p.marketing)} indent={20} />}
                         <RowWithPercent label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Operating Income</div>
@@ -19283,23 +20213,22 @@ export default function FinancialScorePage() {
                 
                 const grossProfit = revenue - cogs;
                 
-                const opexPayroll = periodMonths.reduce((sum, m) => sum + (m.opexPayroll || 0), 0);
-                const ownersBasePay = periodMonths.reduce((sum, m) => sum + (m.ownersBasePay || 0), 0);
+                const payroll = periodMonths.reduce((sum, m) => sum + (m.payroll || 0), 0);
+                const ownerBasePay = periodMonths.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
                 const ownersRetirement = periodMonths.reduce((sum, m) => sum + (m.ownersRetirement || 0), 0);
-                const professionalServices = periodMonths.reduce((sum, m) => sum + (m.professionalServices || 0), 0);
-                const rentLease = periodMonths.reduce((sum, m) => sum + (m.rentLease || 0), 0);
-                const utilities = periodMonths.reduce((sum, m) => sum + (m.utilities || 0), 0);
-                const equipment = periodMonths.reduce((sum, m) => sum + (m.equipment || 0), 0);
-                const travel = periodMonths.reduce((sum, m) => sum + (m.travel || 0), 0);
+                const professionalFees = periodMonths.reduce((sum, m) => sum + (m.professionalFees || 0), 0);
+                const rent = periodMonths.reduce((sum, m) => sum + (m.rent || 0), 0);
+                const infrastructure = periodMonths.reduce((sum, m) => sum + (m.infrastructure || 0), 0);
+                const autoTravel = periodMonths.reduce((sum, m) => sum + (m.autoTravel || 0), 0);
                 const insurance = periodMonths.reduce((sum, m) => sum + (m.insurance || 0), 0);
-                const opexSalesMarketing = periodMonths.reduce((sum, m) => sum + (m.opexSalesMarketing || 0), 0);
-                const contractorsDistribution = periodMonths.reduce((sum, m) => sum + (m.contractorsDistribution || 0), 0);
-                const depreciationExpense = periodMonths.reduce((sum, m) => sum + (m.depreciationExpense || 0), 0);
-                const opexOther = periodMonths.reduce((sum, m) => sum + (m.opexOther || 0), 0);
+                const salesExpense = periodMonths.reduce((sum, m) => sum + (m.salesExpense || 0), 0);
+                const subcontractors = periodMonths.reduce((sum, m) => sum + (m.subcontractors || 0), 0);
+                const depreciationAmortization = periodMonths.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
+                const marketing = periodMonths.reduce((sum, m) => sum + (m.marketing || 0), 0);
                 
-                const totalOpex = opexPayroll + ownersBasePay + ownersRetirement + professionalServices + 
-                                 rentLease + utilities + equipment + travel + insurance + 
-                                 opexSalesMarketing + contractorsDistribution + depreciationExpense + opexOther;
+                const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
+                                 rent + infrastructure + autoTravel + insurance + 
+                                 salesExpense + subcontractors + depreciationAmortization + marketing;
                 
                 const operatingIncome = grossProfit - totalOpex;
                 
@@ -19394,18 +20323,18 @@ export default function FinancialScorePage() {
                       {/* Operating Expenses */}
                       <div style={{ marginTop: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Operating Expenses</div>
-                        {opexPayroll > 0 && (
+                        {payroll > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Payroll</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexPayroll)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(payroll)}</div>
                           </div>
                         )}
-                        {ownersBasePay > 0 && (
+                        {ownerBasePay > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Owner's Base Pay</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersBasePay)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownerBasePay)}</div>
                           </div>
                         )}
                         {ownersRetirement > 0 && (
@@ -19415,38 +20344,38 @@ export default function FinancialScorePage() {
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersRetirement)}</div>
                           </div>
                         )}
-                        {professionalServices > 0 && (
+                        {professionalFees > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Professional Services</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalServices.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalServices)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalFees)}</div>
                           </div>
                         )}
-                        {rentLease > 0 && (
+                        {rent > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Rent/Lease</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${rentLease.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rentLease)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rent)}</div>
                           </div>
                         )}
-                        {utilities > 0 && (
+                        {infrastructure > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Utilities</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${utilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ color: '#64748b' }}>Infrastructure</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(utilities)}</div>
                           </div>
                         )}
-                        {equipment > 0 && (
+                        {infrastructure > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Equipment</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${equipment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ color: '#64748b' }}>Infrastructure</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(equipment)}</div>
                           </div>
                         )}
-                        {travel > 0 && (
+                        {autoTravel > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Travel</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${travel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ color: '#64748b' }}>Auto & Travel</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(travel)}</div>
                           </div>
                         )}
@@ -19457,32 +20386,32 @@ export default function FinancialScorePage() {
                             <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(insurance)}</div>
                           </div>
                         )}
-                        {opexSalesMarketing > 0 && (
+                        {salesExpense > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Sales & Marketing</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexSalesMarketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexSalesMarketing)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(salesExpense)}</div>
                           </div>
                         )}
-                        {contractorsDistribution > 0 && (
+                        {subcontractors > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Contractors - Distribution</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${contractorsDistribution.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(contractorsDistribution)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(subcontractors)}</div>
                           </div>
                         )}
-                        {depreciationExpense > 0 && (
+                        {depreciationAmortization > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Depreciation & Amortization</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationExpense)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationAmortization)}</div>
                           </div>
                         )}
-                        {opexOther > 0 && (
+                        {marketing > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                             <div style={{ color: '#64748b' }}>Other Operating Expenses</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${opexOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(opexOther)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(marketing)}</div>
                           </div>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>

@@ -96,7 +96,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS Payroll</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS - Payroll</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                         ${(m.cogsPayroll || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -104,7 +104,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS Owner Pay</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS - Owner Pay</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                         ${(m.cogsOwnerPay || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -112,7 +112,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS Contractors</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS - Contractors</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                         ${(m.cogsContractors || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -120,7 +120,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS Materials</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS - Materials</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                         ${(m.cogsMaterials || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -128,7 +128,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS Commissions</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS - Commissions</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                         ${(m.cogsCommissions || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -136,7 +136,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS Other</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>COGS - Other</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                         ${(m.cogsOther || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -144,7 +144,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#fef9c3' }}>
-                    <td style={{ padding: '8px 10px', fontWeight: '700', position: 'sticky', left: 0, background: '#fef9c3', zIndex: 1 }}>Total COGS</td>
+                    <td style={{ padding: '8px 10px', fontWeight: '700', position: 'sticky', left: 0, background: '#fef9c3', zIndex: 1 }}>COGS - Total</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
                         ${(m.cogsTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -176,7 +176,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Payroll</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.opexPayroll || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.payroll || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -184,7 +184,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Owner Base Pay</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.ownersBasePay || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.ownerBasePay || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -208,7 +208,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Professional Fees</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.professionalServices || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.professionalFees || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -216,7 +216,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Subcontractors</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.contractorsDistribution || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.subcontractors || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -224,7 +224,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Rent</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.rentLease || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.rent || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -237,7 +237,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Phone & Comm</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Phone & Communication</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                         ${(m.phoneComm || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -245,10 +245,10 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Infrastructure</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Infrastructure/Utilities</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.equipment || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.infrastructure || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -256,15 +256,15 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Auto & Travel</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.travel || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.autoTravel || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Sales Expense</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Sales & Marketing</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.opexSalesMarketing || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.salesExpense || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -272,12 +272,12 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Marketing</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.opexOther || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.marketing || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
                   <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Training & Cert</td>
+                    <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Training & Certification</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                         ${(m.trainingCert || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -304,7 +304,7 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                     <td style={{ padding: '8px 10px', paddingLeft: '20px', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Depreciation & Amortization</td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ${(m.depreciationExpense || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${(m.depreciationAmortization || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -319,20 +319,26 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                   <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#e0f2fe' }}>
                     <td style={{ padding: '8px 10px', fontWeight: '700', position: 'sticky', left: 0, background: '#e0f2fe', zIndex: 1 }}>Total Operating Expenses</td>
                     {monthly.slice(-36).map((m: any, idx: number) => {
-                      const totalOpex = (m.opexPayroll || 0) + 
-                                      (m.ownersBasePay || 0) + 
+                      const totalOpex = (m.payroll || 0) + 
+                                      (m.ownerBasePay || 0) + 
                                       (m.ownersRetirement || 0) + 
-                                      (m.professionalServices || 0) + 
-                                      (m.rentLease || 0) + 
+                                      (m.professionalFees || 0) + 
+                                      (m.rent || 0) + 
                                       (m.utilities || 0) + 
-                                      (m.equipment || 0) + 
-                                      (m.travel || 0) + 
+                                      (m.infrastructure || 0) + 
+                                      (m.autoTravel || 0) + 
                                       (m.insurance || 0) + 
-                                      (m.opexSalesMarketing || 0) + 
-                                      (m.contractorsDistribution || 0) + 
-                                      (m.depreciationExpense || 0) + 
+                                      (m.salesExpense || 0) + 
+                                      (m.subcontractors || 0) + 
+                                      (m.depreciationAmortization || 0) + 
                                       (m.interestExpense || 0) + 
-                                      (m.opexOther || 0);
+                                      (m.marketing || 0) + 
+                                      (m.benefits || 0) + 
+                                      (m.taxLicense || 0) + 
+                                      (m.phoneComm || 0) + 
+                                      (m.trainingCert || 0) + 
+                                      (m.mealsEntertainment || 0) + 
+                                      (m.otherExpense || 0);
                       return (
                         <td key={idx} style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
                           ${totalOpex.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -345,20 +351,26 @@ export default function DataReviewTab({ monthly, companyName }: DataReviewTabPro
                   <tr style={{ borderBottom: '3px solid #10b981', background: '#10b981', color: 'white' }}>
                     <td style={{ padding: '12px 10px', fontWeight: '700', fontSize: '15px', position: 'sticky', left: 0, background: '#10b981', zIndex: 1 }}>NET INCOME</td>
                     {monthly.slice(-36).map((m: any, idx: number) => {
-                      const totalOpex = (m.opexPayroll || 0) + 
-                                      (m.ownersBasePay || 0) + 
+                      const totalOpex = (m.payroll || 0) + 
+                                      (m.ownerBasePay || 0) + 
                                       (m.ownersRetirement || 0) + 
-                                      (m.professionalServices || 0) + 
-                                      (m.rentLease || 0) + 
+                                      (m.professionalFees || 0) + 
+                                      (m.rent || 0) + 
                                       (m.utilities || 0) + 
-                                      (m.equipment || 0) + 
-                                      (m.travel || 0) + 
+                                      (m.infrastructure || 0) + 
+                                      (m.autoTravel || 0) + 
                                       (m.insurance || 0) + 
-                                      (m.opexSalesMarketing || 0) + 
-                                      (m.contractorsDistribution || 0) + 
-                                      (m.depreciationExpense || 0) + 
+                                      (m.salesExpense || 0) + 
+                                      (m.subcontractors || 0) + 
+                                      (m.depreciationAmortization || 0) + 
                                       (m.interestExpense || 0) + 
-                                      (m.opexOther || 0);
+                                      (m.marketing || 0) + 
+                                      (m.benefits || 0) + 
+                                      (m.taxLicense || 0) + 
+                                      (m.phoneComm || 0) + 
+                                      (m.trainingCert || 0) + 
+                                      (m.mealsEntertainment || 0) + 
+                                      (m.otherExpense || 0);
                       const netIncome = (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
                       return (
                         <td key={idx} style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', fontSize: '15px' }}>
