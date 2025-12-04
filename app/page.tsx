@@ -13548,15 +13548,18 @@ export default function FinancialScorePage() {
                   </h2>
                 </div>
 
-                {/* Mapping Table */}
-                <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
-                  <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-                    <thead style={{ position: 'sticky', top: 0, background: 'white', zIndex: 10 }}>
-                      <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                        <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Account Type</th>
-                        <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Account Name</th>
-                        <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
-                        {linesOfBusiness.filter(lob => lob.trim() !== '').length > 0 && (
+                <AccountMappingTable
+                  mappings={aiMappings}
+                  linesOfBusiness={linesOfBusiness}
+                  onMappingChange={(index, updates) => {
+                    const updated = [...aiMappings];
+                    updated[index] = { ...updated[index], ...updates };
+                    setAiMappings(updated);
+                  }}
+                />
+
+                {/* Bottom Action Buttons */}
+                <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
                           <>
                             {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, idx) => (
                               <th key={idx} style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '600', color: '#7c3aed', fontSize: '11px', background: '#f5f3ff', borderLeft: idx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: idx === linesOfBusiness.filter(l => l.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none' }}>
