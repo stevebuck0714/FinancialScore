@@ -34,6 +34,7 @@ import MAScoresSummaryView from './components/assessment/MAScoresSummaryView';
 import MAYourResultsView from './components/assessment/MAYourResultsView';
 import TextToSpeech from './components/common/TextToSpeech';
 import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
+import AccountMappingTable from './components/dashboard/AccountMappingTable';
 
 // Constants (now imported from ./constants)
 
