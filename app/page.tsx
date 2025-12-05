@@ -35,6 +35,7 @@ import MAYourResultsView from './components/assessment/MAYourResultsView';
 import TextToSpeech from './components/common/TextToSpeech';
 import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
 import AccountMappingTable from './components/dashboard/AccountMappingTable';
+import toast, { Toaster } from 'react-hot-toast';
 
 // Constants (now imported from ./constants)
 
@@ -3755,6 +3756,7 @@ export default function FinancialScorePage() {
 
   return (
     <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <Toaster />
       <InactivityLogout 
         isLoggedIn={isLoggedIn}
         userEmail={currentUser?.email}
@@ -6242,7 +6244,7 @@ export default function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && !csvTrialBalanceData && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '32px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
