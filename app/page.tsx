@@ -1887,7 +1887,8 @@ export default function FinancialScorePage() {
         userType: user.userType?.toLowerCase(),
         consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
         consultantType: user.consultantType, // Preserve consultant type
-        consultantId: user.consultantId // Preserve consultant ID
+        consultantId: user.consultantId, // Preserve consultant ID
+        isPrimaryContact: user.isPrimaryContact // Preserve primary contact status
       };
       
       setCurrentUser(normalizedUser);
