@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface AccountMapping {
   qbAccount: string;
@@ -21,7 +22,7 @@ export default function AccountMappingTable({
   linesOfBusiness,
   onMappingChange
 }: AccountMappingTableProps) {
-  
+
   const [collapsedSections, setCollapsedSections] = useState<{[key: string]: boolean}>({
     revenue: false,
     cogs: false,
@@ -30,8 +31,14 @@ export default function AccountMappingTable({
     liability: false,
     equity: false
   });
-  
+
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
+  const [isClient, setIsClient] = useState(false);
+
+  // Set isClient to true on mount to avoid SSR issues with createPortal
+  React.useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // Group mappings by classification
   const groupedMappings = {
@@ -156,50 +163,55 @@ export default function AccountMappingTable({
               <span style={{ fontSize: '10px', color: '#64748b' }}>{openTargetFieldDropdown === globalIdx ? '▲' : '▼'}</span>
             </button>
             
-            {openTargetFieldDropdown === globalIdx && (
+            {openTargetFieldDropdown === globalIdx && isClient && createPortal(
               <>
                 {/* Backdrop */}
-                <div 
+                <div
                   onClick={() => setOpenTargetFieldDropdown(null)}
-                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
+                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }}
                 />
                 {/* Dropdown */}
                 <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  zIndex: 100,
+                  position: 'fixed',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: 9999,
                   background: 'white',
                   border: '1px solid #e2e8f0',
                   borderRadius: '6px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                  minWidth: '200px',
-                  maxHeight: '300px',
-                  overflowY: 'auto',
-                  marginTop: '4px'
+                  boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+                  minWidth: '250px',
+                  maxHeight: '400px',
+                  overflowY: 'auto'
                 }}>
+                  <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: '600', color: '#374151' }}>
+                    Select Target Field
+                  </div>
                   {targetFieldOptions[sectionKey as keyof typeof targetFieldOptions]?.map(opt => (
-                    <div 
-                      key={opt.value} 
-                      onClick={() => { 
-                        onMappingChange(globalIdx, { targetField: opt.value }); 
-                        setOpenTargetFieldDropdown(null); 
+                    <div
+                      key={opt.value}
+                      onClick={() => {
+                        onMappingChange(globalIdx, { targetField: opt.value });
+                        setOpenTargetFieldDropdown(null);
                       }}
-                      style={{ 
-                        padding: '8px 12px', 
-                        cursor: 'pointer', 
-                        fontSize: '13px', 
-                        color: '#1e293b', 
-                        background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent' 
+                      style={{
+                        padding: '10px 16px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        color: '#1e293b',
+                        background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent',
+                        borderBottom: '1px solid #f3f4f6'
                       }}
-                      onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                      onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
                       onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
                     >
                       {opt.label}
                     </div>
                   ))}
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
         </td>
