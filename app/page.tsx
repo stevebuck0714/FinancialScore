@@ -11,7 +11,7 @@ import { parseDateLike, monthKey, sum, pctChange, getAssetSizeCategory } from '.
 import { clamp, revenueGrowthScore_24mo, rgsAdjustmentFrom6mo } from './utils/scoring';
 import { getBenchmarkValue, sixMonthGrowthFromMonthly, normalizeRows, ltmVsPrior } from './utils/data-processing';
 import { exportDataReviewToExcel, exportMonthlyRatiosToExcel } from './utils/excel-export';
-import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, AssessmentResponses, AssessmentNotes, AssessmentRecord, Consultant, User, FinancialDataRecord } from './types';
+import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, AssessmentResponses, AssessmentNotes, AssessmentRecord, Consultant, User, FinancialDataRecord, LOBData } from './types';
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
 import LoginView from './components/auth/LoginView';
@@ -24,6 +24,7 @@ import ProfileTab from './components/dashboard/ProfileTab';
 import LOBReportingTab from './components/dashboard/LOBReportingTab';
 import ConsultantDashboard from './components/consultant/ConsultantDashboard';
 import CompanyManagementTab from './components/admin/CompanyManagementTab';
+import CompanySettingsTab from './components/admin/CompanySettingsTab';
 import Header from './components/layout/Header';
 import SiteAdminDashboard from './components/siteadmin/SiteAdminDashboard';
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
@@ -226,7 +227,7 @@ export default function FinancialScorePage() {
   };
 
   // Handle admin dashboard tab navigation with payment gate
-  const handleAdminTabNavigation = (tab: 'company-management' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping') => {
+  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping') => {
     // Always allow payments tab
     if (tab === 'payments') {
       setAdminDashboardTab(tab);
@@ -351,7 +352,7 @@ export default function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('team-management');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
@@ -616,7 +617,7 @@ export default function FinancialScorePage() {
   const [isSavingMappings, setIsSavingMappings] = useState(false);
   
   // State - Lines of Business
-  const [linesOfBusiness, setLinesOfBusiness] = useState<string[]>(['', '', '', '', '']);
+  const [linesOfBusiness, setLinesOfBusiness] = useState<LOBData[]>([]);
   const [showMappingSection, setShowMappingSection] = useState(false);
   const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
@@ -1080,12 +1081,14 @@ export default function FinancialScorePage() {
             setAiMappings(loadedMappings);
             setShowMappingSection(true);
           }
-          if (data.linesOfBusiness && data.linesOfBusiness.length > 0) {
+          if (data.linesOfBusiness && Array.isArray(data.linesOfBusiness) && data.linesOfBusiness.length > 0) {
             console.log('✅ Loaded saved Lines of Business:', data.linesOfBusiness);
-            // Pad to 5 entries
-            const paddedLobs = [...data.linesOfBusiness];
-            while (paddedLobs.length < 5) paddedLobs.push('');
-            setLinesOfBusiness(paddedLobs);
+            // Convert from stored format to LOBData format
+            const lobData = data.linesOfBusiness.map((lob: any) => ({
+              name: typeof lob === 'string' ? lob : (lob.name || ''),
+              headcountPercentage: typeof lob === 'object' ? (lob.headcountPercentage || 0) : 0
+            })).filter((lob: LOBData) => lob.name.trim() !== '');
+            setLinesOfBusiness(lobData);
           }
         })
         .catch(err => {
@@ -1437,9 +1440,14 @@ export default function FinancialScorePage() {
             if (mappings && mappings.length > 0) {
               console.log('Loaded saved account mappings:', mappings);
               setAiMappings(mappings);
-              if (savedLobs && savedLobs.length > 0) {
+              if (savedLobs && Array.isArray(savedLobs) && savedLobs.length > 0) {
                 console.log('Loaded saved Lines of Business:', savedLobs);
-                setLinesOfBusiness(savedLobs);
+              // Convert from stored format to LOBData format
+              const lobData = savedLobs.map((lob: any) => ({
+                name: typeof lob === 'string' ? lob : (lob.name || ''),
+                headcountPercentage: typeof lob === 'object' ? (lob.headcountPercentage || 0) : 0
+              })).filter((lob: LOBData) => lob.name.trim() !== '');
+              setLinesOfBusiness(lobData);
               }
               setShowMappingSection(true);
             }
@@ -4911,6 +4919,23 @@ export default function FinancialScorePage() {
               Company Management
             </button>
             <button
+              onClick={() => handleAdminTabNavigation('company-settings')}
+              style={{
+                padding: '12px 24px',
+                background: adminDashboardTab === 'company-settings' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'company-settings' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'company-settings' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Company Settings
+            </button>
+            <button
               onClick={() => handleAdminTabNavigation('payments')}
               style={{
                 padding: '12px 24px',
@@ -5033,7 +5058,19 @@ export default function FinancialScorePage() {
               setIsLoading={setIsLoading}
             />
           )}
-          
+
+          {/* Company Settings Tab */}
+          {adminDashboardTab === 'company-settings' && selectedCompanyId && (
+            <CompanySettingsTab
+              selectedCompanyId={selectedCompanyId}
+              companies={companies}
+              onLOBChange={(lobData: LOBData[]) => {
+                setLinesOfBusiness(lobData);
+              }}
+              initialLOBs={linesOfBusiness}
+            />
+          )}
+
           {/* Import Financials Tab */}
           {adminDashboardTab === 'import-financials' && selectedCompanyId && (
             <>
@@ -13545,11 +13582,11 @@ export default function FinancialScorePage() {
       {/* CSV Trial Balance Data Mapping View - Show when CSV data is loaded OR when there are saved mappings */}
       {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && (csvTrialBalanceData?._companyId === selectedCompanyId || (aiMappings.length > 0 && showMappingSection))) && (() => {
         const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
-        
+
         // Get accounts for mapping from CSV data (if available)
         const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
         const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
-        
+
         return (
           <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -13557,50 +13594,12 @@ export default function FinancialScorePage() {
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              {hasCsvData 
+              {hasCsvData
                 ? `Map Trial Balance accounts to your standardized financial fields • Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} • ${csvTrialBalanceData.dates?.length || 0} periods`
                 : `${aiMappings.length} saved account mappings loaded from database`
               }
             </p>
 
-            {/* Lines of Business Section */}
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                  Lines of Business
-                </h2>
-                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-                  Define up to 5 lines of business to allocate revenue and expenses for detailed reporting
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                  {linesOfBusiness.map((lob, index) => (
-                    <div key={index}>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        Line of Business {index + 1}
-                      </label>
-                      <input
-                        type="text"
-                        value={lob}
-                        onChange={(e) => {
-                          const updated = [...linesOfBusiness];
-                          updated[index] = e.target.value;
-                          setLinesOfBusiness(updated);
-                        }}
-                        placeholder={`e.g., ${index === 0 ? 'Consulting' : index === 1 ? 'Products' : index === 2 ? 'Services' : index === 3 ? 'Training' : 'Other'}`}
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          color: '#1e293b'
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
 
             {/* AI-Assisted Mapping Section for CSV */}
             {hasCsvData && (
@@ -14025,44 +14024,6 @@ export default function FinancialScorePage() {
               Map QuickBooks accounts to your standardized financial fields • Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
             </p>
 
-            {/* Lines of Business Section */}
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                  Lines of Business
-                </h2>
-                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-                  Define up to 5 lines of business to allocate revenue and expenses for detailed reporting
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                  {linesOfBusiness.map((lob, index) => (
-                    <div key={index}>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        Line of Business {index + 1}
-                      </label>
-                      <input
-                        type="text"
-                        value={lob}
-                        onChange={(e) => {
-                          const updated = [...linesOfBusiness];
-                          updated[index] = e.target.value;
-                          setLinesOfBusiness(updated);
-                        }}
-                        placeholder={`e.g., ${index === 0 ? 'Consulting' : index === 1 ? 'Products' : index === 2 ? 'Services' : index === 3 ? 'Training' : 'Other'}`}
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          color: '#1e293b'
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
 
             {/* AI-Assisted Mapping Section */}
             <div style={{ marginBottom: '32px' }}>
@@ -14306,7 +14267,7 @@ export default function FinancialScorePage() {
                             <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#1e293b', width: '20%' }}>QuickBooks Account</th>
                             <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', color: '#1e293b', width: '10%' }}>Amount</th>
                             <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#1e293b', width: '15%' }}>Target Field</th>
-                            <th colSpan={linesOfBusiness.filter(lob => lob.trim() !== '').length || 1} style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#1e293b', borderLeft: '2px solid #e2e8f0', borderRight: '2px solid #e2e8f0' }}>
+                            <th colSpan={linesOfBusiness.filter(lob => lob.name.trim() !== '').length || 1} style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#1e293b', borderLeft: '2px solid #e2e8f0', borderRight: '2px solid #e2e8f0' }}>
                               Line of Business Allocation (%)
                             </th>
                             <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#1e293b', width: '7%' }}>Total %</th>
@@ -14314,10 +14275,10 @@ export default function FinancialScorePage() {
                           </tr>
                           <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                             <th colSpan={4}></th>
-                            {linesOfBusiness.filter(lob => lob.trim() !== '').length > 0 ? (
-                              linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, idx) => (
-                                <th key={idx} style={{ padding: '8px 4px', textAlign: 'center', fontSize: '11px', fontWeight: '600', color: '#475569', borderLeft: idx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: idx === linesOfBusiness.filter(l => l.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none', background: '#f8fafc' }}>
-                                  {lob}
+                            {linesOfBusiness.filter(lob => lob.name.trim() !== '').length > 0 ? (
+                              linesOfBusiness.filter(lob => lob.name.trim() !== '').map((lob, idx) => (
+                                <th key={idx} style={{ padding: '8px 4px', textAlign: 'center', fontSize: '11px', fontWeight: '600', color: '#475569', borderLeft: idx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: idx === linesOfBusiness.filter(l => l.name.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none', background: '#f8fafc' }}>
+                                  {lob.name}
                                 </th>
                               ))
                             ) : (
@@ -14448,10 +14409,10 @@ export default function FinancialScorePage() {
                                       </optgroup>
                                     </select>
                                   </td>
-                                  {linesOfBusiness.filter(lob => lob.trim() !== '').length > 0 ? (
-                                    linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, lobIdx) => {
+                                  {linesOfBusiness.filter(lob => lob.name.trim() !== '').length > 0 ? (
+                                    linesOfBusiness.filter(lob => lob.name.trim() !== '').map((lob, lobIdx) => {
                                       const lobAllocations = mapping.lobAllocations || {};
-                                      const currentPercent = lobAllocations[lob] !== undefined ? lobAllocations[lob] : 0;
+                                      const currentPercent = lobAllocations[lob.name] !== undefined ? lobAllocations[lob.name] : 0;
                                       const allAllocations = lobAllocations;
                                       const total = Object.values(allAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
                                       const isOverAllocated = total > 100;
@@ -14467,10 +14428,10 @@ export default function FinancialScorePage() {
                                             onChange={(e) => {
                                               const newValue = parseInt(e.target.value) || 0;
                                               const clamped = Math.min(Math.max(newValue, 0), 100);
-                                              const updated = aiMappings.map(m => 
-                                                m.qbAccount === mapping.qbAccount 
-                                                  ? { 
-                                                      ...m, 
+                                              const updated = aiMappings.map(m =>
+                                                m.qbAccount === mapping.qbAccount
+                                                  ? {
+                                                      ...m,
                                                       lobAllocations: {
                                                         ...(m.lobAllocations || {}),
                                                         [lob]: clamped
@@ -14632,7 +14593,7 @@ export default function FinancialScorePage() {
                                   body: JSON.stringify({
                                     companyId: selectedCompanyId,
                                     mappings: uniqueMappings,
-                                    linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== '')
+                                    linesOfBusiness: linesOfBusiness.filter(lob => lob.name.trim() !== '')
                                   })
                                 });
 

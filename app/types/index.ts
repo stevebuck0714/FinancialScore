@@ -258,3 +258,8 @@ export interface FinancialDataRecord {
   mapping: Mappings;
   fileName: string;
 }
+
+export interface LOBData {
+  name: string;
+  headcountPercentage: number;
+}
