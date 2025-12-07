@@ -13734,6 +13734,11 @@ export default function FinancialScorePage() {
                             return;
                           }
 
+                          if (!currentUser) {
+                            alert('User not logged in!');
+                            return;
+                          }
+
                           setIsProcessingMonthlyData(true);
                           try {
                             console.log('📊 Processing CSV/Trial Balance data using mappings...');
@@ -13748,8 +13753,11 @@ export default function FinancialScorePage() {
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
                                 companyId: selectedCompanyId,
-                                monthlyData: processedData,
-                                source: 'csv_trial_balance'
+                                uploadedByUserId: currentUser.id,
+                                fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
+                                rawData: csvTrialBalanceData,
+                                columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
+                                monthlyData: processedData
                               })
                             });
 
