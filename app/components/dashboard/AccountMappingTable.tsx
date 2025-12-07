@@ -20,12 +20,14 @@ interface LOBData {
 interface AccountMappingTableProps {
   mappings: AccountMapping[];
   linesOfBusiness: LOBData[];
+  userDefinedAllocations?: { lobName: string; percentage: number }[];
   onMappingChange: (index: number, updates: Partial<AccountMapping>) => void;
 }
 
 export default function AccountMappingTable({
   mappings,
   linesOfBusiness,
+  userDefinedAllocations = [],
   onMappingChange
 }: AccountMappingTableProps) {
 
@@ -134,7 +136,7 @@ export default function AccountMappingTable({
   const renderMappingRow = (mapping: AccountMapping, sectionKey: string) => {
     const globalIdx = mappings.indexOf(mapping);
     const lobAllocations = mapping.lobAllocations || {};
-    const total = Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
+    const total = Math.round(Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0));
     const isOverAllocated = total > 100;
     const isUnderAllocated = total < 100 && total > 0;
     const activeLOBs = linesOfBusiness.filter(lob => lob && lob.name && lob.name.trim() !== '');
@@ -249,6 +251,46 @@ export default function AccountMappingTable({
                   equalAllocations[lob.name] = equalPercent;
                 });
                 updates.lobAllocations = equalAllocations;
+              } else if (newMethod === 'user-defined') {
+                // Apply user-defined allocations from company settings
+                const userDefinedAllocationsMap: { [lobName: string]: number } = {};
+                userDefinedAllocations.forEach((alloc) => {
+                  if (alloc.lobName && alloc.percentage > 0) {
+                    userDefinedAllocationsMap[alloc.lobName] = alloc.percentage;
+                  }
+                });
+                updates.lobAllocations = userDefinedAllocationsMap;
+              } else if (newMethod === 'average') {
+                // Apply average allocations from other accounts in the same classification
+                const averageAllocations: { [lobName: string]: number } = {};
+                const activeLOBs = linesOfBusiness.filter(lob => lob.name && lob.name.trim() !== '');
+
+                // Find all accounts with the same classification as this one
+                const sectionMappings = groupedMappings[sectionKey as keyof typeof groupedMappings];
+                const otherMappings = sectionMappings.filter(m => m !== mapping);
+
+                // Calculate averages for each LOB
+                activeLOBs.forEach((lob) => {
+                  const lobValues: number[] = [];
+
+                  // Collect allocation values for this LOB from other accounts
+                  otherMappings.forEach(otherMapping => {
+                    const otherAllocations = otherMapping.lobAllocations || {};
+                    const value = otherAllocations[lob.name];
+                    if (value !== undefined && value > 0) {
+                      lobValues.push(value);
+                    }
+                  });
+
+                  // Calculate average, default to 0 if no data
+                  const average = lobValues.length > 0
+                    ? Math.round((lobValues.reduce((sum, val) => sum + val, 0) / lobValues.length) * 10) / 10
+                    : 0;
+
+                  averageAllocations[lob.name] = average;
+                });
+
+                updates.lobAllocations = averageAllocations;
               }
 
               onMappingChange(globalIdx, updates);
@@ -266,6 +308,7 @@ export default function AccountMappingTable({
             <option value="user-defined">User Defined</option>
             <option value="headcount">Headcount Based</option>
             <option value="equal">Equal Distribution</option>
+            <option value="average">Average Allocation</option>
           </select>
         </td>
 

@@ -16,6 +16,12 @@ export interface AccountMapping {
   qbAccountId?: string | null;
   targetField: string;
   lobAllocations?: any; // { "LOB Name": percentage, ... }
+  allocationMethod?: string; // 'manual', 'headcount', etc.
+}
+
+export interface CompanyLOB {
+  name: string;
+  headcountPercentage: number;
 }
 
 export interface LOBBreakdown {
@@ -41,14 +47,16 @@ export interface MonthlyLOBData {
 
 /**
  * Process account values and apply LOB allocations
- * 
+ *
  * @param accountValues - Array of account values for a specific month
  * @param accountMappings - Array of account mappings with LOB allocations
+ * @param companyLOBs - Array of company LOBs with headcount percentages
  * @returns Processed data with totals and LOB breakdowns
  */
 export function applyLOBAllocations(
   accountValues: AccountValue[],
-  accountMappings: AccountMapping[]
+  accountMappings: AccountMapping[],
+  companyLOBs: CompanyLOB[] = []
 ): MonthlyLOBData {
   // Initialize result structure
   const totals: { [fieldName: string]: number } = {};
@@ -89,10 +97,23 @@ export function applyLOBAllocations(
     // Add to total
     totals[targetField] += amount;
 
-    // Apply LOB allocations if they exist
-    if (mapping.lobAllocations && typeof mapping.lobAllocations === 'object') {
+    // Apply LOB allocations based on allocation method
+    if (mapping.allocationMethod === 'headcount' && companyLOBs.length > 0) {
+      // Use headcount-based allocation
+      for (const companyLOB of companyLOBs) {
+        if (companyLOB.name.trim() !== '' && companyLOB.headcountPercentage > 0) {
+          const lobAmount = (amount * companyLOB.headcountPercentage) / 100;
+
+          if (!breakdowns[targetField][companyLOB.name]) {
+            breakdowns[targetField][companyLOB.name] = 0;
+          }
+          breakdowns[targetField][companyLOB.name] += lobAmount;
+        }
+      }
+    } else if (mapping.lobAllocations && typeof mapping.lobAllocations === 'object') {
+      // Use manual LOB allocations
       const lobAllocations = mapping.lobAllocations as { [lob: string]: number };
-      
+
       // Validate that percentages add up to 100 (with small tolerance for rounding)
       const totalPercentage = Object.values(lobAllocations).reduce((sum, pct) => sum + pct, 0);
       if (Math.abs(totalPercentage - 100) > 0.01 && totalPercentage > 0) {
@@ -105,7 +126,7 @@ export function applyLOBAllocations(
       for (const [lobName, percentage] of Object.entries(lobAllocations)) {
         if (percentage > 0) {
           const lobAmount = (amount * percentage) / 100;
-          
+
           if (!breakdowns[targetField][lobName]) {
             breakdowns[targetField][lobName] = 0;
           }
@@ -116,7 +137,7 @@ export function applyLOBAllocations(
       // No LOB allocation - this amount goes to "unallocated" or could be distributed equally
       // For now, we'll just track it in totals but not in any specific LOB
       // Alternatively, you could add it to a default "General" LOB
-      
+
       // Option: Add to "Unallocated" LOB
       const unallocatedLOB = 'Unallocated';
       if (!breakdowns[targetField][unallocatedLOB]) {

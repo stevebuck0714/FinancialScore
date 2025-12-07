@@ -3,6 +3,7 @@ import OAuthClient from 'intuit-oauth';
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
 import { createMonthlyRecords } from '@/lib/quickbooks-parser';
+import { CompanyLOB } from '@/lib/lob-allocator';
 import { emitSyncStatus } from '@/lib/websocket-emit';
 
 // Decrypt OAuth tokens using modern cipher
@@ -374,9 +375,27 @@ export async function POST(request: NextRequest) {
         qbAccountId: true,
         targetField: true,
         lobAllocations: true,
+        allocationMethod: true,
       },
     });
     console.log(`✅ Found ${accountMappings.length} account mappings (${accountMappings.filter(m => m.lobAllocations).length} with LOB allocations)`);
+
+    // Fetch company LOBs with headcount percentages
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { linesOfBusiness: true },
+    });
+
+    let companyLOBs: CompanyLOB[] = [];
+    if (company?.linesOfBusiness && Array.isArray(company.linesOfBusiness)) {
+      companyLOBs = company.linesOfBusiness
+        .filter((lob: any) => typeof lob === 'object' && lob.name && lob.name.trim() !== '')
+        .map((lob: any) => ({
+          name: lob.name,
+          headcountPercentage: lob.headcountPercentage || 0
+        }));
+    }
+    console.log(`✅ Found ${companyLOBs.length} company LOBs with headcount data`);
 
     // Create a financial record
     const financialRecord = await prisma.financialRecord.create({
@@ -399,7 +418,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Parse and create monthly financial records with LOB allocations
-    const parsedRecords = createMonthlyRecords(plData, bsData, financialRecord.id, 36, accountMappings as any);
+    const parsedRecords = createMonthlyRecords(plData, bsData, financialRecord.id, 36, accountMappings as any, companyLOBs);
     
     if (parsedRecords.length > 0) {
       const monthlyRecords = parsedRecords.map(record => ({

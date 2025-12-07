@@ -1,46 +1,38 @@
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
 
-async function main() {
-  const companies = await prisma.company.findMany({
-    include: {
-      consultant: {
-        select: { fullName: true, companyName: true }
-      },
-      users: {
-        select: { id: true, name: true, email: true }
-      },
-      _count: {
-        select: { users: true }
+async function checkCompanies() {
+  const prisma = new PrismaClient();
+
+  try {
+    const companies = await prisma.company.findMany({
+      select: {
+        id: true,
+        name: true,
+        affiliateCode: true,
+        subscriptionMonthlyPrice: true,
+        subscriptionQuarterlyPrice: true,
+        subscriptionAnnualPrice: true,
+        selectedSubscriptionPlan: true
       }
-    },
-    orderBy: { name: 'asc' }
-  });
+    });
 
-  console.log('');
-  console.log('=== COMPANIES LIST ===');
-  console.log('');
-  
-  companies.forEach(c => {
-    console.log('Company: ' + c.name);
-    console.log('  ID: ' + c.id);
-    if (c.consultant) {
-      console.log('  Managed by: ' + c.consultant.fullName + ' (' + c.consultant.companyName + ')');
-    } else {
-      console.log('  Managed by: (Standalone - no consultant)');
-    }
-    console.log('  Users (' + c._count.users + '):');
-    if (c.users.length > 0) {
-      c.users.forEach(u => {
-        console.log('    - ' + u.name + ' <' + u.email + '>');
-      });
-    } else {
-      console.log('    (none)');
-    }
-    console.log('');
-  });
-  
-  console.log('Total: ' + companies.length + ' companies');
+    console.log('=== COMPANIES AND AFFILIATE CODES ===');
+    console.log(`Found ${companies.length} companies:\n`);
+
+    companies.forEach((company, index) => {
+      console.log(`${index + 1}. ${company.name}`);
+      console.log(`   ID: ${company.id}`);
+      console.log(`   Affiliate Code: ${company.affiliateCode || 'NONE'}`);
+      console.log(`   Prices (M/Q/A): ${company.subscriptionMonthlyPrice}/${company.subscriptionQuarterlyPrice}/${company.subscriptionAnnualPrice}`);
+      console.log(`   Selected Plan: ${company.selectedSubscriptionPlan || 'NONE'}`);
+      console.log('');
+    });
+
+    await prisma.$disconnect();
+  } catch (error) {
+    console.error('Error checking companies:', error);
+    process.exit(1);
+  }
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect());
+checkCompanies();

@@ -1,7 +1,7 @@
 // QuickBooks Report Parser
 // Extracts financial data from QuickBooks P&L and Balance Sheet reports
 
-import { applyLOBAllocations, AccountValue, AccountMapping, roundAllBreakdowns, MonthlyLOBData } from './lob-allocator';
+import { applyLOBAllocations, AccountValue, AccountMapping, CompanyLOB, roundAllBreakdowns, MonthlyLOBData } from './lob-allocator';
 
 export interface ParsedFinancialData {
   monthDate: Date;
@@ -250,7 +250,8 @@ export function createMonthlyRecords(
   bsData: any,
   financialRecordId: string,
   monthsCount: number = 36,
-  accountMappings?: AccountMapping[]
+  accountMappings?: AccountMapping[],
+  companyLOBs?: CompanyLOB[]
 ): ParsedFinancialData[] {
   const records: ParsedFinancialData[] = [];
   
@@ -365,7 +366,7 @@ export function createMonthlyRecords(
       const allAccountValues = [...plAccountValues, ...bsAccountValues];
       
       // Apply LOB allocations
-      lobData = applyLOBAllocations(allAccountValues, accountMappings);
+      lobData = applyLOBAllocations(allAccountValues, accountMappings, companyLOBs || []);
       
       if (colIndex === 1) {
         console.log(`📊 LOB Allocation sample for first month:`);

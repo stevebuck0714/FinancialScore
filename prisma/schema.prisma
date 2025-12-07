@@ -57,7 +57,8 @@ model Company {
   subscriptionStartDate      DateTime?
   nextBillingDate            DateTime?
   lastBillingDate            DateTime?
-  linesOfBusiness            Json?                  // Array of LOB names defined for this company
+  linesOfBusiness            Json?                  // Array of LOB objects: [{name: string, headcountPercentage: number}]
+  userDefinedAllocations     Json?                  // Array of user-defined allocation percentages: [{lobName: string, percentage: number}]
   accountMappings            AccountMapping[]
   accountingConnections      AccountingConnection[]
   apiSyncLogs                ApiSyncLog[]
