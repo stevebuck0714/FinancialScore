@@ -26,6 +26,18 @@ export interface FieldBreakdowns {
   [fieldName: string]: LOBBreakdown;
 }
 
+export type AllocationMethodType = 'manual' | 'average' | 'headcount' | 'revenue';
+
+export interface AllocationMethod {
+  type: AllocationMethodType;
+}
+
+export interface CompanyContext {
+  linesOfBusiness: string[];
+  headcountAllocations?: { [lobName: string]: number };
+  revenueAllocations?: { [lobName: string]: number };
+}
+
 export interface MonthlyLOBData {
   // Totals by field
   totals: {
@@ -40,15 +52,168 @@ export interface MonthlyLOBData {
 }
 
 /**
+ * Get LOB allocations for an account based on the selected allocation method
+ */
+export function getLOBAllocationsForAccount(
+  mapping: AccountMapping,
+  linesOfBusiness: string[],
+  companyContext?: CompanyContext
+): { [lobName: string]: number } | null {
+
+  // If allocation method is not set, use manual allocations (existing behavior)
+  if (!mapping.allocationMethod) {
+    return mapping.lobAllocations as { [lobName: string]: number } | null;
+  }
+
+  const method = mapping.allocationMethod as AllocationMethod;
+
+  switch (method.type) {
+    case 'manual':
+      return mapping.lobAllocations as { [lobName: string]: number } | null;
+
+    case 'average':
+      return calculateAverageAllocations(linesOfBusiness);
+
+    case 'headcount':
+      return companyContext?.headcountAllocations || calculateAverageAllocations(linesOfBusiness);
+
+    case 'revenue':
+      return companyContext?.revenueAllocations || calculateAverageAllocations(linesOfBusiness);
+
+    default:
+      console.warn(`Unknown allocation method: ${method.type}`);
+      return mapping.lobAllocations as { [lobName: string]: number } | null;
+  }
+}
+
+/**
+ * Calculate average (equal) allocations across all LOBs
+ */
+export function calculateAverageAllocations(linesOfBusiness: string[]): { [lobName: string]: number } {
+  const count = linesOfBusiness.length;
+  if (count === 0) return {};
+
+  const basePercentage = Math.floor(100 / count);
+  const remainder = 100 - (basePercentage * count);
+
+  const allocations: { [lobName: string]: number } = {};
+  linesOfBusiness.forEach((lob, index) => {
+    allocations[lob] = basePercentage + (index < remainder ? 1 : 0);
+  });
+
+  return allocations;
+}
+
+/**
+ * Calculate revenue-based allocations using historical data and current revenue mappings
+ * This analyzes the last 12 months of revenue data, weighted by how revenue accounts are currently allocated
+ */
+export async function calculateRevenueBasedAllocations(companyId: string): Promise<{ [lobName: string]: number }> {
+  const { PrismaClient } = require('@prisma/client');
+  const prisma = new PrismaClient();
+
+  try {
+    // Get last 12 months of data
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+    // Get all monthly financial records with revenue breakdowns
+    const historicalRecords = await prisma.monthlyFinancial.findMany({
+      where: {
+        companyId,
+        monthDate: { gte: twelveMonthsAgo },
+        revenue: { gt: 0 }
+      },
+      select: {
+        revenueBreakdown: true
+      }
+    });
+
+    if (historicalRecords.length === 0) {
+      console.warn('No historical revenue data found for company', companyId);
+      // Get company LOBs and return average allocation as fallback
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { linesOfBusiness: true }
+      });
+      const lobs = (company?.linesOfBusiness as string[]) || [];
+      return calculateAverageAllocations(lobs);
+    }
+
+    // Aggregate revenue by LOB across all historical months
+    const totalRevenueByLob: { [lobName: string]: number } = {};
+
+    historicalRecords.forEach(record => {
+      if (record.revenueBreakdown) {
+        const breakdown = record.revenueBreakdown as { [lobName: string]: number };
+        Object.entries(breakdown).forEach(([lob, amount]) => {
+          totalRevenueByLob[lob] = (totalRevenueByLob[lob] || 0) + amount;
+        });
+      }
+    });
+
+    const totalRevenue = Object.values(totalRevenueByLob).reduce((sum, amt) => sum + amt, 0);
+
+    if (totalRevenue === 0) {
+      // Fallback to average
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { linesOfBusiness: true }
+      });
+      const lobs = (company?.linesOfBusiness as string[]) || [];
+      return calculateAverageAllocations(lobs);
+    }
+
+    // Calculate percentages
+    const percentages: { [lobName: string]: number } = {};
+    let totalPercentage = 0;
+
+    Object.entries(totalRevenueByLob).forEach(([lob, amount], index, array) => {
+      const percentage = Math.round((amount / totalRevenue) * 100);
+      percentages[lob] = percentage;
+      totalPercentage += percentage;
+    });
+
+    // Handle rounding errors
+    if (totalPercentage !== 100) {
+      const diff = 100 - totalPercentage;
+      const firstLob = Object.keys(percentages)[0];
+      percentages[firstLob] += diff;
+    }
+
+    return percentages;
+
+  } catch (error) {
+    console.error('Error calculating revenue-based allocations:', error);
+    // Fallback to average allocation
+    try {
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { linesOfBusiness: true }
+      });
+      const lobs = (company?.linesOfBusiness as string[]) || [];
+      return calculateAverageAllocations(lobs);
+    } catch (fallbackError) {
+      console.error('Fallback allocation calculation failed:', fallbackError);
+      return {};
+    }
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+/**
  * Process account values and apply LOB allocations
  *
  * @param accountValues - Array of account values for a specific month
  * @param accountMappings - Array of account mappings with LOB allocations
+ * @param companyContext - Optional context with company-wide allocation settings
  * @returns Processed data with totals and LOB breakdowns
  */
 export function applyLOBAllocations(
   accountValues: AccountValue[],
-  accountMappings: AccountMapping[]
+  accountMappings: AccountMapping[],
+  companyContext?: CompanyContext
 ): MonthlyLOBData {
   // Initialize result structure
   const totals: { [fieldName: string]: number } = {};
@@ -89,10 +254,11 @@ export function applyLOBAllocations(
     // Add to total
     totals[targetField] += amount;
 
-    // Apply LOB allocations if they exist
-    if (mapping.lobAllocations && typeof mapping.lobAllocations === 'object') {
-      const lobAllocations = mapping.lobAllocations as { [lob: string]: number };
+    // Get LOB allocations using the selected method
+    const linesOfBusiness = companyContext?.linesOfBusiness || [];
+    const lobAllocations = getLOBAllocationsForAccount(mapping, linesOfBusiness, companyContext);
 
+    if (lobAllocations && Object.keys(lobAllocations).length > 0) {
       // Validate that percentages add up to 100 (with small tolerance for rounding)
       const totalPercentage = Object.values(lobAllocations).reduce((sum, pct) => sum + pct, 0);
       if (Math.abs(totalPercentage - 100) > 0.01 && totalPercentage > 0) {

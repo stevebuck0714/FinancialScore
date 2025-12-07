@@ -374,9 +374,29 @@ export async function POST(request: NextRequest) {
         qbAccountId: true,
         targetField: true,
         lobAllocations: true,
+        allocationMethod: true,
       },
     });
     console.log(`✅ Found ${accountMappings.length} account mappings (${accountMappings.filter(m => m.lobAllocations).length} with LOB allocations)`);
+
+    // Fetch company context for allocation methods
+    console.log('📋 Fetching company context for allocation methods...');
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: {
+        linesOfBusiness: true,
+        headcountAllocations: true,
+        revenueAllocations: true,
+      },
+    });
+
+    const companyContext = company ? {
+      linesOfBusiness: (company.linesOfBusiness as string[]) || [],
+      headcountAllocations: company.headcountAllocations as { [lobName: string]: number } | undefined,
+      revenueAllocations: company.revenueAllocations as { [lobName: string]: number } | undefined,
+    } : undefined;
+
+    console.log(`✅ Company context loaded: ${companyContext?.linesOfBusiness?.length || 0} LOBs, headcount: ${!!companyContext?.headcountAllocations}, revenue: ${!!companyContext?.revenueAllocations}`);
 
     // Create a financial record
     const financialRecord = await prisma.financialRecord.create({
@@ -399,7 +419,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Parse and create monthly financial records with LOB allocations
-    const parsedRecords = createMonthlyRecords(plData, bsData, financialRecord.id, 36, accountMappings as any);
+    const parsedRecords = createMonthlyRecords(plData, bsData, financialRecord.id, 36, accountMappings as any, companyContext);
     
     if (parsedRecords.length > 0) {
       const monthlyRecords = parsedRecords.map(record => ({

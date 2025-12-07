@@ -58,6 +58,8 @@ model Company {
   nextBillingDate            DateTime?
   lastBillingDate            DateTime?
   linesOfBusiness            Json?                  // Array of LOB names defined for this company
+  headcountAllocations       Json?                  // { "LOB1": 60, "LOB2": 40 } - headcount percentages
+  revenueAllocations         Json?                  // { "LOB1": 70, "LOB2": 30 } - calculated revenue percentages
   accountMappings            AccountMapping[]
   accountingConnections      AccountingConnection[]
   apiSyncLogs                ApiSyncLog[]
@@ -321,6 +323,7 @@ model AccountMapping {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
   lobAllocations          Json?
+  allocationMethod        Json?
   company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, qbAccount])
