@@ -3777,8 +3777,6 @@ export default function FinancialScorePage() {
     );
   }
 
-  console.log('ðŸŽ¨ RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
-
   return (
     <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Toaster />
