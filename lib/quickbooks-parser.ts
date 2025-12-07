@@ -250,7 +250,12 @@ export function createMonthlyRecords(
   bsData: any,
   financialRecordId: string,
   monthsCount: number = 36,
-  accountMappings?: AccountMapping[]
+  accountMappings?: AccountMapping[],
+  companyContext?: {
+    linesOfBusiness: string[];
+    headcountAllocations?: { [lobName: string]: number };
+    revenueAllocations?: { [lobName: string]: number };
+  }
 ): ParsedFinancialData[] {
   const records: ParsedFinancialData[] = [];
   
@@ -365,7 +370,7 @@ export function createMonthlyRecords(
       const allAccountValues = [...plAccountValues, ...bsAccountValues];
       
       // Apply LOB allocations
-      lobData = applyLOBAllocations(allAccountValues, accountMappings);
+      lobData = applyLOBAllocations(allAccountValues, accountMappings, companyContext);
       
       if (colIndex === 1) {
         console.log(`📊 LOB Allocation sample for first month:`);

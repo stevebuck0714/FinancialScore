@@ -28,6 +28,23 @@ export default function ProfileTab({
   isLoading,
   setIsLoading
 }: ProfileTabProps) {
+  // State for LOB management
+  const [linesOfBusiness, setLinesOfBusiness] = React.useState<string[]>(['', '', '', '', '']);
+  const [headcountAllocations, setHeadcountAllocations] = React.useState<{ [lobName: string]: number }>({});
+
+  // Load LOB data when component mounts or company changes
+  React.useEffect(() => {
+    if (company?.linesOfBusiness) {
+      const lobs = [...company.linesOfBusiness];
+      while (lobs.length < 5) lobs.push('');
+      setLinesOfBusiness(lobs);
+    }
+
+    if (company?.headcountAllocations) {
+      setHeadcountAllocations(company.headcountAllocations as { [lobName: string]: number });
+    }
+  }, [company]);
+
   // Get or create profile for this company
   let profile = companyProfiles.find(p => p.companyId === selectedCompanyId);
   
@@ -639,6 +656,145 @@ export default function ProfileTab({
             <option value="No">No</option>
             <option value="Partial">Partial</option>
           </select>
+        </div>
+      </div>
+
+      {/* Line of Business Settings Section */}
+      <div className="no-print" style={{ marginBottom: '32px' }}>
+        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+          Line of Business Settings
+        </h3>
+
+        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ marginBottom: '24px' }}>
+            <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+              Lines of Business
+            </h4>
+            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+              Define up to 5 lines of business for your company. These will be used for revenue and expense allocation.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+              {linesOfBusiness.map((lob, index) => (
+                <div key={index}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                    Line of Business {index + 1}
+                  </label>
+                  <input
+                    type="text"
+                    value={lob}
+                    onChange={(e) => {
+                      const updated = [...linesOfBusiness];
+                      updated[index] = e.target.value;
+                      setLinesOfBusiness(updated);
+                    }}
+                    placeholder={`e.g., ${index === 0 ? 'Consulting' : index === 1 ? 'Products' : index === 2 ? 'Services' : index === 3 ? 'Training' : 'Other'}`}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      color: '#1e293b'
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+              Headcount Allocation (%)
+            </h4>
+            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+              Define the percentage of your total headcount allocated to each line of business. This will be used for automatic expense allocation.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+              {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, index) => (
+                <div key={index}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                    {lob} (%)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={headcountAllocations[lob] || ''}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 0;
+                      setHeadcountAllocations(prev => ({
+                        ...prev,
+                        [lob]: value
+                      }));
+                    }}
+                    placeholder="0.0"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      color: '#1e293b'
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            {linesOfBusiness.filter(lob => lob.trim() !== '').length > 0 && (
+              <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748b' }}>
+                Total: {Object.values(headcountAllocations).reduce((sum, pct) => sum + pct, 0).toFixed(1)}%
+                {Math.abs(Object.values(headcountAllocations).reduce((sum, pct) => sum + pct, 0) - 100) > 0.1 && (
+                  <span style={{ color: '#ef4444', marginLeft: '8px' }}>
+                    (Should total 100%)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <button
+              onClick={async () => {
+                setIsLoading(true);
+                try {
+                  // Save LOB names and headcount allocations to company
+                  const response = await fetch('/api/companies', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      companyId: selectedCompanyId,
+                      linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== ''),
+                      headcountAllocations
+                    })
+                  });
+
+                  if (response.ok) {
+                    alert('LOB settings saved successfully!');
+                  } else {
+                    throw new Error('Failed to save LOB settings');
+                  }
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : 'Failed to save LOB settings');
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              disabled={isLoading}
+              style={{
+                padding: '10px 20px',
+                background: isLoading ? '#94a3b8' : '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: isLoading ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isLoading ? 'Saving...' : '💾 Save LOB Settings'}
+            </button>
+          </div>
         </div>
       </div>
 
