@@ -252,22 +252,27 @@ export async function PUT(request: NextRequest) {
 // PATCH update company
 export async function PATCH(request: NextRequest) {
   try {
-    const { 
-      id, 
-      addressStreet, 
-      addressCity, 
-      addressState, 
-      addressZip, 
-      addressCountry, 
-      industrySector, 
+    const {
+      companyId, // Alternative parameter name used by ProfileTab
+      id,
+      addressStreet,
+      addressCity,
+      addressState,
+      addressZip,
+      addressCountry,
+      industrySector,
       name,
       subscriptionMonthlyPrice,
       subscriptionQuarterlyPrice,
       subscriptionAnnualPrice,
-      selectedSubscriptionPlan
+      selectedSubscriptionPlan,
+      linesOfBusiness,
+      headcountAllocations
     } = await request.json();
 
-    if (!id) {
+    const companyIdToUse = companyId || id;
+
+    if (!companyIdToUse) {
       return NextResponse.json(
         { error: 'Company ID required' },
         { status: 400 }
@@ -275,7 +280,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const company = await prisma.company.update({
-      where: { id },
+      where: { id: companyIdToUse },
       data: {
         ...(name && { name }),
         ...(addressStreet !== undefined && { addressStreet }),
@@ -287,7 +292,9 @@ export async function PATCH(request: NextRequest) {
         ...(subscriptionMonthlyPrice !== undefined && { subscriptionMonthlyPrice }),
         ...(subscriptionQuarterlyPrice !== undefined && { subscriptionQuarterlyPrice }),
         ...(subscriptionAnnualPrice !== undefined && { subscriptionAnnualPrice }),
-        ...(selectedSubscriptionPlan !== undefined && { selectedSubscriptionPlan })
+        ...(selectedSubscriptionPlan !== undefined && { selectedSubscriptionPlan }),
+        ...(linesOfBusiness !== undefined && { linesOfBusiness }),
+        ...(headcountAllocations !== undefined && { headcountAllocations })
       }
     });
 

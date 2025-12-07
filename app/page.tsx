@@ -615,8 +615,6 @@ export default function FinancialScorePage() {
   const [isGeneratingMappings, setIsGeneratingMappings] = useState(false);
   const [isSavingMappings, setIsSavingMappings] = useState(false);
   
-  // State - Lines of Business
-  const [linesOfBusiness, setLinesOfBusiness] = useState<string[]>(['', '', '', '', '']);
   const [showMappingSection, setShowMappingSection] = useState(false);
   const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
@@ -1080,13 +1078,6 @@ export default function FinancialScorePage() {
             setAiMappings(loadedMappings);
             setShowMappingSection(true);
           }
-          if (data.linesOfBusiness && data.linesOfBusiness.length > 0) {
-            console.log('✅ Loaded saved Lines of Business:', data.linesOfBusiness);
-            // Pad to 5 entries
-            const paddedLobs = [...data.linesOfBusiness];
-            while (paddedLobs.length < 5) paddedLobs.push('');
-            setLinesOfBusiness(paddedLobs);
-          }
         })
         .catch(err => {
           console.error('❌ Error loading saved mappings:', err);
@@ -1433,14 +1424,10 @@ export default function FinancialScorePage() {
         try {
           const mappingsResponse = await fetch(`/api/account-mappings?companyId=${selectedCompanyId}`);
           if (mappingsResponse.ok) {
-            const { mappings, linesOfBusiness: savedLobs } = await mappingsResponse.json();
+            const { mappings } = await mappingsResponse.json();
             if (mappings && mappings.length > 0) {
               console.log('Loaded saved account mappings:', mappings);
               setAiMappings(mappings);
-              if (savedLobs && savedLobs.length > 0) {
-                console.log('Loaded saved Lines of Business:', savedLobs);
-                setLinesOfBusiness(savedLobs);
-              }
               setShowMappingSection(true);
             }
           }
@@ -13552,44 +13539,89 @@ export default function FinancialScorePage() {
               }
             </p>
 
-            {/* Lines of Business Section */}
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                  Lines of Business
-                </h2>
-                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-                  Define up to 5 lines of business to allocate revenue and expenses for detailed reporting
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                  {linesOfBusiness.map((lob, index) => (
-                    <div key={index}>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                        Line of Business {index + 1}
-                      </label>
-                      <input
-                        type="text"
-                        value={lob}
-                        onChange={(e) => {
-                          const updated = [...linesOfBusiness];
-                          updated[index] = e.target.value;
-                          setLinesOfBusiness(updated);
-                        }}
-                        placeholder={`e.g., ${index === 0 ? 'Consulting' : index === 1 ? 'Products' : index === 2 ? 'Services' : index === 3 ? 'Training' : 'Other'}`}
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          color: '#1e293b'
-                        }}
-                      />
-                    </div>
-                  ))}
+            {/* Lines of Business Display */}
+            {selectedCompany && (
+              <div style={{ marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '8px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                  Lines of Business ({selectedCompany.linesOfBusiness?.length || 0})
+                </h3>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {selectedCompany.linesOfBusiness?.map((lob, idx) => (
+                    <span key={idx} style={{
+                      padding: '6px 12px',
+                      background: '#e2e8f0',
+                      color: '#475569',
+                      borderRadius: '20px',
+                      fontSize: '13px',
+                      fontWeight: '500'
+                    }}>
+                      {lob}
+                      {selectedCompany.headcountAllocations?.[lob] && (
+                        <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '6px' }}>
+                          ({selectedCompany.headcountAllocations[lob]}% headcount)
+                        </span>
+                      )}
+                    </span>
+                  )) || <span style={{ color: '#94a3b8' }}>No LOBs configured</span>}
                 </div>
+                <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
+                  Configure LOBs and headcount percentages in Company Settings
+                </p>
               </div>
-            </div>
+
+              {/* Calculate Revenue Allocations Button */}
+              {selectedCompany && selectedCompany.linesOfBusiness && selectedCompany.linesOfBusiness.length > 0 && (
+                <div style={{ marginTop: '16px' }}>
+                  <button
+                    onClick={async () => {
+                      if (!selectedCompanyId) return;
+
+                      try {
+                        setIsProcessingMonthlyData(true);
+                        const response = await fetch('/api/companies/calculate-revenue-allocations', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ companyId: selectedCompanyId })
+                        });
+
+                        if (response.ok) {
+                          const result = await response.json();
+                          alert(`Revenue allocations calculated successfully!\n${Object.entries(result.allocations).map(([lob, pct]) => `${lob}: ${pct}%`).join('\n')}`);
+                          // Refresh company data to show updated allocations
+                          // This would need to be implemented to refresh the company state
+                        } else {
+                          const error = await response.json();
+                          alert(`Failed to calculate revenue allocations: ${error.error}`);
+                        }
+                      } catch (error) {
+                        alert(`Error calculating revenue allocations: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                      } finally {
+                        setIsProcessingMonthlyData(false);
+                      }
+                    }}
+                    disabled={isProcessingMonthlyData}
+                    style={{
+                      padding: '8px 16px',
+                      background: isProcessingMonthlyData ? '#94a3b8' : '#059669',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      cursor: isProcessingMonthlyData ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    {isProcessingMonthlyData ? '⏳ Calculating...' : '📊 Calculate Revenue Allocations'}
+                  </button>
+                  <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                    Analyzes last 12 months of mapped revenue data to create allocation percentages for expense accounts
+                  </p>
+                </div>
+              )}
+            )}
 
             {/* AI-Assisted Mapping Section for CSV */}
             {hasCsvData && (
@@ -13803,8 +13835,7 @@ export default function FinancialScorePage() {
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
                                 companyId: currentCompany?.id,
-                                mappings: aiMappings,
-                                linesOfBusiness: linesOfBusiness
+                                mappings: aiMappings
                               })
                             });
 
@@ -14620,8 +14651,7 @@ export default function FinancialScorePage() {
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
                                     companyId: selectedCompanyId,
-                                    mappings: uniqueMappings,
-                                    linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== '')
+                                    mappings: uniqueMappings
                                   })
                                 });
 
