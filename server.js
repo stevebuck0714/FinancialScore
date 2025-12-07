@@ -7,6 +7,14 @@ const { Server: SocketIOServer } = require('socket.io');
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config(); // Fallback to .env for any missing vars
 
+// SAFETY CHECK: Ensure dev environment never connects to prod database
+if (process.env.NODE_ENV === 'development' && !process.env.DATABASE_URL?.includes('cold-frost')) {
+  console.error('🚨 SECURITY ERROR: Dev environment is trying to connect to non-dev database!');
+  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL);
+  console.error('🚨 This is a critical security violation. Aborting startup.');
+  process.exit(1);
+}
+
 // Log which database we're connecting to
 console.log('🔗 DATABASE:', process.env.DATABASE_URL?.includes('cold-frost') ? 'DEV (cold-frost)' : 'PROD (orange-poetry)');
 

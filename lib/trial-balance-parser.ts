@@ -403,6 +403,8 @@ export function processTrialBalanceToMonthly(
     
     // Apply LOB allocations if we have account mappings with LOB data
     if (accountValues.length > 0 && accountMappings.length > 0) {
+      // For trial balance imports, we don't have company context yet
+      // TODO: Pass company context when available
       const lobData = applyLOBAllocations(accountValues, accountMappings);
       
       // Store LOB breakdowns in the monthly record
