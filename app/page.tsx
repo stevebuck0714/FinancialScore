@@ -13721,52 +13721,118 @@ export default function FinancialScorePage() {
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
                       <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>Save your mappings to use them for future data processing.</p>
                     </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          setIsSavingMappings(true);
-                          const response = await fetch('/api/account-mappings', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              companyId: currentCompany?.id,
-                              mappings: aiMappings,
-                              linesOfBusiness: linesOfBusiness
-                            })
-                          });
-
-                          if (response.ok) {
-                            toast.success('Account mappings saved successfully!');
-                          } else {
-                            toast.error('Failed to save account mappings');
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <button
+                        onClick={async () => {
+                          if (!aiMappings || aiMappings.length === 0) {
+                            alert('Please save account mappings first!');
+                            return;
                           }
-                        } catch (error) {
-                          console.error('Error saving mappings:', error);
-                          toast.error('Failed to save account mappings');
-                        } finally {
-                          setIsSavingMappings(false);
-                        }
-                      }}
-                      disabled={isSavingMappings}
-                      style={{
-                        padding: '8px 16px',
-                        background: isSavingMappings ? '#9ca3af' : '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                        fontWeight: '500',
-                        cursor: isSavingMappings ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      {isSavingMappings ? 'Saving...' : 'Save Mappings'}
-                    </button>
+
+                          if (!csvTrialBalanceData || csvTrialBalanceData._companyId !== selectedCompanyId) {
+                            alert('No CSV/Trial Balance data available!');
+                            return;
+                          }
+
+                          setIsProcessingMonthlyData(true);
+                          try {
+                            console.log('📊 Processing CSV/Trial Balance data using mappings...');
+                            console.log('📋 Total mappings:', aiMappings.length);
+
+                            // Process the CSV data using mappings
+                            const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
+
+                            // Save to database
+                            const response = await fetch('/api/financials', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                companyId: selectedCompanyId,
+                                monthlyData: processedData,
+                                source: 'csv_trial_balance'
+                              })
+                            });
+
+                            if (!response.ok) {
+                              throw new Error('Failed to save processed data');
+                            }
+
+                            const result = await response.json();
+                            console.log(`✅ Processed and saved ${processedData.length} months of CSV data`);
+
+                            // Update local state
+                            setLoadedMonthlyData(processedData);
+
+                            alert(`✅ Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                          } catch (error: any) {
+                            console.error('Error processing CSV data:', error);
+                            alert('Failed to process CSV data: ' + error.message);
+                          } finally {
+                            setIsProcessingMonthlyData(false);
+                          }
+                        }}
+                        disabled={isProcessingMonthlyData || aiMappings.length === 0}
+                        style={{
+                          padding: '8px 16px',
+                          background: isProcessingMonthlyData || aiMappings.length === 0 ? '#9ca3af' : '#3b82f6',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
+                        }}
+                      >
+                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            setIsSavingMappings(true);
+                            const response = await fetch('/api/account-mappings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                companyId: currentCompany?.id,
+                                mappings: aiMappings,
+                                linesOfBusiness: linesOfBusiness
+                              })
+                            });
+
+                            if (response.ok) {
+                              toast.success('Account mappings saved successfully!');
+                            } else {
+                              toast.error('Failed to save account mappings');
+                            }
+                          } catch (error) {
+                            console.error('Error saving mappings:', error);
+                            toast.error('Failed to save account mappings');
+                          } finally {
+                            setIsSavingMappings(false);
+                          }
+                        }}
+                        disabled={isSavingMappings}
+                        style={{
+                          padding: '8px 16px',
+                          background: isSavingMappings ? '#9ca3af' : '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          cursor: isSavingMappings ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                        }}
+                      >
+                        {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Process Monthly Data Section */}
             {/* Account Preview Section */}
             {hasCsvData && csvTrialBalanceData && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
