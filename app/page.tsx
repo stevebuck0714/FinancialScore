@@ -13748,8 +13748,11 @@ export default function FinancialScorePage() {
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
                                 companyId: selectedCompanyId,
-                                monthlyData: processedData,
-                                source: 'csv_trial_balance'
+                                uploadedByUserId: currentUser.id,
+                                fileName: csvTrialBalanceData.fileName || 'Trial Balance CSV',
+                                rawData: csvTrialBalanceData,
+                                columnMapping: aiMappings,
+                                monthlyData: processedData
                               })
                             });
 

@@ -8,7 +8,7 @@ require('dotenv').config({ path: '.env.local' });
 require('dotenv').config(); // Fallback to .env for any missing vars
 
 // Log which database we're connecting to
-console.log('🔗 DATABASE:', process.env.DATABASE_URL?.includes('billowing-term') ? 'DEV (billowing-term)' : 'PROD (orange-poetry)');
+console.log('🔗 DATABASE:', process.env.DATABASE_URL?.includes('cold-frost') ? 'DEV (cold-frost)' : 'PROD (orange-poetry)');
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';

@@ -1,46 +1,56 @@
+// Check companies and their associations
+require('dotenv').config({ path: '.env.local' });
+require('dotenv').config();
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-async function main() {
-  const companies = await prisma.company.findMany({
-    include: {
-      consultant: {
-        select: { fullName: true, companyName: true }
-      },
-      users: {
-        select: { id: true, name: true, email: true }
-      },
-      _count: {
-        select: { users: true }
-      }
-    },
-    orderBy: { name: 'asc' }
-  });
+async function checkCompanies() {
+  try {
+    console.log('DATABASE:', process.env.DATABASE_URL?.includes('cold-frost') ? 'DEV (cold-frost)' : 'PROD (orange-poetry)');
 
-  console.log('');
-  console.log('=== COMPANIES LIST ===');
-  console.log('');
-  
-  companies.forEach(c => {
-    console.log('Company: ' + c.name);
-    console.log('  ID: ' + c.id);
-    if (c.consultant) {
-      console.log('  Managed by: ' + c.consultant.fullName + ' (' + c.consultant.companyName + ')');
-    } else {
-      console.log('  Managed by: (Standalone - no consultant)');
-    }
-    console.log('  Users (' + c._count.users + '):');
-    if (c.users.length > 0) {
-      c.users.forEach(u => {
-        console.log('    - ' + u.name + ' <' + u.email + '>');
-      });
-    } else {
-      console.log('    (none)');
-    }
-    console.log('');
-  });
-  
-  console.log('Total: ' + companies.length + ' companies');
+    const companies = await prisma.company.findMany({
+      include: {
+        consultant: {
+          select: { id: true, fullName: true, user: { select: { email: true } } }
+        },
+        users: {
+          select: { id: true, email: true, name: true }
+        },
+        _count: {
+          select: { users: true, financialRecords: true }
+        }
+      }
+    });
+
+    console.log('\nCompanies in database:');
+    companies.forEach(company => {
+      console.log(`- "${company.name}" (ID: ${company.id})`);
+      console.log(`  Consultant: ${company.consultant?.fullName || 'None'} (${company.consultant?.user?.email || 'N/A'})`);
+      console.log(`  Users: ${company.users.length}`);
+      console.log(`  Financial Records: ${company._count.financialRecords}`);
+      console.log('');
+    });
+
+    // Also check consultants
+    const consultants = await prisma.consultant.findMany({
+      select: {
+        id: true,
+        fullName: true,
+        user: { select: { email: true } }
+      }
+    });
+
+    console.log('Consultants:');
+    consultants.forEach(consultant => {
+      console.log(`- ${consultant.fullName} (${consultant.user?.email}) - ID: ${consultant.id}`);
+    });
+
+  } catch (error) {
+    console.error('Error:', error);
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect());
+checkCompanies();
