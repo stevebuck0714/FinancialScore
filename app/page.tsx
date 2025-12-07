@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import LoginView from './components/auth/LoginView';
+import SiteAdminDashboard from './components/siteadmin/SiteAdminDashboard';
+import ConsultantDashboard from './components/consultant/ConsultantDashboard';
 
 export default function FinancialScorePage() {
   // State - Authentication
@@ -72,6 +74,14 @@ export default function FinancialScorePage() {
     );
   }
 
+  // Show appropriate dashboard based on user role
+  if (currentUser?.role === 'SITEADMIN') {
+    return <SiteAdminDashboard {...getSiteAdminProps()} />;
+  } else if (currentUser?.role === 'CONSULTANT') {
+    return <ConsultantDashboard {...getConsultantProps()} />;
+  }
+
+  // Fallback for other roles
   return (
     <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '20px' }}>
@@ -121,6 +131,42 @@ export default function FinancialScorePage() {
       </div>
     </div>
   );
+
+  // Helper functions to provide props to dashboard components
+  function getSiteAdminProps() {
+    return {
+      // Site admin state and functions would go here
+      // This is a placeholder - would need full implementation
+      currentUser,
+      setCurrentUser: (user: any) => setCurrentUser(user),
+      setIsLoggedIn: (loggedIn: boolean) => setIsLoggedIn(loggedIn),
+    };
+  }
+
+  function getConsultantProps() {
+    return {
+      // Consultant dashboard state and functions would go here
+      // This is a placeholder - would need full implementation
+      currentUser,
+      consultantDashboardTab: 'company-list', // Default tab
+      setConsultantDashboardTab: (tab: string) => console.log('Tab changed:', tab),
+      consultantTeamMembers: [],
+      showAddTeamMemberForm: false,
+      setShowAddTeamMemberForm: (show: boolean) => console.log('Show form:', show),
+      newTeamMember: { name: '', email: '', phone: '', title: '', password: '' },
+      setNewTeamMember: (member: any) => console.log('New member:', member),
+      addTeamMember: () => console.log('Add team member'),
+      removeTeamMember: (id: number, name: string) => console.log('Remove member:', id, name),
+      companies: [],
+      setCurrentView: (view: any) => console.log('View changed:', view),
+      setSelectedCompanyId: (id: string) => console.log('Company selected:', id),
+      setAdminDashboardTab: (tab: string) => console.log('Admin tab:', tab),
+      setCompanyManagementSubTab: (tab: string) => console.log('Sub tab:', tab),
+      setCompanyToDelete: (company: any) => console.log('Company to delete:', company),
+      setShowDeleteConfirmation: (show: boolean) => console.log('Show delete:', show),
+      isLoading: false,
+    };
+  }
 
   async function handleLogin() {
     if (!loginEmail || !loginPassword) {
