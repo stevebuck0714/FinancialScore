@@ -41,7 +41,7 @@ export interface MonthlyLOBData {
 
 /**
  * Process account values and apply LOB allocations
- * 
+ *
  * @param accountValues - Array of account values for a specific month
  * @param accountMappings - Array of account mappings with LOB allocations
  * @returns Processed data with totals and LOB breakdowns
@@ -92,7 +92,7 @@ export function applyLOBAllocations(
     // Apply LOB allocations if they exist
     if (mapping.lobAllocations && typeof mapping.lobAllocations === 'object') {
       const lobAllocations = mapping.lobAllocations as { [lob: string]: number };
-      
+
       // Validate that percentages add up to 100 (with small tolerance for rounding)
       const totalPercentage = Object.values(lobAllocations).reduce((sum, pct) => sum + pct, 0);
       if (Math.abs(totalPercentage - 100) > 0.01 && totalPercentage > 0) {
@@ -105,7 +105,7 @@ export function applyLOBAllocations(
       for (const [lobName, percentage] of Object.entries(lobAllocations)) {
         if (percentage > 0) {
           const lobAmount = (amount * percentage) / 100;
-          
+
           if (!breakdowns[targetField][lobName]) {
             breakdowns[targetField][lobName] = 0;
           }
@@ -116,7 +116,7 @@ export function applyLOBAllocations(
       // No LOB allocation - this amount goes to "unallocated" or could be distributed equally
       // For now, we'll just track it in totals but not in any specific LOB
       // Alternatively, you could add it to a default "General" LOB
-      
+
       // Option: Add to "Unallocated" LOB
       const unallocatedLOB = 'Unallocated';
       if (!breakdowns[targetField][unallocatedLOB]) {
