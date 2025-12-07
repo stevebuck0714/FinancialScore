@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import * as XLSX from 'xlsx';
@@ -100,6 +100,18 @@ export default function FinancialScorePage() {
   
   // State - Companies & Users
   const [companies, setCompanies] = useState<Company[]>([]);
+
+  // Safeguard to ensure companies is always an array
+  const safeSetCompanies = (value: any) => {
+    if (Array.isArray(value)) {
+      setCompanies(value);
+    } else if (value && typeof value === 'object' && value.companies && Array.isArray(value.companies)) {
+      setCompanies(value.companies);
+    } else {
+      console.warn('Attempted to set companies to invalid value:', value);
+      setCompanies([]);
+    }
+  };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -190,22 +202,39 @@ export default function FinancialScorePage() {
   // Check if payment is required for the current company
   const isPaymentRequired = useCallback(() => {
     if (!selectedCompanyId || !currentUser) return false;
-    
-    const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+
+    // If companies is not an array, assume payment is not required (avoid errors)
+    if (!Array.isArray(companies)) return false;
+
+    const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
-    
+
+    // If company has an affiliate code (promo code), consider it free access
+    if (selectedCompany.affiliateCode) {
+      return false; // Free access - no payment required
+    }
+
     // If all subscription prices are $0, no payment is required (free access)
-    const allPricesZero = 
+    const allPricesZero =
       (selectedCompany.subscriptionMonthlyPrice === 0 || selectedCompany.subscriptionMonthlyPrice === null) &&
       (selectedCompany.subscriptionQuarterlyPrice === 0 || selectedCompany.subscriptionQuarterlyPrice === null) &&
       (selectedCompany.subscriptionAnnualPrice === 0 || selectedCompany.subscriptionAnnualPrice === null);
-    
+
     if (allPricesZero) {
       return false; // Free access - no payment required
     }
-    
-    // Simple check: if no subscription plan selected, payment is required
-    return !selectedCompany.selectedSubscriptionPlan;
+
+    // If no subscription plan is selected, payment is required
+    if (!selectedCompany.selectedSubscriptionPlan) {
+      return true;
+    }
+
+    // Check if the selected plan has a $0 price (promo/free plan)
+    const selectedPlanPrice = selectedCompany.selectedSubscriptionPlan === 'monthly' ? selectedCompany.subscriptionMonthlyPrice :
+                             selectedCompany.selectedSubscriptionPlan === 'quarterly' ? selectedCompany.subscriptionQuarterlyPrice :
+                             selectedCompany.subscriptionAnnualPrice;
+
+    return selectedPlanPrice !== 0; // If price is $0, no payment required
   }, [selectedCompanyId, currentUser, companies]);
 
   // Check if current view is allowed for assessment users
@@ -218,7 +247,7 @@ export default function FinancialScorePage() {
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
     if (isPaymentRequired()) {
-      alert('⚠️ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
+      alert('?? Payment Required\n\nPlease complete your subscription payment before accessing other features.');
       setAdminDashboardTab('payments');
       setCurrentView('admin');
       return;
@@ -233,10 +262,10 @@ export default function FinancialScorePage() {
       setAdminDashboardTab(tab);
       return;
     }
-    
+
     // Block other tabs if payment is required
     if (isPaymentRequired()) {
-      alert('⚠️ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
+      alert('?? Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
       setAdminDashboardTab('payments');
       return;
     }
@@ -277,8 +306,8 @@ export default function FinancialScorePage() {
             // Load companies for the consultant
             if (user.consultantId) {
               companiesApi.getAll(user.consultantId).then(({ companies: loadedCompanies }) => {
-                setCompanies(loadedCompanies || []);
-                
+                safeSetCompanies(Array.isArray(loadedCompanies) ? loadedCompanies : []);
+
                 let needsPayment = false;
                 
                 if (user.companyId && loadedCompanies && loadedCompanies.length > 0) {
@@ -299,6 +328,9 @@ export default function FinancialScorePage() {
                 
                 // Always direct to company management on login
                 setAdminDashboardTab('company-management');
+              }).catch(error => {
+                console.error('Error loading companies:', error);
+                safeSetCompanies([]); // Set empty array on error
               });
             }
           } else if (normalizedUser.role === 'siteadmin') {
@@ -314,8 +346,10 @@ export default function FinancialScorePage() {
               fetch(`/api/companies?companyId=${user.companyId}`)
                 .then(res => res.json())
                 .then(data => {
-                  if (data.companies && data.companies.length > 0) {
-                    setCompanies(data.companies);
+                  if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
+                    safeSetCompanies(data.companies);
+                  } else {
+                    safeSetCompanies([]);
                   }
                 })
                 .catch(err => console.error('Error loading company:', err));
@@ -336,19 +370,19 @@ export default function FinancialScorePage() {
 
   useEffect(() => {
     if (currentUser?.userType === 'assessment' && isLoggedIn && currentView !== 'login' && !isAssessmentUserViewAllowed(currentView)) {
-      console.log('ðŸš« useEffect redirecting from', currentView, 'to ma-welcome');
+      console.log('🚫 useEffect redirecting from', currentView, 'to ma-welcome');
       setCurrentView('ma-welcome');
     }
   }, [currentView, currentUser, isLoggedIn]);
 
   // Helper function to handle view changes for assessment users
   const handleViewChange = (newView: string) => {
-    console.log('ðŸ”„ handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
+    console.log('🔄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
     if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
-      console.log('❌ View not allowed, redirecting to ma-welcome');
+      console.log('? View not allowed, redirecting to ma-welcome');
       setCurrentView('ma-welcome');
     } else {
-      console.log('✅ Setting view to:', newView);
+      console.log('? Setting view to:', newView);
       setCurrentView(newView as any);
     }
   };
@@ -618,6 +652,7 @@ export default function FinancialScorePage() {
   
   // State - Lines of Business
   const [linesOfBusiness, setLinesOfBusiness] = useState<LOBData[]>([]);
+  const [userDefinedAllocations, setUserDefinedAllocations] = useState<{ lobName: string; percentage: number }[]>([]);
   const [showMappingSection, setShowMappingSection] = useState(false);
   const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
@@ -704,7 +739,7 @@ export default function FinancialScorePage() {
       const refreshCompanyData = async () => {
         try {
           const fetchedCompanies = await companiesApi.getAll(consultantId);
-          setCompanies(fetchedCompanies);
+          safeSetCompanies(fetchedCompanies);
         } catch (error) {
           console.error('Error refreshing company data:', error);
         }
@@ -773,7 +808,7 @@ export default function FinancialScorePage() {
       const result = await response.json();
       
       if (result.success) {
-        alert('✅ Payment method updated successfully!');
+        alert('? Payment method updated successfully!');
         setShowUpdatePaymentModal(false);
         // Reset form
         setUpdatePaymentData({
@@ -794,11 +829,11 @@ export default function FinancialScorePage() {
           setActiveSubscription(subData.subscription);
         }
       } else {
-        alert(`❌ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
+        alert(`? Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
       }
     } catch (error) {
       console.error('Update payment method error:', error);
-      alert('❌ An error occurred while updating your payment method. Please try again.');
+      alert('? An error occurred while updating your payment method. Please try again.');
     } finally {
       setUpdatingPayment(false);
     }
@@ -822,31 +857,31 @@ export default function FinancialScorePage() {
       // Handle both success and 404 (company already deleted)
       if (result.success || response.status === 404) {
         const message = result.success 
-          ? `✅ Company "${companyToDelete.companyName}" has been deleted successfully.`
-          : `✅ Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
+          ? `? Company "${companyToDelete.companyName}" has been deleted successfully.`
+          : `? Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
         
         alert(message);
         
         console.log('Before delete - companies:', companies.length, 'consultants:', consultants.length);
         
         // Remove the company from the companies list
-        setCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
+        safeSetCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
         
         // Remove the business/consultant from the consultants list
         setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
         
-        console.log('After delete - filtered companies:', companies.filter(c => c.id !== companyToDelete.companyId).length);
-        console.log('After delete - filtered consultants:', consultants.filter(c => c.id !== companyToDelete.businessId).length);
+        console.log('After delete - filtered companies:', Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId).length : 0);
+        console.log('After delete - filtered consultants:', Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId).length : 0);
         
         // Close the confirmation dialog
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       } else {
-        alert(result.error || '❌ Failed to delete company');
+        alert(result.error || '? Failed to delete company');
       }
     } catch (error) {
       console.error('Error deleting company:', error);
-      alert('❌ An error occurred while deleting the company');
+      alert('? An error occurred while deleting the company');
     }
   };
 
@@ -874,7 +909,7 @@ export default function FinancialScorePage() {
     if (saved.consultants) setConsultants(JSON.parse(saved.consultants));
     if (saved.companies) {
       const parsed = JSON.parse(saved.companies);
-      setCompanies(Array.isArray(parsed) ? parsed : []);
+      safeSetCompanies(Array.isArray(parsed) ? parsed : []);
     }
     if (saved.users) setUsers(JSON.parse(saved.users));
     if (saved.records) setFinancialDataRecords(JSON.parse(saved.records));
@@ -963,14 +998,14 @@ export default function FinancialScorePage() {
   // Load expense goals when Goals, Trend Analysis, or MD&A view is accessed
   useEffect(() => {
     if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis' || currentView === 'mda')) {
-      console.log('ðŸ“Š Loading expense goals for company:', selectedCompanyId);
+      console.log('📊 Loading expense goals for company:', selectedCompanyId);
       // Reset to empty first, so fields are blank while loading
       setExpenseGoals({});
       
       fetch(`/api/expense-goals?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
-          console.log('ðŸ“Š Expense goals loaded:', data);
+          console.log('📊 Expense goals loaded:', data);
           if (data.success && data.goals) {
             // Filter out any zero or invalid values so fields stay blank
             const filteredGoals: {[key: string]: number} = {};
@@ -986,7 +1021,7 @@ export default function FinancialScorePage() {
           }
         })
         .catch(err => {
-          console.error('❌ Error loading expense goals:', err);
+          console.error('? Error loading expense goals:', err);
           // Keep empty on error
           setExpenseGoals({});
         });
@@ -999,14 +1034,14 @@ export default function FinancialScorePage() {
       fetch(`/api/valuation-settings?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
-          console.log('ðŸ“Š Valuation settings loaded:', data);
+          console.log('📊 Valuation settings loaded:', data);
           setSdeMultiplier(data.sdeMultiplier || 2.5);
           setEbitdaMultiplier(data.ebitdaMultiplier || 5.0);
           setDcfDiscountRate(data.dcfDiscountRate || 10.0);
           setDcfTerminalGrowth(data.dcfTerminalGrowth || 2.0);
         })
         .catch(err => {
-          console.error('❌ Error loading valuation settings:', err);
+          console.error('? Error loading valuation settings:', err);
           // Keep defaults on error
           setSdeMultiplier(2.5);
           setEbitdaMultiplier(5.0);
@@ -1047,7 +1082,7 @@ export default function FinancialScorePage() {
   // Load saved account mappings and CSV data when company changes or data-mapping tab is visited
   useEffect(() => {
     if (selectedCompanyId && adminDashboardTab === 'data-mapping') {
-      console.log('📋 Loading saved data for company:', selectedCompanyId);
+      console.log('?? Loading saved data for company:', selectedCompanyId);
       
       // Load CSV Trial Balance data from localStorage
       const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
@@ -1055,11 +1090,11 @@ export default function FinancialScorePage() {
         try {
           const parsed = JSON.parse(savedCsvData);
           if (parsed._companyId === selectedCompanyId) {
-            console.log('✅ Loaded CSV Trial Balance from localStorage:', parsed.fileName);
+            console.log('? Loaded CSV Trial Balance from localStorage:', parsed.fileName);
             setCsvTrialBalanceData(parsed);
           }
         } catch (err) {
-          console.error('❌ Error parsing saved CSV data:', err);
+          console.error('? Error parsing saved CSV data:', err);
         }
       }
       
@@ -1068,7 +1103,7 @@ export default function FinancialScorePage() {
         .then(res => res.json())
         .then(data => {
           if (data.mappings && data.mappings.length > 0) {
-            console.log(`✅ Loaded ${data.mappings.length} saved account mappings`);
+            console.log(`? Loaded ${data.mappings.length} saved account mappings`);
             // Convert to aiMappings format
             const loadedMappings = data.mappings.map((m: any) => ({
               qbAccount: m.qbAccount,
@@ -1082,17 +1117,27 @@ export default function FinancialScorePage() {
             setShowMappingSection(true);
           }
           if (data.linesOfBusiness && Array.isArray(data.linesOfBusiness) && data.linesOfBusiness.length > 0) {
-            console.log('✅ Loaded saved Lines of Business:', data.linesOfBusiness);
+            console.log('? Loaded saved Lines of Business:', data.linesOfBusiness);
             // Convert from stored format to LOBData format
             const lobData = data.linesOfBusiness.map((lob: any) => ({
               name: typeof lob === 'string' ? lob : (lob.name || ''),
               headcountPercentage: typeof lob === 'object' ? (lob.headcountPercentage || 0) : 0
             })).filter((lob: LOBData) => lob.name.trim() !== '');
             setLinesOfBusiness(lobData);
+
+            // Load user defined allocations
+            if (data.userDefinedAllocations && Array.isArray(data.userDefinedAllocations)) {
+              setUserDefinedAllocations(data.userDefinedAllocations);
+            } else {
+              setUserDefinedAllocations([]);
+            }
+          } else {
+            setLinesOfBusiness([]);
+            setUserDefinedAllocations([]);
           }
         })
         .catch(err => {
-          console.error('❌ Error loading saved mappings:', err);
+          console.error('? Error loading saved mappings:', err);
         });
     }
   }, [selectedCompanyId, adminDashboardTab]);
@@ -1199,7 +1244,7 @@ export default function FinancialScorePage() {
       
       try {
         // ALWAYS clear state at the start to prevent stale data
-        console.log('ðŸ§¹ Clearing all state before loading new company data');
+        console.log('🧹 Clearing all state before loading new company data');
         setQbRawData(null);
         setRawRows([]);
         setMapping({ date: '' });
@@ -1229,36 +1274,36 @@ export default function FinancialScorePage() {
         // Load financial records
         const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const companyName = selectedCompany?.name || 'Unknown';
-        console.log(`ðŸ“‚ LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
+        console.log(`📂 LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
         
         const { records } = await financialsApi.getByCompany(selectedCompanyId);
-        console.log(`ðŸ“‚ Found ${records.length} financial records for company "${companyName}"`);
+        console.log(`📂 Found ${records.length} financial records for company "${companyName}"`);
         
         // If no records found, clear aiMappings as well
         if (!records || records.length === 0) {
-          console.log(`ðŸ§¹ No records found - clearing aiMappings too`);
+          console.log(`🧹 No records found - clearing aiMappings too`);
           setAiMappings([]);
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
-          console.log(`ðŸ“‚ Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
+          console.log(`📂 Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
           
           // Check if this is QuickBooks data and extract raw QB financial statements
           if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
               !Array.isArray(latestRecord.rawData) &&
               (latestRecord.rawData.profitAndLoss || latestRecord.rawData.balanceSheet)) {
             // QuickBooks data - use monthlyData directly
-            console.log(`ðŸ”„ Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
-            console.log(`ðŸ“„ Record belongs to company ID: ${latestRecord.companyId}`);
-            console.log(`ðŸ“… QB Data sync date:`, latestRecord.rawData.syncDate);
-            console.log(`ðŸ”‘ QB rawData object keys:`, Object.keys(latestRecord.rawData));
-            console.log(`✅ SETTING qbRawData with sync date:`, latestRecord.rawData.syncDate);
+            console.log(`🔄 Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
+            console.log(`📄 Record belongs to company ID: ${latestRecord.companyId}`);
+            console.log(`📅 QB Data sync date:`, latestRecord.rawData.syncDate);
+            console.log(`🔑 QB rawData object keys:`, Object.keys(latestRecord.rawData));
+            console.log(`? SETTING qbRawData with sync date:`, latestRecord.rawData.syncDate);
             // Add companyId to the raw data so we can verify it matches
             setQbRawData({
               ...latestRecord.rawData,
               _companyId: selectedCompanyId,
               _recordId: latestRecord.id
             });
-            console.log(`⚠️ Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
+            console.log(`?? Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
             // Force re-render of Financial Statements view
             setDataRefreshKey(prev => prev + 1);
             setRawRows([]); // Set empty array since rawRows is not used for QB data
@@ -1337,7 +1382,7 @@ export default function FinancialScorePage() {
             
             // If this record has monthlyData, it's a processed Trial Balance - load it like QB data
             if (latestRecord.monthlyData && latestRecord.monthlyData.length > 0) {
-              console.log(`📊 Loading processed Trial Balance data: ${latestRecord.monthlyData.length} months`);
+              console.log(`?? Loading processed Trial Balance data: ${latestRecord.monthlyData.length} months`);
               const convertedMonthly = latestRecord.monthlyData.map((m: any) => ({
                 date: new Date(m.monthDate),
                 month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
@@ -1404,7 +1449,7 @@ export default function FinancialScorePage() {
                 lobBreakdowns: m.lobBreakdowns || null
               }));
               setLoadedMonthlyData(convertedMonthly);
-              console.log(`✅ Trial Balance monthly data loaded with ${convertedMonthly.length} months`);
+              console.log(`? Trial Balance monthly data loaded with ${convertedMonthly.length} months`);
             } else {
               // Legacy CSV upload - set rawRows for manual processing
               setRawRows(latestRecord.rawData);
@@ -1417,11 +1462,11 @@ export default function FinancialScorePage() {
         }
         
         // Load assessment records
-        console.log(`ðŸ“Š Loading assessment records for company: ${selectedCompanyId}`);
+        console.log(`📊 Loading assessment records for company: ${selectedCompanyId}`);
         const { records: assessments } = await assessmentsApi.getByCompany(selectedCompanyId);
-        console.log(`ðŸ“Š Loaded ${assessments?.length || 0} assessment records:`, assessments);
+        console.log(`📊 Loaded ${assessments?.length || 0} assessment records:`, assessments);
         setAssessmentRecords(assessments || []);
-        console.log(`✅ Assessment records set in state`);
+        console.log(`? Assessment records set in state`);
         
         // Load company profile
         const { profile } = await profilesApi.get(selectedCompanyId);
@@ -1448,6 +1493,7 @@ export default function FinancialScorePage() {
                 headcountPercentage: typeof lob === 'object' ? (lob.headcountPercentage || 0) : 0
               })).filter((lob: LOBData) => lob.name.trim() !== '');
               setLinesOfBusiness(lobData);
+              // Note: userDefinedAllocations not loaded from this endpoint, will be loaded separately
               }
               setShowMappingSection(true);
             }
@@ -1477,12 +1523,12 @@ export default function FinancialScorePage() {
           console.log('Fetching benchmarks for industry:', company.industrySector, 'assetSize:', assetCategory);
           const benchmarkData = await benchmarksApi.get(String(company.industrySector), assetCategory);
           setBenchmarks(benchmarkData || []);
-          console.log('✅ Loaded', benchmarkData?.length || 0, 'benchmarks');
+          console.log('? Loaded', benchmarkData?.length || 0, 'benchmarks');
           if (benchmarkData && benchmarkData.length > 0) {
             console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map((b: any) => b.metricName).join(', '));
           }
         } else {
-          console.log('⚠️ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
+          console.log('?? Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
         }
 
         // Load subscription pricing for this company
@@ -1515,11 +1561,11 @@ export default function FinancialScorePage() {
       if (loadedConsultantId === currentUser.consultantId) return;
       
       // CRITICAL: Clear companies immediately to prevent showing wrong consultant's data
-      setCompanies([]);
+      safeSetCompanies([]);
       
       try {
         const { companies: consultantCompanies } = await companiesApi.getAll(currentUser.consultantId);
-        setCompanies(consultantCompanies || []);
+        safeSetCompanies(consultantCompanies || []);
         setLoadedConsultantId(currentUser.consultantId);
         
         // Load all users and assessment records for all companies
@@ -1541,7 +1587,7 @@ export default function FinancialScorePage() {
             // Load assessment records for this company
             const { records } = await assessmentsApi.getByCompany(company.id);
             if (records) {
-              console.log(`ðŸ“Š Loaded ${records.length} assessment records for company ${company.id} (${company.name}):`, 
+              console.log(`📊 Loaded ${records.length} assessment records for company ${company.id} (${company.name}):`, 
                 records.map((r: any) => ({ userEmail: r.user?.email, companyId: r.companyId, answersCount: Object.keys(r.responses || {}).length }))
               );
               allAssessments.push(...records);
@@ -1550,7 +1596,7 @@ export default function FinancialScorePage() {
             console.error(`Error loading data for company ${company.id}:`, error);
           }
         }
-        console.log(`✅ Total loaded: ${allUsers.length} users, ${allAssessments.length} assessment records`);
+        console.log(`? Total loaded: ${allUsers.length} users, ${allAssessments.length} assessment records`);
         console.log(`Assessment users:`, allUsers.filter(u => u.userType === 'assessment').map(u => ({ email: u.email, companyId: u.companyId })));
         setUsers(allUsers);
         setAssessmentRecords(allAssessments);
@@ -1585,7 +1631,7 @@ export default function FinancialScorePage() {
             allCompanies.push(...consultant.companies);
           }
         }
-        setCompanies(allCompanies);
+        safeSetCompanies(allCompanies);
       } catch (error) {
         console.error('Error loading consultants:', error);
       }
@@ -1680,8 +1726,8 @@ export default function FinancialScorePage() {
             totalLAndE: m.totalLAndE || 0
           }));
           
-          console.log('✅ Loaded', formattedData.length, 'months of financial data from database');
-          console.log('📊 RAW from database (sample):', monthlyData[0] ? {
+          console.log('? Loaded', formattedData.length, 'months of financial data from database');
+          console.log('?? RAW from database (sample):', monthlyData[0] ? {
             revenue: monthlyData[0].revenue,
             payroll: monthlyData[0].payroll,
             professionalFees: monthlyData[0].professionalFees,
@@ -1691,7 +1737,7 @@ export default function FinancialScorePage() {
             retainedEarnings: monthlyData[0].retainedEarnings,
             ownersDraw: monthlyData[0].ownersDraw
           } : 'no data');
-          console.log('📊 FORMATTED for display (sample):', formattedData[0] ? {
+          console.log('?? FORMATTED for display (sample):', formattedData[0] ? {
             revenue: formattedData[0].revenue,
             payroll: formattedData[0].payroll,
             professionalFees: formattedData[0].professionalFees,
@@ -1795,13 +1841,13 @@ export default function FinancialScorePage() {
           };
         });
         
-        console.log('ðŸ“¤ Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
-        console.log('ðŸ“Š Sample Excel values from row 0:', { 
+        console.log('📤 Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
+        console.log('📊 Sample Excel values from row 0:', { 
           revenue: rawRows[0]?.[mapping.revenue!], 
           expense: rawRows[0]?.[mapping.expense!],
           professionalFees: rawRows[0]?.[mapping.professionalFees!]
         });
-        console.log('ðŸ“Š First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
+        console.log('📊 First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
           month: m.month, 
           revenue: m.revenue, 
           expense: m.expense,
@@ -1968,7 +2014,7 @@ export default function FinancialScorePage() {
       // Load user's data after login
       if (normalizedUser.role === 'consultant' && user.consultantId) {
         const { companies: loadedCompanies } = await companiesApi.getAll(user.consultantId);
-        setCompanies(loadedCompanies || []);
+        safeSetCompanies(loadedCompanies || []);
         
         // Check payment for business users (have companyId) OR consultants with companies
         let needsPayment = false;
@@ -1998,8 +2044,10 @@ export default function FinancialScorePage() {
       if (normalizedUser.userType === 'company' && user.companyId) {
         const response = await fetch(`/api/companies?companyId=${user.companyId}`);
         const data = await response.json();
-        if (data.companies && data.companies.length > 0) {
-          setCompanies(data.companies);
+        if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
+          safeSetCompanies(data.companies);
+        } else {
+          safeSetCompanies([]);
         }
         
         // Load consultant data to show consultant's company name in header
@@ -2073,11 +2121,11 @@ export default function FinancialScorePage() {
       setCurrentView('consultant-dashboard');
       
       // Clear any stale company data and load fresh data for the new consultant
-      setCompanies([]);
+      safeSetCompanies([]);
       if (user.consultantId) {
         try {
           const { companies: consultantCompanies } = await companiesApi.getAll(user.consultantId);
-          setCompanies(consultantCompanies || []);
+          safeSetCompanies(consultantCompanies || []);
         } catch (error) {
           console.error('Failed to load companies after registration:', error);
         }
@@ -2150,7 +2198,7 @@ export default function FinancialScorePage() {
         affiliateCode: selectedAffiliateCodeForNewCompany || undefined
       });
       console.log('Company created:', company);
-      setCompanies(Array.isArray(companies) ? [...companies, company] : [company]);
+      safeSetCompanies(Array.isArray(companies) ? [...companies, company] : [company]);
       setNewCompanyName('');
       setSelectedAffiliateCodeForNewCompany('');
       
@@ -2414,7 +2462,7 @@ export default function FinancialScorePage() {
         addressCountry: companyAddressCountry,
         industrySector: companyIndustrySector as number
       });
-      setCompanies(Array.isArray(companies) ? companies.map(c => c.id === editingCompanyId ? { ...c, ...company } : c) : [company]);
+      safeSetCompanies(Array.isArray(companies) ? companies.map(c => c.id === editingCompanyId ? { ...c, ...company } : c) : [company]);
       setSelectedCompanyId(editingCompanyId);
       setShowCompanyDetailsModal(false);
       
@@ -2447,20 +2495,20 @@ export default function FinancialScorePage() {
     try {
       const { company } = await companiesApi.updatePricing(selectedCompanyId, subscriptionMonthlyPrice || 0, subscriptionQuarterlyPrice || 0, subscriptionAnnualPrice || 0);
       
-      console.log('ðŸ’° Subscription pricing saved:', company);
+      console.log('💰 Subscription pricing saved:', company);
       
       // Update the companies list with the new pricing
-      setCompanies(Array.isArray(companies) ? companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c) : [company]);
+      safeSetCompanies(Array.isArray(companies) ? companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c) : [company]);
       
       // Reload companies list to ensure fresh data
       if (currentUser?.consultantId) {
         const allCompanies = await companiesApi.getAll(currentUser.consultantId);
-        setCompanies(allCompanies);
+        safeSetCompanies(allCompanies);
       }
       
-      alert('✅ Subscription pricing saved successfully!');
+      alert('? Subscription pricing saved successfully!');
     } catch (error) {
-      console.error('❌ Error saving subscription pricing:', error);
+      console.error('? Error saving subscription pricing:', error);
       alert(error instanceof ApiError ? error.message : 'Failed to save subscription pricing');
     } finally {
       setIsLoading(false);
@@ -2528,9 +2576,9 @@ export default function FinancialScorePage() {
       console.error('Error creating user:', error);
       if (error instanceof ApiError) {
         if (error.message.includes('already registered')) {
-          alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+          alert(`?? Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
         } else if (error.message.includes('Password does not meet requirements')) {
-          alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+          alert('? Password does not meet requirements:\n\n� At least 8 characters\n� One uppercase letter (A-Z)\n� One lowercase letter (a-z)\n� One number (0-9)\n� One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -2614,7 +2662,7 @@ export default function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('❌ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('? Password does not meet requirements:\n\n� At least 8 characters\n� One uppercase letter (A-Z)\n� One lowercase letter (a-z)\n� One number (0-9)\n� One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -2628,7 +2676,7 @@ export default function FinancialScorePage() {
       await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual);
       
       // Update local state
-      setCompanies(Array.isArray(companies) ? companies.map(c => 
+      safeSetCompanies(Array.isArray(companies) ? companies.map(c => 
         c.id === companyId 
           ? { 
               ...c, 
@@ -2647,7 +2695,7 @@ export default function FinancialScorePage() {
         return newState;
       });
       
-      alert('✅ Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
+      alert('? Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
     }
@@ -2716,7 +2764,7 @@ export default function FinancialScorePage() {
       setConsultants(consultants.filter(c => c.id !== consultantId));
       const consultantCompanies = Array.isArray(companies) ? companies.filter(c => c.consultantId === consultantId) : [];
       const companyIds = consultantCompanies.map(c => c.id);
-      setCompanies(Array.isArray(companies) ? companies.filter(c => c.consultantId !== consultantId) : []);
+      safeSetCompanies(Array.isArray(companies) ? companies.filter(c => c.consultantId !== consultantId) : []);
       setUsers(users.filter(u => !companyIds.includes(u.companyId) && u.id !== consultantId));
       setFinancialDataRecords(financialDataRecords.filter(r => !companyIds.includes(r.companyId)));
       setAssessmentRecords(assessmentRecords.filter(r => !companyIds.includes(r.companyId)));
@@ -3721,8 +3769,8 @@ export default function FinancialScorePage() {
     }
 
     // Show confirmation
-    const reportNames = printQueue.map(p => p.title).join('\n• ');
-    if (!confirm(`You are about to print the following reports in sequence:\n\n• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
+    const reportNames = printQueue.map(p => p.title).join('\n� ');
+    if (!confirm(`You are about to print the following reports in sequence:\n\n� ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
       return;
     }
 
@@ -3809,7 +3857,7 @@ export default function FinancialScorePage() {
     );
   }
 
-  console.log('ðŸŽ¨ RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
+  console.log('🎨 RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
 
   return (
     <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -3943,7 +3991,7 @@ export default function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-intro' && '• '}Introduction
+                    {currentView === 'fs-intro' && '� '}Introduction
                   </div>
                   <div
                     onClick={() => setCurrentView('fs-score')}
@@ -3971,7 +4019,7 @@ export default function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-score' && '• '}Financial Score
+                    {currentView === 'fs-score' && '� '}Financial Score
                   </div>
                 </div>
               )}
@@ -4033,7 +4081,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-welcome' && '• '}Welcome
+                  {currentView === 'ma-welcome' && '� '}Welcome
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-questionnaire')}
@@ -4061,7 +4109,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-questionnaire' && '• '}Questionnaire
+                  {currentView === 'ma-questionnaire' && '� '}Questionnaire
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-your-results')}
@@ -4089,7 +4137,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-your-results' && '• '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
+                  {currentView === 'ma-your-results' && '� '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scores-summary')}
@@ -4117,7 +4165,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scores-summary' && '• '}Scores Summary
+                  {currentView === 'ma-scores-summary' && '� '}Scores Summary
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scoring-guide')}
@@ -4145,7 +4193,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scoring-guide' && '• '}Scoring Guide
+                  {currentView === 'ma-scoring-guide' && '� '}Scoring Guide
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-charts')}
@@ -4173,7 +4221,7 @@ export default function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-charts' && '• '}Charts
+                  {currentView === 'ma-charts' && '� '}Charts
                 </div>
               </div>
               )}
@@ -4345,7 +4393,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📚 Getting Started
+                ?? Getting Started
               </a>
               <a
                 href="/privacy-policy"
@@ -4371,7 +4419,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                🔒 Privacy Policy
+                ?? Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4397,7 +4445,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📄 License Agreement
+                ?? License Agreement
               </a>
             </div>
 
@@ -4425,7 +4473,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📧 Contact Support
+                ?? Contact Support
               </a>
             </div>
           </nav>
@@ -4620,7 +4668,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📚 Getting Started
+                ?? Getting Started
               </a>
               <a
                 href="/privacy-policy"
@@ -4646,7 +4694,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                🔒 Privacy Policy
+                ?? Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4672,7 +4720,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📄 License Agreement
+                ?? License Agreement
               </a>
             </div>
 
@@ -4700,7 +4748,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📧 Contact Support
+                ?? Contact Support
               </a>
             </div>
           </nav>
@@ -4821,7 +4869,7 @@ export default function FinancialScorePage() {
                         setSiteAdminViewingAs(null);
                         setCurrentView('siteadmin');
                         setLoadedConsultantId(null);
-                        setCompanies([]); // Clear companies to prevent data leakage
+                        safeSetCompanies([]); // Clear companies to prevent data leakage
                       }}
                       style={{ 
                         padding: '10px 20px', 
@@ -4837,7 +4885,7 @@ export default function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      ← Return to Site Admin
+                      ? Return to Site Admin
                     </button>
                   </div>
                 </div>
@@ -4878,7 +4926,7 @@ export default function FinancialScorePage() {
                   setSiteAdminViewingAs(null);
                   setCurrentView('siteadmin');
                   setLoadedConsultantId(null); // Reset so companies reload for next consultant view
-                  setCompanies([]); // Clear companies to prevent data leakage
+                  safeSetCompanies([]); // Clear companies to prevent data leakage
                 }}
                 style={{ 
                   padding: '10px 20px', 
@@ -4894,7 +4942,7 @@ export default function FinancialScorePage() {
                   gap: '8px'
                 }}
               >
-                ← Back to Site Admin
+                ? Back to Site Admin
               </button>
             </div>
           )}
@@ -5077,9 +5125,9 @@ export default function FinancialScorePage() {
               {/* QuickBooks Data Verification Section */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>✅ QuickBooks Data Verification</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h2>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    Imported from QuickBooks • {loadedMonthlyData.length} months of data verified
+                    Imported from QuickBooks � {loadedMonthlyData.length} months of data verified
                   </p>
 
                   {/* Summary Stats */}
@@ -5170,12 +5218,12 @@ export default function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>✅ Data Quality Check</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      • All {loadedMonthlyData.length} months have complete data<br/>
-                      • Income Statement fields populated: Revenue, Expenses, COGS<br/>
-                      • Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
-                      • Ready for AI-assisted mapping
+                      � All {loadedMonthlyData.length} months have complete data<br/>
+                      � Income Statement fields populated: Revenue, Expenses, COGS<br/>
+                      � Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
+                      � Ready for AI-assisted mapping
                     </div>
                   </div>
                 </div>
@@ -5194,7 +5242,7 @@ export default function FinancialScorePage() {
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
                   <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
                   {error && <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>}
-                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>✓ Loaded: {file.name}</div>}
+                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>? Loaded: {file.name}</div>}
                 </div>
 
               {file && columns.length > 0 && (
@@ -5282,7 +5330,7 @@ export default function FinancialScorePage() {
 
               {/* Trial Balance Import Section */}
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📊 Trial Balance Import</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>?? Trial Balance Import</h2>
                 
                 <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
                   <p style={{ fontSize: '14px', color: '#065f46', lineHeight: '1.6', margin: 0 }}>
@@ -5312,7 +5360,7 @@ export default function FinancialScorePage() {
                         // Save to localStorage for persistence across sessions
                         localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
                         setError(null);
-                        alert(`✓ Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
+                        alert(`? Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
                       } catch (err: any) {
                         setError(`Failed to parse Trial Balance CSV: ${err.message}`);
                         setCsvTrialBalanceData(null);
@@ -5328,7 +5376,7 @@ export default function FinancialScorePage() {
                 {csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId && (
                   <div style={{ background: '#f0fdf4', border: '2px solid #10b981', borderRadius: '8px', padding: '16px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '12px' }}>
-                      ✓ Trial Balance Loaded: {csvTrialBalanceData.fileName}
+                      ? Trial Balance Loaded: {csvTrialBalanceData.fileName}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '16px' }}>
                       <div style={{ background: 'white', padding: '12px', borderRadius: '6px', textAlign: 'center' }}>
@@ -5379,7 +5427,7 @@ export default function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(102, 126, 234, 0.3)'
                         }}
                       >
-                        → Go to Data Mapping
+                        ? Go to Data Mapping
                       </button>
                       <button
                         onClick={() => {
@@ -5442,7 +5490,7 @@ export default function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? '✓ Connected' : qbStatus === 'ERROR' ? '✗ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? '? Connected' : qbStatus === 'ERROR' ? '? Error' : qbStatus === 'EXPIRED' ? '?? Token Expired' : '?? Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -5520,9 +5568,9 @@ export default function FinancialScorePage() {
               {/* QuickBooks Data Verification */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>✅ QuickBooks Data Verification</h3>
+                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h3>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    Synced successfully • {loadedMonthlyData.length} months of data imported
+                    Synced successfully � {loadedMonthlyData.length} months of data imported
                   </p>
 
                   {/* Summary Stats */}
@@ -5630,7 +5678,7 @@ export default function FinancialScorePage() {
                                 <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                   <td style={{ padding: '8px', color: '#1e293b' }}>
                                     <span style={{ fontSize: '10px', color: '#94a3b8', marginRight: '8px' }}>
-                                      {isIncome ? 'ðŸ“ˆ' : 'ðŸ“‰'}
+                                      {isIncome ? '📈' : '📉'}
                                     </span>
                                     {account.name}
                                   </td>
@@ -5684,12 +5732,12 @@ export default function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>✅ Data Quality Check</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      • All {loadedMonthlyData.length} months have complete data<br/>
-                      • Income Statement: Revenue, Expenses, COGS populated<br/>
-                      • Balance Sheet: Assets, Liabilities, Equity populated<br/>
-                      • Ready for AI-assisted account mapping
+                      � All {loadedMonthlyData.length} months have complete data<br/>
+                      � Income Statement: Revenue, Expenses, COGS populated<br/>
+                      � Balance Sheet: Assets, Liabilities, Equity populated<br/>
+                      � Ready for AI-assisted account mapping
                     </div>
                   </div>
 
@@ -5716,8 +5764,8 @@ export default function FinancialScorePage() {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                       onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
                     >
-                      <span>ðŸ¤–</span>
-                      <span>Proceed to AI Account Mapping →</span>
+                      <span>🤖</span>
+                      <span>Proceed to AI Account Mapping ?</span>
                     </button>
                   </div>
                 </div>
@@ -5836,7 +5884,7 @@ export default function FinancialScorePage() {
                       onClick={() => setShowCheckoutModal(false)}
                       style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                     >
-                      ×
+                      �
                     </button>
                   </div>
 
@@ -5857,7 +5905,7 @@ export default function FinancialScorePage() {
 
                   {/* USAePay Payment Form */}
                   <div style={{ marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>ðŸ’³ Payment Information</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>💳 Payment Information</h3>
                     
                     {/* Payment Form */}
                     <form onSubmit={async (e) => {
@@ -5890,23 +5938,23 @@ export default function FinancialScorePage() {
                         const result = await response.json();
                         
                         if (result.success) {
-                          alert(`✅ Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
+                          alert(`? Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
                           setShowCheckoutModal(false);
                           setSelectedSubscriptionPlan(null);
                           // Refresh companies to show updated subscription
                           loadAllCompanies();
                         } else {
-                          alert(`❌ Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
+                          alert(`? Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
                         }
                       } catch (error) {
                         console.error('Payment error:', error);
-                        alert('❌ An error occurred while processing your payment. Please try again.');
+                        alert('? An error occurred while processing your payment. Please try again.');
                       }
                     }}>
                       {/* Card Information Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                         <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          ðŸ’³ Card Details
+                          💳 Card Details
                         </h4>
                         
                         <div style={{ marginBottom: '12px' }}>
@@ -5970,7 +6018,7 @@ export default function FinancialScorePage() {
                       
                       {/* Billing Address Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>ðŸ“ Billing Address</h4>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📍 Billing Address</h4>
                         
                         <div style={{ marginBottom: '12px' }}>
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
@@ -6082,14 +6130,14 @@ export default function FinancialScorePage() {
                             gap: '8px'
                           }}
                         >
-                          ðŸ’³ Complete Payment - ${planPrice.toFixed(2)}
+                          💳 Complete Payment - ${planPrice.toFixed(2)}
                         </button>
                       </div>
                     </form>
                     
                     {/* Security Notice */}
                     <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>ðŸ”’</span>
+                      <span style={{ fontSize: '16px' }}>🔒</span>
                       <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
                         Secured by USAePay - Your payment information is encrypted
                       </span>
@@ -6099,7 +6147,7 @@ export default function FinancialScorePage() {
                   {/* Security Notice */}
                   <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>ðŸ”’</span>
+                      <span style={{ fontSize: '16px' }}>🔒</span>
                       <span style={{ fontSize: '13px', fontWeight: '500', color: '#059669' }}>
                         Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                       </span>
@@ -6121,7 +6169,7 @@ export default function FinancialScorePage() {
                     onClick={() => setShowUpdatePaymentModal(false)}
                     style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                   >
-                    ×
+                    �
                   </button>
                 </div>
 
@@ -6129,7 +6177,7 @@ export default function FinancialScorePage() {
                   {/* Card Information Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      ðŸ’³ Card Details
+                      💳 Card Details
                     </h4>
                     
                     <div style={{ marginBottom: '12px' }}>
@@ -6203,7 +6251,7 @@ export default function FinancialScorePage() {
                   {/* Billing Address Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                      ðŸ“ Billing Address
+                      📍 Billing Address
                     </h4>
 
                     <div style={{ marginBottom: '12px' }}>
@@ -6260,7 +6308,7 @@ export default function FinancialScorePage() {
 
                   {/* Security Notice */}
                   <div style={{ background: '#d1fae5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '12px', marginBottom: '20px', display: 'flex', alignItems: 'start', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>ðŸ”’</span>
+                    <span style={{ fontSize: '18px' }}>🔒</span>
                     <span style={{ fontSize: '13px', color: '#065f46', lineHeight: '1.5' }}>
                       Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                     </span>
@@ -6312,7 +6360,7 @@ export default function FinancialScorePage() {
                           Updating...
                         </>
                       ) : (
-                        'ðŸ’³ Update Payment Method'
+                        '💳 Update Payment Method'
                       )}
                     </button>
                   </div>
@@ -6340,7 +6388,7 @@ export default function FinancialScorePage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', maxWidth: '800px', margin: '0 auto' }}>
                 {/* QuickBooks Option */}
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>📊</div>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>💻</div>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks API</div>
                   <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
                   <button
@@ -6362,7 +6410,7 @@ export default function FinancialScorePage() {
                 
                 {/* Trial Balance Upload Option */}
                 <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '24px', border: '2px solid #86efac' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px', textAlign: 'center' }}>📁</div>
+                  <div style={{ fontSize: '32px', marginBottom: '12px', textAlign: 'center' }}>📊</div>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '8px', textAlign: 'center' }}>Trial Balance CSV</div>
                   <p style={{ fontSize: '13px', color: '#047857', marginBottom: '16px', textAlign: 'center' }}>Upload a CSV with Acct Type, Acct ID, Description, and date columns.</p>
                   <input 
@@ -6627,7 +6675,7 @@ export default function FinancialScorePage() {
                               lineHeight: '1'
                             }}
                           >
-                            ×
+                            �
                           </button>
                         </div>
                       ))}
@@ -6675,7 +6723,7 @@ export default function FinancialScorePage() {
                       ];
                       
                       if (expenseCategories.includes(item) && expenseGoals[item]) {
-                        // Calculate goal as: Goal % × Revenue for each month
+                        // Calculate goal as: Goal % � Revenue for each month
                         return monthly.map(m => {
                           const revenue = m.revenue || 0;
                               const goalPct = expenseGoals[item] / 100;
@@ -6798,7 +6846,7 @@ export default function FinancialScorePage() {
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Expense Items as % of Total Revenue</h2>
               
               <div style={{ marginBottom: '12px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>💡 How to Use This Analysis</h3>
+                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>?? How to Use This Analysis</h3>
                 <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#15803d', lineHeight: '1.6' }}>
                   <li>Each chart shows an expense category as a <strong>percentage of total revenue</strong> over time</li>
                   <li>Look for categories with <strong>increasing trends</strong> that may need cost control</li>
@@ -6912,7 +6960,7 @@ export default function FinancialScorePage() {
                               marginLeft: '4px'
                             }}
                           >
-                            ×
+                            �
                           </button>
                         </div>
                       ))}
@@ -7319,7 +7367,7 @@ export default function FinancialScorePage() {
                 
                 <div style={{ display: 'grid', gap: '20px' }}>
                   <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 — 100: Strong Financial Performance</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 � 100: Strong Financial Performance</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#064e3b', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Good growth and good balance</li>
                       <li>In a good position for considering an M&A transaction</li>
@@ -7328,7 +7376,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 — 80: Good Fundamentals</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 � 80: Good Fundamentals</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>In a good position for revenue growth</li>
                       <li>Needs to focus on bringing costs down as volume grows</li>
@@ -7336,7 +7384,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 — 50: Basic Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 � 50: Basic Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Cost structure issues; not in a position to grow</li>
                       <li>Improvements needed in operations and process controls</li>
@@ -7345,7 +7393,7 @@ export default function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 — 30: Serious Performance Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 � 30: Serious Performance Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Problems exist which may not be correctable</li>
                       <li>Some form of major restructuring or liquidation may be best</li>
@@ -7498,7 +7546,7 @@ export default function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                🖨️ Print
+                ??? Print
               </button>
             </div>
           </div>
@@ -7539,7 +7587,7 @@ export default function FinancialScorePage() {
                     {expenseAdjustment >= 0 ? '+' : ''}{expenseAdjustment}
                   </div>
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                    {expenseAdjustment > 0 ? '✅ BONUS' : expenseAdjustment < 0 ? '✗ PENALTY' : 'NEUTRAL'}
+                    {expenseAdjustment > 0 ? '? BONUS' : expenseAdjustment < 0 ? '? PENALTY' : 'NEUTRAL'}
                   </div>
                 </div>
                 <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
@@ -7623,7 +7671,7 @@ export default function FinancialScorePage() {
                   lineHeight: 1
                 }}
               >
-                ×
+                �
               </button>
             </div>
             
@@ -7821,7 +7869,7 @@ export default function FinancialScorePage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                🖨️ Print Dashboard
+                ??? Print Dashboard
               </button>
               <button
                 className="no-print"
@@ -7841,7 +7889,7 @@ export default function FinancialScorePage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
+                {showDashboardCustomizer ? 'Done Customizing' : '?? Customize Dashboard'}
               </button>
             </div>
           </div>
@@ -7857,7 +7905,7 @@ export default function FinancialScorePage() {
               border: '2px solid #667eea'
             }}>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                🎨 Build Your Custom Dashboard
+                ?? Build Your Custom Dashboard
               </h2>
               <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
                 Select the metrics and charts you want to see. Click on any item to add or remove it from your dashboard. Items will appear in the order selected.
@@ -7869,7 +7917,7 @@ export default function FinancialScorePage() {
               {/* Ratios Section */}
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  📊 Financial Ratios
+                  ?? Financial Ratios
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                   {/* Liquidity Ratios */}
@@ -8075,7 +8123,7 @@ export default function FinancialScorePage() {
                               padding: 0
                             }}
                           >
-                            ×
+                            �
                           </button>
                         </div>
                       ))}
@@ -8087,7 +8135,7 @@ export default function FinancialScorePage() {
                 {/* Trend Analysis Section */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    📈 Trend Analysis
+                    ?? Trend Analysis
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                     {/* Item Trends Dropdown */}
@@ -8263,7 +8311,7 @@ export default function FinancialScorePage() {
                                 lineHeight: '1'
                               }}
                             >
-                              ×
+                              �
                             </button>
                       </div>
                     ))}
@@ -8275,7 +8323,7 @@ export default function FinancialScorePage() {
                 {/* Working Capital Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💰 Working Capital Metrics
+                    ?? Working Capital Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle', 'Working Capital Trend'].map(widget => (
@@ -8304,7 +8352,7 @@ export default function FinancialScorePage() {
                         }}
                       >
                         <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? '?' : '+'}</span>
                       </div>
                     ))}
                   </div>
@@ -8313,7 +8361,7 @@ export default function FinancialScorePage() {
                 {/* Cash Flow Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💵 Cash Flow
+                    ?? Cash Flow
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['Operating Cash Flow', 'Free Cash Flow', 'Cash Position'].map(widget => (
@@ -8342,7 +8390,7 @@ export default function FinancialScorePage() {
                         }}
                       >
                         <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? '?' : '+'}</span>
                       </div>
                     ))}
                   </div>
@@ -8351,7 +8399,7 @@ export default function FinancialScorePage() {
                 {/* Valuation Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💎 Valuation Metrics
+                    ?? Valuation Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'].map(widget => (
@@ -8380,7 +8428,7 @@ export default function FinancialScorePage() {
                         }}
                       >
                         <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '✓' : '+'}</span>
+                        <span>{selectedDashboardWidgets.includes(widget) ? '?' : '+'}</span>
                       </div>
                     ))}
                   </div>
@@ -8422,7 +8470,7 @@ export default function FinancialScorePage() {
               textAlign: 'center',
               border: '2px dashed #cbd5e1'
             }}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>📊</div>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>??</div>
               <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
                 Your Dashboard is Empty
               </h3>
@@ -8509,7 +8557,7 @@ export default function FinancialScorePage() {
                             ${(currentWC / 1000).toFixed(0)}K
                           </div>
                           <div style={{ fontSize: '11px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                            {wcChange >= 0 ? '↑' : '↓'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
+                            {wcChange >= 0 ? '?' : '?'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
                           </div>
                         </div>
                       )}
@@ -8617,7 +8665,7 @@ export default function FinancialScorePage() {
                                 ${(sdeValuation / 1000000).toFixed(2)}M
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier.toFixed(1)}x
+                                SDE: ${(ttmSDE / 1000).toFixed(0)}K � {sdeMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -8629,7 +8677,7 @@ export default function FinancialScorePage() {
                                 ${(ebitdaValuation / 1000000).toFixed(2)}M
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier.toFixed(1)}x
+                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K � {ebitdaMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -8982,11 +9030,11 @@ export default function FinancialScorePage() {
           {/* Benchmark Status Indicator */}
           {benchmarks.length > 0 ? (
             <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#065f46' }}>
-              ✓ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
+              ? Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
             </div>
           ) : (
             <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
-              ⚠️ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
+              ?? No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
             </div>
           )}
 
@@ -9200,7 +9248,7 @@ export default function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      ðŸ–¨ï¸ Print Priority Ratios
+                      🖨� Print Priority Ratios
                     </button>
                   </div>
                   <div className="priority-ratios-print-content">
@@ -9243,7 +9291,7 @@ export default function FinancialScorePage() {
                             justifyContent: 'center'
                           }}
                         >
-                          ×
+                          �
                         </button>
                       </div>
                     ))}
@@ -9254,7 +9302,7 @@ export default function FinancialScorePage() {
 
               {priorityRatios.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '60px', color: '#64748b' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>ðŸ“Š</div>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
                   <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>No Priority Ratios Selected</h3>
                   <p>Select ratios from the dropdowns above to create your custom KPI dashboard.</p>
                 </div>
@@ -9288,7 +9336,7 @@ export default function FinancialScorePage() {
                   onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
                   onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
                 >
-                  📥 Export to Excel
+                  ?? Export to Excel
                 </button>
               </div>
               
@@ -9586,7 +9634,7 @@ export default function FinancialScorePage() {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
                 onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
               >
-                🔄 Refresh Analysis
+                ?? Refresh Analysis
               </button>
               <button
                 className="no-print"
@@ -9603,7 +9651,7 @@ export default function FinancialScorePage() {
                   boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)',
                 }}
               >
-                💾 Export to Word
+                ?? Export to Word
               </button>
               <button 
                 className="no-print"
@@ -9619,7 +9667,7 @@ export default function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                🖨️ Print
+                ??? Print
               </button>
               <TextToSpeech 
                 targetElementId={
@@ -10172,9 +10220,9 @@ export default function FinancialScorePage() {
                          revTrend > -15 ? <span style={{ color: '#f59e0b' }}>, suggesting slowing momentum requiring attention</span> :
                          <span style={{ color: '#ef4444' }}>, indicating significant contraction requiring strategic intervention</span>}.
                         <strong> Expense</strong> trends show {expTrend > 0 ? 'growth' : 'reduction'} of <strong style={{ color: Math.abs(expTrend) < Math.abs(revTrend) ? '#10b981' : '#ef4444' }}>{Math.abs(expTrend).toFixed(1)}%</strong> over the same period
-                        {expTrend < revTrend ? <span style={{ color: '#10b981' }}>, with expenses growing {revTrend - expTrend > 10 ? 'significantly ' : ''}slower than revenue—excellent operational leverage</span> :
+                        {expTrend < revTrend ? <span style={{ color: '#10b981' }}>, with expenses growing {revTrend - expTrend > 10 ? 'significantly ' : ''}slower than revenue�excellent operational leverage</span> :
                          expTrend === revTrend ? ', matching revenue growth pace' :
-                         <span style={{ color: '#ef4444' }}>, outpacing revenue growth by {(expTrend - revTrend).toFixed(1)} percentage points—margin compression risk</span>}.
+                         <span style={{ color: '#ef4444' }}>, outpacing revenue growth by {(expTrend - revTrend).toFixed(1)} percentage points�margin compression risk</span>}.
                         <strong> Net margin</strong> {marginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: marginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(marginChange).toFixed(1)}</strong> percentage points to <strong>{recentMargin.toFixed(1)}%</strong>
                         {marginChange > 3 ? <span style={{ color: '#10b981' }}>, reflecting improving profitability and strong operational efficiency</span> :
                          marginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
@@ -10183,7 +10231,7 @@ export default function FinancialScorePage() {
                         {assetGrowth !== 0 && (
                           <>
                             <strong> Asset base</strong> {assetGrowth > 0 ? 'grew' : 'declined'} by <strong style={{ color: assetGrowth > 0 ? '#667eea' : '#f59e0b' }}>{Math.abs(assetGrowth).toFixed(1)}%</strong> year-over-year
-                            {assetGrowth > revTrend + 10 ? <span style={{ color: '#f59e0b' }}>, growing faster than revenue—monitor asset efficiency and ROA</span> :
+                            {assetGrowth > revTrend + 10 ? <span style={{ color: '#f59e0b' }}>, growing faster than revenue�monitor asset efficiency and ROA</span> :
                              assetGrowth > 5 ? ', supporting business expansion' :
                              assetGrowth > -5 ? ', remaining relatively stable' :
                              <span style={{ color: '#64748b' }}>, contracting which may improve asset turnover ratios</span>}.
@@ -10344,7 +10392,7 @@ export default function FinancialScorePage() {
                          <span style={{ color: '#ef4444' }}>, indicating negative working capital position requiring immediate attention and potential financing needs</span>}.
                         The working capital ratio of <strong>{wcRatio.toFixed(2)}</strong> has {wcRatioChange > 0 ? 'improved' : wcRatioChange < 0 ? 'declined' : 'remained stable'} 
                         {Math.abs(wcRatioChange) > 5 ? <span> by <strong style={{ color: wcRatioChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(wcRatioChange).toFixed(1)}%</strong> from {priorWCRatio.toFixed(2)} a year ago</span> : ' over the past year'}
-                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assets—a concerning liquidity position</span> :
+                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assets�a concerning liquidity position</span> :
                          wcRatio < 1.5 ? <span style={{ color: '#f59e0b' }}>, suggesting tight liquidity that may limit operational flexibility</span> :
                          wcRatio > 3.0 ? <span style={{ color: '#10b981' }}>, reflecting exceptionally strong liquidity, though potentially excess capital that could be deployed more productively</span> :
                          ', indicating adequate short-term liquidity'}.
@@ -10384,7 +10432,7 @@ export default function FinancialScorePage() {
                         {monthly.length >= 13 && Math.abs(cccChange) > 5 && (
                           <span> has {cccChange > 0 ? 'lengthened' : 'shortened'} by <strong style={{ color: cccChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(cccChange).toFixed(0)} days</strong> year-over-year</span>
                         )}
-                        {ccc < 0 ? <span style={{ color: '#10b981' }}>, indicating the business receives payment before paying suppliers—an exceptionally favorable working capital dynamic generating float</span> :
+                        {ccc < 0 ? <span style={{ color: '#10b981' }}>, indicating the business receives payment before paying suppliers�an exceptionally favorable working capital dynamic generating float</span> :
                          ccc < 30 ? <span style={{ color: '#10b981' }}>, demonstrating highly efficient working capital management with rapid cash generation cycles</span> :
                          ccc < 60 ? ', reflecting reasonable working capital efficiency' :
                          ccc < 90 ? <span style={{ color: '#f59e0b' }}>, suggesting extended working capital cycle that ties up significant cash in operations</span> :
@@ -10535,15 +10583,15 @@ export default function FinancialScorePage() {
                          opCFMargin > 0 ? <span style={{ color: '#f59e0b' }}>, suggesting opportunities to improve working capital efficiency</span> :
                          <span style={{ color: '#ef4444' }}>, indicating cash outflow from operations requiring immediate attention</span>}.
                         Working capital changes {changeInWC > 0 ? 'contributed' : 'consumed'} <strong>{formatDollar(changeInWC)}</strong>
-                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capital—review receivables and inventory management</span> :
+                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capital�review receivables and inventory management</span> :
                          changeInWC > ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, with efficient working capital management releasing cash for other uses</span> :
                          ''}.
                         <strong> Investing activities</strong> {investingCF < 0 ? 'deployed' : 'generated'} <strong style={{ color: '#667eea' }}>{formatDollar(investingCF)}</strong>
-                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flow—monitor return on invested capital</span> :
+                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flow�monitor return on invested capital</span> :
                          capEx > 0 ? ', supporting maintenance and growth of the asset base' :
                          ', with minimal capital investment in fixed assets'}.
                         <strong> Financing activities</strong> {financingCF > 0 ? 'provided' : 'consumed'} <strong style={{ color: financingCF > 0 ? '#667eea' : '#64748b' }}>{formatDollar(financingCF)}</strong>
-                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of {formatDollar(changeInDebt)}—monitor leverage ratios</span> :
+                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of {formatDollar(changeInDebt)}�monitor leverage ratios</span> :
                          changeInDebt < -ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, reducing debt by {formatDollar(changeInDebt)} and strengthening the balance sheet</span> :
                          ''}.
                         <strong> Free cash flow</strong> of <strong style={{ color: freeCF > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(freeCF)}</strong>
@@ -10552,7 +10600,7 @@ export default function FinancialScorePage() {
                          <span style={{ color: '#ef4444' }}> indicates operations are not generating sufficient cash to cover capital needs</span>}.
                         Net cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#f59e0b' }}>{formatDollar(cashChange)}</strong> to <strong>{formatDollar(last12[last12.length - 1].cash)}</strong>
                         {cashChange / ltmRev > 0.15 ? <span style={{ color: '#10b981' }}>, building substantial cash reserves and financial resilience</span> :
-                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reserves—monitor cash runway and funding needs</span> :
+                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reserves�monitor cash runway and funding needs</span> :
                          ''}.
                       </>
                     );
@@ -10739,7 +10787,7 @@ export default function FinancialScorePage() {
             
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#10b981', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>✓</span> Key Strengths & Competitive Advantages
+                <span style={{ fontSize: '20px' }}>?</span> Key Strengths & Competitive Advantages
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.strengths.length > 0 ? (
@@ -10756,7 +10804,7 @@ export default function FinancialScorePage() {
 
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ef4444', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>⚠️</span> Areas Requiring Management Attention
+                <span style={{ fontSize: '20px' }}>??</span> Areas Requiring Management Attention
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.weaknesses.length > 0 ? (
@@ -10773,7 +10821,7 @@ export default function FinancialScorePage() {
 
             <div>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#667eea', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>💡</span> Strategic Recommendations & Action Items
+                <span style={{ fontSize: '20px' }}>??</span> Strategic Recommendations & Action Items
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.insights.length > 0 ? (
@@ -10796,7 +10844,7 @@ export default function FinancialScorePage() {
             {mdaAnalysis.strengths.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#10b981', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>✓</span> Strengths
+                  <span style={{ fontSize: '24px' }}>?</span> Strengths
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.strengths.map((str, idx) => (
@@ -10809,7 +10857,7 @@ export default function FinancialScorePage() {
             {mdaAnalysis.weaknesses.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#ef4444', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>⚠</span> Areas for Improvement
+                  <span style={{ fontSize: '24px' }}>?</span> Areas for Improvement
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.weaknesses.map((weak, idx) => (
@@ -10822,7 +10870,7 @@ export default function FinancialScorePage() {
             {mdaAnalysis.insights.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>💡</span> Strategic Insights
+                  <span style={{ fontSize: '24px' }}>??</span> Strategic Insights
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.insights.map((ins, idx) => (
@@ -10838,7 +10886,7 @@ export default function FinancialScorePage() {
           {mdaTab === 'key-metrics' && monthly.length >= 12 && (
           <div id="mda-key-metrics-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
-              ⚠️ Critical Review Items
+              ?? Critical Review Items
             </h2>
             
             <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' }}>
@@ -11429,7 +11477,7 @@ export default function FinancialScorePage() {
                   {/* Issues List */}
                   {issues.length === 0 ? (
                     <div style={{ background: '#d1fae5', borderRadius: '12px', padding: '32px', textAlign: 'center', border: '2px solid #10b981' }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>✅</div>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>?</div>
                       <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>No Critical Issues Detected</h3>
                       <p style={{ fontSize: '15px', color: '#047857', margin: 0 }}>
                         All analyzed metrics are within acceptable ranges. Continue monitoring for any changes.
@@ -11441,7 +11489,7 @@ export default function FinancialScorePage() {
                         const bgColor = issue.severity === 'high' ? '#fee2e2' : issue.severity === 'medium' ? '#fef3c7' : '#dbeafe';
                         const borderColor = issue.severity === 'high' ? '#ef4444' : issue.severity === 'medium' ? '#f59e0b' : '#3b82f6';
                         const textColor = issue.severity === 'high' ? '#991b1b' : issue.severity === 'medium' ? '#92400e' : '#1e40af';
-                        const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🔵';
+                        const icon = issue.severity === 'high' ? '??' : issue.severity === 'medium' ? '??' : '??';
                         
                         return (
                           <div key={idx} style={{ background: bgColor, borderRadius: '12px', padding: '20px', border: `2px solid ${borderColor}` }}>
@@ -11475,7 +11523,7 @@ export default function FinancialScorePage() {
                   {/* Action Items */}
                   {issues.filter(i => i.severity === 'high').length > 0 && (
                     <div style={{ marginTop: '32px', background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #667eea' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>📋 Recommended Actions</h3>
+                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>?? Recommended Actions</h3>
                       <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
                         {issues.filter(i => i.severity === 'high').length > 0 && (
                           <li><strong>Immediate attention required:</strong> Address all high-priority issues within the next 30 days</li>
@@ -11729,7 +11777,7 @@ export default function FinancialScorePage() {
                     }
                   });
                   
-                  console.log('💾 Saving expense goals for company:', selectedCompanyId, goalsToSave);
+                  console.log('?? Saving expense goals for company:', selectedCompanyId, goalsToSave);
                   setGoalsSaveStatus('saving');
                   try {
                     const response = await fetch('/api/expense-goals', {
@@ -11741,17 +11789,17 @@ export default function FinancialScorePage() {
                       })
                     });
                     const result = await response.json();
-                    console.log('💾 Save response:', result);
+                    console.log('?? Save response:', result);
                     if (response.ok) {
                       setGoalsSaveStatus('saved');
                       setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                     } else {
-                      console.error('❌ Failed to save goals:', result);
+                      console.error('? Failed to save goals:', result);
                       setGoalsSaveStatus('error');
                       setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                     }
                   } catch (error) {
-                    console.error('❌ Error saving goals:', error);
+                    console.error('? Error saving goals:', error);
                     setGoalsSaveStatus('error');
                     setTimeout(() => setGoalsSaveStatus('idle'), 3000);
                   }
@@ -11770,7 +11818,7 @@ export default function FinancialScorePage() {
                   transition: 'all 0.3s ease'
                 }}
               >
-                {goalsSaveStatus === 'saving' ? '💾 Saving...' : goalsSaveStatus === 'saved' ? '✅ Saved!' : goalsSaveStatus === 'error' ? '✗ Error' : 'Save Goals'}
+                {goalsSaveStatus === 'saving' ? '?? Saving...' : goalsSaveStatus === 'saved' ? '? Saved!' : goalsSaveStatus === 'error' ? '? Error' : 'Save Goals'}
               </button>
             </div>
           </div>
@@ -11955,7 +12003,7 @@ export default function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                🖨️ Print
+                ??? Print
               </button>
             </div>
           </div>
@@ -12010,7 +12058,7 @@ export default function FinancialScorePage() {
                       ${(currentWC / 1000).toFixed(0)}K
                     </div>
                     <div style={{ fontSize: '12px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                      {wcChange >= 0 ? '↑' : '↓'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%) vs. 1Y ago
+                      {wcChange >= 0 ? '?' : '?'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%) vs. 1Y ago
                     </div>
                   </div>
                   
@@ -12214,7 +12262,7 @@ export default function FinancialScorePage() {
                   <div style={{ display: 'grid', gap: '16px' }}>
                     {currentWC > 0 && wcRatio >= 1.5 && (
                       <div style={{ padding: '16px', background: '#f0fdf4', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '4px' }}>✓ Strong Liquidity Position</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '4px' }}>? Strong Liquidity Position</div>
                         <div style={{ fontSize: '13px', color: '#166534', lineHeight: '1.6' }}>
                           Your working capital ratio of {wcRatio} indicates strong short-term financial health with ${(currentWC / 1000).toFixed(0)}K in working capital available to cover operational needs.
                         </div>
@@ -12223,7 +12271,7 @@ export default function FinancialScorePage() {
                     
                     {currentWC > 0 && wcRatio < 1.5 && wcRatio >= 1.0 && (
                       <div style={{ padding: '16px', background: '#fffbeb', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️  Adequate but Monitor Closely</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>??� Adequate but Monitor Closely</div>
                         <div style={{ fontSize: '13px', color: '#92400e', lineHeight: '1.6' }}>
                           Your working capital ratio of {wcRatio} is adequate but below ideal levels. Consider improving cash flow or reducing short-term liabilities to strengthen your position.
                         </div>
@@ -12232,7 +12280,7 @@ export default function FinancialScorePage() {
                     
                     {wcRatio < 1.0 && (
                       <div style={{ padding: '16px', background: '#fef2f2', borderRadius: '8px', borderLeft: '4px solid #ef4444' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️  Liquidity Concern</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>??� Liquidity Concern</div>
                         <div style={{ fontSize: '13px', color: '#991b1b', lineHeight: '1.6' }}>
                           Your working capital ratio of {wcRatio} indicates current liabilities exceed current assets. Immediate attention to cash flow management and working capital optimization is recommended.
                         </div>
@@ -12241,7 +12289,7 @@ export default function FinancialScorePage() {
                     
                     {wcChange > 0 && (
                       <div style={{ padding: '16px', background: '#f0f9ff', borderRadius: '8px', borderLeft: '4px solid #0284c7' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px' }}>↑ Positive Trend</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px' }}>? Positive Trend</div>
                         <div style={{ fontSize: '13px', color: '#0c4a6e', lineHeight: '1.6' }}>
                           Working capital has increased by ${(wcChange / 1000).toFixed(0)}K ({wcChangePercent.toFixed(1)}%) over the past year, indicating improved operational efficiency and financial stability.
                         </div>
@@ -12263,7 +12311,7 @@ export default function FinancialScorePage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
                 onClick={async () => {
-                  console.log('💾 Saving valuation settings for company:', selectedCompanyId);
+                  console.log('?? Saving valuation settings for company:', selectedCompanyId);
                   setValuationSaveStatus('saving');
                   try {
                     const response = await fetch('/api/valuation-settings', {
@@ -12278,17 +12326,17 @@ export default function FinancialScorePage() {
                       })
                     });
                     const result = await response.json();
-                    console.log('💾 Save response:', result);
+                    console.log('?? Save response:', result);
                     if (response.ok) {
                       setValuationSaveStatus('saved');
                       setTimeout(() => setValuationSaveStatus('idle'), 3000);
                     } else {
-                      console.error('❌ Failed to save valuation settings:', result);
+                      console.error('? Failed to save valuation settings:', result);
                       setValuationSaveStatus('error');
                       setTimeout(() => setValuationSaveStatus('idle'), 3000);
                     }
                   } catch (error) {
-                    console.error('❌ Error saving valuation settings:', error);
+                    console.error('? Error saving valuation settings:', error);
                     setValuationSaveStatus('error');
                     setTimeout(() => setValuationSaveStatus('idle'), 3000);
                   }
@@ -12307,7 +12355,7 @@ export default function FinancialScorePage() {
                   transition: 'all 0.3s ease'
                 }}
               >
-                {valuationSaveStatus === 'saving' ? '💾 Saving...' : valuationSaveStatus === 'saved' ? '✅ Saved!' : valuationSaveStatus === 'error' ? '✗ Error' : 'Save Settings'}
+                {valuationSaveStatus === 'saving' ? '?? Saving...' : valuationSaveStatus === 'saved' ? '? Saved!' : valuationSaveStatus === 'error' ? '? Error' : 'Save Settings'}
               </button>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
@@ -12377,7 +12425,7 @@ export default function FinancialScorePage() {
                       ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
+                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K � {sdeMultiplier}x
                     </div>
                   </div>
                   
@@ -12387,7 +12435,7 @@ export default function FinancialScorePage() {
                       ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
+                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K � {ebitdaMultiplier}x
                     </div>
                   </div>
                   
@@ -12739,7 +12787,7 @@ export default function FinancialScorePage() {
                     cursor: 'pointer',
                     boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                   }}>
-                  ðŸ–¨ï¸ Print
+                  🖨� Print
                 </button>
               )}
             </div>
@@ -12806,7 +12854,7 @@ export default function FinancialScorePage() {
             <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
               <details>
                 <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                  📚 Cash Flow Metrics - Definitions & Examples
+                  ?? Cash Flow Metrics - Definitions & Examples
                 </summary>
               
               <div style={{ display: 'grid', gap: '20px', marginTop: '16px' }}>
@@ -12873,10 +12921,10 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Percentage of revenue converted to operating cash flow. Higher percentages indicate better cash generation efficiency.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> (Operating Cash Flow ÷ Revenue) × 100
+                    <strong>Formula:</strong> (Operating Cash Flow � Revenue) � 100
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 ÷ $250,000) × 100 = <strong>23.2%</strong>
+                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 � $250,000) � 100 = <strong>23.2%</strong>
                   </p>
                 </div>
 
@@ -12887,10 +12935,10 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Number of days the company can operate with its current cash balance at the current cash flow rate. Indicates financial runway.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Ending Cash ÷ (Operating Cash Flow ÷ 30)
+                    <strong>Formula:</strong> Ending Cash � (Operating Cash Flow � 30)
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 ÷ ($58,000 ÷ 30) = <strong>38.8 days</strong>
+                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 � ($58,000 � 30) = <strong>38.8 days</strong>
                   </p>
                 </div>
 
@@ -12901,11 +12949,11 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days inventory is held before being sold. Lower values indicate faster inventory turnover and better working capital management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Inventory Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS ÷ Avg Inventory</span>
+                    <strong>Formula:</strong> 365 � Inventory Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS � Avg Inventory</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 ÷ 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 � 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -12916,11 +12964,11 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days to collect payment from customers after a sale. Lower values indicate faster cash collection and better receivables management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Receivables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue ÷ Avg A/R</span>
+                    <strong>Formula:</strong> 365 � Receivables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue � Avg A/R</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 ÷ 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 � 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -12931,11 +12979,11 @@ export default function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days the company takes to pay its suppliers. Higher values can indicate better use of supplier credit, but be careful not to damage supplier relationships.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Payables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS ÷ Avg A/P</span>
+                    <strong>Formula:</strong> 365 � Payables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS � Avg A/P</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 ÷ 8 = <strong>45.6 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 � 8 = <strong>45.6 days</strong>
                   </p>
                 </div>
 
@@ -12960,7 +13008,7 @@ export default function FinancialScorePage() {
             <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
               <details>
                 <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                  📖 Why Cash Flow Management is Critical for your Business
+                  ?? Why Cash Flow Management is Critical for your Business
                 </summary>
               
               <div style={{ marginTop: '16px', fontSize: '14px', lineHeight: '1.8', color: '#475569' }}>
@@ -13072,7 +13120,7 @@ export default function FinancialScorePage() {
                   Conclusion: Liquidity is the Key to Resilience
                 </h3>
                 <p style={{ marginBottom: '0' }}>
-                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters most—growing your business.
+                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters most�growing your business.
                 </p>
               </div>
               </details>
@@ -13526,14 +13574,14 @@ export default function FinancialScorePage() {
                   <div style={{ display: 'grid', gap: '16px' }}>
                     {totalOperatingCF > 0 ? (
                       <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>✓ Positive Operating Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>? Positive Operating Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#047857' }}>
                           The company generated ${(totalOperatingCF / 1000).toFixed(0)}K in cash from operations over the last 12 months, indicating healthy operational performance.
                         </div>
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️  Negative Operating Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>??� Negative Operating Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           The company consumed ${Math.abs(totalOperatingCF / 1000).toFixed(0)}K in cash from operations, which may indicate operational challenges.
                         </div>
@@ -13542,14 +13590,14 @@ export default function FinancialScorePage() {
                     
                     {totalFreeCF > 0 ? (
                       <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>✓ Positive Free Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>? Positive Free Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#047857' }}>
                           After capital expenditures, the company has ${(totalFreeCF / 1000).toFixed(0)}K in free cash flow available for growth, debt reduction, or distributions.
                         </div>
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️  Negative Free Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>??� Negative Free Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#b45309' }}>
                           Capital expenditures exceed operating cash flow by ${Math.abs(totalFreeCF / 1000).toFixed(0)}K, requiring external financing.
                         </div>
@@ -13558,14 +13606,14 @@ export default function FinancialScorePage() {
                     
                     {avgCashFlowMargin > 15 ? (
                       <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>✅ Strong Cash Flow Margin</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>? Strong Cash Flow Margin</div>
                         <div style={{ fontSize: '13px', color: '#047857' }}>
                           Average cash flow margin of {avgCashFlowMargin.toFixed(1)}% indicates the company efficiently converts revenue into cash.
                         </div>
                       </div>
                     ) : avgCashFlowMargin < 5 ? (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️  Low Cash Flow Margin</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>??� Low Cash Flow Margin</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           Cash flow margin of {avgCashFlowMargin.toFixed(1)}% suggests challenges in converting revenue to cash. Review receivables collection and expense timing.
                         </div>
@@ -13590,12 +13638,12 @@ export default function FinancialScorePage() {
         return (
           <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>📊 Account Mapping</h1>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
               {hasCsvData
-                ? `Map Trial Balance accounts to your standardized financial fields • Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} • ${csvTrialBalanceData.dates?.length || 0} periods`
+                ? `Map Trial Balance accounts to your standardized financial fields � Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} � ${csvTrialBalanceData.dates?.length || 0} periods`
                 : `${aiMappings.length} saved account mappings loaded from database`
               }
             </p>
@@ -13626,8 +13674,8 @@ export default function FinancialScorePage() {
                           accountType: acc.acctType,
                         }));
 
-                        console.log('📊 CSV accounts to map:', qbAccountsWithClass.length);
-                        console.log('📊 First 10 accounts:', qbAccountsWithClass.slice(0, 10));
+                        console.log('?? CSV accounts to map:', qbAccountsWithClass.length);
+                        console.log('?? First 10 accounts:', qbAccountsWithClass.slice(0, 10));
 
                         const response = await fetch('/api/ai-mapping/enhanced', {
                           method: 'POST',
@@ -13671,12 +13719,12 @@ export default function FinancialScorePage() {
                   >
                     {isGeneratingMappings ? (
                       <>
-                        <span>⏳</span>
+                        <span>?</span>
                         <span>Generating Mappings...</span>
                       </>
                     ) : (
                       <>
-                        <span>🤖</span>
+                        <span>??</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -13717,6 +13765,7 @@ export default function FinancialScorePage() {
                 <AccountMappingTable
                   mappings={aiMappings}
                   linesOfBusiness={linesOfBusiness}
+                  userDefinedAllocations={userDefinedAllocations}
                   onMappingChange={(index, updates) => {
                     const updated = [...aiMappings];
                     updated[index] = { ...updated[index], ...updates };
@@ -13751,8 +13800,8 @@ export default function FinancialScorePage() {
 
                           setIsProcessingMonthlyData(true);
                           try {
-                            console.log('📊 Processing CSV/Trial Balance data using mappings...');
-                            console.log('📋 Total mappings:', aiMappings.length);
+                            console.log('?? Processing CSV/Trial Balance data using mappings...');
+                            console.log('?? Total mappings:', aiMappings.length);
 
                             // Process the CSV data using mappings
                             const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
@@ -13776,12 +13825,12 @@ export default function FinancialScorePage() {
                             }
 
                             const result = await response.json();
-                            console.log(`✅ Processed and saved ${processedData.length} months of CSV data`);
+                            console.log(`? Processed and saved ${processedData.length} months of CSV data`);
 
                             // Update local state
                             setLoadedMonthlyData(processedData);
 
-                            alert(`✅ Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                            alert(`? Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
                           } catch (error: any) {
                             console.error('Error processing CSV data:', error);
                             alert('Failed to process CSV data: ' + error.message);
@@ -13802,7 +13851,7 @@ export default function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                         }}
                       >
-                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                        {isProcessingMonthlyData ? 'Processing...' : '?? Process & Save Monthly Data'}
                       </button>
                       <button
                         onClick={async () => {
@@ -13843,7 +13892,7 @@ export default function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                         }}
                       >
-                        {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                        {isSavingMappings ? 'Saving...' : '?? Save Mappings'}
                       </button>
                     </div>
                   </div>
@@ -13901,22 +13950,22 @@ export default function FinancialScorePage() {
       {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && qbRawData) && (() => {
         // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
+          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⚠️ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>?? Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
         
         const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
-        console.log(`ðŸ”„ ========================================`);
-        console.log(`ðŸ”„ DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
-        console.log(`ðŸ”„ Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
-        console.log(`ðŸ”„ QB Data sync date:`, qbRawData.syncDate);
-        console.log(`ðŸ”„ Data belongs to company:`, qbRawData._companyId);
-        console.log(`ðŸ”„ Record ID:`, qbRawData._recordId);
-        console.log(`ðŸ”„ ========================================`);
+        console.log(`🔄 ========================================`);
+        console.log(`🔄 DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
+        console.log(`🔄 Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
+        console.log(`🔄 QB Data sync date:`, qbRawData.syncDate);
+        console.log(`🔄 Data belongs to company:`, qbRawData._companyId);
+        console.log(`🔄 Record ID:`, qbRawData._recordId);
+        console.log(`🔄 ========================================`);
         
         // Helper function to recursively extract all rows from QB report
         // Extract from the last month column, not the total column
@@ -14017,11 +14066,11 @@ export default function FinancialScorePage() {
         return (
           <div key={`data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Account Mapping</h1>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              Map QuickBooks accounts to your standardized financial fields • Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
+              Map QuickBooks accounts to your standardized financial fields � Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
             </p>
 
 
@@ -14045,8 +14094,8 @@ export default function FinancialScorePage() {
                         const accountClassifications: Record<string, string> = {};
                         const chartOfAccounts = qbRawData?.chartOfAccounts?.QueryResponse?.Account || [];
                         
-                        console.log('ðŸ” Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
-                        console.log('ðŸ” Total accounts in chart:', chartOfAccounts.length);
+                        console.log('🔍 Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
+                        console.log('🔍 Total accounts in chart:', chartOfAccounts.length);
                         
                         chartOfAccounts.forEach((account: any) => {
                           const accountName = account.Name;
@@ -14092,7 +14141,7 @@ export default function FinancialScorePage() {
                         });
                         
                         if (Object.keys(accountClassifications).length === 0) {
-                          console.error('⚠️ No Chart of Accounts data found! Classifications will be incorrect.');
+                          console.error('?? No Chart of Accounts data found! Classifications will be incorrect.');
                         }
                         
                         // Extract all account names WITH classifications from QB data
@@ -14117,13 +14166,13 @@ export default function FinancialScorePage() {
                         // For Balance Sheet: Get individual items (all detail accounts)
                         const bsDataRows = bsRows.filter(r => r.type === 'data' && !r.isHeader && !r.isTotal);
                         
-                        console.log('ðŸ” Revenue individual items:', revenueDataRows.length);
-                        console.log('ðŸ” Expense individual items:', expenseDataRows.length);
-                        console.log('ðŸ” BS individual items:', bsDataRows.length);
+                        console.log('🔍 Revenue individual items:', revenueDataRows.length);
+                        console.log('🔍 Expense individual items:', expenseDataRows.length);
+                        console.log('🔍 BS individual items:', bsDataRows.length);
                         
                         // DEBUG: Pick first revenue account to track through entire process
                         const testAccount = revenueDataRows[0]?.name || expenseDataRows[0]?.name || bsDataRows[0]?.name;
-                        console.log(`\nðŸ”¬ TRACKING TEST ACCOUNT: "${testAccount}"`);
+                        console.log(`\n🔬 TRACKING TEST ACCOUNT: "${testAccount}"`);
                         if (testAccount) {
                           const testRow = plRows.find(r => r.name === testAccount) || bsRows.find(r => r.name === testAccount);
                           console.log('Test account raw data:', testRow);
@@ -14167,7 +14216,7 @@ export default function FinancialScorePage() {
                             
                             // Debug first 5 accounts
                             if (idx < 5) {
-                              console.log(`BS Account ${idx}: "${row.name}" | Section: "${row.section}" → ${classification}`);
+                              console.log(`BS Account ${idx}: "${row.name}" | Section: "${row.section}" ? ${classification}`);
                             }
                           } else if (!classification) {
                             classification = 'Asset'; // Last resort default
@@ -14182,10 +14231,10 @@ export default function FinancialScorePage() {
                           qbAccountsWithClass.push({ name: row.name, classification });
                         });
                         
-                        console.log(`ðŸ“Š BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
+                        console.log(`📊 BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
                         
-                        console.log('ðŸ” TOTAL accounts to map:', qbAccountsWithClass.length);
-                        console.log('ðŸ” First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
+                        console.log('🔍 TOTAL accounts to map:', qbAccountsWithClass.length);
+                        console.log('🔍 First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
 
                         const response = await fetch('/api/ai-mapping/enhanced', {
                           method: 'POST',
@@ -14207,7 +14256,7 @@ export default function FinancialScorePage() {
                         // DEBUG: Track test account through mapping
                         if (testAccount) {
                           const testMapping = data.mappings.find((m: any) => m.qbAccount === testAccount);
-                          console.log(`\nðŸ”¬ TEST ACCOUNT MAPPING:`, testMapping);
+                          console.log(`\n🔬 TEST ACCOUNT MAPPING:`, testMapping);
                         }
                         
                         setShowMappingSection(true);
@@ -14236,12 +14285,12 @@ export default function FinancialScorePage() {
                   >
                     {isGeneratingMappings ? (
                       <>
-                        <span>³</span>
+                        <span>�</span>
                         <span>Generating Mappings...</span>
                       </>
                     ) : (
                       <>
-                        <span>🤖</span>
+                        <span>??</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -14252,7 +14301,7 @@ export default function FinancialScorePage() {
                   <div>
                     <div style={{ marginBottom: '16px', padding: '16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#0369a1', marginBottom: '4px' }}>
-                        ✨ AI Suggestions Generated
+                        ? AI Suggestions Generated
                       </div>
                       <div style={{ fontSize: '13px', color: '#0c4a6e' }}>
                         Review the suggested mappings below. You can edit any mapping before saving. Mappings will be used to automatically populate your standardized financial statements from QuickBooks data.
@@ -14538,7 +14587,7 @@ export default function FinancialScorePage() {
                                   
                                   // Clear from state
                                   setAiMappings([]);
-                                  alert('All mappings cleared! ✅');
+                                  alert('All mappings cleared! ?');
                                 } catch (error: any) {
                                   alert('Failed to clear mappings: ' + error.message);
                                 }
@@ -14556,7 +14605,7 @@ export default function FinancialScorePage() {
                               cursor: aiMappings.length === 0 ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            🗑️ Clear All
+                            ??? Clear All
                           </button>
                           <button
                             onClick={() => {
@@ -14605,7 +14654,7 @@ export default function FinancialScorePage() {
                                 // Update local state to reflect deduplicated mappings
                                 setAiMappings(uniqueMappings);
                                 
-                                alert('Mappings saved successfully! ✅');
+                                alert('Mappings saved successfully! ?');
                                 // Keep the section visible after saving so users can see their saved mappings
                               } catch (error: any) {
                                 console.error('Error saving mappings:', error);
@@ -14627,7 +14676,7 @@ export default function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                            {isSavingMappings ? 'Saving...' : '?? Save Mappings'}
                           </button>
                         </div>
                       </div>
@@ -14653,8 +14702,8 @@ export default function FinancialScorePage() {
                           
                           setIsProcessingMonthlyData(true);
                           try {
-                            console.log('ðŸ”„ Processing 36 months of data using mappings...');
-                            console.log('ðŸ“‹ Total mappings:', aiMappings.length);
+                            console.log('🔄 Processing 36 months of data using mappings...');
+                            console.log('📋 Total mappings:', aiMappings.length);
                             
                             // DEBUG: Track Professional Services expense account
                             const testMapping = aiMappings.find(m => 
@@ -14663,7 +14712,7 @@ export default function FinancialScorePage() {
                               m.qbAccount?.toLowerCase().includes('legal')
                             );
                             const testAccountName = testMapping?.qbAccount;
-                            console.log(`ðŸ”¬ TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
+                            console.log(`🔬 TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
                             
                             // Get column information from QB report
                             const plColumns = qbRawData.profitAndLoss.Columns?.Column || [];
@@ -14704,7 +14753,7 @@ export default function FinancialScorePage() {
                                         accountValues[accountName] = isNaN(numValue) ? 0 : numValue;
                                         
                                         if (isFirstCall && accountName.toLowerCase().includes('legal')) {
-                                          console.log(`\nðŸ’° Found Section Summary "${accountName}":`, {
+                                          console.log(`\n💰 Found Section Summary "${accountName}":`, {
                                       columnIndex,
                                       value,
                                             numValue
@@ -14731,7 +14780,7 @@ export default function FinancialScorePage() {
                               processRows(rows, 0);
                               
                               if (isFirstCall) {
-                                console.log(`\nðŸ“Š Extraction results: Found ${Object.keys(accountValues).length} accounts`);
+                                console.log(`\n📊 Extraction results: Found ${Object.keys(accountValues).length} accounts`);
                               }
                               
                               return accountValues;
@@ -14747,7 +14796,7 @@ export default function FinancialScorePage() {
                               
                               // Debug logging for first few months
                               if (i <= 3) {
-                                console.log(`\nðŸ” Month ${i} extraction debug:`);
+                                console.log(`\n🔍 Month ${i} extraction debug:`);
                                 console.log(`P&L data keys:`, Object.keys(plData).slice(0, 10));
                                 console.log(`P&L sample values:`, Object.entries(plData).slice(0, 5));
                                 console.log(`BS data keys:`, Object.keys(bsData).slice(0, 10));
@@ -14755,7 +14804,7 @@ export default function FinancialScorePage() {
                               
                               // Debug mappings for first month
                               if (i === 1) {
-                                console.log(`\nðŸ—ºï¸ Total mappings: ${aiMappings.length}`);
+                                console.log(`\n🗺� Total mappings: ${aiMappings.length}`);
                                 const targetFieldCounts: Record<string, number> = {};
                                 aiMappings.forEach(m => {
                                   targetFieldCounts[m.targetField] = (targetFieldCounts[m.targetField] || 0) + 1;
@@ -14834,7 +14883,7 @@ export default function FinancialScorePage() {
                                 
                                 // DEBUG: Track test account through every month
                                 if (qbAccount === testAccountName) {
-                                  console.log(`\nðŸ”¬ MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
+                                  console.log(`\n🔬 MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
                                     targetField,
                                     classification,
                                     isBalanceSheet,
@@ -14979,7 +15028,7 @@ export default function FinancialScorePage() {
                               }
                             }
                             
-                            console.log(`✅ Processed ${monthlyData.length} months of data`);
+                            console.log(`? Processed ${monthlyData.length} months of data`);
                             console.log('First month:', monthlyData[0]);
                             console.log('Last month:', monthlyData[monthlyData.length - 1]);
                             console.log('Date range:', monthlyData[0]?.monthDate?.substring(0, 7), 'to', monthlyData[monthlyData.length - 1]?.monthDate?.substring(0, 7));
@@ -14988,7 +15037,7 @@ export default function FinancialScorePage() {
                             if (testAccountName) {
                               const testMapping = aiMappings.find(m => m.qbAccount === testAccountName);
                               const targetField = testMapping?.targetField;
-                              console.log(`\nðŸ”¬ FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
+                              console.log(`\n🔬 FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
                               console.log(`Mapped to field: ${targetField}`);
                               console.log('Values across all months:');
                               monthlyData.forEach((month, idx) => {
@@ -15000,11 +15049,11 @@ export default function FinancialScorePage() {
                             
                             // Check if we have less than expected months
                             if (monthlyData.length < 12) {
-                              console.warn(`⚠️ WARNING: Only ${monthlyData.length} months of data found. Expected at least 12 months for proper reporting.`);
+                              console.warn(`?? WARNING: Only ${monthlyData.length} months of data found. Expected at least 12 months for proper reporting.`);
                               if (monthlyData.length === 1) {
-                                alert(`⚠️ Only 1 month of data was processed!\n\nQuickBooks may have returned a single-column report instead of monthly breakdown.\n\nThe reports need at least 12 months of data to function properly.\n\nTip: Check the QuickBooks sync settings or try re-syncing.`);
+                                alert(`?? Only 1 month of data was processed!\n\nQuickBooks may have returned a single-column report instead of monthly breakdown.\n\nThe reports need at least 12 months of data to function properly.\n\nTip: Check the QuickBooks sync settings or try re-syncing.`);
                               } else {
-                                alert(`⚠️ Only ${monthlyData.length} months of data processed.\n\nReports work best with at least 12 months of data.`);
+                                alert(`?? Only ${monthlyData.length} months of data processed.\n\nReports work best with at least 12 months of data.`);
                               }
                             }
 
@@ -15100,9 +15149,9 @@ export default function FinancialScorePage() {
                               totalLAndE: m.totalLAndE || 0
                             }));
                             setLoadedMonthlyData(convertedMonthly);
-                            console.log('✅ Updated loadedMonthlyData state with', convertedMonthly.length, 'months');
+                            console.log('? Updated loadedMonthlyData state with', convertedMonthly.length, 'months');
                             
-                            alert(`✅ Successfully processed and saved ${monthlyData.length} months of financial data!`);
+                            alert(`? Successfully processed and saved ${monthlyData.length} months of financial data!`);
                           } catch (error: any) {
                             console.error('Error processing monthly data:', error);
                             alert('Failed to process monthly data: ' + error.message);
@@ -15123,7 +15172,7 @@ export default function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                         }}
                       >
-                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                        {isProcessingMonthlyData ? 'Processing...' : '?? Process & Save Monthly Data'}
                       </button>
                           <button
                             onClick={async () => {
@@ -15197,7 +15246,7 @@ export default function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            📥 Download Mapped Data (CSV)
+                            ?? Download Mapped Data (CSV)
                           </button>
                         </div>
                       </div>
@@ -15216,22 +15265,22 @@ export default function FinancialScorePage() {
       {false && currentView === 'financial-statements' && selectedCompanyId && qbRawData && (() => {
         // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
+          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⚠️ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>?? Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
         
         const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
-        console.log(`ðŸ“Š ========================================`);
-        console.log(`ðŸ“Š FINANCIAL STATEMENTS RENDERING (Refresh Key: ${dataRefreshKey})`);
-        console.log(`ðŸ“Š Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
-        console.log(`ðŸ“Š QB Data sync date:`, qbRawData.syncDate);
-        console.log(`ðŸ“Š Data belongs to company:`, qbRawData._companyId);
-        console.log(`ðŸ“Š Record ID:`, qbRawData._recordId);
-        console.log(`ðŸ“Š ========================================`);
+        console.log(`📊 ========================================`);
+        console.log(`📊 FINANCIAL STATEMENTS RENDERING (Refresh Key: ${dataRefreshKey})`);
+        console.log(`📊 Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
+        console.log(`📊 QB Data sync date:`, qbRawData.syncDate);
+        console.log(`📊 Data belongs to company:`, qbRawData._companyId);
+        console.log(`📊 Record ID:`, qbRawData._recordId);
+        console.log(`📊 ========================================`);
 
         // Helper function to recursively extract all rows from QB report
         const extractRows = (data: any, level: number = 0, parentSection: string = ''): any[] => {
@@ -15306,7 +15355,7 @@ export default function FinancialScorePage() {
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-              QuickBooks Data • Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
+              QuickBooks Data � Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
             </p>
 
             {/* Tab Navigation */}
@@ -15434,7 +15483,7 @@ export default function FinancialScorePage() {
 
             {/* Statement Content Area */}
             {(() => {
-              console.log('ðŸ“Š Financial Statement Render Check:', {
+              console.log('📊 Financial Statement Render Check:', {
                 statementType,
                 statementPeriod,
                 monthlyLength: monthly?.length || 0,
@@ -15753,7 +15802,7 @@ export default function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                       <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
-                      <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} • All items shown as % of Revenue</div>
+                      <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} � All items shown as % of Revenue</div>
                     </div>
 
                     {/* Column Headers */}
@@ -16188,7 +16237,7 @@ export default function FinancialScorePage() {
                       </div>
                       {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          ?? Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       )}
                     </div>
@@ -16242,7 +16291,7 @@ export default function FinancialScorePage() {
                   return (
                     <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                       <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                        ðŸ“Š No Data Available
+                        📊 No Data Available
                       </div>
                       <p style={{ fontSize: '14px', color: '#94a3b8' }}>
                         No financial data available for the selected period.
@@ -17611,7 +17660,7 @@ export default function FinancialScorePage() {
                         </div>
                         {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                           <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                            ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            ?? Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </div>
                         )}
                       </div>
@@ -17624,7 +17673,7 @@ export default function FinancialScorePage() {
                 return (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                     <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                      ðŸ“Š Financial Statement Viewer
+                      📊 Financial Statement Viewer
                     </div>
                     <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
                       {monthly.length === 0 
@@ -17720,11 +17769,11 @@ export default function FinancialScorePage() {
                             <strong>Report Period:</strong> {qbRawData.profitAndLoss.Header.StartPeriod || 'N/A'} to {qbRawData.profitAndLoss.Header.EndPeriod || 'N/A'}
                           </div>
                           <div style={{ color: '#10b981', fontWeight: '600', marginTop: '4px', padding: '8px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
-                            ðŸ“… Displaying: {hasMultipleMonths ? `Monthly data for ${monthLabel}` : `Period total for ${monthLabel}`}
+                            📅 Displaying: {hasMultipleMonths ? `Monthly data for ${monthLabel}` : `Period total for ${monthLabel}`}
                           </div>
                           {!hasMultipleMonths && (
                             <div style={{ color: '#f59e0b', fontWeight: '500', fontSize: '12px', marginTop: '4px', padding: '6px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #fcd34d' }}>
-                              ⚠️ Note: This appears to be cumulative for the entire period, not monthly breakdowns
+                              ?? Note: This appears to be cumulative for the entire period, not monthly breakdowns
                             </div>
                           )}
                         </div>
@@ -17802,7 +17851,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -17823,7 +17872,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -17856,7 +17905,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -17899,7 +17948,7 @@ export default function FinancialScorePage() {
                           As of: {qbRawData.balanceSheet.Header.Time || qbRawData.balanceSheet.Header.EndPeriod || 'N/A'}
                         </div>
                         <div style={{ color: '#3b82f6', fontWeight: '500', fontSize: '12px', marginTop: '4px' }}>
-                          ðŸ“Š Balance Sheet shows point-in-time snapshot as of the date above
+                          📊 Balance Sheet shows point-in-time snapshot as of the date above
                         </div>
                       </div>
                     )}
@@ -17990,7 +18039,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18010,7 +18059,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18030,7 +18079,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18053,7 +18102,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18073,7 +18122,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18094,7 +18143,7 @@ export default function FinancialScorePage() {
                                     <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>→ {m.targetField}</div>
+                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
                                       </div>
                                       <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
                                         ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -18116,7 +18165,7 @@ export default function FinancialScorePage() {
                             {/* Balance Check */}
                             {Math.abs(totalAssets - totalLiabAndEquity) > 0.01 && (
                               <div style={{ padding: '10px 16px', background: '#fef2f2', border: '2px solid #ef4444', marginTop: '8px', borderRadius: '6px' }}>
-                                <span style={{ color: '#991b1b', fontWeight: '600' }}>⚠️ Balance Check: Assets and Liabilities+Equity do not match!</span>
+                                <span style={{ color: '#991b1b', fontWeight: '600' }}>?? Balance Check: Assets and Liabilities+Equity do not match!</span>
                               </div>
                             )}
                           </>
@@ -18408,7 +18457,7 @@ export default function FinancialScorePage() {
                     gap: '8px'
                   }}
                 >
-                  🖨️ Print
+                  ??? Print
                 </button>
               </div>
             </div>
@@ -18416,7 +18465,7 @@ export default function FinancialScorePage() {
 
           {/* Statement Content Area */}
           {(() => {
-            console.log('ðŸ“Š Financial Statement Render Check (CSV/Monthly Data):', {
+            console.log('📊 Financial Statement Render Check (CSV/Monthly Data):', {
               statementType,
               statementPeriod,
               monthlyLength: monthly?.length || 0,
@@ -18740,7 +18789,7 @@ export default function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                     <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
-                    <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} • All items shown as % of Revenue</div>
+                    <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} � All items shown as % of Revenue</div>
                   </div>
 
                   {/* Column Headers */}
@@ -19182,7 +19231,7 @@ export default function FinancialScorePage() {
                     </div>
                     {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                       <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                        ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ?? Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </div>
                     )}
                   </div>
@@ -19236,7 +19285,7 @@ export default function FinancialScorePage() {
                 return (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                     <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                      ðŸ“Š No Data Available
+                      📊 No Data Available
                     </div>
                     <p style={{ fontSize: '14px', color: '#94a3b8' }}>
                       No financial data available for the selected period.
@@ -19284,7 +19333,7 @@ export default function FinancialScorePage() {
                     
                     // DEBUG: Log first 3 periods
                     if (idx < 3) {
-                      console.log(`🔍 Period ${idx}:`, { 
+                      console.log(`?? Period ${idx}:`, { 
                         dateValue, 
                         dateObj, 
                         isValid: !isNaN(dateObj.getTime()), 
@@ -20665,7 +20714,7 @@ export default function FinancialScorePage() {
                       </div>
                       {Math.abs(totalAssets - totalLAndE) > 0.01 && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ⚠️ Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          ?? Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </div>
                       )}
                     </div>
@@ -20678,7 +20727,7 @@ export default function FinancialScorePage() {
               return (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                   <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                    ðŸ“Š Financial Statement Viewer
+                    📊 Financial Statement Viewer
                   </div>
                   <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
                     Select options above to view financial statements.
@@ -20719,7 +20768,7 @@ export default function FinancialScorePage() {
           </div>
           <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center', marginTop: '32px' }}>
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-              ðŸ“Š No Financial Data Available
+              📊 No Financial Data Available
             </div>
             <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
               Please import financial data via CSV or sync from QuickBooks to view financial statements.
@@ -20734,7 +20783,7 @@ export default function FinancialScorePage() {
         const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
         const canView = currentView === 'ma-questionnaire' && hasCompanyId && hasCorrectRole;
         
-        console.log('ðŸ“‹ Questionnaire render check:', {
+        console.log('📋 Questionnaire render check:', {
           currentView,
           isQuestionnaireView: currentView === 'ma-questionnaire',
           selectedCompanyId,
@@ -20756,7 +20805,7 @@ export default function FinancialScorePage() {
           
           {currentUser?.role === 'consultant' && (
             <div style={{ background: '#fffbeb', border: '2px solid #fbbf24', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>⚠ Consultant View Only</h3>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>? Consultant View Only</h3>
               <p style={{ fontSize: '14px', color: '#78350f', margin: 0 }}>
                 As a consultant, you can view this questionnaire but cannot fill it out. Only company users can complete assessments. 
                 Navigate to "View Assessments" in the Administrator Dashboard to see user responses.
@@ -20804,7 +20853,7 @@ export default function FinancialScorePage() {
                     </div>
                     {unansweredQuestions.includes(question.id) && (
                       <div style={{ marginTop: '8px', fontSize: '12px', color: '#ef4444', fontWeight: '600' }}>
-                        ⚠️  Please select a rating
+                        ??� Please select a rating
                       </div>
                     )}
                   </div>
@@ -21328,7 +21377,7 @@ export default function FinancialScorePage() {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                 onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
               >
-                🖨️ Generate Print Package
+                ??? Generate Print Package
               </button>
               <button
                 onClick={() => {
@@ -21374,7 +21423,7 @@ export default function FinancialScorePage() {
             {/* Info Box */}
             <div style={{ marginTop: '32px', padding: '16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px' }}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <span style={{ fontSize: '20px' }}>ℹ️</span>
+                <span style={{ fontSize: '20px' }}>??</span>
                 <div style={{ fontSize: '14px', color: '#1e40af', lineHeight: '1.6' }}>
                   <strong>How it works:</strong> Select the reports you want to include, then click "Generate Print Package" to create a combined PDF with all selected reports in a single document ready for printing.
                 </div>
@@ -21391,7 +21440,7 @@ export default function FinancialScorePage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>??</div>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Delete Company</h2>
               <p style={{ fontSize: '16px', color: '#64748b', lineHeight: '1.6' }}>
                 Are you sure you want to delete <strong style={{ color: '#ef4444' }}>"{companyToDelete.companyName}"</strong>?

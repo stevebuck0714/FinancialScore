@@ -13,7 +13,25 @@ export async function GET(request: NextRequest) {
 
     const companies = await prisma.company.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        name: true,
+        addressStreet: true,
+        addressCity: true,
+        addressState: true,
+        addressZip: true,
+        addressCountry: true,
+        industrySector: true,
+        linesOfBusiness: true,
+        userDefinedAllocations: true,
+        affiliateCode: true,
+        subscriptionStatus: true,
+        subscriptionStartDate: true,
+        nextBillingDate: true,
+        selectedSubscriptionPlan: true,
+        consultantId: true,
+        affiliateId: true,
+        createdAt: true,
         users: {
           select: {
             id: true,
@@ -252,22 +270,27 @@ export async function PUT(request: NextRequest) {
 // PATCH update company
 export async function PATCH(request: NextRequest) {
   try {
-    const { 
-      id, 
-      addressStreet, 
-      addressCity, 
-      addressState, 
-      addressZip, 
-      addressCountry, 
-      industrySector, 
+    const {
+      id,
+      companyId, // Alternative way to specify company ID
+      addressStreet,
+      addressCity,
+      addressState,
+      addressZip,
+      addressCountry,
+      industrySector,
       name,
+      linesOfBusiness,
+      userDefinedAllocations,
       subscriptionMonthlyPrice,
       subscriptionQuarterlyPrice,
       subscriptionAnnualPrice,
       selectedSubscriptionPlan
     } = await request.json();
 
-    if (!id) {
+    const targetCompanyId = id || companyId;
+
+    if (!targetCompanyId) {
       return NextResponse.json(
         { error: 'Company ID required' },
         { status: 400 }
@@ -275,7 +298,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const company = await prisma.company.update({
-      where: { id },
+      where: { id: targetCompanyId },
       data: {
         ...(name && { name }),
         ...(addressStreet !== undefined && { addressStreet }),
@@ -284,6 +307,8 @@ export async function PATCH(request: NextRequest) {
         ...(addressZip !== undefined && { addressZip }),
         ...(addressCountry !== undefined && { addressCountry }),
         ...(industrySector !== undefined && { industrySector }),
+        ...(linesOfBusiness !== undefined && { linesOfBusiness }),
+        ...(userDefinedAllocations !== undefined && { userDefinedAllocations }),
         ...(subscriptionMonthlyPrice !== undefined && { subscriptionMonthlyPrice }),
         ...(subscriptionQuarterlyPrice !== undefined && { subscriptionQuarterlyPrice }),
         ...(subscriptionAnnualPrice !== undefined && { subscriptionAnnualPrice }),

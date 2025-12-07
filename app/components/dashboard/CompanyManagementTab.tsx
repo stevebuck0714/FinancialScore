@@ -97,7 +97,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
             {(() => {
               // For business users, auto-select their company if not already selected
               if (currentUser.consultantType === 'business' && !selectedCompanyId && Array.isArray(companies) && companies.length > 0) {
-                const businessCompany = companies.find(c => c.consultantId === currentUser.consultantId);
+                const businessCompany = Array.isArray(companies) ? companies.find(c => c.consultantId === currentUser.consultantId) : undefined;
                 if (businessCompany) {
                   setTimeout(() => setSelectedCompanyId(businessCompany.id), 0);
                 }
@@ -399,7 +399,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
             {(() => {
               // For business users, auto-select their company if not already selected
               if (currentUser.consultantType === 'business' && !selectedCompanyId && Array.isArray(companies) && companies.length > 0) {
-                const businessCompany = companies.find(c => c.consultantId === currentUser.consultantId);
+                const businessCompany = Array.isArray(companies) ? companies.find(c => c.consultantId === currentUser.consultantId) : undefined;
                 if (businessCompany) {
                   setTimeout(() => setSelectedCompanyId(businessCompany.id), 0);
                 }
