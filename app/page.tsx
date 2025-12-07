@@ -2862,10 +2862,20 @@ export default function FinancialScorePage() {
       totalLAndE: parseFloat(row[mapping.totalLAndE!]) || 0
     }));
   }, [rawRows, mapping, loadedMonthlyData]).map(m => {
+    // Calculate Total Operating Expenses using standard chart of accounts (same as Data Review)
+    const opexCategories = [
+      'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
+      'insurance', 'rent', 'infrastructure', 'autoTravel',
+      'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
+    ];
+    const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((m as any)[key] || 0), 0);
+
+    // Use calculated total if expense field is not set or is 0
+    const expense = m.expense || totalOperatingExpense;
+
     // Calculate Gross Profit, EBIT and EBITDA for each month
     const revenue = m.revenue || 0;
     const cogsTotal = m.cogsTotal || 0;
-    const expense = m.expense || 0;
     const interestExpense = m.interestExpense || 0;
     const depreciationAmortization = m.depreciationAmortization || 0;
     
@@ -2878,6 +2888,7 @@ export default function FinancialScorePage() {
     
     return {
       ...m,
+      expense, // Use the calculated total operating expense
       grossProfit,
       ebit,
       ebitda
