@@ -1,5 +1,5 @@
 // Check which database we're connected to
-require('dotenv').config({ path: '.env.local' });
+require('dotenv').config({ path: '.env.local', override: true });
 require('dotenv').config();
 
 const { PrismaClient } = require('@prisma/client');
