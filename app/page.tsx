@@ -1560,36 +1560,57 @@ function FinancialScorePage() {
 
         // Load subscription pricing for this company
         if (company) {
-          console.log('🔍 Loading pricing for company:', company.name, 'affiliateCode:', company.affiliateCode);
+          console.log('🔍 Loading pricing for company:', {
+            name: company.name,
+            id: company.id,
+            affiliateCode: company.affiliateCode,
+            allKeys: Object.keys(company)
+          });
 
           // FIRST: Check localStorage cache for affiliate pricing (expires in 24 hours)
-          const cacheKey = `affiliate_${company.affiliateCode}`;
-          const cacheTimestampKey = `${cacheKey}_timestamp`;
-          const cachedPricing = localStorage.getItem(cacheKey);
-          const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
+          if (company.affiliateCode) {
+            const cacheKey = `affiliate_${company.affiliateCode}`;
+            const cacheTimestampKey = `${cacheKey}_timestamp`;
+            const cachedPricing = localStorage.getItem(cacheKey);
+            const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
 
-          if (cachedPricing && cacheTimestamp) {
-            const cacheAge = Date.now() - parseInt(cacheTimestamp);
-            const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+            console.log('🔍 Checking affiliate cache:', {
+              code: company.affiliateCode,
+              hasCache: !!cachedPricing,
+              hasTimestamp: !!cacheTimestamp
+            });
 
-            if (cacheAge < maxAge) {
-              try {
-                const { monthly, quarterly, annual } = JSON.parse(cachedPricing);
-                console.log('💾 Using cached affiliate pricing:', { monthly, quarterly, annual, age: Math.round(cacheAge/1000/60) + 'min ago' });
-                setSubscriptionMonthlyPrice(monthly);
-                setSubscriptionQuarterlyPrice(quarterly);
-                setSubscriptionAnnualPrice(annual);
-                // Continue to API call in background to refresh cache
-              } catch (e) {
-                console.log('⚠️ Invalid cached pricing, loading from API');
+            if (cachedPricing && cacheTimestamp) {
+              const cacheAge = Date.now() - parseInt(cacheTimestamp);
+              const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+              if (cacheAge < maxAge) {
+                try {
+                  const { monthly, quarterly, annual } = JSON.parse(cachedPricing);
+                  console.log('💾 USING CACHED affiliate pricing:', {
+                    monthly, quarterly, annual,
+                    age: Math.round(cacheAge/1000/60) + 'min ago',
+                    cacheKey
+                  });
+                  setSubscriptionMonthlyPrice(monthly);
+                  setSubscriptionQuarterlyPrice(quarterly);
+                  setSubscriptionAnnualPrice(annual);
+                  // Continue to API call in background to refresh cache
+                } catch (e) {
+                  console.log('⚠️ Invalid cached pricing, loading from API');
+                  localStorage.removeItem(cacheKey);
+                  localStorage.removeItem(cacheTimestampKey);
+                }
+              } else {
+                console.log('⏰ Cached pricing expired, refreshing from API');
                 localStorage.removeItem(cacheKey);
                 localStorage.removeItem(cacheTimestampKey);
               }
             } else {
-              console.log('⏰ Cached pricing expired, refreshing from API');
-              localStorage.removeItem(cacheKey);
-              localStorage.removeItem(cacheTimestampKey);
+              console.log('📭 No cached pricing found, will load from API');
             }
+          } else {
+            console.log('⚠️ No affiliate code on company, skipping cache check');
           }
 
           // If company has an affiliate code, load the affiliate pricing
