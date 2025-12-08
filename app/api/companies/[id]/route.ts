@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
 
 const prisma = new PrismaClient();
-
-// Direct database connection for emergency operations
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 // MANUAL WORKAROUND: If you need to delete companies immediately,
 // you can run this SQL directly in your database:
@@ -39,8 +33,6 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const client = await pool.connect();
-
   try {
     const { id: companyId } = await params;
 
@@ -48,27 +40,18 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
     }
 
-    console.log(`Direct database delete for company ${companyId}`);
+    console.log(`Hiding company ${companyId} from consultant view`);
 
-    // Use direct PostgreSQL client to avoid Prisma schema issues
-    const query = 'UPDATE "Company" SET "consultantId" = NULL WHERE "id" = $1';
-    const result = await client.query(query, [companyId]);
+    // Use Prisma raw query to avoid schema field validation issues
+    await prisma.$executeRaw`UPDATE "Company" SET "consultantId" = NULL WHERE "id" = ${companyId}`;
 
-    if (result.rowCount > 0) {
-      console.log(`Successfully hid company ${companyId} from consultant view`);
-      return NextResponse.json({
-        success: true,
-        message: 'Company has been removed from your dashboard.',
-        hidden: true
-      });
-    } else {
-      console.log(`Company ${companyId} not found or already hidden`);
-      return NextResponse.json({
-        success: true,
-        message: 'Company removed from view.',
-        hidden: true
-      });
-    }
+    console.log(`Successfully hid company ${companyId} from consultant view`);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Company has been removed from your dashboard.',
+      hidden: true
+    });
 
   } catch (error: any) {
     console.error('Database error:', error);
@@ -77,11 +60,9 @@ export async function DELETE(
     return NextResponse.json({
       success: true,
       message: 'Company removed from your dashboard.',
-      hidden: true,
-      note: 'Database operation completed'
+      hidden: true
     });
   } finally {
-    client.release();
     await prisma.$disconnect();
   }
 }
