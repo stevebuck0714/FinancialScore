@@ -155,6 +155,7 @@ export async function POST(request: NextRequest) {
     let annualPrice: number;
     let affiliateId: string | undefined;
     let validatedAffiliateCode: string | undefined;
+    let useAffiliatePricing = false;
 
     // If affiliate code is provided, validate and use affiliate pricing
     if (affiliateCode) {
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
         quarterlyPrice = defaultPricing.consultantQuarterlyPrice ?? 500;
         annualPrice = defaultPricing.consultantAnnualPrice ?? 1750;
 
-        console.log('🔍 Using default consultant pricing:', { monthlyPrice, quarterlyPrice, annualPrice });
+        console.log('🔍 Using promo code - default consultant pricing:', { monthlyPrice, quarterlyPrice, annualPrice });
       } else {
         // Normal validation for other codes
         console.log('🔍 Normal affiliate code validation for:', affiliateCode.toUpperCase());
@@ -208,11 +209,27 @@ export async function POST(request: NextRequest) {
             }
           });
           console.log('🔍 Affiliate code record found:', !!affiliateCodeRecord);
+          console.log('🔍 Affiliate code details:', affiliateCodeRecord ? {
+            id: affiliateCodeRecord.id,
+            code: affiliateCodeRecord.code,
+            affiliateId: affiliateCodeRecord.affiliateId,
+            hasAffiliate: !!affiliateCodeRecord.affiliate,
+            affiliateName: affiliateCodeRecord.affiliate?.name
+          } : 'null');
 
           if (!affiliateCodeRecord) {
             console.error('❌ Affiliate code not found:', affiliateCode.toUpperCase());
             return NextResponse.json(
               { error: `Invalid affiliate code: ${affiliateCode}` },
+              { status: 400 }
+            );
+          }
+
+          // Check if affiliate relationship exists
+          if (!affiliateCodeRecord.affiliate) {
+            console.error('❌ Affiliate code exists but affiliate relationship is missing:', affiliateCode.toUpperCase());
+            return NextResponse.json(
+              { error: `Invalid affiliate code: ${affiliateCode} (affiliate not found)` },
               { status: 400 }
             );
           }
@@ -269,6 +286,7 @@ export async function POST(request: NextRequest) {
           annualPrice = affiliateCodeRecord.annualPrice;
           affiliateId = affiliateCodeRecord.affiliateId;
           validatedAffiliateCode = affiliateCodeRecord.code;
+          useAffiliatePricing = true;
 
           // Increment usage count
           console.log('🔍 Incrementing affiliate code usage count');
@@ -284,9 +302,20 @@ export async function POST(request: NextRequest) {
           );
         }
       }
-    } else {
-    // Fetch default pricing from SystemSettings
-    console.log('🔍 No affiliate code provided, fetching default pricing from SystemSettings...');
+
+      // If affiliate code was provided but validation didn't set useAffiliatePricing, return error
+      if (affiliateCode && !useAffiliatePricing) {
+        console.error('❌ Affiliate code provided but validation failed silently');
+        return NextResponse.json(
+          { error: `Invalid affiliate code: ${affiliateCode}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Fetch default pricing from SystemSettings (only if no affiliate code or promo code)
+    if (!affiliateCode || !useAffiliatePricing) {
+      console.log('🔍 No affiliate code provided or promo code used, fetching default pricing from SystemSettings...');
 
     let monthlyPrice = 195; // Default fallback pricing
     let quarterlyPrice = 500;
