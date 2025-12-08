@@ -162,46 +162,6 @@ export async function POST(request: NextRequest) {
             );
           }
 
-        console.log('🔍 Checking affiliate code status:', {
-          isActive: affiliateCodeRecord.isActive,
-          affiliateActive: affiliateCodeRecord.affiliate.isActive,
-          expiresAt: affiliateCodeRecord.expiresAt,
-          currentUses: affiliateCodeRecord.currentUses,
-          maxUses: affiliateCodeRecord.maxUses
-        });
-
-        if (!affiliateCodeRecord.isActive) {
-          console.error('❌ Affiliate code is not active');
-          return NextResponse.json(
-            { error: 'This affiliate code is no longer active' },
-            { status: 400 }
-          );
-        }
-
-        if (!affiliateCodeRecord.affiliate.isActive) {
-          console.error('❌ Affiliate is not active');
-          return NextResponse.json(
-            { error: 'This affiliate is no longer active' },
-            { status: 400 }
-          );
-        }
-
-        if (affiliateCodeRecord.expiresAt && new Date(affiliateCodeRecord.expiresAt) < new Date()) {
-          console.error('❌ Affiliate code has expired');
-          return NextResponse.json(
-            { error: 'This affiliate code has expired' },
-            { status: 400 }
-          );
-        }
-
-        if (affiliateCodeRecord.maxUses && affiliateCodeRecord.currentUses >= affiliateCodeRecord.maxUses) {
-          console.error('❌ Affiliate code has reached max uses');
-          return NextResponse.json(
-            { error: 'This affiliate code has reached its maximum number of uses' },
-            { status: 400 }
-          );
-        }
-
           console.log('🔍 Checking affiliate code status:', {
             isActive: affiliateCodeRecord.isActive,
             affiliateActive: affiliateCodeRecord.affiliate.isActive,
