@@ -150,8 +150,8 @@ export default function CompanySettingsTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId: selectedCompanyId,
-          linesOfBusiness: lobData,
-          ...(filteredAllocations.length > 0 && { userDefinedAllocations: filteredAllocations })
+          linesOfBusiness: lobData
+          // ...(filteredAllocations.length > 0 && { userDefinedAllocations: filteredAllocations }) // Temporarily disabled - column doesn't exist in production DB
         })
       });
 
