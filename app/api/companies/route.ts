@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
 
     console.log('🔍 Where clause:', where);
 
+    console.log('🔍 Executing query with where clause:', where);
+
     const companies = await prisma.company.findMany({
       where,
       select: {
@@ -31,29 +33,29 @@ export async function GET(request: NextRequest) {
         industrySector: true,
         linesOfBusiness: true,
         // userDefinedAllocations: true, // Column doesn't exist in production DB
-        affiliateCode: true,
-        subscriptionStatus: true,
-        subscriptionStartDate: true,
-        nextBillingDate: true,
-        selectedSubscriptionPlan: true,
+        // affiliateCode: true, // Let's try removing potentially problematic fields
+        // subscriptionStatus: true,
+        // subscriptionStartDate: true,
+        // nextBillingDate: true,
+        // selectedSubscriptionPlan: true,
         consultantId: true,
-        affiliateId: true,
+        // affiliateId: true,
         createdAt: true,
-        users: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            userType: true
-          }
-        },
-        _count: {
-          select: {
-            users: true,
-            financialRecords: true,
-            assessmentRecords: true
-          }
-        }
+        // users: {
+        //   select: {
+        //     id: true,
+        //     name: true,
+        //     email: true,
+        //     userType: true
+        //   }
+        // },
+        // _count: {
+        //   select: {
+        //     users: true,
+        //     financialRecords: true,
+        //     assessmentRecords: true
+        //   }
+        // }
       },
       orderBy: { name: 'asc' }
     });
