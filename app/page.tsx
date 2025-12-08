@@ -4967,23 +4967,6 @@ export default function FinancialScorePage() {
               Company Management
             </button>
             <button
-              onClick={() => handleAdminTabNavigation('company-settings')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'company-settings' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'company-settings' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'company-settings' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Company Settings
-            </button>
-            <button
               onClick={() => handleAdminTabNavigation('payments')}
               style={{
                 padding: '12px 24px',
@@ -5016,6 +4999,23 @@ export default function FinancialScorePage() {
               }}
             >
               Accounting API Connections
+            </button>
+            <button
+              onClick={() => handleAdminTabNavigation('company-settings')}
+              style={{
+                padding: '12px 24px',
+                background: adminDashboardTab === 'company-settings' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'company-settings' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'company-settings' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              LOB Settings
             </button>
             <button
               onClick={() => handleAdminTabNavigation('data-mapping')}
@@ -5107,7 +5107,7 @@ export default function FinancialScorePage() {
             />
           )}
 
-          {/* Company Settings Tab */}
+          {/* LOB Settings Tab */}
           {adminDashboardTab === 'company-settings' && selectedCompanyId && (
             <CompanySettingsTab
               selectedCompanyId={selectedCompanyId}
