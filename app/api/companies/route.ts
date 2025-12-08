@@ -309,6 +309,25 @@ export async function POST(request: NextRequest) {
           subscriptionAnnualPrice: annualPrice,
           affiliateCode: validatedAffiliateCode,
           affiliateId: affiliateId
+          // Explicitly exclude userDefinedAllocations which doesn't exist in production DB
+        },
+        select: {
+          id: true,
+          name: true,
+          consultantId: true,
+          addressStreet: true,
+          addressCity: true,
+          addressState: true,
+          addressZip: true,
+          addressCountry: true,
+          industrySector: true,
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true,
+          affiliateCode: true,
+          affiliateId: true,
+          createdAt: true
+          // Explicitly exclude userDefinedAllocations from select
         }
       });
 
