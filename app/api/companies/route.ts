@@ -163,20 +163,27 @@ export async function POST(request: NextRequest) {
         // Normal validation for other codes
         console.log('🔍 Normal affiliate code validation for:', affiliateCode.toUpperCase());
         try {
+          console.log('🔍 Looking up affiliate code:', affiliateCode.toUpperCase());
           const affiliateCodeRecord = await prisma.affiliateCode.findUnique({
             where: { code: affiliateCode.toUpperCase() },
             include: {
               affiliate: true
             }
           });
+          console.log('🔍 Affiliate code lookup completed');
           console.log('🔍 Affiliate code record found:', !!affiliateCodeRecord);
-          console.log('🔍 Affiliate code details:', affiliateCodeRecord ? {
-            id: affiliateCodeRecord.id,
-            code: affiliateCodeRecord.code,
-            affiliateId: affiliateCodeRecord.affiliateId,
-            hasAffiliate: !!affiliateCodeRecord.affiliate,
-            affiliateName: affiliateCodeRecord.affiliate?.name
-          } : 'null');
+
+          if (affiliateCodeRecord) {
+            console.log('🔍 Affiliate code details:', {
+              id: affiliateCodeRecord.id,
+              code: affiliateCodeRecord.code,
+              affiliateId: affiliateCodeRecord.affiliateId,
+              isActive: affiliateCodeRecord.isActive,
+              hasAffiliate: !!affiliateCodeRecord.affiliate,
+              affiliateName: affiliateCodeRecord.affiliate?.name,
+              affiliateActive: affiliateCodeRecord.affiliate?.isActive
+            });
+          }
 
           if (!affiliateCodeRecord) {
             console.error('❌ Affiliate code not found:', affiliateCode.toUpperCase());
@@ -188,9 +195,9 @@ export async function POST(request: NextRequest) {
 
           // Check if affiliate relationship exists
           if (!affiliateCodeRecord.affiliate) {
-            console.error('❌ Affiliate code exists but affiliate relationship is missing:', affiliateCode.toUpperCase());
+            console.error('❌ Affiliate code exists but affiliate relationship is missing:', affiliateCode.toUpperCase(), 'affiliateId:', affiliateCodeRecord.affiliateId);
             return NextResponse.json(
-              { error: `Invalid affiliate code: ${affiliateCode} (affiliate not found)` },
+              { error: `Invalid affiliate code: ${affiliateCode} (affiliate relationship broken)` },
               { status: 400 }
             );
           }
@@ -256,9 +263,14 @@ export async function POST(request: NextRequest) {
             data: { currentUses: affiliateCodeRecord.currentUses + 1 }
           });
         } catch (affiliateError) {
-          console.error('❌ Error during affiliate code validation:', affiliateError);
+          console.error('❌ Database error during affiliate code validation:', affiliateError);
+          console.error('❌ Error details:', {
+            message: affiliateError.message,
+            code: affiliateError.code,
+            name: affiliateError.name
+          });
           return NextResponse.json(
-            { error: 'Error validating affiliate code', details: affiliateError.message },
+            { error: 'Database error validating affiliate code', details: affiliateError.message },
             { status: 500 }
           );
         }
