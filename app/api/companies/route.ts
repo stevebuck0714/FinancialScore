@@ -43,6 +43,11 @@ export async function GET(request: NextRequest) {
         // subscriptionAnnualPrice: true, // Doesn't exist in production DB
         consultantId: true,
         // affiliateId: true, // Doesn't exist in production DB
+        consultant: {
+          select: {
+            type: true
+          }
+        },
         createdAt: true,
         // users: {
         //   select: {
@@ -63,7 +68,43 @@ export async function GET(request: NextRequest) {
       orderBy: { name: 'asc' }
     });
 
-    return NextResponse.json({ companies });
+    // Enrich companies with pricing information from SystemSettings
+    console.log('🔍 Enriching companies with pricing data...');
+
+    // Fetch default pricing
+    const defaultPricing = await prisma.systemSettings.findUnique({
+      where: { key: 'default_pricing' }
+    });
+
+    console.log('🔍 Default pricing from SystemSettings:', defaultPricing);
+
+    // Enrich each company with pricing
+    const enrichedCompanies = companies.map(company => {
+      const isBusinessConsultant = company.consultant?.type === 'business';
+
+      const monthlyPrice = isBusinessConsultant
+        ? (defaultPricing?.businessMonthlyPrice ?? 195)
+        : (defaultPricing?.consultantMonthlyPrice ?? 195);
+
+      const quarterlyPrice = isBusinessConsultant
+        ? (defaultPricing?.businessQuarterlyPrice ?? 500)
+        : (defaultPricing?.consultantQuarterlyPrice ?? 500);
+
+      const annualPrice = isBusinessConsultant
+        ? (defaultPricing?.businessAnnualPrice ?? 1750)
+        : (defaultPricing?.consultantAnnualPrice ?? 1750);
+
+      return {
+        ...company,
+        subscriptionMonthlyPrice: monthlyPrice,
+        subscriptionQuarterlyPrice: quarterlyPrice,
+        subscriptionAnnualPrice: annualPrice
+      };
+    });
+
+    console.log('🔍 Enriched companies with pricing:', enrichedCompanies.length);
+
+    return NextResponse.json({ companies: enrichedCompanies });
   } catch (error) {
     console.error('❌ Error fetching companies:', error);
     console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
