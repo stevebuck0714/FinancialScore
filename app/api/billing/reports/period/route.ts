@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { calculatePeriodRevenue } from '@/lib/billing/revenueCalculator';
 import { getDateRangeForPeriod } from '@/lib/billing/billingHelpers';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Revenue by time period report
 export async function GET(request: NextRequest) {
   try {
