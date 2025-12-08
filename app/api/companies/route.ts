@@ -164,14 +164,54 @@ export async function POST(request: NextRequest) {
         console.log('🔍 Normal affiliate code validation for:', affiliateCode.toUpperCase());
         try {
           console.log('🔍 Looking up affiliate code:', affiliateCode.toUpperCase());
-          const affiliateCodeRecord = await prisma.affiliateCode.findUnique({
-            where: { code: affiliateCode.toUpperCase() },
-            include: {
-              affiliate: true
-            }
+
+          // First, find the affiliate code without include to avoid relationship issues
+          const affiliateCodeBasic = await prisma.affiliateCode.findUnique({
+            where: { code: affiliateCode.toUpperCase() }
           });
-          console.log('🔍 Affiliate code lookup completed');
-          console.log('🔍 Affiliate code record found:', !!affiliateCodeRecord);
+          console.log('🔍 Basic affiliate code lookup completed:', !!affiliateCodeBasic);
+
+          if (!affiliateCodeBasic) {
+            console.error('❌ Affiliate code not found:', affiliateCode.toUpperCase());
+            return NextResponse.json(
+              { error: `Invalid affiliate code: ${affiliateCode}` },
+              { status: 400 }
+            );
+          }
+
+          console.log('🔍 Affiliate code found:', {
+            id: affiliateCodeBasic.id,
+            code: affiliateCodeBasic.code,
+            affiliateId: affiliateCodeBasic.affiliateId,
+            isActive: affiliateCodeBasic.isActive
+          });
+
+          // Now get the affiliate relationship separately
+          console.log('🔍 Looking up affiliate relationship...');
+          const affiliate = await prisma.affiliate.findUnique({
+            where: { id: affiliateCodeBasic.affiliateId }
+          });
+          console.log('🔍 Affiliate lookup completed:', !!affiliate);
+
+          if (!affiliate) {
+            console.error('❌ Affiliate not found for affiliateId:', affiliateCodeBasic.affiliateId);
+            return NextResponse.json(
+              { error: `Invalid affiliate code: ${affiliateCode} (affiliate not found)` },
+              { status: 400 }
+            );
+          }
+
+          console.log('🔍 Affiliate details:', {
+            id: affiliate.id,
+            name: affiliate.name,
+            isActive: affiliate.isActive
+          });
+
+          // Combine the data
+          const affiliateCodeRecord = {
+            ...affiliateCodeBasic,
+            affiliate: affiliate
+          };
 
           if (affiliateCodeRecord) {
             console.log('🔍 Affiliate code details:', {
