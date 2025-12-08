@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔍 ===== STARTING COMPANY CREATION =====');
 
-    const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode } = await request.json();
+    const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode, linesOfBusiness } = await request.json();
 
     console.log('🔍 Received data:', { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode });
 
