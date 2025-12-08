@@ -216,14 +216,21 @@ export default function FinancialScorePage() {
       if (freeCodes.includes(selectedCompany.affiliateCode.toUpperCase())) {
         return false; // Free access - no payment required for promo codes
       }
-      // For other affiliate codes, payment may still be required
-      // (could check affiliate pricing here in the future)
     }
 
-    // Since subscription pricing fields don't exist in production DB,
-    // default to requiring payment for companies without free promo codes
-    return true; // Payment required by default
-  }, [selectedCompanyId, currentUser, companies]);
+    // Check if the loaded pricing is all $0 (free)
+    if (subscriptionMonthlyPrice === 0 && subscriptionQuarterlyPrice === 0 && subscriptionAnnualPrice === 0) {
+      return false; // Free access - all pricing is $0
+    }
+
+    // If pricing hasn't loaded yet, don't block (avoid false positives)
+    if (subscriptionMonthlyPrice === undefined || subscriptionQuarterlyPrice === undefined || subscriptionAnnualPrice === undefined) {
+      return false; // Don't block while pricing is loading
+    }
+
+    // Payment required for non-free pricing
+    return true;
+  }, [selectedCompanyId, currentUser, companies, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice]);
 
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
