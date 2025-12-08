@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
         addressCountry: true,
         industrySector: true,
         linesOfBusiness: true,
+        userDefinedAllocations: true,
         affiliateCode: true,
         subscriptionStatus: true,
         subscriptionStartDate: true,
@@ -291,7 +292,7 @@ export async function PATCH(request: NextRequest) {
       industrySector,
       name,
       linesOfBusiness,
-      // userDefinedAllocations, // Temporarily disabled - column doesn't exist in production DB
+      userDefinedAllocations,
       subscriptionMonthlyPrice,
       subscriptionQuarterlyPrice,
       subscriptionAnnualPrice,
@@ -318,7 +319,7 @@ export async function PATCH(request: NextRequest) {
         ...(addressCountry !== undefined && { addressCountry }),
         ...(industrySector !== undefined && { industrySector }),
         ...(linesOfBusiness !== undefined && { linesOfBusiness }),
-        // ...(userDefinedAllocations !== undefined && { userDefinedAllocations }), // Temporarily disabled
+        ...(userDefinedAllocations !== undefined && { userDefinedAllocations }),
         ...(subscriptionMonthlyPrice !== undefined && { subscriptionMonthlyPrice }),
         ...(subscriptionQuarterlyPrice !== undefined && { subscriptionQuarterlyPrice }),
         ...(subscriptionAnnualPrice !== undefined && { subscriptionAnnualPrice }),
