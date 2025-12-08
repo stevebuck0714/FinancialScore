@@ -1,27 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+// import prisma from '@/lib/prisma'; // Not needed since we don't query database
 
 export async function GET(request: NextRequest) {
+  console.log('🔍 Valuation settings API called with URL:', request.url);
+
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('companyId');
+    console.log('🔍 Company ID from params:', companyId);
 
     if (!companyId) {
+      console.log('❌ No company ID provided');
       return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
     }
 
     // ValuationSettings table doesn't exist in production DB
     // Always return default values
-    console.log('🔍 Returning default valuation settings for company:', companyId);
-    return NextResponse.json({
+    console.log('✅ Returning default valuation settings for company:', companyId);
+    const response = NextResponse.json({
       sdeMultiplier: 2.5,
       ebitdaMultiplier: 5.0,
       dcfDiscountRate: 10.0,
       dcfTerminalGrowth: 2.0,
     });
+    console.log('✅ Response created successfully');
+    return response;
   } catch (error) {
-    console.error('Error in valuation settings API:', error);
-    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
+    console.error('❌ Error in valuation settings API:', error);
+    console.error('❌ Error stack:', error.stack);
+    return NextResponse.json({
+      error: 'Failed to fetch settings',
+      details: error.message
+    }, { status: 500 });
   }
 }
 
