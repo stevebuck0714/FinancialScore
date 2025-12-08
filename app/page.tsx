@@ -2187,10 +2187,12 @@ export default function FinancialScorePage() {
     
     setIsLoading(true);
     try {
-      console.log('Creating company:', { 
-        name: newCompanyName, 
+      console.log('Creating company:', {
+        name: newCompanyName,
         consultantId: currentUser.consultantId,
-        affiliateCode: selectedAffiliateCodeForNewCompany || undefined
+        affiliateCode: selectedAffiliateCodeForNewCompany || undefined,
+        affiliateCodeRaw: selectedAffiliateCodeForNewCompany,
+        affiliateCodeUpper: selectedAffiliateCodeForNewCompany?.toUpperCase()
       });
       const { company } = await companiesApi.create({
         name: newCompanyName,
