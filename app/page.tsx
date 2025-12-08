@@ -50,14 +50,17 @@ const formatDollar = (value: number): string => {
   return '$' + Math.round(Math.abs(value)).toLocaleString('en-US');
 };
 
-import dynamic from 'next/dynamic';
-
-// Disable prerendering for this complex page
-export default dynamic(() => Promise.resolve(FinancialScorePage), {
-  ssr: false
-});
-
 function FinancialScorePage() {
+  // Prevent any rendering during SSR
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  if (!isClient) {
+    return <div>Loading...</div>;
+  }
   // State - Authentication
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -21574,5 +21577,7 @@ function FinancialScorePage() {
     </div>
   );
 }
+
+export default FinancialScorePage;
 
 
