@@ -1535,8 +1535,16 @@ export default function FinancialScorePage() {
 
         // Load subscription pricing for this company
         if (company) {
+          console.log('🔍 Loading pricing for company:', company.name, 'affiliateCode:', company.affiliateCode);
+          console.log('🔍 Company pricing fields:', {
+            monthly: company.subscriptionMonthlyPrice,
+            quarterly: company.subscriptionQuarterlyPrice,
+            annual: company.subscriptionAnnualPrice
+          });
+
           // If company has affiliate code pricing (from affiliate validation), use it
           if (company.subscriptionMonthlyPrice !== undefined && company.subscriptionMonthlyPrice !== null) {
+            console.log('✅ Using affiliate pricing from company object');
             setSubscriptionMonthlyPrice(company.subscriptionMonthlyPrice);
             setSubscriptionQuarterlyPrice(company.subscriptionQuarterlyPrice);
             setSubscriptionAnnualPrice(company.subscriptionAnnualPrice);
@@ -1555,6 +1563,8 @@ export default function FinancialScorePage() {
                 setSubscriptionAnnualPrice(isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice);
                 console.log('✅ Default pricing loaded:', {
                   monthly: isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice,
+                  quarterly: isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice,
+                  annual: isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice,
                   type: isBusinessUser ? 'business' : 'consultant'
                 });
               } else {
@@ -5894,6 +5904,9 @@ export default function FinancialScorePage() {
               setShowCheckoutModal={setShowCheckoutModal}
               setShowUpdatePaymentModal={setShowUpdatePaymentModal}
               selectedCompanyId={selectedCompanyId}
+              subscriptionMonthlyPrice={subscriptionMonthlyPrice}
+              subscriptionQuarterlyPrice={subscriptionQuarterlyPrice}
+              subscriptionAnnualPrice={subscriptionAnnualPrice}
             />
           )}
 
@@ -5906,10 +5919,9 @@ export default function FinancialScorePage() {
 
           {/* Checkout Modal */}
           {showCheckoutModal && selectedSubscriptionPlan && (() => {
-            const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
-            const planPrice = selectedSubscriptionPlan === 'monthly' ? (selectedCompany?.subscriptionMonthlyPrice ?? 0) :
-                             selectedSubscriptionPlan === 'quarterly' ? (selectedCompany?.subscriptionQuarterlyPrice ?? 0) :
-                             (selectedCompany?.subscriptionAnnualPrice ?? 0);
+            const planPrice = selectedSubscriptionPlan === 'monthly' ? (subscriptionMonthlyPrice ?? 0) :
+                             selectedSubscriptionPlan === 'quarterly' ? (subscriptionQuarterlyPrice ?? 0) :
+                             (subscriptionAnnualPrice ?? 0);
             const planPeriod = selectedSubscriptionPlan === 'monthly' ? '/month' :
                               selectedSubscriptionPlan === 'quarterly' ? '/quarter' : '/year';
 

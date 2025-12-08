@@ -33,6 +33,9 @@ interface PaymentsTabProps {
   setShowCheckoutModal: (show: boolean) => void;
   setShowUpdatePaymentModal: (show: boolean) => void;
   selectedCompanyId: number | null;
+  subscriptionMonthlyPrice?: number;
+  subscriptionQuarterlyPrice?: number;
+  subscriptionAnnualPrice?: number;
 }
 
 export default function PaymentsTab({
@@ -44,11 +47,14 @@ export default function PaymentsTab({
   loadingSubscription,
   setShowCheckoutModal,
   setShowUpdatePaymentModal,
-  selectedCompanyId
+  selectedCompanyId,
+  subscriptionMonthlyPrice = 0,
+  subscriptionQuarterlyPrice = 0,
+  subscriptionAnnualPrice = 0
 }: PaymentsTabProps) {
-  const monthlyPrice = selectedCompany?.subscriptionMonthlyPrice ?? 0;
-  const quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice ?? 0;
-  const annualPrice = selectedCompany?.subscriptionAnnualPrice ?? 0;
+  const monthlyPrice = subscriptionMonthlyPrice;
+  const quarterlyPrice = subscriptionQuarterlyPrice;
+  const annualPrice = subscriptionAnnualPrice;
 
   return (
     <>
