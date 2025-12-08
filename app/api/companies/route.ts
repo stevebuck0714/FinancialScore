@@ -196,6 +196,7 @@ export async function POST(request: NextRequest) {
         monthlyPrice = defaultPricing.consultantMonthlyPrice ?? 195;
         quarterlyPrice = defaultPricing.consultantQuarterlyPrice ?? 500;
         annualPrice = defaultPricing.consultantAnnualPrice ?? 1750;
+        useAffiliatePricing = true; // Promo codes are valid affiliate codes
 
         console.log('🔍 Using promo code - default consultant pricing:', { monthlyPrice, quarterlyPrice, annualPrice });
       } else {
@@ -304,7 +305,9 @@ export async function POST(request: NextRequest) {
       }
 
       // If affiliate code was provided but validation didn't set useAffiliatePricing, return error
-      if (affiliateCode && !useAffiliatePricing) {
+      // (unless it's a special promo code that should use default pricing)
+      const isPromoCode = affiliateCode.toUpperCase() === 'PROMO2025' || affiliateCode.toUpperCase() === 'VCFREE2025';
+      if (affiliateCode && !useAffiliatePricing && !isPromoCode) {
         console.error('❌ Affiliate code provided but validation failed silently');
         return NextResponse.json(
           { error: `Invalid affiliate code: ${affiliateCode}` },
