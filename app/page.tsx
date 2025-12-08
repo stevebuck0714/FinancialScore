@@ -7,7 +7,8 @@ import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lu
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
 import { assessmentData } from '../data/assessmentData';
 import { authApi, companiesApi, usersApi, consultantsApi, financialsApi, assessmentsApi, profilesApi, benchmarksApi, ApiError } from '@/lib/api-client';
-import InactivityLogout from './components/InactivityLogout';
+// Dynamic imports to prevent SSR issues with browser API dependent components
+const InactivityLogout = dynamic(() => import('./components/InactivityLogout'), { ssr: false });
 import { parseDateLike, monthKey, sum, pctChange, getAssetSizeCategory } from './utils/financial';
 import { clamp, revenueGrowthScore_24mo, rgsAdjustmentFrom6mo } from './utils/scoring';
 import { getBenchmarkValue, sixMonthGrowthFromMonthly, normalizeRows, ltmVsPrior } from './utils/data-processing';
@@ -15,28 +16,32 @@ import { exportDataReviewToExcel, exportMonthlyRatiosToExcel } from './utils/exc
 import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, AssessmentResponses, AssessmentNotes, AssessmentRecord, Consultant, User, FinancialDataRecord, LOBData } from './types';
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
-import LoginView from './components/auth/LoginView';
-import { LineChart, ProjectionChart } from './components/charts/Charts';
-import CompanyDetailsModal from './components/modals/CompanyDetailsModal';
-import DataReviewTab from './components/dashboard/DataReviewTab';
-import TeamManagementTab from './components/dashboard/TeamManagementTab';
-import PaymentsTab from './components/dashboard/PaymentsTab';
-import ProfileTab from './components/dashboard/ProfileTab';
-import LOBReportingTab from './components/dashboard/LOBReportingTab';
-import ConsultantDashboard from './components/consultant/ConsultantDashboard';
-import CompanyManagementTab from './components/admin/CompanyManagementTab';
-import CompanySettingsTab from './components/admin/CompanySettingsTab';
-import Header from './components/layout/Header';
-import SiteAdminDashboard from './components/siteadmin/SiteAdminDashboard';
+const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
+const Charts = dynamic(() => import('./components/charts/Charts'), { ssr: false });
+
+// Create dynamic chart components
+const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => ({ default: mod.LineChart })), { ssr: false });
+const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => ({ default: mod.ProjectionChart })), { ssr: false });
+const CompanyDetailsModal = dynamic(() => import('./components/modals/CompanyDetailsModal'), { ssr: false });
+const DataReviewTab = dynamic(() => import('./components/dashboard/DataReviewTab'), { ssr: false });
+const TeamManagementTab = dynamic(() => import('./components/dashboard/TeamManagementTab'), { ssr: false });
+const PaymentsTab = dynamic(() => import('./components/dashboard/PaymentsTab'), { ssr: false });
+const ProfileTab = dynamic(() => import('./components/dashboard/ProfileTab'), { ssr: false });
+const LOBReportingTab = dynamic(() => import('./components/dashboard/LOBReportingTab'), { ssr: false });
+const ConsultantDashboard = dynamic(() => import('./components/consultant/ConsultantDashboard'), { ssr: false });
+const CompanyManagementTab = dynamic(() => import('./components/admin/CompanyManagementTab'), { ssr: false });
+const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySettingsTab'), { ssr: false });
+const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
+const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
 import { saveProjectionDefaults as saveProjectionDefaultsUtil } from './utils/projection-helpers';
-import MAWelcomeView from './components/assessment/MAWelcomeView';
-import MAScoringGuideView from './components/assessment/MAScoringGuideView';
-import MAScoresSummaryView from './components/assessment/MAScoresSummaryView';
-import MAYourResultsView from './components/assessment/MAYourResultsView';
-import TextToSpeech from './components/common/TextToSpeech';
+const MAWelcomeView = dynamic(() => import('./components/assessment/MAWelcomeView'), { ssr: false });
+const MAScoringGuideView = dynamic(() => import('./components/assessment/MAScoringGuideView'), { ssr: false });
+const MAScoresSummaryView = dynamic(() => import('./components/assessment/MAScoresSummaryView'), { ssr: false });
+const MAYourResultsView = dynamic(() => import('./components/assessment/MAYourResultsView'), { ssr: false });
+const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), { ssr: false });
 import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
-import AccountMappingTable from './components/dashboard/AccountMappingTable';
+const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 import toast, { Toaster } from 'react-hot-toast';
 
 // Constants (now imported from ./constants)
