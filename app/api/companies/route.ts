@@ -104,11 +104,12 @@ export async function POST(request: NextRequest) {
     if (affiliateCode) {
       console.log('🔍 Validating affiliate code:', affiliateCode.toUpperCase());
 
-      // First, find the affiliate code without include to avoid relationship issues
-      const affiliateCodeBasic = await prisma.affiliateCode.findUnique({
-        where: { code: affiliateCode.toUpperCase() }
-      });
-      console.log('🔍 Basic affiliate code lookup completed:', !!affiliateCodeBasic);
+      try {
+        // First, find the affiliate code without include to avoid relationship issues
+        const affiliateCodeBasic = await prisma.affiliateCode.findUnique({
+          where: { code: affiliateCode.toUpperCase() }
+        });
+        console.log('🔍 Basic affiliate code lookup completed:', !!affiliateCodeBasic);
 
       if (!affiliateCodeBasic) {
         console.error('❌ Affiliate code not found:', affiliateCode.toUpperCase());
@@ -198,6 +199,18 @@ export async function POST(request: NextRequest) {
       useAffiliatePricing = true;
 
       console.log('🔍 Using affiliate pricing:', { monthlyPrice, quarterlyPrice, annualPrice, affiliateId });
+      } catch (affiliateError) {
+        console.error('❌ Database error during affiliate code validation:', affiliateError);
+        console.error('❌ Error details:', {
+          message: affiliateError.message,
+          code: affiliateError.code,
+          name: affiliateError.name
+        });
+        return NextResponse.json(
+          { error: 'Database error validating affiliate code', details: affiliateError.message },
+          { status: 500 }
+        );
+      }
     }
 
     // If affiliate code was provided but validation didn't set useAffiliatePricing, return error
