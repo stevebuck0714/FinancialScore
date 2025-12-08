@@ -104,22 +104,62 @@ export async function POST(request: NextRequest) {
     // If affiliate code is provided, validate and use affiliate pricing
     if (affiliateCode) {
       console.log('🔍 Validating affiliate code:', affiliateCode.toUpperCase());
-      try {
-        const affiliateCodeRecord = await prisma.affiliateCode.findUnique({
-          where: { code: affiliateCode.toUpperCase() },
-          include: {
-            affiliate: true
-          }
-        });
-        console.log('🔍 Affiliate code record found:', !!affiliateCodeRecord);
 
-        if (!affiliateCodeRecord) {
-          console.error('❌ Affiliate code not found:', affiliateCode.toUpperCase());
-          return NextResponse.json(
-            { error: `Invalid affiliate code: ${affiliateCode}` },
-            { status: 400 }
-          );
+      // TEMPORARY: Skip validation for PROMO2025 to allow company creation
+      if (affiliateCode.toUpperCase() === 'PROMO2025') {
+        console.log('🔍 TEMPORARY: Skipping validation for PROMO2025');
+        // Use default pricing instead
+        console.log('🔍 Fetching default pricing from SystemSettings...');
+        let defaultPricing = await prisma.systemSettings.findUnique({
+          where: { key: 'default_pricing' }
+        });
+        console.log('🔍 SystemSettings lookup result:', defaultPricing);
+
+        if (!defaultPricing) {
+          console.log('🔍 No default pricing found, creating new SystemSettings record...');
+          try {
+            defaultPricing = await prisma.systemSettings.create({
+              data: {
+                key: 'default_pricing',
+                businessMonthlyPrice: 195,
+                businessQuarterlyPrice: 500,
+                businessAnnualPrice: 1750,
+                consultantMonthlyPrice: 195,
+                consultantQuarterlyPrice: 500,
+                consultantAnnualPrice: 1750
+              }
+            });
+            console.log('🔍 SystemSettings created successfully:', defaultPricing);
+          } catch (createError) {
+            console.error('❌ Error creating SystemSettings:', createError);
+            throw createError;
+          }
         }
+
+        // Use consultant pricing (since this is a consultant creating the company)
+        monthlyPrice = defaultPricing.consultantMonthlyPrice ?? 195;
+        quarterlyPrice = defaultPricing.consultantQuarterlyPrice ?? 500;
+        annualPrice = defaultPricing.consultantAnnualPrice ?? 1750;
+
+        console.log('🔍 Using default consultant pricing:', { monthlyPrice, quarterlyPrice, annualPrice });
+      } else {
+        // Normal validation for other codes
+        try {
+          const affiliateCodeRecord = await prisma.affiliateCode.findUnique({
+            where: { code: affiliateCode.toUpperCase() },
+            include: {
+              affiliate: true
+            }
+          });
+          console.log('🔍 Affiliate code record found:', !!affiliateCodeRecord);
+
+          if (!affiliateCodeRecord) {
+            console.error('❌ Affiliate code not found:', affiliateCode.toUpperCase());
+            return NextResponse.json(
+              { error: `Invalid affiliate code: ${affiliateCode}` },
+              { status: 400 }
+            );
+          }
 
         console.log('🔍 Checking affiliate code status:', {
           isActive: affiliateCodeRecord.isActive,
@@ -161,31 +201,72 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        console.log('🔍 Affiliate pricing:', {
-          monthly: affiliateCodeRecord.monthlyPrice,
-          quarterly: affiliateCodeRecord.quarterlyPrice,
-          annual: affiliateCodeRecord.annualPrice
-        });
+          console.log('🔍 Checking affiliate code status:', {
+            isActive: affiliateCodeRecord.isActive,
+            affiliateActive: affiliateCodeRecord.affiliate.isActive,
+            expiresAt: affiliateCodeRecord.expiresAt,
+            currentUses: affiliateCodeRecord.currentUses,
+            maxUses: affiliateCodeRecord.maxUses
+          });
 
-        // Use affiliate pricing
-        monthlyPrice = affiliateCodeRecord.monthlyPrice;
-        quarterlyPrice = affiliateCodeRecord.quarterlyPrice;
-        annualPrice = affiliateCodeRecord.annualPrice;
-        affiliateId = affiliateCodeRecord.affiliateId;
-        validatedAffiliateCode = affiliateCodeRecord.code;
+          if (!affiliateCodeRecord.isActive) {
+            console.error('❌ Affiliate code is not active');
+            return NextResponse.json(
+              { error: 'This affiliate code is no longer active' },
+              { status: 400 }
+            );
+          }
 
-        // Increment usage count
-        console.log('🔍 Incrementing affiliate code usage count');
-        await prisma.affiliateCode.update({
-          where: { id: affiliateCodeRecord.id },
-          data: { currentUses: affiliateCodeRecord.currentUses + 1 }
-        });
-      } catch (affiliateError) {
-        console.error('❌ Error during affiliate code validation:', affiliateError);
-        return NextResponse.json(
-          { error: 'Error validating affiliate code', details: affiliateError.message },
-          { status: 500 }
-        );
+          if (!affiliateCodeRecord.affiliate.isActive) {
+            console.error('❌ Affiliate is not active');
+            return NextResponse.json(
+              { error: 'This affiliate is no longer active' },
+              { status: 400 }
+            );
+          }
+
+          if (affiliateCodeRecord.expiresAt && new Date(affiliateCodeRecord.expiresAt) < new Date()) {
+            console.error('❌ Affiliate code has expired');
+            return NextResponse.json(
+              { error: 'This affiliate code has expired' },
+              { status: 400 }
+            );
+          }
+
+          if (affiliateCodeRecord.maxUses && affiliateCodeRecord.currentUses >= affiliateCodeRecord.maxUses) {
+            console.error('❌ Affiliate code has reached max uses');
+            return NextResponse.json(
+              { error: 'This affiliate code has reached its maximum number of uses' },
+              { status: 400 }
+            );
+          }
+
+          console.log('🔍 Affiliate pricing:', {
+            monthly: affiliateCodeRecord.monthlyPrice,
+            quarterly: affiliateCodeRecord.quarterlyPrice,
+            annual: affiliateCodeRecord.annualPrice
+          });
+
+          // Use affiliate pricing
+          monthlyPrice = affiliateCodeRecord.monthlyPrice;
+          quarterlyPrice = affiliateCodeRecord.quarterlyPrice;
+          annualPrice = affiliateCodeRecord.annualPrice;
+          affiliateId = affiliateCodeRecord.affiliateId;
+          validatedAffiliateCode = affiliateCodeRecord.code;
+
+          // Increment usage count
+          console.log('🔍 Incrementing affiliate code usage count');
+          await prisma.affiliateCode.update({
+            where: { id: affiliateCodeRecord.id },
+            data: { currentUses: affiliateCodeRecord.currentUses + 1 }
+          });
+        } catch (affiliateError) {
+          console.error('❌ Error during affiliate code validation:', affiliateError);
+          return NextResponse.json(
+            { error: 'Error validating affiliate code', details: affiliateError.message },
+            { status: 500 }
+          );
+        }
       }
     } else {
     // Fetch default pricing from SystemSettings
