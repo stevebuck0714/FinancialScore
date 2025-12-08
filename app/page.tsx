@@ -222,7 +222,6 @@ export default function FinancialScorePage() {
 
     // Since subscription pricing fields don't exist in production DB,
     // default to requiring payment for companies without free promo codes
-    // This can be enhanced later to check affiliate pricing from the API
     return true; // Payment required by default
   }, [selectedCompanyId, currentUser, companies]);
 
