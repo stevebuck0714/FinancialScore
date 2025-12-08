@@ -312,7 +312,9 @@ export async function POST(request: NextRequest) {
       const company = await prisma.company.create({
         data: {
           name,
-          consultantId,
+          consultant: {
+            connect: { id: consultantId }
+          },
           addressStreet,
           addressCity,
           addressState,
@@ -323,7 +325,9 @@ export async function POST(request: NextRequest) {
           subscriptionQuarterlyPrice: quarterlyPrice,
           subscriptionAnnualPrice: annualPrice,
           affiliateCode: validatedAffiliateCode,
-          affiliateId: affiliateId
+          affiliate: affiliateId ? {
+            connect: { id: affiliateId }
+          } : undefined
           // Explicitly exclude userDefinedAllocations which doesn't exist in production DB
         },
         select: {
