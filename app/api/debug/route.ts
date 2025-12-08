@@ -63,6 +63,50 @@ export async function GET(request: NextRequest) {
         }
       });
       console.log(`✅ Stuart has ${stuartCompanies.length} companies:`, stuartCompanies);
+
+      // Also check if there are any companies with "test" in the name
+      const testCompanies = await prisma.company.findMany({
+        where: {
+          name: {
+            contains: 'test',
+            mode: 'insensitive'
+          }
+        },
+        select: {
+          id: true,
+          name: true,
+          consultantId: true
+        }
+      });
+      console.log(`🔍 Companies with 'test' in name:`, testCompanies);
+    }
+
+    // Get Stuart's companies
+    let stuartCompanies = [];
+    let testCompanies = [];
+    if (stuartUser?.consultantId) {
+      stuartCompanies = await prisma.company.findMany({
+        where: { consultantId: stuartUser.consultantId },
+        select: {
+          id: true,
+          name: true,
+          consultantId: true
+        }
+      });
+
+      testCompanies = await prisma.company.findMany({
+        where: {
+          name: {
+            contains: 'test',
+            mode: 'insensitive'
+          }
+        },
+        select: {
+          id: true,
+          name: true,
+          consultantId: true
+        }
+      });
     }
 
     return NextResponse.json({
@@ -82,6 +126,8 @@ export async function GET(request: NextRequest) {
         primaryConsultantName: stuartUser.primaryConsultant?.companyName,
         consultantFirmName: stuartUser.consultantFirm?.companyName
       } : null,
+      stuartCompanies,
+      testCompanies,
       consultants: consultants.map(c => ({
         id: c.id,
         companyName: c.companyName,
