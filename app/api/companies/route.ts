@@ -75,6 +75,8 @@ export async function GET(request: NextRequest) {
 // POST create new company
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔍 ===== STARTING COMPANY CREATION =====');
+
     const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode } = await request.json();
 
     console.log('🔍 Received data:', { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode });
@@ -94,6 +96,14 @@ export async function POST(request: NextRequest) {
       select: { type: true, id: true, userId: true }
     });
     console.log('🔍 Consultant lookup result:', consultant);
+
+    if (!consultant) {
+      console.error('❌ Consultant not found:', consultantId);
+      return NextResponse.json(
+        { error: 'Consultant not found' },
+        { status: 404 }
+      );
+    }
 
     let monthlyPrice: number;
     let quarterlyPrice: number;
@@ -232,36 +242,66 @@ export async function POST(request: NextRequest) {
     } else {
     // Fetch default pricing from SystemSettings
     console.log('🔍 No affiliate code provided, fetching default pricing from SystemSettings...');
-    let defaultPricing = await prisma.systemSettings.findUnique({
-      where: { key: 'default_pricing' }
-    });
-    console.log('🔍 SystemSettings lookup result:', defaultPricing);
 
-    // If no settings exist, create with defaults
-    if (!defaultPricing) {
-      console.log('🔍 No default pricing found, creating new SystemSettings record...');
-      try {
-        defaultPricing = await prisma.systemSettings.create({
-          data: {
-            key: 'default_pricing',
-            businessMonthlyPrice: 195,
-            businessQuarterlyPrice: 500,
-            businessAnnualPrice: 1750,
-            consultantMonthlyPrice: 195,
-            consultantQuarterlyPrice: 500,
-            consultantAnnualPrice: 1750
-          }
-        });
-        console.log('🔍 SystemSettings created successfully:', defaultPricing);
-      } catch (createError) {
-        console.error('❌ Error creating SystemSettings:', createError);
-        console.error('❌ SystemSettings create error details:', {
-          message: createError.message,
-          code: createError.code,
-          meta: createError.meta
-        });
-        throw createError;
+    let monthlyPrice = 195; // Default fallback pricing
+    let quarterlyPrice = 500;
+    let annualPrice = 1750;
+
+    try {
+      let defaultPricing = await prisma.systemSettings.findUnique({
+        where: { key: 'default_pricing' }
+      });
+      console.log('🔍 SystemSettings lookup result:', defaultPricing);
+
+      // If no settings exist, create with defaults
+      if (!defaultPricing) {
+        console.log('🔍 No default pricing found, creating new SystemSettings record...');
+        try {
+          defaultPricing = await prisma.systemSettings.create({
+            data: {
+              key: 'default_pricing',
+              businessMonthlyPrice: 195,
+              businessQuarterlyPrice: 500,
+              businessAnnualPrice: 1750,
+              consultantMonthlyPrice: 195,
+              consultantQuarterlyPrice: 500,
+              consultantAnnualPrice: 1750
+            }
+          });
+          console.log('🔍 SystemSettings created successfully:', defaultPricing);
+        } catch (createError) {
+          console.error('❌ Error creating SystemSettings:', createError);
+          console.error('❌ SystemSettings create error details:', {
+            message: createError.message,
+            code: createError.code,
+            meta: createError.meta
+          });
+          // Don't throw here - use default pricing instead
+          console.log('🔍 Using fallback pricing due to SystemSettings error');
+        }
       }
+
+      // Use pricing from database if available, otherwise use defaults
+      if (defaultPricing) {
+        // Use consultant pricing for regular consultants, business pricing for business consultants
+        const isBusinessConsultant = consultant?.type === 'business';
+        monthlyPrice = isBusinessConsultant
+          ? (defaultPricing.businessMonthlyPrice ?? 195)
+          : (defaultPricing.consultantMonthlyPrice ?? 195);
+        quarterlyPrice = isBusinessConsultant
+          ? (defaultPricing.businessQuarterlyPrice ?? 500)
+          : (defaultPricing.consultantQuarterlyPrice ?? 500);
+        annualPrice = isBusinessConsultant
+          ? (defaultPricing.businessAnnualPrice ?? 1750)
+          : (defaultPricing.consultantAnnualPrice ?? 1750);
+      }
+
+      console.log('🔍 Final pricing:', { monthlyPrice, quarterlyPrice, annualPrice });
+
+    } catch (settingsError) {
+      console.error('❌ Error with SystemSettings lookup:', settingsError);
+      console.log('🔍 Using fallback pricing due to SystemSettings error');
+      // Continue with default pricing
     }
 
     // Use consultant pricing for regular consultants, business pricing for business consultants
@@ -333,7 +373,16 @@ export async function POST(request: NextRequest) {
       });
 
       console.log('🔍 Company created successfully:', company);
+
+      console.log('🔍 ===== COMPANY CREATION COMPLETED SUCCESSFULLY =====');
+      console.log('🔍 Returning response with company data');
+
+      const response = NextResponse.json({ company }, { status: 201 });
+      console.log('🔍 Response created successfully');
+      return response;
+
     } catch (companyCreateError) {
+      console.error('❌ ===== COMPANY CREATION FAILED =====');
       console.error('❌ Error creating company:', companyCreateError);
       console.error('❌ Company create error details:', {
         message: companyCreateError.message,
@@ -342,8 +391,6 @@ export async function POST(request: NextRequest) {
       });
       throw companyCreateError;
     }
-
-    return NextResponse.json({ company }, { status: 201 });
   } catch (error) {
     console.error('❌ Error creating company:', error);
     console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
