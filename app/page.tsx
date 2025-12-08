@@ -1535,9 +1535,43 @@ export default function FinancialScorePage() {
 
         // Load subscription pricing for this company
         if (company) {
-          setSubscriptionMonthlyPrice(company.subscriptionMonthlyPrice);
-          setSubscriptionQuarterlyPrice(company.subscriptionQuarterlyPrice);
-          setSubscriptionAnnualPrice(company.subscriptionAnnualPrice);
+          // If company has affiliate code pricing (from affiliate validation), use it
+          if (company.subscriptionMonthlyPrice !== undefined && company.subscriptionMonthlyPrice !== null) {
+            setSubscriptionMonthlyPrice(company.subscriptionMonthlyPrice);
+            setSubscriptionQuarterlyPrice(company.subscriptionQuarterlyPrice);
+            setSubscriptionAnnualPrice(company.subscriptionAnnualPrice);
+          } else {
+            // No affiliate pricing - load default pricing from settings API
+            console.log('🔍 Loading default pricing for company without affiliate code');
+            try {
+              const settingsResponse = await fetch('/api/settings');
+              if (settingsResponse.ok) {
+                const settingsData = await settingsResponse.json();
+                const settings = settingsData.settings;
+                // Use consultant pricing for consultants, business pricing for businesses
+                const isBusinessUser = currentUser?.role === 'siteadmin' || (company.consultantId && currentUser?.consultantId !== company.consultantId);
+                setSubscriptionMonthlyPrice(isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice);
+                setSubscriptionQuarterlyPrice(isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice);
+                setSubscriptionAnnualPrice(isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice);
+                console.log('✅ Default pricing loaded:', {
+                  monthly: isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice,
+                  type: isBusinessUser ? 'business' : 'consultant'
+                });
+              } else {
+                // Fallback pricing
+                console.log('⚠️ Could not load default pricing, using fallback');
+                setSubscriptionMonthlyPrice(195);
+                setSubscriptionQuarterlyPrice(500);
+                setSubscriptionAnnualPrice(1750);
+              }
+            } catch (pricingError) {
+              console.error('❌ Error loading default pricing:', pricingError);
+              // Fallback pricing
+              setSubscriptionMonthlyPrice(195);
+              setSubscriptionQuarterlyPrice(500);
+              setSubscriptionAnnualPrice(1750);
+            }
+          }
         }
 
         // Check QuickBooks connection status
