@@ -7,9 +7,9 @@ async function checkAffiliateCodes() {
   const prisma = new PrismaClient();
 
   try {
-    console.log('🔍 Checking affiliate code: PROMO2025');
+    console.log('🔍 Checking affiliate code: VCFREE2025');
     const code = await prisma.affiliateCode.findUnique({
-      where: { code: 'PROMO2025' },
+      where: { code: 'VCFREE2025' },
       include: {
         affiliate: {
           select: {
@@ -21,7 +21,7 @@ async function checkAffiliateCodes() {
       }
     });
 
-    console.log('PROMO2025 exists:', !!code);
+    console.log('VCFREE2025 exists:', !!code);
     if (code) {
       console.log('Full code details:', {
         id: code.id,
@@ -65,8 +65,15 @@ async function checkAffiliateCodes() {
         });
       }
     } else {
-      console.log('❌ PROMO2025 not found in database');
+      console.log('❌ VCFREE2025 not found in database');
     }
+
+    console.log('\n🔍 Checking PROMO2025 (for comparison):');
+    const promoCode = await prisma.affiliateCode.findUnique({
+      where: { code: 'PROMO2025' },
+      include: { affiliate: true }
+    });
+    console.log('PROMO2025 exists:', !!promoCode);
 
     console.log('\n🔍 All affiliate codes (first 10):');
     const allCodes = await prisma.affiliateCode.findMany({
