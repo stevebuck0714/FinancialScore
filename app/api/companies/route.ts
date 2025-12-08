@@ -160,46 +160,6 @@ export async function POST(request: NextRequest) {
     // If affiliate code is provided, validate and use affiliate pricing
     if (affiliateCode) {
       console.log('🔍 Validating affiliate code:', affiliateCode.toUpperCase());
-
-      // TEMPORARY: Skip validation for PROMO2025 and VCFREE2025 to allow company creation
-      if (affiliateCode.toUpperCase() === 'PROMO2025' || affiliateCode.toUpperCase() === 'VCFREE2025') {
-        console.log('🔍 TEMPORARY: Skipping validation for PROMO2025');
-        // Use default pricing instead
-        console.log('🔍 Fetching default pricing from SystemSettings...');
-        defaultPricing = await prisma.systemSettings.findUnique({
-          where: { key: 'default_pricing' }
-        });
-        console.log('🔍 SystemSettings lookup result:', defaultPricing);
-
-        if (!defaultPricing) {
-          console.log('🔍 No default pricing found, creating new SystemSettings record...');
-          try {
-            defaultPricing = await prisma.systemSettings.create({
-              data: {
-                key: 'default_pricing',
-                businessMonthlyPrice: 195,
-                businessQuarterlyPrice: 500,
-                businessAnnualPrice: 1750,
-                consultantMonthlyPrice: 195,
-                consultantQuarterlyPrice: 500,
-                consultantAnnualPrice: 1750
-              }
-            });
-            console.log('🔍 SystemSettings created successfully:', defaultPricing);
-          } catch (createError) {
-            console.error('❌ Error creating SystemSettings:', createError);
-            throw createError;
-          }
-        }
-
-        // Use consultant pricing (since this is a consultant creating the company)
-        monthlyPrice = defaultPricing.consultantMonthlyPrice ?? 195;
-        quarterlyPrice = defaultPricing.consultantQuarterlyPrice ?? 500;
-        annualPrice = defaultPricing.consultantAnnualPrice ?? 1750;
-        useAffiliatePricing = true; // Promo codes are valid affiliate codes
-
-        console.log('🔍 Using promo code - default consultant pricing:', { monthlyPrice, quarterlyPrice, annualPrice });
-      } else {
         // Normal validation for other codes
         console.log('🔍 Normal affiliate code validation for:', affiliateCode.toUpperCase());
         try {
@@ -305,9 +265,7 @@ export async function POST(request: NextRequest) {
       }
 
       // If affiliate code was provided but validation didn't set useAffiliatePricing, return error
-      // (unless it's a special promo code that should use default pricing)
-      const isPromoCode = affiliateCode.toUpperCase() === 'PROMO2025' || affiliateCode.toUpperCase() === 'VCFREE2025';
-      if (affiliateCode && !useAffiliatePricing && !isPromoCode) {
+      if (affiliateCode && !useAffiliatePricing) {
         console.error('❌ Affiliate code provided but validation failed silently');
         return NextResponse.json(
           { error: `Invalid affiliate code: ${affiliateCode}` },
