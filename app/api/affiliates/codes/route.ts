@@ -1,6 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+// GET - Get affiliate code details by code
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const code = searchParams.get('code');
+
+    if (!code) {
+      return NextResponse.json(
+        { error: 'Code parameter is required' },
+        { status: 400 }
+      );
+    }
+
+    const affiliateCode = await prisma.affiliateCode.findUnique({
+      where: { code: code.toUpperCase() },
+      include: {
+        affiliate: true
+      }
+    });
+
+    if (!affiliateCode) {
+      return NextResponse.json(
+        { error: 'Affiliate code not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ code: affiliateCode });
+  } catch (error) {
+    console.error('Error fetching affiliate code:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch affiliate code' },
+      { status: 500 }
+    );
+  }
+}
+
 // POST - Create new affiliate code
 export async function POST(request: NextRequest) {
   try {

@@ -1536,51 +1536,66 @@ export default function FinancialScorePage() {
         // Load subscription pricing for this company
         if (company) {
           console.log('🔍 Loading pricing for company:', company.name, 'affiliateCode:', company.affiliateCode);
-          console.log('🔍 Company pricing fields:', {
-            monthly: company.subscriptionMonthlyPrice,
-            quarterly: company.subscriptionQuarterlyPrice,
-            annual: company.subscriptionAnnualPrice
-          });
 
-          // If company has affiliate code pricing (from affiliate validation), use it
-          if (company.subscriptionMonthlyPrice !== undefined && company.subscriptionMonthlyPrice !== null) {
-            console.log('✅ Using affiliate pricing from company object');
-            setSubscriptionMonthlyPrice(company.subscriptionMonthlyPrice);
-            setSubscriptionQuarterlyPrice(company.subscriptionQuarterlyPrice);
-            setSubscriptionAnnualPrice(company.subscriptionAnnualPrice);
-          } else {
-            // No affiliate pricing - load default pricing from settings API
-            console.log('🔍 Loading default pricing for company without affiliate code');
+          // If company has an affiliate code, load the affiliate pricing
+          if (company.affiliateCode) {
+            console.log('🔍 Company has affiliate code, loading affiliate pricing');
             try {
-              const settingsResponse = await fetch('/api/settings');
-              if (settingsResponse.ok) {
-                const settingsData = await settingsResponse.json();
-                const settings = settingsData.settings;
-                // Use consultant pricing for consultants, business pricing for businesses
-                const isBusinessUser = currentUser?.role === 'siteadmin' || (company.consultantId && currentUser?.consultantId !== company.consultantId);
-                setSubscriptionMonthlyPrice(isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice);
-                setSubscriptionQuarterlyPrice(isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice);
-                setSubscriptionAnnualPrice(isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice);
-                console.log('✅ Default pricing loaded:', {
-                  monthly: isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice,
-                  quarterly: isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice,
-                  annual: isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice,
-                  type: isBusinessUser ? 'business' : 'consultant'
-                });
-              } else {
-                // Fallback pricing
-                console.log('⚠️ Could not load default pricing, using fallback');
-                setSubscriptionMonthlyPrice(195);
-                setSubscriptionQuarterlyPrice(500);
-                setSubscriptionAnnualPrice(1750);
+              // Find the affiliate code to get pricing
+              const affiliateCodeResponse = await fetch(`/api/affiliates/codes?code=${encodeURIComponent(company.affiliateCode)}`);
+              if (affiliateCodeResponse.ok) {
+                const affiliateCodeData = await affiliateCodeResponse.json();
+                if (affiliateCodeData.code) {
+                  console.log('✅ Found affiliate code pricing:', affiliateCodeData.code);
+                  setSubscriptionMonthlyPrice(affiliateCodeData.code.monthlyPrice || 0);
+                  setSubscriptionQuarterlyPrice(affiliateCodeData.code.quarterlyPrice || 0);
+                  setSubscriptionAnnualPrice(affiliateCodeData.code.annualPrice || 0);
+                  console.log('✅ Affiliate pricing loaded:', {
+                    monthly: affiliateCodeData.code.monthlyPrice || 0,
+                    quarterly: affiliateCodeData.code.quarterlyPrice || 0,
+                    annual: affiliateCodeData.code.annualPrice || 0
+                  });
+                  return; // Exit early - we have affiliate pricing
+                }
               }
-            } catch (pricingError) {
-              console.error('❌ Error loading default pricing:', pricingError);
+              console.log('⚠️ Could not find affiliate code, falling back to default pricing');
+            } catch (affiliateError) {
+              console.error('❌ Error loading affiliate pricing:', affiliateError);
+              console.log('⚠️ Falling back to default pricing due to affiliate error');
+            }
+          }
+
+          // No affiliate code or affiliate pricing failed - load default pricing
+          console.log('🔍 Loading default pricing for company');
+          try {
+            const settingsResponse = await fetch('/api/settings');
+            if (settingsResponse.ok) {
+              const settingsData = await settingsResponse.json();
+              const settings = settingsData.settings;
+              // Use consultant pricing for consultants, business pricing for businesses
+              const isBusinessUser = currentUser?.role === 'siteadmin' || (company.consultantId && currentUser?.consultantId !== company.consultantId);
+              setSubscriptionMonthlyPrice(isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice);
+              setSubscriptionQuarterlyPrice(isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice);
+              setSubscriptionAnnualPrice(isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice);
+              console.log('✅ Default pricing loaded:', {
+                monthly: isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice,
+                quarterly: isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice,
+                annual: isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice,
+                type: isBusinessUser ? 'business' : 'consultant'
+              });
+            } else {
               // Fallback pricing
+              console.log('⚠️ Could not load default pricing, using fallback');
               setSubscriptionMonthlyPrice(195);
               setSubscriptionQuarterlyPrice(500);
               setSubscriptionAnnualPrice(1750);
             }
+          } catch (pricingError) {
+            console.error('❌ Error loading default pricing:', pricingError);
+            // Fallback pricing
+            setSubscriptionMonthlyPrice(195);
+            setSubscriptionQuarterlyPrice(500);
+            setSubscriptionAnnualPrice(1750);
           }
         }
 
