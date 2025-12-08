@@ -301,9 +301,7 @@ export async function POST(request: NextRequest) {
       addressZip,
       addressCountry,
       industrySector,
-      subscriptionMonthlyPrice: monthlyPrice,
-      subscriptionQuarterlyPrice: quarterlyPrice,
-      subscriptionAnnualPrice: annualPrice,
+      pricingUsed: { monthlyPrice, quarterlyPrice, annualPrice }, // Pricing determined but not stored in Company table
       affiliateCode: validatedAffiliateCode,
       affiliateId: affiliateId
     });
@@ -321,9 +319,10 @@ export async function POST(request: NextRequest) {
           addressZip,
           addressCountry,
           industrySector,
-          subscriptionMonthlyPrice: monthlyPrice,
-          subscriptionQuarterlyPrice: quarterlyPrice,
-          subscriptionAnnualPrice: annualPrice,
+          // subscription pricing fields don't exist in production DB
+          // subscriptionMonthlyPrice: monthlyPrice,
+          // subscriptionQuarterlyPrice: quarterlyPrice,
+          // subscriptionAnnualPrice: annualPrice,
           affiliateCode: validatedAffiliateCode,
           affiliate: affiliateId ? {
             connect: { id: affiliateId }
@@ -333,7 +332,9 @@ export async function POST(request: NextRequest) {
         select: {
           id: true,
           name: true,
-          consultantId: true,
+          consultant: {
+            select: { id: true }
+          },
           addressStreet: true,
           addressCity: true,
           addressState: true,
@@ -346,6 +347,9 @@ export async function POST(request: NextRequest) {
           // subscriptionAnnualPrice: true,
           // affiliateCode: true,
           // affiliateId: true,
+          affiliate: {
+            select: { id: true, name: true }
+          },
           createdAt: true
           // Explicitly exclude userDefinedAllocations and other fields that may not exist in production
         }
@@ -353,10 +357,16 @@ export async function POST(request: NextRequest) {
 
       console.log('🔍 Company created successfully:', company);
 
+      // Transform the response to include consultantId for backward compatibility
+      const transformedCompany = {
+        ...company,
+        consultantId: company.consultant?.id
+      };
+
       console.log('🔍 ===== COMPANY CREATION COMPLETED SUCCESSFULLY =====');
       console.log('🔍 Returning response with company data');
 
-      const response = NextResponse.json({ company }, { status: 201 });
+      const response = NextResponse.json({ company: transformedCompany }, { status: 201 });
       console.log('🔍 Response created successfully');
       return response;
 
