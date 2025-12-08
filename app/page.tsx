@@ -209,16 +209,8 @@ export default function FinancialScorePage() {
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
 
-    // If company has an affiliate code, check if it's a free promo code
-    if (selectedCompany.affiliateCode) {
-      // Known free promo codes
-      const freeCodes = ['PROMO2025', 'VCFREE2025'];
-      if (freeCodes.includes(selectedCompany.affiliateCode.toUpperCase())) {
-        return false; // Free access - no payment required for promo codes
-      }
-    }
-
-    // Check if the loaded pricing is all $0 (free)
+    // Check if the loaded pricing is all $0 (free access)
+    // This applies to affiliate codes where pricing is $0, or any company with $0 pricing
     if (subscriptionMonthlyPrice === 0 && subscriptionQuarterlyPrice === 0 && subscriptionAnnualPrice === 0) {
       return false; // Free access - all pricing is $0
     }
