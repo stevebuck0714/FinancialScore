@@ -209,32 +209,21 @@ export default function FinancialScorePage() {
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
 
-    // If company has an affiliate code (promo code), consider it free access
+    // If company has an affiliate code, check if it's a free promo code
     if (selectedCompany.affiliateCode) {
-      return false; // Free access - no payment required
+      // Known free promo codes
+      const freeCodes = ['PROMO2025', 'VCFREE2025'];
+      if (freeCodes.includes(selectedCompany.affiliateCode.toUpperCase())) {
+        return false; // Free access - no payment required for promo codes
+      }
+      // For other affiliate codes, payment may still be required
+      // (could check affiliate pricing here in the future)
     }
 
-    // If all subscription prices are $0, no payment is required (free access)
-    const allPricesZero =
-      (selectedCompany.subscriptionMonthlyPrice === 0 || selectedCompany.subscriptionMonthlyPrice === null) &&
-      (selectedCompany.subscriptionQuarterlyPrice === 0 || selectedCompany.subscriptionQuarterlyPrice === null) &&
-      (selectedCompany.subscriptionAnnualPrice === 0 || selectedCompany.subscriptionAnnualPrice === null);
-
-    if (allPricesZero) {
-      return false; // Free access - no payment required
-    }
-
-    // If no subscription plan is selected, payment is required
-    if (!selectedCompany.selectedSubscriptionPlan) {
-      return true;
-    }
-
-    // Check if the selected plan has a $0 price (promo/free plan)
-    const selectedPlanPrice = selectedCompany.selectedSubscriptionPlan === 'monthly' ? selectedCompany.subscriptionMonthlyPrice :
-                             selectedCompany.selectedSubscriptionPlan === 'quarterly' ? selectedCompany.subscriptionQuarterlyPrice :
-                             selectedCompany.subscriptionAnnualPrice;
-
-    return selectedPlanPrice !== 0; // If price is $0, no payment required
+    // Since subscription pricing fields don't exist in production DB,
+    // default to requiring payment for companies without free promo codes
+    // This can be enhanced later to check affiliate pricing from the API
+    return true; // Payment required by default
   }, [selectedCompanyId, currentUser, companies]);
 
   // Check if current view is allowed for assessment users
