@@ -321,13 +321,14 @@ export async function POST(request: NextRequest) {
           addressZip: true,
           addressCountry: true,
           industrySector: true,
-          subscriptionMonthlyPrice: true,
-          subscriptionQuarterlyPrice: true,
-          subscriptionAnnualPrice: true,
-          affiliateCode: true,
-          affiliateId: true,
+          linesOfBusiness: true,
+          // subscriptionMonthlyPrice: true, // These fields may not exist in production DB
+          // subscriptionQuarterlyPrice: true,
+          // subscriptionAnnualPrice: true,
+          // affiliateCode: true,
+          // affiliateId: true,
           createdAt: true
-          // Explicitly exclude userDefinedAllocations from select
+          // Explicitly exclude userDefinedAllocations and other fields that may not exist in production
         }
       });
 
