@@ -105,8 +105,8 @@ export async function POST(request: NextRequest) {
     if (affiliateCode) {
       console.log('🔍 Validating affiliate code:', affiliateCode.toUpperCase());
 
-      // TEMPORARY: Skip validation for PROMO2025 to allow company creation
-      if (affiliateCode.toUpperCase() === 'PROMO2025') {
+      // TEMPORARY: Skip validation for PROMO2025 and VCFREE2025 to allow company creation
+      if (affiliateCode.toUpperCase() === 'PROMO2025' || affiliateCode.toUpperCase() === 'VCFREE2025') {
         console.log('🔍 TEMPORARY: Skipping validation for PROMO2025');
         // Use default pricing instead
         console.log('🔍 Fetching default pricing from SystemSettings...');
