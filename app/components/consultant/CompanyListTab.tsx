@@ -65,14 +65,14 @@ export default function CompanyListTab({
         </button>
       </div>
       
-      {companies.length === 0 ? (
+      {!Array.isArray(companies) || companies.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
           <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>No companies yet</div>
           <div style={{ fontSize: '14px' }}>Companies will appear here once they are added to your account.</div>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: '16px' }}>
-          {[...companies]
+          {(Array.isArray(companies) ? [...companies] : [])
             .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
             .map((company) => (
               <div

@@ -9,18 +9,25 @@ interface AccountMapping {
   targetField: string;
   confidence?: string;
   lobAllocations?: { [lobName: string]: number };
-  allocationMethod?: { type: 'manual' | 'average' | 'headcount' | 'revenue' };
+  allocationMethod?: string;
+}
+
+interface LOBData {
+  name: string;
+  headcountPercentage: number;
 }
 
 interface AccountMappingTableProps {
   mappings: AccountMapping[];
-  linesOfBusiness: string[];
+  linesOfBusiness: LOBData[];
+  userDefinedAllocations?: { lobName: string; percentage: number }[];
   onMappingChange: (index: number, updates: Partial<AccountMapping>) => void;
 }
 
 export default function AccountMappingTable({
   mappings,
   linesOfBusiness,
+  userDefinedAllocations = [],
   onMappingChange
 }: AccountMappingTableProps) {
 
@@ -34,7 +41,6 @@ export default function AccountMappingTable({
   });
 
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
-  const [openAllocationMethodDropdown, setOpenAllocationMethodDropdown] = useState<number | null>(null);
   const [isClient, setIsClient] = useState(false);
 
   // Set isClient to true on mount to avoid SSR issues with createPortal
@@ -127,23 +133,13 @@ export default function AccountMappingTable({
     return option ? option.label : value;
   };
 
-  const getAllocationMethodLabel = (type: string): string => {
-    switch (type) {
-      case 'manual': return 'Manual';
-      case 'average': return 'Average';
-      case 'headcount': return 'Headcount %';
-      case 'revenue': return 'Revenue %';
-      default: return 'Manual';
-    }
-  };
-
   const renderMappingRow = (mapping: AccountMapping, sectionKey: string) => {
     const globalIdx = mappings.indexOf(mapping);
     const lobAllocations = mapping.lobAllocations || {};
-    const total = Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
+    const total = Math.round(Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0));
     const isOverAllocated = total > 100;
     const isUnderAllocated = total < 100 && total > 0;
-    const activeLOBs = linesOfBusiness.filter(lob => lob.trim() !== '');
+    const activeLOBs = linesOfBusiness.filter(lob => lob && lob.name && lob.name.trim() !== '');
 
     return (
       <tr key={globalIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -227,119 +223,100 @@ export default function AccountMappingTable({
             )}
           </div>
         </td>
-        <td style={{ padding: '10px 12px', position: 'relative' }}>
-          {/* Allocation Method Dropdown */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setOpenAllocationMethodDropdown(openAllocationMethodDropdown === globalIdx ? null : globalIdx)}
-              style={{
-                width: '100%',
-                padding: '6px 10px',
-                border: '1px solid #cbd5e1',
-                borderRadius: '4px',
-                fontSize: '12px',
-                background: '#ffffff',
-                cursor: 'pointer',
-                textAlign: 'left',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}
-            >
-              <span style={{ color: '#1e293b' }}>
-                {mapping.allocationMethod?.type ? getAllocationMethodLabel(mapping.allocationMethod.type) : 'Manual'}
-              </span>
-              <span style={{ fontSize: '10px', color: '#64748b' }}>{openAllocationMethodDropdown === globalIdx ? '▲' : '▼'}</span>
-            </button>
 
-            {openAllocationMethodDropdown === globalIdx && isClient && createPortal(
-              <>
-                {/* Backdrop */}
-                <div
-                  onClick={() => setOpenAllocationMethodDropdown(null)}
-                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }}
-                />
-                {/* Dropdown */}
-                <div style={{
-                  position: 'fixed',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  zIndex: 9999,
-                  background: 'white',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '6px',
-                  boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-                  minWidth: '200px'
-                }}>
-                  <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: '600', color: '#374151' }}>
-                    Allocation Method
-                  </div>
-                  {[
-                    { value: 'manual', label: 'Manual Entry', desc: 'Enter percentages manually' },
-                    { value: 'average', label: 'Average', desc: 'Equal split across LOBs' },
-                    { value: 'headcount', label: 'Headcount %', desc: 'Uses company headcount split' },
-                    // Revenue % only available for non-revenue fields
-                    ...(sectionKey !== 'revenue' ? [{ value: 'revenue', label: 'Revenue %', desc: 'Uses calculated revenue split' }] : [])
-                  ].map(method => (
-                    <div
-                      key={method.value}
-                      onClick={() => {
-                        onMappingChange(globalIdx, {
-                          allocationMethod: { type: method.value as any }
-                        });
-                        setOpenAllocationMethodDropdown(null);
-                      }}
-                      style={{
-                        padding: '10px 16px',
-                        cursor: 'pointer',
-                        background: mapping.allocationMethod?.type === method.value ? '#dbeafe' : 'transparent',
-                        borderBottom: '1px solid #f3f4f6'
-                      }}
-                      onMouseOver={(e) => e.currentTarget.style.background = '#f3f4f6'}
-                      onMouseOut={(e) => e.currentTarget.style.background = mapping.allocationMethod?.type === method.value ? '#dbeafe' : 'transparent'}
-                    >
-                      <div style={{ fontWeight: '500', color: '#1e293b' }}>{method.label}</div>
-                      <div style={{ fontSize: '12px', color: '#64748b' }}>{method.desc}</div>
-                    </div>
-                  ))}
-                </div>
-              </>,
-              document.body
-            )}
-          </div>
+        {/* Allocation Method Dropdown */}
+        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+          <select
+            value={mapping.allocationMethod || 'manual'}
+            onChange={(e) => {
+              const newMethod = e.target.value;
+              let updates: Partial<AccountMapping> = { allocationMethod: newMethod };
+
+              // Auto-apply allocations based on method
+              if (newMethod === 'headcount' && linesOfBusiness.length > 0) {
+                // Apply headcount-based allocations
+                const headcountAllocations: { [lobName: string]: number } = {};
+                linesOfBusiness.forEach((lob) => {
+                  if (lob.name && lob.name.trim() !== '') {
+                    headcountAllocations[lob.name] = lob.headcountPercentage || 0;
+                  }
+                });
+                updates.lobAllocations = headcountAllocations;
+              } else if (newMethod === 'equal') {
+                // Apply equal distribution across all LOBs
+                const equalAllocations: { [lobName: string]: number } = {};
+                const activeLOBs = linesOfBusiness.filter(lob => lob.name && lob.name.trim() !== '');
+                const equalPercent = activeLOBs.length > 0 ? Math.round((100 / activeLOBs.length) * 10) / 10 : 0;
+                activeLOBs.forEach((lob) => {
+                  equalAllocations[lob.name] = equalPercent;
+                });
+                updates.lobAllocations = equalAllocations;
+              } else if (newMethod === 'user-defined') {
+                // Apply user-defined allocations from company settings
+                const userDefinedAllocationsMap: { [lobName: string]: number } = {};
+                userDefinedAllocations.forEach((alloc) => {
+                  if (alloc.lobName && alloc.percentage > 0) {
+                    userDefinedAllocationsMap[alloc.lobName] = alloc.percentage;
+                  }
+                });
+                updates.lobAllocations = userDefinedAllocationsMap;
+              }
+
+              onMappingChange(globalIdx, updates);
+            }}
+            style={{
+              width: '120px',
+              padding: '6px 8px',
+              border: '1px solid #cbd5e1',
+              borderRadius: '4px',
+              fontSize: '12px',
+              background: 'white'
+            }}
+          >
+            <option value="manual">Manual Entry</option>
+            <option value="user-defined">User Defined</option>
+            <option value="headcount">Headcount Based</option>
+            <option value="equal">Equal Distribution</option>
+          </select>
         </td>
 
         {/* LOB Allocation Columns */}
         {activeLOBs.length > 0 && (
           <>
             {activeLOBs.map((lob, lobIdx) => {
-              const currentPercent = lobAllocations[lob] !== undefined ? lobAllocations[lob] : 0;
-              
+              const currentPercent = lobAllocations[lob.name] !== undefined ? lobAllocations[lob.name] : 0;
+              const isHeadcountBased = mapping.allocationMethod === 'headcount';
+              const headcountValue = lob.headcountPercentage || 0;
+              const displayValue = isHeadcountBased ? headcountValue : currentPercent;
+
               return (
-                <td key={lobIdx} style={{ 
-                  padding: '8px 4px', 
-                  borderLeft: lobIdx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', 
-                  borderRight: lobIdx === activeLOBs.length - 1 ? '2px solid #e2e8f0' : 'none', 
-                  background: '#fafafa' 
+                <td key={lobIdx} style={{
+                  padding: '8px 4px',
+                  borderLeft: lobIdx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9',
+                  borderRight: lobIdx === activeLOBs.length - 1 ? '2px solid #e2e8f0' : 'none',
+                  background: '#fafafa'
                 }}>
                   <input
                     type="number"
                     min="0"
                     max="100"
-                    value={currentPercent}
+                    value={displayValue}
+                    disabled={isHeadcountBased}
                     onChange={(e) => {
+                      if (isHeadcountBased) return; // Don't allow changes when headcount-based
                       const newValue = parseInt(e.target.value) || 0;
-                      const newAllocations = { ...lobAllocations, [lob]: newValue };
+                      const newAllocations = { ...lobAllocations, [lob.name]: newValue };
                       onMappingChange(globalIdx, { lobAllocations: newAllocations });
                     }}
                     style={{
                       width: '100%',
                       padding: '4px',
-                      border: '1px solid #cbd5e1',
+                      border: isHeadcountBased ? '1px solid #d1d5db' : '1px solid #cbd5e1',
                       borderRadius: '3px',
                       fontSize: '12px',
-                      textAlign: 'center'
+                      textAlign: 'center',
+                      background: isHeadcountBased ? '#f9fafb' : 'white',
+                      color: isHeadcountBased ? '#6b7280' : '#1e293b'
                     }}
                   />
                 </td>
@@ -389,7 +366,7 @@ export default function AccountMappingTable({
         if (sectionMappings.length === 0) return null;
         
         const isCollapsed = collapsedSections[section.key];
-        const activeLOBs = linesOfBusiness.filter(lob => lob.trim() !== '');
+        const activeLOBs = linesOfBusiness.filter(lob => lob && lob.name && lob.name.trim() !== '');
 
         return (
           <div key={section.key} style={{ marginBottom: '16px' }}>
@@ -431,12 +408,12 @@ export default function AccountMappingTable({
                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                       <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Account Name</th>
                       <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
-                      <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
+                      <th style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
                       {activeLOBs.length > 0 && (
                         <>
                           {activeLOBs.map((lob, idx) => (
                             <th key={idx} style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '600', color: '#7c3aed', fontSize: '11px', background: '#f5f3ff', borderLeft: idx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: idx === activeLOBs.length - 1 ? '2px solid #e2e8f0' : 'none' }}>
-                              {lob} %
+                              {lob.name} %
                             </th>
                           ))}
                           <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569', fontSize: '11px' }}>Total %</th>
@@ -467,7 +444,7 @@ export default function AccountMappingTable({
         if (sectionMappings.length === 0) return null;
         
         const isCollapsed = collapsedSections[section.key];
-        const activeLOBs = linesOfBusiness.filter(lob => lob.trim() !== '');
+        const activeLOBs = linesOfBusiness.filter(lob => lob && lob.name && lob.name.trim() !== '');
 
         return (
           <div key={section.key} style={{ marginBottom: '16px' }}>
@@ -476,7 +453,7 @@ export default function AccountMappingTable({
               onClick={() => toggleSection(section.key)}
               style={{ 
                 display: 'flex', 
-                alignments: 'center', 
+                alignItems: 'center', 
                 justifyContent: 'space-between',
                 padding: '12px 16px', 
                 background: section.bgColor,
@@ -509,12 +486,12 @@ export default function AccountMappingTable({
                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                       <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Account Name</th>
                       <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
-                      <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
+                      <th style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
                       {activeLOBs.length > 0 && (
                         <>
                           {activeLOBs.map((lob, idx) => (
                             <th key={idx} style={{ textAlign: 'center', padding: '8px 4px', fontWeight: '600', color: '#7c3aed', fontSize: '11px', background: '#f5f3ff', borderLeft: idx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: idx === activeLOBs.length - 1 ? '2px solid #e2e8f0' : 'none' }}>
-                              {lob} %
+                              {lob.name} %
                             </th>
                           ))}
                           <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569', fontSize: '11px' }}>Total %</th>
