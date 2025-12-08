@@ -77,7 +77,273 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ error: 'Function temporarily disabled due to syntax errors' }, { status: 500 });
+    // Get consultant to check their type
+    console.log('🔍 Looking up consultant with ID:', consultantId);
+    const consultant = await prisma.consultant.findUnique({
+      where: { id: consultantId },
+      select: { type: true, id: true, userId: true }
+    });
+    console.log('🔍 Consultant lookup result:', consultant);
+
+    if (!consultant) {
+      console.error('❌ Consultant not found:', consultantId);
+      return NextResponse.json(
+        { error: 'Consultant not found' },
+        { status: 404 }
+      );
+    }
+
+    let monthlyPrice: number;
+    let quarterlyPrice: number;
+    let annualPrice: number;
+    let affiliateId: string | undefined;
+    let validatedAffiliateCode: string | undefined;
+    let useAffiliatePricing = false;
+
+    // If affiliate code is provided, validate and use affiliate pricing
+    if (affiliateCode) {
+      console.log('🔍 Validating affiliate code:', affiliateCode.toUpperCase());
+
+      // First, find the affiliate code without include to avoid relationship issues
+      const affiliateCodeBasic = await prisma.affiliateCode.findUnique({
+        where: { code: affiliateCode.toUpperCase() }
+      });
+      console.log('🔍 Basic affiliate code lookup completed:', !!affiliateCodeBasic);
+
+      if (!affiliateCodeBasic) {
+        console.error('❌ Affiliate code not found:', affiliateCode.toUpperCase());
+        return NextResponse.json(
+          { error: `Invalid affiliate code: ${affiliateCode}` },
+          { status: 400 }
+        );
+      }
+
+      console.log('🔍 Affiliate code found:', {
+        id: affiliateCodeBasic.id,
+        code: affiliateCodeBasic.code,
+        affiliateId: affiliateCodeBasic.affiliateId,
+        isActive: affiliateCodeBasic.isActive
+      });
+
+      // Now get the affiliate relationship separately
+      console.log('🔍 Looking up affiliate relationship...');
+      const affiliate = await prisma.affiliate.findUnique({
+        where: { id: affiliateCodeBasic.affiliateId }
+      });
+      console.log('🔍 Affiliate lookup completed:', !!affiliate);
+
+      if (!affiliate) {
+        console.error('❌ Affiliate not found for affiliateId:', affiliateCodeBasic.affiliateId);
+        return NextResponse.json(
+          { error: `Invalid affiliate code: ${affiliateCode} (affiliate not found)` },
+          { status: 400 }
+        );
+      }
+
+      console.log('🔍 Affiliate details:', {
+        id: affiliate.id,
+        name: affiliate.name,
+        isActive: affiliate.isActive
+      });
+
+      // Check if affiliate code is active
+      if (!affiliateCodeBasic.isActive) {
+        console.error('❌ Affiliate code is not active');
+        return NextResponse.json(
+          { error: 'This affiliate code is no longer active' },
+          { status: 400 }
+        );
+      }
+
+      // Check if affiliate is active
+      if (!affiliate.isActive) {
+        console.error('❌ Affiliate is not active');
+        return NextResponse.json(
+          { error: 'This affiliate is no longer active' },
+          { status: 400 }
+        );
+      }
+
+      // Check expiration
+      if (affiliateCodeBasic.expiresAt && new Date(affiliateCodeBasic.expiresAt) < new Date()) {
+        console.error('❌ Affiliate code has expired');
+        return NextResponse.json(
+          { error: 'This affiliate code has expired' },
+          { status: 400 }
+        );
+      }
+
+      // Check usage limits
+      if (affiliateCodeBasic.maxUses && affiliateCodeBasic.currentUses >= affiliateCodeBasic.maxUses) {
+        console.error('❌ Affiliate code has reached max uses');
+        return NextResponse.json(
+          { error: 'This affiliate code has reached its maximum number of uses' },
+          { status: 400 }
+        );
+      }
+
+      // Increment usage count
+      console.log('🔍 Incrementing affiliate code usage count');
+      await prisma.affiliateCode.update({
+        where: { id: affiliateCodeBasic.id },
+        data: { currentUses: affiliateCodeBasic.currentUses + 1 }
+      });
+
+      // Use affiliate pricing
+      monthlyPrice = affiliateCodeBasic.monthlyPrice;
+      quarterlyPrice = affiliateCodeBasic.quarterlyPrice;
+      annualPrice = affiliateCodeBasic.annualPrice;
+      affiliateId = affiliateCodeBasic.affiliateId;
+      validatedAffiliateCode = affiliateCodeBasic.code;
+      useAffiliatePricing = true;
+
+      console.log('🔍 Using affiliate pricing:', { monthlyPrice, quarterlyPrice, annualPrice, affiliateId });
+    }
+
+    // If affiliate code was provided but validation didn't set useAffiliatePricing, return error
+    if (affiliateCode && !useAffiliatePricing) {
+      console.error('❌ Affiliate code provided but validation failed silently');
+      return NextResponse.json(
+        { error: `Invalid affiliate code: ${affiliateCode}` },
+        { status: 400 }
+      );
+    }
+
+    // Fetch default pricing from SystemSettings (only if no affiliate code)
+    if (!affiliateCode) {
+      console.log('🔍 No affiliate code provided, fetching default pricing from SystemSettings...');
+
+      let defaultPricing = null;
+
+      try {
+        defaultPricing = await prisma.systemSettings.findUnique({
+          where: { key: 'default_pricing' }
+        });
+        console.log('🔍 SystemSettings lookup result:', defaultPricing);
+
+        // If no settings exist, create with defaults
+        if (!defaultPricing) {
+          console.log('🔍 No default pricing found, creating new SystemSettings record...');
+          defaultPricing = await prisma.systemSettings.create({
+            data: {
+              key: 'default_pricing',
+              businessMonthlyPrice: 195,
+              businessQuarterlyPrice: 500,
+              businessAnnualPrice: 1750,
+              consultantMonthlyPrice: 195,
+              consultantQuarterlyPrice: 500,
+              consultantAnnualPrice: 1750
+            }
+          });
+          console.log('🔍 SystemSettings created successfully:', defaultPricing);
+        }
+
+        // Use pricing from database if available, otherwise use defaults
+        if (defaultPricing) {
+          // Use consultant pricing for regular consultants, business pricing for business consultants
+          const isBusinessConsultant = consultant?.type === 'business';
+          monthlyPrice = isBusinessConsultant
+            ? (defaultPricing.businessMonthlyPrice ?? 195)
+            : (defaultPricing.consultantMonthlyPrice ?? 195);
+          quarterlyPrice = isBusinessConsultant
+            ? (defaultPricing.businessQuarterlyPrice ?? 500)
+            : (defaultPricing.consultantQuarterlyPrice ?? 500);
+          annualPrice = isBusinessConsultant
+            ? (defaultPricing.businessAnnualPrice ?? 1750)
+            : (defaultPricing.consultantAnnualPrice ?? 1750);
+        } else {
+          // Fallback pricing
+          monthlyPrice = 195;
+          quarterlyPrice = 500;
+          annualPrice = 1750;
+        }
+
+        console.log('🔍 Final pricing:', { monthlyPrice, quarterlyPrice, annualPrice });
+
+      } catch (settingsError) {
+        console.error('❌ Error with SystemSettings lookup:', settingsError);
+        console.log('🔍 Using fallback pricing due to SystemSettings error');
+        // Use fallback pricing
+        monthlyPrice = 195;
+        quarterlyPrice = 500;
+        annualPrice = 1750;
+      }
+    }
+
+    console.log('🔍 About to create company with final data:', {
+      name,
+      consultantId,
+      addressStreet,
+      addressCity,
+      addressState,
+      addressZip,
+      addressCountry,
+      industrySector,
+      subscriptionMonthlyPrice: monthlyPrice,
+      subscriptionQuarterlyPrice: quarterlyPrice,
+      subscriptionAnnualPrice: annualPrice,
+      affiliateCode: validatedAffiliateCode,
+      affiliateId: affiliateId
+    });
+
+    try {
+      const company = await prisma.company.create({
+        data: {
+          name,
+          consultantId,
+          addressStreet,
+          addressCity,
+          addressState,
+          addressZip,
+          addressCountry,
+          industrySector,
+          subscriptionMonthlyPrice: monthlyPrice,
+          subscriptionQuarterlyPrice: quarterlyPrice,
+          subscriptionAnnualPrice: annualPrice,
+          affiliateCode: validatedAffiliateCode,
+          affiliateId: affiliateId
+          // Explicitly exclude userDefinedAllocations which doesn't exist in production DB
+        },
+        select: {
+          id: true,
+          name: true,
+          consultantId: true,
+          addressStreet: true,
+          addressCity: true,
+          addressState: true,
+          addressZip: true,
+          addressCountry: true,
+          industrySector: true,
+          linesOfBusiness: true,
+          // subscriptionMonthlyPrice: true, // These fields may not exist in production DB
+          // subscriptionQuarterlyPrice: true,
+          // subscriptionAnnualPrice: true,
+          // affiliateCode: true,
+          // affiliateId: true,
+          createdAt: true
+          // Explicitly exclude userDefinedAllocations and other fields that may not exist in production
+        }
+      });
+
+      console.log('🔍 Company created successfully:', company);
+
+      console.log('🔍 ===== COMPANY CREATION COMPLETED SUCCESSFULLY =====');
+      console.log('🔍 Returning response with company data');
+
+      const response = NextResponse.json({ company }, { status: 201 });
+      console.log('🔍 Response created successfully');
+      return response;
+
+    } catch (companyCreateError) {
+      console.error('❌ ===== COMPANY CREATION FAILED =====');
+      console.error('❌ Error creating company:', companyCreateError);
+      console.error('❌ Company create error details:', {
+        message: companyCreateError.message,
+        code: companyCreateError.code,
+        meta: companyCreateError.meta
+      });
+      throw companyCreateError;
+    }
   } catch (error) {
     console.error('❌ Error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
