@@ -268,6 +268,7 @@ export default function FinancialScorePage() {
   // Redirect assessment users if they try to access unauthorized views - but not during login
   // Handle pending login after business registration redirect
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const pendingLoginStr = sessionStorage.getItem('pendingLogin');
     if (pendingLoginStr && !isLoggedIn) {
       try {
@@ -888,6 +889,7 @@ export default function FinancialScorePage() {
 
   // Load from localStorage (DEPRECATED - will be removed)
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const saved = {
       consultants: localStorage.getItem('fs_consultants'),
       companies: localStorage.getItem('fs_companies'),
@@ -957,17 +959,17 @@ export default function FinancialScorePage() {
     }
   }, []);
 
-  useEffect(() => { if (consultants.length > 0) localStorage.setItem('fs_consultants', JSON.stringify(consultants)); }, [consultants]);
-  useEffect(() => { if (companies.length > 0) localStorage.setItem('fs_companies', JSON.stringify(companies)); }, [companies]);
-  useEffect(() => { if (users.length > 0) localStorage.setItem('fs_users', JSON.stringify(users)); }, [users]);
-  useEffect(() => { if (currentUser) localStorage.setItem('fs_currentUser', JSON.stringify(currentUser)); }, [currentUser]);
-  useEffect(() => { if (financialDataRecords.length > 0) localStorage.setItem('fs_financialDataRecords', JSON.stringify(financialDataRecords)); }, [financialDataRecords]);
-  
-  useEffect(() => { if (Object.keys(assessmentResponses).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentResponses', JSON.stringify(assessmentResponses)); }, [assessmentResponses, currentUser]);
-  useEffect(() => { if (Object.keys(assessmentNotes).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentNotes', JSON.stringify(assessmentNotes)); }, [assessmentNotes, currentUser]);
-  useEffect(() => { if (assessmentRecords.length > 0) localStorage.setItem('fs_assessmentRecords', JSON.stringify(assessmentRecords)); }, [assessmentRecords]);
-  useEffect(() => { if (companyProfiles.length > 0) localStorage.setItem('fs_companyProfiles', JSON.stringify(companyProfiles)); }, [companyProfiles]);
-  useEffect(() => { if (priorityRatios.length > 0) localStorage.setItem('fs_priorityRatios', JSON.stringify(priorityRatios)); }, [priorityRatios]);
+  useEffect(() => { if (typeof window !== 'undefined' && consultants.length > 0) localStorage.setItem('fs_consultants', JSON.stringify(consultants)); }, [consultants]);
+  useEffect(() => { if (typeof window !== 'undefined' && companies.length > 0) localStorage.setItem('fs_companies', JSON.stringify(companies)); }, [companies]);
+  useEffect(() => { if (typeof window !== 'undefined' && users.length > 0) localStorage.setItem('fs_users', JSON.stringify(users)); }, [users]);
+  useEffect(() => { if (typeof window !== 'undefined' && currentUser) localStorage.setItem('fs_currentUser', JSON.stringify(currentUser)); }, [currentUser]);
+  useEffect(() => { if (typeof window !== 'undefined' && financialDataRecords.length > 0) localStorage.setItem('fs_financialDataRecords', JSON.stringify(financialDataRecords)); }, [financialDataRecords]);
+
+  useEffect(() => { if (typeof window !== 'undefined' && Object.keys(assessmentResponses).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentResponses', JSON.stringify(assessmentResponses)); }, [assessmentResponses, currentUser]);
+  useEffect(() => { if (typeof window !== 'undefined' && Object.keys(assessmentNotes).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentNotes', JSON.stringify(assessmentNotes)); }, [assessmentNotes, currentUser]);
+  useEffect(() => { if (typeof window !== 'undefined' && assessmentRecords.length > 0) localStorage.setItem('fs_assessmentRecords', JSON.stringify(assessmentRecords)); }, [assessmentRecords]);
+  useEffect(() => { if (typeof window !== 'undefined' && companyProfiles.length > 0) localStorage.setItem('fs_companyProfiles', JSON.stringify(companyProfiles)); }, [companyProfiles]);
+  useEffect(() => { if (typeof window !== 'undefined' && priorityRatios.length > 0) localStorage.setItem('fs_priorityRatios', JSON.stringify(priorityRatios)); }, [priorityRatios]);
   
   // Fetch team members when viewing team management tab
   useEffect(() => {
@@ -1207,6 +1209,7 @@ export default function FinancialScorePage() {
 
   // Handle URL parameters for navigation and messages
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const urlParams = new URLSearchParams(window.location.search);
     const view = urlParams.get('view');
     const tab = urlParams.get('tab');
