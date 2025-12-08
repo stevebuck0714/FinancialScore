@@ -4393,7 +4393,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ?? Getting Started
+                ℹ️ Getting Started
               </a>
               <a
                 href="/privacy-policy"
@@ -4419,7 +4419,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ?? Privacy Policy
+                🛡️ Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4445,7 +4445,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ?? License Agreement
+                📄 License Agreement
               </a>
             </div>
 
@@ -4473,7 +4473,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ?? Contact Support
+                💬 Contact Support
               </a>
             </div>
           </nav>
@@ -4668,7 +4668,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ?? Getting Started
+                ℹ️ Getting Started
               </a>
               <a
                 href="/privacy-policy"
@@ -4694,7 +4694,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ?? Privacy Policy
+                🛡️ Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4720,7 +4720,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ?? License Agreement
+                📄 License Agreement
               </a>
             </div>
 
@@ -4748,7 +4748,7 @@ export default function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ?? Contact Support
+                💬 Contact Support
               </a>
             </div>
           </nav>
@@ -5330,7 +5330,7 @@ export default function FinancialScorePage() {
 
               {/* Trial Balance Import Section */}
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>?? Trial Balance Import</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📊 Trial Balance Import</h2>
                 
                 <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
                   <p style={{ fontSize: '14px', color: '#065f46', lineHeight: '1.6', margin: 0 }}>
@@ -5490,7 +5490,7 @@ export default function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? '? Connected' : qbStatus === 'ERROR' ? '? Error' : qbStatus === 'EXPIRED' ? '?? Token Expired' : '?? Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? '✅ Connected' : qbStatus === 'ERROR' ? '❌ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
