@@ -23,10 +23,10 @@ export async function GET(request: NextRequest) {
       orderBy: { qbAccount: 'asc' },
     });
 
-    // Get the company's saved LOB names and user defined allocations
+    // Get the company's saved LOB names
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { linesOfBusiness: true, userDefinedAllocations: true }
+      select: { linesOfBusiness: true }
     });
 
     console.log(`Retrieved ${mappings.length} mappings for company ${companyId}`);
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       mappings,
       linesOfBusiness: company?.linesOfBusiness || [],
-      userDefinedAllocations: company?.userDefinedAllocations || []
+      userDefinedAllocations: [] // Not available in current schema
     });
   } catch (error: any) {
     console.error('❌ Error fetching mappings:', error);
