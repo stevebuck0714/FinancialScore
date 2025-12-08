@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 // GET all companies (optionally filtered by consultant or company ID)
 export async function GET(request: NextRequest) {
   try {
+    console.log('🔍 Companies API called');
     const { searchParams } = new URL(request.url);
     const consultantId = searchParams.get('consultantId');
     const companyId = searchParams.get('companyId');
 
+    console.log('🔍 Query params:', { consultantId, companyId });
+
     // Build where clause - if consultantId provided, filter by it; if companyId provided, filter by that; otherwise return all companies
     const where = consultantId ? { consultantId } : companyId ? { id: companyId } : {};
+
+    console.log('🔍 Where clause:', where);
 
     const companies = await prisma.company.findMany({
       where,
@@ -53,9 +60,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ companies });
   } catch (error) {
-    console.error('Error fetching companies:', error);
+    console.error('❌ Error fetching companies:', error);
+    console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -195,9 +204,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ company }, { status: 201 });
   } catch (error) {
-    console.error('Error creating company:', error);
+    console.error('❌ Error creating company:', error);
+    console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

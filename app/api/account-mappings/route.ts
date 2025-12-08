@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Retrieve mappings for a company
 export async function GET(request: NextRequest) {
   try {
+    console.log('🔍 Account mappings API called');
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('companyId');
+    console.log('🔍 Query params:', { companyId });
 
     if (!companyId) {
       return NextResponse.json(
@@ -43,7 +47,9 @@ export async function GET(request: NextRequest) {
       userDefinedAllocations: company?.userDefinedAllocations || []
     });
   } catch (error: any) {
-    console.error('Error fetching mappings:', error);
+    console.error('❌ Error fetching mappings:', error);
+    console.error('❌ Error details:', error.message);
+    console.error('❌ Error stack:', error.stack);
     return NextResponse.json(
       { error: 'Failed to fetch mappings', details: error.message },
       { status: 500 }
