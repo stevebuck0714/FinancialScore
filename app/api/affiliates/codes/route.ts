@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    console.log('🔍 Looking up affiliate code:', code.toUpperCase());
+
     const affiliateCode = await prisma.affiliateCode.findUnique({
       where: { code: code.toUpperCase() },
       include: {
@@ -22,15 +24,28 @@ export async function GET(request: NextRequest) {
     });
 
     if (!affiliateCode) {
+      console.log('❌ Affiliate code not found:', code.toUpperCase());
       return NextResponse.json(
         { error: 'Affiliate code not found' },
         { status: 404 }
       );
     }
 
+    // Log affiliate code status for monitoring
+    console.log('✅ Found affiliate code:', {
+      code: affiliateCode.code,
+      isActive: affiliateCode.isActive,
+      pricing: {
+        monthly: affiliateCode.monthlyPrice,
+        quarterly: affiliateCode.quarterlyPrice,
+        annual: affiliateCode.annualPrice
+      },
+      affiliate: affiliateCode.affiliate?.name
+    });
+
     return NextResponse.json({ code: affiliateCode });
   } catch (error) {
-    console.error('Error fetching affiliate code:', error);
+    console.error('❌ Error fetching affiliate code:', error);
     return NextResponse.json(
       { error: 'Failed to fetch affiliate code' },
       { status: 500 }

@@ -58,7 +58,7 @@ model Company {
   nextBillingDate            DateTime?
   lastBillingDate            DateTime?
   linesOfBusiness            Json?                  // Array of LOB objects: [{name: string, headcountPercentage: number}]
-  // userDefinedAllocations     Json?    // Doesn't exist in production DB
+  userDefinedAllocations     Json?                  // Array of user defined allocation templates: [{lobName: string, percentage: number}]
   accountMappings            AccountMapping[]
   accountingConnections      AccountingConnection[]
   apiSyncLogs                ApiSyncLog[]

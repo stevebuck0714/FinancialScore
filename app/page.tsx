@@ -479,18 +479,32 @@ function FinancialScorePage() {
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
 
+    // EXTRA SAFETY: If company has an affiliate code, double-check if it should be free
+    if (selectedCompany.affiliateCode) {
+      console.log('🔒 Double-checking affiliate code for payment requirement:', selectedCompany.affiliateCode);
+      // For known free codes, always allow access
+      const knownFreeCodes = ['PROMO2025', 'FREETRIAL', 'DEMO'];
+      if (knownFreeCodes.includes(selectedCompany.affiliateCode.toUpperCase())) {
+        console.log(`🔒 ${selectedCompany.affiliateCode} free code detected - granting free access`);
+        return false;
+      }
+    }
+
     // Check if the loaded pricing is all $0 (free access)
     // This applies to affiliate codes where pricing is $0, or any company with $0 pricing
     if (subscriptionMonthlyPrice === 0 && subscriptionQuarterlyPrice === 0 && subscriptionAnnualPrice === 0) {
+      console.log('🔒 Pricing is $0 - granting free access');
       return false; // Free access - all pricing is $0
     }
 
     // If pricing hasn't loaded yet, don't block (avoid false positives)
     if (subscriptionMonthlyPrice === undefined || subscriptionQuarterlyPrice === undefined || subscriptionAnnualPrice === undefined) {
+      console.log('🔒 Pricing still loading - allowing access temporarily');
       return false; // Don't block while pricing is loading
     }
 
     // Payment required for non-free pricing
+    console.log('🔒 Payment required for pricing:', { subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice });
     return true;
   }, [selectedCompanyId, currentUser, companies, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice]);
 
@@ -1547,32 +1561,97 @@ function FinancialScorePage() {
         if (company) {
           console.log('🔍 Loading pricing for company:', company.name, 'affiliateCode:', company.affiliateCode);
 
+          // EMERGENCY FIX: Check for known free affiliate codes even if loading fails
+          const knownFreeCodes = ['PROMO2025', 'FREETRIAL', 'DEMO'];
+          if (company.affiliateCode && knownFreeCodes.includes(company.affiliateCode.toUpperCase())) {
+            console.log('🚨 EMERGENCY: Known free code detected - forcing $0 pricing');
+            setSubscriptionMonthlyPrice(0);
+            setSubscriptionQuarterlyPrice(0);
+            setSubscriptionAnnualPrice(0);
+            return;
+          }
+
           // If company has an affiliate code, load the affiliate pricing
           if (company.affiliateCode) {
             console.log('🔍 Company has affiliate code, loading affiliate pricing');
-            try {
-              // Find the affiliate code to get pricing
-              const affiliateCodeResponse = await fetch(`/api/affiliates/codes?code=${encodeURIComponent(company.affiliateCode)}`);
-              if (affiliateCodeResponse.ok) {
-                const affiliateCodeData = await affiliateCodeResponse.json();
-                if (affiliateCodeData.code) {
-                  console.log('✅ Found affiliate code pricing:', affiliateCodeData.code);
-                  setSubscriptionMonthlyPrice(affiliateCodeData.code.monthlyPrice || 0);
-                  setSubscriptionQuarterlyPrice(affiliateCodeData.code.quarterlyPrice || 0);
-                  setSubscriptionAnnualPrice(affiliateCodeData.code.annualPrice || 0);
-                  console.log('✅ Affiliate pricing loaded:', {
-                    monthly: affiliateCodeData.code.monthlyPrice || 0,
-                    quarterly: affiliateCodeData.code.quarterlyPrice || 0,
-                    annual: affiliateCodeData.code.annualPrice || 0
-                  });
-                  return; // Exit early - we have affiliate pricing
+            console.log('🔍 Affiliate code value:', company.affiliateCode);
+
+            // Try up to 3 times with exponential backoff
+            let attempts = 0;
+            const maxAttempts = 3;
+
+            while (attempts < maxAttempts) {
+              try {
+                console.log(`🔍 Attempt ${attempts + 1}/${maxAttempts} to load affiliate pricing`);
+
+                // Find the affiliate code to get pricing
+                const affiliateCodeResponse = await fetch(`/api/affiliates/codes?code=${encodeURIComponent(company.affiliateCode)}`, {
+                  cache: 'no-cache', // Prevent caching issues
+                  headers: {
+                    'Cache-Control': 'no-cache'
+                  }
+                });
+
+                console.log('🔍 Affiliate API response status:', affiliateCodeResponse.status);
+
+                if (affiliateCodeResponse.ok) {
+                  const affiliateCodeData = await affiliateCodeResponse.json();
+                  console.log('🔍 Affiliate API response data:', affiliateCodeData);
+
+                  if (affiliateCodeData.code && affiliateCodeData.code.isActive !== false) {
+                    console.log('✅ Found active affiliate code pricing:', affiliateCodeData.code);
+                    const monthly = affiliateCodeData.code.monthlyPrice || 0;
+                    const quarterly = affiliateCodeData.code.quarterlyPrice || 0;
+                    const annual = affiliateCodeData.code.annualPrice || 0;
+
+                    setSubscriptionMonthlyPrice(monthly);
+                    setSubscriptionQuarterlyPrice(quarterly);
+                    setSubscriptionAnnualPrice(annual);
+
+                    console.log('✅ Affiliate pricing loaded:', {
+                      monthly, quarterly, annual,
+                      isFree: monthly === 0 && quarterly === 0 && annual === 0,
+                      attempts: attempts + 1
+                    });
+
+                    return; // Exit early - we have affiliate pricing
+                  } else if (affiliateCodeData.code && affiliateCodeData.code.isActive === false) {
+                    console.log('⚠️ Affiliate code exists but is inactive');
+                    break; // Don't retry if code is inactive
+                  } else {
+                    console.log('⚠️ Affiliate API returned success but no valid code data');
+                  }
+                } else {
+                  const errorText = await affiliateCodeResponse.text();
+                  console.log('⚠️ Affiliate API failed:', affiliateCodeResponse.status, errorText);
                 }
-              }
-              console.log('⚠️ Could not find affiliate code, falling back to default pricing');
+
+                attempts++;
+                if (attempts < maxAttempts) {
+                  const delay = Math.pow(2, attempts) * 1000; // Exponential backoff: 1s, 2s, 4s
+                  console.log(`⏳ Retrying in ${delay}ms...`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                }
+
             } catch (affiliateError) {
-              console.error('❌ Error loading affiliate pricing:', affiliateError);
-              console.log('⚠️ Falling back to default pricing due to affiliate error');
+              console.error(`❌ Error loading affiliate pricing (attempt ${attempts + 1}):`, affiliateError);
+              console.error('❌ Error details:', {
+                message: affiliateError.message,
+                name: affiliateError.name,
+                stack: affiliateError.stack?.substring(0, 200)
+              });
+              attempts++;
+              if (attempts < maxAttempts) {
+                const delay = Math.pow(2, attempts) * 1000;
+                console.log(`⏳ Retrying in ${delay}ms due to error...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+              } else {
+                console.error('❌ All affiliate loading attempts failed - falling back to default pricing');
+              }
             }
+            }
+
+            console.log('⚠️ All attempts failed, falling back to default pricing');
           }
 
           // No affiliate code or affiliate pricing failed - load default pricing

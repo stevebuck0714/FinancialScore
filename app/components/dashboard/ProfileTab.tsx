@@ -31,6 +31,7 @@ export default function ProfileTab({
   // State for LOB management
   const [linesOfBusiness, setLinesOfBusiness] = React.useState<string[]>(['', '', '', '', '']);
   const [headcountAllocations, setHeadcountAllocations] = React.useState<{ [lobName: string]: number }>({});
+  const [userDefinedAllocations, setUserDefinedAllocations] = React.useState<{ lobName: string; percentage: number }[]>([]);
 
   // Load LOB data when component mounts or company changes
   React.useEffect(() => {
@@ -42,6 +43,10 @@ export default function ProfileTab({
 
     if (company?.headcountAllocations) {
       setHeadcountAllocations(company.headcountAllocations as { [lobName: string]: number });
+    }
+
+    if (company?.userDefinedAllocations) {
+      setUserDefinedAllocations(company.userDefinedAllocations as { lobName: string; percentage: number }[]);
     }
   }, [company]);
 
@@ -753,6 +758,135 @@ export default function ProfileTab({
             )}
           </div>
 
+          <div style={{ marginBottom: '24px' }}>
+            <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+              User Defined Allocations
+            </h4>
+            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+              Create custom allocation templates that can be reused across multiple account mappings.
+            </p>
+            <div style={{ marginBottom: '16px' }}>
+              <button
+                onClick={() => {
+                  setUserDefinedAllocations(prev => [...prev, { lobName: '', percentage: 0 }]);
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                + Add Allocation Template
+              </button>
+            </div>
+            {userDefinedAllocations.map((allocation, index) => (
+              <div key={index} style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 120px 40px',
+                gap: '12px',
+                alignItems: 'center',
+                marginBottom: '8px',
+                padding: '12px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                background: '#f8fafc'
+              }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                    Line of Business
+                  </label>
+                  <select
+                    value={allocation.lobName}
+                    onChange={(e) => {
+                      const updated = [...userDefinedAllocations];
+                      updated[index] = { ...updated[index], lobName: e.target.value };
+                      setUserDefinedAllocations(updated);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '6px 8px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      color: '#1e293b'
+                    }}
+                  >
+                    <option value="">Select LOB</option>
+                    {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, lobIndex) => (
+                      <option key={lobIndex} value={lob}>{lob}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                    %
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={allocation.percentage}
+                    onChange={(e) => {
+                      const updated = [...userDefinedAllocations];
+                      updated[index] = { ...updated[index], percentage: parseFloat(e.target.value) || 0 };
+                      setUserDefinedAllocations(updated);
+                    }}
+                    placeholder="0.0"
+                    style={{
+                      width: '100%',
+                      padding: '6px 8px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      color: '#1e293b'
+                    }}
+                  />
+                </div>
+                <div>
+                  <button
+                    onClick={() => {
+                      const updated = userDefinedAllocations.filter((_, i) => i !== index);
+                      setUserDefinedAllocations(updated);
+                    }}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      background: '#ef4444',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+            {userDefinedAllocations.length === 0 && (
+              <div style={{
+                padding: '24px',
+                textAlign: 'center',
+                color: '#64748b',
+                border: '2px dashed #cbd5e1',
+                borderRadius: '6px'
+              }}>
+                No user defined allocation templates yet. Click "Add Allocation Template" to create one.
+              </div>
+            )}
+          </div>
+
           <div style={{ textAlign: 'center' }}>
             <button
               onClick={async () => {
@@ -765,7 +899,8 @@ export default function ProfileTab({
                     body: JSON.stringify({
                       companyId: selectedCompanyId,
                       linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== ''),
-                      headcountAllocations
+                      headcountAllocations,
+                      userDefinedAllocations: userDefinedAllocations.filter(alloc => alloc.lobName.trim() !== '' && alloc.percentage > 0)
                     })
                   });
 

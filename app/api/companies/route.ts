@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
         addressCountry: true,
         industrySector: true,
         linesOfBusiness: true,
+        userDefinedAllocations: true,
         createdAt: true
         // subscriptionMonthlyPrice: true, // These fields may not exist in production DB
         // subscriptionQuarterlyPrice: true,
@@ -342,12 +343,12 @@ export async function POST(request: NextRequest) {
           addressCountry: true,
           industrySector: true,
           linesOfBusiness: true,
+          userDefinedAllocations: true,
           affiliateCode: true, // This field exists in production
           affiliate: {
             select: { id: true, name: true }
           },
           createdAt: true
-          // Explicitly exclude userDefinedAllocations and other fields that may not exist in production
         }
       });
 
@@ -405,6 +406,70 @@ export async function POST(request: NextRequest) {
       code: error?.code || 'Unknown',
       timestamp: new Date().toISOString()
     }, { status: 500 });
+  }
+}
+
+// PATCH update company LOB settings
+export async function PATCH(request: NextRequest) {
+  try {
+    const { companyId, linesOfBusiness, headcountAllocations, userDefinedAllocations } = await request.json();
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: 'Company ID required' },
+        { status: 400 }
+      );
+    }
+
+    // Prepare update data
+    const updateData: any = {};
+
+    if (linesOfBusiness !== undefined) {
+      updateData.linesOfBusiness = linesOfBusiness;
+      console.log('📝 Updating linesOfBusiness:', linesOfBusiness);
+    }
+
+    if (headcountAllocations !== undefined && process.env.NODE_ENV !== 'development') {
+      updateData.headcountAllocations = headcountAllocations;
+      console.log('📝 Updating headcountAllocations:', headcountAllocations);
+    } else if (headcountAllocations !== undefined && process.env.NODE_ENV === 'development') {
+      console.log('⚠️ Skipping headcountAllocations update in dev - field does not exist');
+    }
+
+    console.log('🔄 Final update data:', updateData);
+
+    // Build select object dynamically based on environment
+    const selectFields: any = {
+      id: true,
+      name: true,
+      linesOfBusiness: true
+    };
+
+    // Only select headcountAllocations if it exists (not in dev)
+    if (process.env.NODE_ENV !== 'development') {
+      selectFields.headcountAllocations = true;
+      selectFields.userDefinedAllocations = true;
+    }
+
+    const company = await prisma.company.update({
+      where: { id: companyId },
+      data: updateData,
+      select: selectFields
+    });
+
+    return NextResponse.json({ company }, { status: 200 });
+  } catch (error: any) {
+    console.error('❌ Error updating company:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      name: error.name
+    });
+    return NextResponse.json(
+      { error: 'Failed to update company', details: error.message },
+      { status: 500 }
+    );
   }
 }
 
