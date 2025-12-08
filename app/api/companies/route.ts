@@ -103,60 +103,90 @@ export async function POST(request: NextRequest) {
 
     // If affiliate code is provided, validate and use affiliate pricing
     if (affiliateCode) {
-      const affiliateCodeRecord = await prisma.affiliateCode.findUnique({
-        where: { code: affiliateCode.toUpperCase() },
-        include: {
-          affiliate: true
+      console.log('🔍 Validating affiliate code:', affiliateCode.toUpperCase());
+      try {
+        const affiliateCodeRecord = await prisma.affiliateCode.findUnique({
+          where: { code: affiliateCode.toUpperCase() },
+          include: {
+            affiliate: true
+          }
+        });
+        console.log('🔍 Affiliate code record found:', !!affiliateCodeRecord);
+
+        if (!affiliateCodeRecord) {
+          console.error('❌ Affiliate code not found:', affiliateCode.toUpperCase());
+          return NextResponse.json(
+            { error: `Invalid affiliate code: ${affiliateCode}` },
+            { status: 400 }
+          );
         }
-      });
 
-      if (!affiliateCodeRecord) {
+        console.log('🔍 Checking affiliate code status:', {
+          isActive: affiliateCodeRecord.isActive,
+          affiliateActive: affiliateCodeRecord.affiliate.isActive,
+          expiresAt: affiliateCodeRecord.expiresAt,
+          currentUses: affiliateCodeRecord.currentUses,
+          maxUses: affiliateCodeRecord.maxUses
+        });
+
+        if (!affiliateCodeRecord.isActive) {
+          console.error('❌ Affiliate code is not active');
+          return NextResponse.json(
+            { error: 'This affiliate code is no longer active' },
+            { status: 400 }
+          );
+        }
+
+        if (!affiliateCodeRecord.affiliate.isActive) {
+          console.error('❌ Affiliate is not active');
+          return NextResponse.json(
+            { error: 'This affiliate is no longer active' },
+            { status: 400 }
+          );
+        }
+
+        if (affiliateCodeRecord.expiresAt && new Date(affiliateCodeRecord.expiresAt) < new Date()) {
+          console.error('❌ Affiliate code has expired');
+          return NextResponse.json(
+            { error: 'This affiliate code has expired' },
+            { status: 400 }
+          );
+        }
+
+        if (affiliateCodeRecord.maxUses && affiliateCodeRecord.currentUses >= affiliateCodeRecord.maxUses) {
+          console.error('❌ Affiliate code has reached max uses');
+          return NextResponse.json(
+            { error: 'This affiliate code has reached its maximum number of uses' },
+            { status: 400 }
+          );
+        }
+
+        console.log('🔍 Affiliate pricing:', {
+          monthly: affiliateCodeRecord.monthlyPrice,
+          quarterly: affiliateCodeRecord.quarterlyPrice,
+          annual: affiliateCodeRecord.annualPrice
+        });
+
+        // Use affiliate pricing
+        monthlyPrice = affiliateCodeRecord.monthlyPrice;
+        quarterlyPrice = affiliateCodeRecord.quarterlyPrice;
+        annualPrice = affiliateCodeRecord.annualPrice;
+        affiliateId = affiliateCodeRecord.affiliateId;
+        validatedAffiliateCode = affiliateCodeRecord.code;
+
+        // Increment usage count
+        console.log('🔍 Incrementing affiliate code usage count');
+        await prisma.affiliateCode.update({
+          where: { id: affiliateCodeRecord.id },
+          data: { currentUses: affiliateCodeRecord.currentUses + 1 }
+        });
+      } catch (affiliateError) {
+        console.error('❌ Error during affiliate code validation:', affiliateError);
         return NextResponse.json(
-          { error: 'Invalid affiliate code' },
-          { status: 400 }
+          { error: 'Error validating affiliate code', details: affiliateError.message },
+          { status: 500 }
         );
       }
-
-      if (!affiliateCodeRecord.isActive) {
-        return NextResponse.json(
-          { error: 'This affiliate code is no longer active' },
-          { status: 400 }
-        );
-      }
-
-      if (!affiliateCodeRecord.affiliate.isActive) {
-        return NextResponse.json(
-          { error: 'This affiliate is no longer active' },
-          { status: 400 }
-        );
-      }
-
-      if (affiliateCodeRecord.expiresAt && new Date(affiliateCodeRecord.expiresAt) < new Date()) {
-        return NextResponse.json(
-          { error: 'This affiliate code has expired' },
-          { status: 400 }
-        );
-      }
-
-      if (affiliateCodeRecord.maxUses && affiliateCodeRecord.currentUses >= affiliateCodeRecord.maxUses) {
-        return NextResponse.json(
-          { error: 'This affiliate code has reached its maximum number of uses' },
-          { status: 400 }
-        );
-      }
-
-      // Use affiliate pricing
-      monthlyPrice = affiliateCodeRecord.monthlyPrice;
-      quarterlyPrice = affiliateCodeRecord.quarterlyPrice;
-      annualPrice = affiliateCodeRecord.annualPrice;
-      affiliateId = affiliateCodeRecord.affiliateId;
-      validatedAffiliateCode = affiliateCodeRecord.code;
-
-      // Increment usage count
-      await prisma.affiliateCode.update({
-        where: { id: affiliateCodeRecord.id },
-        data: { currentUses: affiliateCodeRecord.currentUses + 1 }
-      });
     } else {
     // Fetch default pricing from SystemSettings
     console.log('🔍 Fetching default pricing from SystemSettings...');
