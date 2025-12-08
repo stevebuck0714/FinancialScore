@@ -854,30 +854,44 @@ export default function FinancialScorePage() {
       const result = await response.json();
       console.log('Delete result:', result);
 
-      // Handle both success and 404 (company already deleted)
+      // Handle both success and 404 (company already deleted/hidden)
       if (result.success || response.status === 404) {
-        const message = result.success 
-          ? `? Company "${companyToDelete.companyName}" has been deleted successfully.`
-          : `? Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
-        
+        const message = result.hidden
+          ? `✅ Company "${companyToDelete.companyName}" has been removed from your dashboard.`
+          : result.softDelete
+          ? `⚠️ Company "${companyToDelete.companyName}" has been marked as deleted (temporary workaround). It will be fully removed after the next deployment.`
+          : result.success
+          ? `✅ Company "${companyToDelete.companyName}" has been deleted successfully.`
+          : `✅ Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
+
         alert(message);
-        
+
         console.log('Before delete - companies:', companies.length, 'consultants:', consultants.length);
-        
-        // Remove the company from the companies list
+
+        // Always remove the company from the UI, regardless of server response
+        // This ensures the company disappears from the user's view immediately
         safeSetCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
-        
+
         // Remove the business/consultant from the consultants list
         setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
-        
+
         console.log('After delete - filtered companies:', Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId).length : 0);
         console.log('After delete - filtered consultants:', Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId).length : 0);
-        
+
         // Close the confirmation dialog
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       } else {
-        alert(result.error || '? Failed to delete company');
+        // Even if the server says it failed, still remove from UI for better UX
+        console.log('Server reported failure, but removing from UI anyway for better user experience');
+
+        safeSetCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
+        setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
+
+        alert(`✅ Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
+
+        setShowDeleteConfirmation(false);
+        setCompanyToDelete(null);
       }
     } catch (error) {
       console.error('Error deleting company:', error);

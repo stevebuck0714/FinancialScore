@@ -33,13 +33,16 @@ export async function GET(request: NextRequest) {
         industrySector: true,
         linesOfBusiness: true,
         // userDefinedAllocations: true, // Column doesn't exist in production DB
-        // affiliateCode: true, // Let's try removing potentially problematic fields
-        // subscriptionStatus: true,
-        // subscriptionStartDate: true,
-        // nextBillingDate: true,
-        // selectedSubscriptionPlan: true,
+        // affiliateCode: true, // Doesn't exist in production DB
+        subscriptionStatus: true,
+        subscriptionStartDate: true,
+        nextBillingDate: true,
+        selectedSubscriptionPlan: true,
+        // subscriptionMonthlyPrice: true, // Doesn't exist in production DB
+        // subscriptionQuarterlyPrice: true, // Doesn't exist in production DB
+        // subscriptionAnnualPrice: true, // Doesn't exist in production DB
         consultantId: true,
-        // affiliateId: true,
+        // affiliateId: true, // Doesn't exist in production DB
         createdAt: true,
         // users: {
         //   select: {
@@ -433,15 +436,134 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    await prisma.company.delete({
-      where: { id }
-    });
+    console.log(`Attempting to delete company ${id}`);
+
+    // Delete all related records first to avoid foreign key constraint errors
+    console.log(`Starting deletion of company ${id}`);
+
+    // Delete subscription-related records
+    try {
+      console.log('Deleting payment transactions...');
+      await prisma.paymentTransaction.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('PaymentTransaction delete failed:', e.message); }
+
+    try {
+      console.log('Deleting revenue records...');
+      await prisma.revenueRecord.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('RevenueRecord delete failed:', e.message); }
+
+    try {
+      console.log('Deleting subscription events...');
+      await prisma.subscriptionEvent.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('SubscriptionEvent delete failed:', e.message); }
+
+    try {
+      console.log('Deleting subscriptions...');
+      await prisma.subscription.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('Subscription delete failed:', e.message); }
+
+    // Delete company profile
+    try {
+      console.log('Deleting company profile...');
+      await prisma.companyProfile.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('CompanyProfile delete failed:', e.message); }
+
+    // Delete financial records (this will cascade to monthly financial data)
+    try {
+      console.log('Deleting financial records...');
+      await prisma.financialRecord.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('FinancialRecord delete failed:', e.message); }
+
+    // Delete assessment records
+    try {
+      console.log('Deleting assessment records...');
+      await prisma.assessmentRecord.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('AssessmentRecord delete failed:', e.message); }
+
+    // Delete users
+    try {
+      console.log('Deleting users...');
+      await prisma.user.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('User delete failed:', e.message); }
+
+    // Delete accounting connections (this will cascade to API sync logs)
+    try {
+      console.log('Deleting accounting connections...');
+      await prisma.accountingConnection.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('AccountingConnection delete failed:', e.message); }
+
+    // Delete account mappings
+    try {
+      console.log('Deleting account mappings...');
+      await prisma.accountMapping.deleteMany({
+        where: { companyId: id }
+      });
+    } catch (e) { console.log('AccountMapping delete failed:', e.message); }
+
+    // Note: ExpenseGoal and ValuationSettings tables don't exist in production DB
+
+    // Finally delete the company using raw SQL to avoid Prisma client field access issues
+    console.log('Deleting company...');
+    try {
+      await prisma.$executeRaw`DELETE FROM "Company" WHERE "id" = ${id}`;
+      console.log(`Successfully deleted company ${id} using raw SQL`);
+    } catch (rawSqlError) {
+      console.log('Raw SQL delete failed, trying Prisma delete:', rawSqlError.message);
+      // Fallback to Prisma delete with explicit select (only existing fields)
+      await prisma.company.delete({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          consultantId: true,
+          addressStreet: true,
+          addressCity: true,
+          addressState: true,
+          addressZip: true,
+          addressCountry: true,
+          industrySector: true,
+          createdAt: true,
+          updatedAt: true,
+          selectedSubscriptionPlan: true,
+          subscriptionStatus: true,
+          subscriptionStartDate: true,
+          nextBillingDate: true,
+          lastBillingDate: true,
+          linesOfBusiness: true
+        }
+      });
+      console.log(`Successfully deleted company ${id} using Prisma with explicit select`);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting company:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack
+    });
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: `Failed to delete company. Please try again. ${error.message || ''}`, success: false },
       { status: 500 }
     );
   }

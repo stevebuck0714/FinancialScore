@@ -201,11 +201,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Update company's selected plan
+    // Update company's selected plan and subscription status
     await prisma.company.update({
       where: { id: companyId },
       data: {
         selectedSubscriptionPlan: plan,
+        subscriptionStatus: 'active',
+        subscriptionStartDate: initialPaymentDate,
       },
     });
 
@@ -386,6 +388,14 @@ export async function DELETE(request: NextRequest) {
       data: {
         status: 'CANCELED',
         billingEndDate: new Date(),
+      },
+    });
+
+    // Update company's subscription status
+    await prisma.company.update({
+      where: { id: companyId },
+      data: {
+        subscriptionStatus: 'cancelled',
       },
     });
 
