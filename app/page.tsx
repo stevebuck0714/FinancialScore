@@ -205,30 +205,6 @@ function FinancialScorePage() {
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
   const [showDashboardCustomizer, setShowDashboardCustomizer] = useState(false);
 
-  // Check if payment is required for the current company
-  const isPaymentRequired = useCallback(() => {
-    if (!selectedCompanyId || !currentUser) return false;
-
-    // If companies is not an array, assume payment is not required (avoid errors)
-    if (!Array.isArray(companies)) return false;
-
-    const selectedCompany = companies.find(c => c.id === selectedCompanyId);
-    if (!selectedCompany) return false;
-
-    // Check if the loaded pricing is all $0 (free access)
-    // This applies to affiliate codes where pricing is $0, or any company with $0 pricing
-    if (subscriptionMonthlyPrice === 0 && subscriptionQuarterlyPrice === 0 && subscriptionAnnualPrice === 0) {
-      return false; // Free access - all pricing is $0
-    }
-
-    // If pricing hasn't loaded yet, don't block (avoid false positives)
-    if (subscriptionMonthlyPrice === undefined || subscriptionQuarterlyPrice === undefined || subscriptionAnnualPrice === undefined) {
-      return false; // Don't block while pricing is loading
-    }
-
-    // Payment required for non-free pricing
-    return true;
-  }, [selectedCompanyId, currentUser, companies, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice]);
 
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
@@ -494,7 +470,32 @@ function FinancialScorePage() {
   const [subscriptionMonthlyPrice, setSubscriptionMonthlyPrice] = useState<number | undefined>();
   const [subscriptionQuarterlyPrice, setSubscriptionQuarterlyPrice] = useState<number | undefined>();
   const [subscriptionAnnualPrice, setSubscriptionAnnualPrice] = useState<number | undefined>();
-  
+
+  // Check if payment is required for the current company
+  const isPaymentRequired = useCallback(() => {
+    if (!selectedCompanyId || !currentUser) return false;
+
+    // If companies is not an array, assume payment is not required (avoid errors)
+    if (!Array.isArray(companies)) return false;
+
+    const selectedCompany = companies.find(c => c.id === selectedCompanyId);
+    if (!selectedCompany) return false;
+
+    // Check if the loaded pricing is all $0 (free access)
+    // This applies to affiliate codes where pricing is $0, or any company with $0 pricing
+    if (subscriptionMonthlyPrice === 0 && subscriptionQuarterlyPrice === 0 && subscriptionAnnualPrice === 0) {
+      return false; // Free access - all pricing is $0
+    }
+
+    // If pricing hasn't loaded yet, don't block (avoid false positives)
+    if (subscriptionMonthlyPrice === undefined || subscriptionQuarterlyPrice === undefined || subscriptionAnnualPrice === undefined) {
+      return false; // Don't block while pricing is loading
+    }
+
+    // Payment required for non-free pricing
+    return true;
+  }, [selectedCompanyId, currentUser, companies, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice]);
+
   // State - Management Assessment
   const [assessmentResponses, setAssessmentResponses] = useState<AssessmentResponses>({});
   const [assessmentNotes, setAssessmentNotes] = useState<AssessmentNotes>({});
