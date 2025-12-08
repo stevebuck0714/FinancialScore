@@ -260,37 +260,6 @@ export default function AccountMappingTable({
                   }
                 });
                 updates.lobAllocations = userDefinedAllocationsMap;
-              } else if (newMethod === 'average') {
-                // Apply average allocations from other accounts in the same classification
-                const averageAllocations: { [lobName: string]: number } = {};
-                const activeLOBs = linesOfBusiness.filter(lob => lob.name && lob.name.trim() !== '');
-
-                // Find all accounts with the same classification as this one
-                const sectionMappings = groupedMappings[sectionKey as keyof typeof groupedMappings];
-                const otherMappings = sectionMappings.filter(m => m !== mapping);
-
-                // Calculate averages for each LOB
-                activeLOBs.forEach((lob) => {
-                  const lobValues: number[] = [];
-
-                  // Collect allocation values for this LOB from other accounts
-                  otherMappings.forEach(otherMapping => {
-                    const otherAllocations = otherMapping.lobAllocations || {};
-                    const value = otherAllocations[lob.name];
-                    if (value !== undefined && value > 0) {
-                      lobValues.push(value);
-                    }
-                  });
-
-                  // Calculate average, default to 0 if no data
-                  const average = lobValues.length > 0
-                    ? Math.round((lobValues.reduce((sum, val) => sum + val, 0) / lobValues.length) * 10) / 10
-                    : 0;
-
-                  averageAllocations[lob.name] = average;
-                });
-
-                updates.lobAllocations = averageAllocations;
               }
 
               onMappingChange(globalIdx, updates);
@@ -308,7 +277,6 @@ export default function AccountMappingTable({
             <option value="user-defined">User Defined</option>
             <option value="headcount">Headcount Based</option>
             <option value="equal">Equal Distribution</option>
-            <option value="average">Average Allocation</option>
           </select>
         </td>
 
@@ -485,7 +453,7 @@ export default function AccountMappingTable({
               onClick={() => toggleSection(section.key)}
               style={{ 
                 display: 'flex', 
-                alignments: 'center', 
+                alignItems: 'center', 
                 justifyContent: 'space-between',
                 padding: '12px 16px', 
                 background: section.bgColor,
