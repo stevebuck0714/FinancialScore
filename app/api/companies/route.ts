@@ -358,8 +358,21 @@ export async function POST(request: NextRequest) {
       throw companyCreateError;
     }
   } catch (error) {
-    console.error('❌ Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('❌ ===== MAIN CATCH BLOCK =====');
+    console.error('❌ Error type:', typeof error);
+    console.error('❌ Error name:', error?.name);
+    console.error('❌ Error message:', error?.message);
+    console.error('❌ Error stack:', error?.stack);
+    console.error('❌ Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+
+    // Return detailed error for debugging
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      type: error?.name || 'Unknown',
+      code: error?.code || 'Unknown',
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
   }
 }
 
