@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
+import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lucide-react';
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
@@ -51,16 +52,6 @@ const formatDollar = (value: number): string => {
 };
 
 function FinancialScorePage() {
-  // Prevent any rendering during SSR
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  if (!isClient) {
-    return <div>Loading...</div>;
-  }
   // State - Authentication
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -21578,6 +21569,12 @@ function FinancialScorePage() {
   );
 }
 
-export default FinancialScorePage;
+// Dynamic import to disable SSR for this complex component
+const DynamicFinancialScorePage = dynamic(() => Promise.resolve(FinancialScorePage), {
+  ssr: false,
+  loading: () => <div>Loading...</div>
+});
+
+export default DynamicFinancialScorePage;
 
 
