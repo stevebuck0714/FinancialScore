@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
         console.log('🔍 TEMPORARY: Skipping validation for PROMO2025');
         // Use default pricing instead
         console.log('🔍 Fetching default pricing from SystemSettings...');
-        let defaultPricing = await prisma.systemSettings.findUnique({
+        defaultPricing = await prisma.systemSettings.findUnique({
           where: { key: 'default_pricing' }
         });
         console.log('🔍 SystemSettings lookup result:', defaultPricing);
