@@ -74,6 +74,7 @@ export async function GET(request: NextRequest) {
 
 // POST create new company
 export async function POST(request: NextRequest) {
+  console.log('🔍 ===== API COMPANIES POST REQUEST RECEIVED =====');
   try {
     console.log('🔍 ===== STARTING COMPANY CREATION =====');
 
@@ -246,9 +247,10 @@ export async function POST(request: NextRequest) {
     let monthlyPrice = 195; // Default fallback pricing
     let quarterlyPrice = 500;
     let annualPrice = 1750;
+    let defaultPricing = null; // Declare outside try block
 
     try {
-      let defaultPricing = await prisma.systemSettings.findUnique({
+      defaultPricing = await prisma.systemSettings.findUnique({
         where: { key: 'default_pricing' }
       });
       console.log('🔍 SystemSettings lookup result:', defaultPricing);
@@ -392,11 +394,27 @@ export async function POST(request: NextRequest) {
       throw companyCreateError;
     }
   } catch (error) {
-    console.error('❌ Error creating company:', error);
-    console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
-    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    console.error('❌ ===== UNCAUGHT ERROR IN COMPANY CREATION =====');
+    console.error('❌ Error type:', typeof error);
+    console.error('❌ Error name:', error?.name);
+    console.error('❌ Error message:', error?.message);
+    console.error('❌ Error stack:', error?.stack);
+    console.error('❌ Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+
+    // Try to provide more specific error info
+    if (error?.code) {
+      console.error('❌ Error code:', error.code);
+    }
+    if (error?.meta) {
+      console.error('❌ Error meta:', error.meta);
+    }
+
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     );
   }
