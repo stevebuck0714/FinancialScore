@@ -77,7 +77,10 @@ export async function POST(request: NextRequest) {
   try {
     const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode } = await request.json();
 
+    console.log('🔍 Received data:', { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode });
+
     if (!name || !consultantId) {
+      console.error('❌ Missing required fields:', { name: !!name, consultantId: !!consultantId });
       return NextResponse.json(
         { error: 'Company name and consultant ID required' },
         { status: 400 }
@@ -85,10 +88,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Get consultant to check their type
+    console.log('🔍 Looking up consultant with ID:', consultantId);
     const consultant = await prisma.consultant.findUnique({
       where: { id: consultantId },
-      select: { type: true }
+      select: { type: true, id: true, userId: true }
     });
+    console.log('🔍 Consultant lookup result:', consultant);
 
     let monthlyPrice: number;
     let quarterlyPrice: number;
@@ -154,23 +159,32 @@ export async function POST(request: NextRequest) {
       });
     } else {
     // Fetch default pricing from SystemSettings
+    console.log('🔍 Fetching default pricing from SystemSettings...');
     let defaultPricing = await prisma.systemSettings.findUnique({
       where: { key: 'default_pricing' }
     });
+    console.log('🔍 SystemSettings lookup result:', defaultPricing);
 
     // If no settings exist, create with defaults
     if (!defaultPricing) {
-      defaultPricing = await prisma.systemSettings.create({
-        data: {
-          key: 'default_pricing',
-          businessMonthlyPrice: 195,
-          businessQuarterlyPrice: 500,
-          businessAnnualPrice: 1750,
-          consultantMonthlyPrice: 195,
-          consultantQuarterlyPrice: 500,
-          consultantAnnualPrice: 1750
-        }
-      });
+      console.log('🔍 No default pricing found, creating new SystemSettings record...');
+      try {
+        defaultPricing = await prisma.systemSettings.create({
+          data: {
+            key: 'default_pricing',
+            businessMonthlyPrice: 195,
+            businessQuarterlyPrice: 500,
+            businessAnnualPrice: 1750,
+            consultantMonthlyPrice: 195,
+            consultantQuarterlyPrice: 500,
+            consultantAnnualPrice: 1750
+          }
+        });
+        console.log('🔍 SystemSettings created successfully:', defaultPricing);
+      } catch (createError) {
+        console.error('❌ Error creating SystemSettings:', createError);
+        throw createError;
+      }
     }
 
     // Use consultant pricing for regular consultants, business pricing for business consultants
@@ -185,6 +199,22 @@ export async function POST(request: NextRequest) {
       ? (defaultPricing.businessAnnualPrice ?? 1750)
       : (defaultPricing.consultantAnnualPrice ?? 1750);
     }
+
+    console.log('🔍 Creating company with data:', {
+      name,
+      consultantId,
+      addressStreet,
+      addressCity,
+      addressState,
+      addressZip,
+      addressCountry,
+      industrySector,
+      subscriptionMonthlyPrice: monthlyPrice,
+      subscriptionQuarterlyPrice: quarterlyPrice,
+      subscriptionAnnualPrice: annualPrice,
+      affiliateCode: validatedAffiliateCode,
+      affiliateId: affiliateId
+    });
 
     const company = await prisma.company.create({
       data: {
@@ -203,6 +233,8 @@ export async function POST(request: NextRequest) {
         affiliateId: affiliateId
       }
     });
+
+    console.log('🔍 Company created successfully:', company);
 
     return NextResponse.json({ company }, { status: 201 });
   } catch (error) {
