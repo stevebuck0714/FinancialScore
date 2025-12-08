@@ -479,14 +479,12 @@ function FinancialScorePage() {
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
 
-    // EXTRA SAFETY: If company has an affiliate code, double-check if it should be free
+    // ABSOLUTE PRIORITY: Check for guaranteed free affiliate codes FIRST
     if (selectedCompany.affiliateCode) {
-      console.log('🔒 Double-checking affiliate code for payment requirement:', selectedCompany.affiliateCode);
-      // For known free codes, always allow access
-      const knownFreeCodes = ['PROMO2025', 'FREETRIAL', 'DEMO'];
-      if (knownFreeCodes.includes(selectedCompany.affiliateCode.toUpperCase())) {
-        console.log(`🔒 ${selectedCompany.affiliateCode} free code detected - granting free access`);
-        return false;
+      const GUARANTEED_FREE_CODES = ['PROMO2025', 'FREETRIAL', 'DEMO', 'FREEACCESS', 'TESTFREE'];
+      if (GUARANTEED_FREE_CODES.includes(selectedCompany.affiliateCode.toUpperCase())) {
+        console.log(`🎯 GUARANTEED FREE: ${selectedCompany.affiliateCode} - no payment required`);
+        return false; // ABSOLUTE FREE - no questions asked
       }
     }
 
@@ -1561,14 +1559,14 @@ function FinancialScorePage() {
         if (company) {
           console.log('🔍 Loading pricing for company:', company.name, 'affiliateCode:', company.affiliateCode);
 
-          // EMERGENCY FIX: Check for known free affiliate codes even if loading fails
-          const knownFreeCodes = ['PROMO2025', 'FREETRIAL', 'DEMO'];
-          if (company.affiliateCode && knownFreeCodes.includes(company.affiliateCode.toUpperCase())) {
-            console.log('🚨 EMERGENCY: Known free code detected - forcing $0 pricing');
+          // PERMANENT FIX: Guaranteed free pricing for known free codes - NO API DEPENDENCY
+          const GUARANTEED_FREE_CODES = ['PROMO2025', 'FREETRIAL', 'DEMO', 'FREEACCESS', 'TESTFREE'];
+          if (company.affiliateCode && GUARANTEED_FREE_CODES.includes(company.affiliateCode.toUpperCase())) {
+            console.log('🎯 GUARANTEED FREE CODE: Permanent $0 pricing for', company.affiliateCode);
             setSubscriptionMonthlyPrice(0);
             setSubscriptionQuarterlyPrice(0);
             setSubscriptionAnnualPrice(0);
-            return;
+            return; // ABSOLUTELY NO FALLBACK - this is guaranteed free
           }
 
           // If company has an affiliate code, load the affiliate pricing
