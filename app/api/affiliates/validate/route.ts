@@ -4,6 +4,17 @@ import prisma from '@/lib/prisma';
 // POST - Validate affiliate code
 export async function POST(request: NextRequest) {
   try {
+    // Check if affiliate tables exist
+    try {
+      await prisma.affiliate.findFirst({ take: 1 });
+    } catch (tableError) {
+      console.log('Affiliate tables not available in production');
+      return NextResponse.json(
+        { error: 'Affiliate functionality not available in production environment' },
+        { status: 503 }
+      );
+    }
+
     const { affiliateId, affiliateCode } = await request.json();
 
     if (!affiliateId || !affiliateCode) {
