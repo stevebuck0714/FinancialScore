@@ -469,6 +469,9 @@ function FinancialScorePage() {
   const [subscriptionQuarterlyPrice, setSubscriptionQuarterlyPrice] = useState<number | undefined>();
   const [subscriptionAnnualPrice, setSubscriptionAnnualPrice] = useState<number | undefined>();
 
+  // Cache for affiliate pricing to prevent reload failures
+  const [affiliatePriceCache, setAffiliatePriceCache] = useState<{[code: string]: {monthly: number, quarterly: number, annual: number}}>({});
+
   // Check if payment is required for the current company
   const isPaymentRequired = useCallback(() => {
     if (!selectedCompanyId || !currentUser) return false;
@@ -1559,14 +1562,34 @@ function FinancialScorePage() {
         if (company) {
           console.log('🔍 Loading pricing for company:', company.name, 'affiliateCode:', company.affiliateCode);
 
-          // PERMANENT FIX: Guaranteed free pricing for known free codes - NO API DEPENDENCY
-          const GUARANTEED_FREE_CODES = ['PROMO2025', 'FREETRIAL', 'DEMO', 'FREEACCESS', 'TESTFREE'];
-          if (company.affiliateCode && GUARANTEED_FREE_CODES.includes(company.affiliateCode.toUpperCase())) {
-            console.log('🎯 GUARANTEED FREE CODE: Permanent $0 pricing for', company.affiliateCode);
-            setSubscriptionMonthlyPrice(0);
-            setSubscriptionQuarterlyPrice(0);
-            setSubscriptionAnnualPrice(0);
-            return; // ABSOLUTELY NO FALLBACK - this is guaranteed free
+          // FIRST: Check localStorage cache for affiliate pricing (expires in 24 hours)
+          const cacheKey = `affiliate_${company.affiliateCode}`;
+          const cacheTimestampKey = `${cacheKey}_timestamp`;
+          const cachedPricing = localStorage.getItem(cacheKey);
+          const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
+
+          if (cachedPricing && cacheTimestamp) {
+            const cacheAge = Date.now() - parseInt(cacheTimestamp);
+            const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+            if (cacheAge < maxAge) {
+              try {
+                const { monthly, quarterly, annual } = JSON.parse(cachedPricing);
+                console.log('💾 Using cached affiliate pricing:', { monthly, quarterly, annual, age: Math.round(cacheAge/1000/60) + 'min ago' });
+                setSubscriptionMonthlyPrice(monthly);
+                setSubscriptionQuarterlyPrice(quarterly);
+                setSubscriptionAnnualPrice(annual);
+                // Continue to API call in background to refresh cache
+              } catch (e) {
+                console.log('⚠️ Invalid cached pricing, loading from API');
+                localStorage.removeItem(cacheKey);
+                localStorage.removeItem(cacheTimestampKey);
+              }
+            } else {
+              console.log('⏰ Cached pricing expired, refreshing from API');
+              localStorage.removeItem(cacheKey);
+              localStorage.removeItem(cacheTimestampKey);
+            }
           }
 
           // If company has an affiliate code, load the affiliate pricing
@@ -1574,21 +1597,27 @@ function FinancialScorePage() {
             console.log('🔍 Company has affiliate code, loading affiliate pricing');
             console.log('🔍 Affiliate code value:', company.affiliateCode);
 
-            // Try up to 3 times with exponential backoff
+            // Try up to 5 times with longer timeouts for reliability
             let attempts = 0;
-            const maxAttempts = 3;
+            const maxAttempts = 5;
 
             while (attempts < maxAttempts) {
               try {
-                console.log(`🔍 Attempt ${attempts + 1}/${maxAttempts} to load affiliate pricing`);
+                console.log(`🔍 Attempt ${attempts + 1}/${maxAttempts} to load affiliate pricing for ${company.affiliateCode}`);
 
                 // Find the affiliate code to get pricing
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
                 const affiliateCodeResponse = await fetch(`/api/affiliates/codes?code=${encodeURIComponent(company.affiliateCode)}`, {
-                  cache: 'no-cache', // Prevent caching issues
+                  cache: 'no-cache',
                   headers: {
                     'Cache-Control': 'no-cache'
-                  }
+                  },
+                  signal: controller.signal
                 });
+
+                clearTimeout(timeoutId);
 
                 console.log('🔍 Affiliate API response status:', affiliateCodeResponse.status);
 
@@ -1607,12 +1636,21 @@ function FinancialScorePage() {
                     setSubscriptionAnnualPrice(annual);
 
                     console.log('✅ Affiliate pricing loaded:', {
+                      code: company.affiliateCode,
                       monthly, quarterly, annual,
                       isFree: monthly === 0 && quarterly === 0 && annual === 0,
                       attempts: attempts + 1
                     });
 
-                    return; // Exit early - we have affiliate pricing
+                    // CACHE SUCCESSFUL PRICING to survive page refreshes and API failures
+                    const cacheKey = `affiliate_${company.affiliateCode}`;
+                    const cacheTimestampKey = `${cacheKey}_timestamp`;
+                    const pricingData = { monthly, quarterly, annual };
+                    localStorage.setItem(cacheKey, JSON.stringify(pricingData));
+                    localStorage.setItem(cacheTimestampKey, Date.now().toString());
+                    console.log('💾 Cached affiliate pricing for offline/failure recovery');
+
+                    return; // SUCCESS - we have affiliate pricing
                   } else if (affiliateCodeData.code && affiliateCodeData.code.isActive === false) {
                     console.log('⚠️ Affiliate code exists but is inactive');
                     break; // Don't retry if code is inactive
@@ -1626,26 +1664,23 @@ function FinancialScorePage() {
 
                 attempts++;
                 if (attempts < maxAttempts) {
-                  const delay = Math.pow(2, attempts) * 1000; // Exponential backoff: 1s, 2s, 4s
-                  console.log(`⏳ Retrying in ${delay}ms...`);
+                  const delay = Math.min(2000 * Math.pow(1.3, attempts), 15000); // Progressive delay: 2s, 2.6s, 3.4s, 4.4s, 5.7s (max 15s)
+                  console.log(`⏳ Retrying affiliate loading in ${delay}ms...`);
                   await new Promise(resolve => setTimeout(resolve, delay));
                 }
 
-            } catch (affiliateError) {
-              console.error(`❌ Error loading affiliate pricing (attempt ${attempts + 1}):`, affiliateError);
-              console.error('❌ Error details:', {
-                message: affiliateError.message,
-                name: affiliateError.name,
-                stack: affiliateError.stack?.substring(0, 200)
-              });
-              attempts++;
-              if (attempts < maxAttempts) {
-                const delay = Math.pow(2, attempts) * 1000;
-                console.log(`⏳ Retrying in ${delay}ms due to error...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-              } else {
-                console.error('❌ All affiliate loading attempts failed - falling back to default pricing');
-              }
+              } catch (affiliateError) {
+                if (affiliateError.name === 'AbortError') {
+                  console.log(`⏰ Affiliate API timeout on attempt ${attempts + 1}`);
+                } else {
+                  console.error(`❌ Affiliate loading error (attempt ${attempts + 1}):`, affiliateError.message);
+                }
+                attempts++;
+                if (attempts < maxAttempts) {
+                  const delay = Math.min(2000 * Math.pow(1.3, attempts), 15000);
+                  console.log(`⏳ Retrying after error in ${delay}ms...`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                }
             }
             }
 
