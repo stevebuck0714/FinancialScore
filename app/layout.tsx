@@ -5,6 +5,10 @@ import { Providers } from './providers'
 export const metadata: Metadata = {
   title: 'Corelytics - Financial Score Calculator',
   description: 'Professional financial health score calculator with P&L and Balance Sheet analysis',
+  icons: {
+    icon: '/corelytics-logo.jpg',
+    apple: '/corelytics-logo.jpg',
+  },
 }
 
 export default function RootLayout({
