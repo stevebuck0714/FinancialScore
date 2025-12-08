@@ -199,18 +199,27 @@ export async function POST(request: NextRequest) {
       useAffiliatePricing = true;
 
       console.log('🔍 Using affiliate pricing:', { monthlyPrice, quarterlyPrice, annualPrice, affiliateId });
-      } catch (affiliateError) {
-        console.error('❌ Database error during affiliate code validation:', affiliateError);
-        console.error('❌ Error details:', {
-          message: affiliateError.message,
-          code: affiliateError.code,
-          name: affiliateError.name
-        });
-        return NextResponse.json(
-          { error: 'Database error validating affiliate code', details: affiliateError.message },
-          { status: 500 }
-        );
-      }
+        } catch (affiliateError) {
+          console.error('❌ Database error during affiliate code validation:', affiliateError);
+          console.error('❌ Error details:', {
+            message: affiliateError.message,
+            code: affiliateError.code,
+            name: affiliateError.name,
+            stack: affiliateError.stack
+          });
+          return NextResponse.json(
+            {
+              error: 'Database error validating affiliate code',
+              details: affiliateError.message,
+              type: affiliateError.name,
+              code: affiliateError.code,
+              stack: affiliateError.stack,
+              affiliateCode: affiliateCode,
+              timestamp: new Date().toISOString()
+            },
+            { status: 500 }
+          );
+        }
     }
 
     // If affiliate code was provided but validation didn't set useAffiliatePricing, return error
@@ -353,9 +362,22 @@ export async function POST(request: NextRequest) {
       console.error('❌ Company create error details:', {
         message: companyCreateError.message,
         code: companyCreateError.code,
-        meta: companyCreateError.meta
+        meta: companyCreateError.meta,
+        stack: companyCreateError.stack
       });
-      throw companyCreateError;
+      // Return detailed error directly instead of throwing
+      return NextResponse.json(
+        {
+          error: 'Company creation failed',
+          details: companyCreateError.message,
+          type: companyCreateError.name,
+          code: companyCreateError.code,
+          meta: companyCreateError.meta,
+          affiliateCode: affiliateCode,
+          timestamp: new Date().toISOString()
+        },
+        { status: 500 }
+      );
     }
   } catch (error) {
     console.error('❌ ===== MAIN CATCH BLOCK =====');
