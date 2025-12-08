@@ -1241,6 +1241,9 @@ export default function FinancialScorePage() {
   // Load company-specific data from API when company is selected
   useEffect(() => {
     const loadCompanyData = async () => {
+      // Prevent execution during server-side rendering
+      if (typeof window === 'undefined') return;
+
       if (!selectedCompanyId || !currentUser) return;
       
       try {
