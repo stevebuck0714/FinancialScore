@@ -342,11 +342,7 @@ export async function POST(request: NextRequest) {
           addressCountry: true,
           industrySector: true,
           linesOfBusiness: true,
-          // subscriptionMonthlyPrice: true, // These fields may not exist in production DB
-          // subscriptionQuarterlyPrice: true,
-          // subscriptionAnnualPrice: true,
-          // affiliateCode: true,
-          // affiliateId: true,
+          affiliateCode: true, // This field exists in production
           affiliate: {
             select: { id: true, name: true }
           },
