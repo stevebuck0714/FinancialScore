@@ -4,17 +4,6 @@ import prisma from '@/lib/prisma';
 // POST - Create new affiliate code
 export async function POST(request: NextRequest) {
   try {
-    // Check if affiliate tables exist
-    try {
-      await prisma.affiliateCode.findFirst({ take: 1 });
-    } catch (tableError) {
-      console.log('Affiliate tables not available in production');
-      return NextResponse.json(
-        { error: 'Affiliate functionality not available in production environment' },
-        { status: 503 }
-      );
-    }
-
     const { affiliateId, code, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice } = await request.json();
 
     if (!affiliateId || !code) {
@@ -62,16 +51,6 @@ export async function POST(request: NextRequest) {
 // PUT - Update affiliate code
 export async function PUT(request: NextRequest) {
   try {
-    // Check if affiliate tables exist
-    try {
-      await prisma.affiliateCode.findFirst({ take: 1 });
-    } catch (tableError) {
-      return NextResponse.json(
-        { error: 'Affiliate functionality not available in production environment' },
-        { status: 503 }
-      );
-    }
-
     const { id, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, isActive } = await request.json();
 
     if (!id) {
@@ -107,16 +86,6 @@ export async function PUT(request: NextRequest) {
 // DELETE - Remove affiliate code
 export async function DELETE(request: NextRequest) {
   try {
-    // Check if affiliate tables exist
-    try {
-      await prisma.affiliateCode.findFirst({ take: 1 });
-    } catch (tableError) {
-      return NextResponse.json(
-        { error: 'Affiliate functionality not available in production environment' },
-        { status: 503 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

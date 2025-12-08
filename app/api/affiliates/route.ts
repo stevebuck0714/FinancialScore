@@ -4,17 +4,6 @@ import prisma from '@/lib/prisma';
 // GET - Fetch all affiliates with their codes and company counts
 export async function GET() {
   try {
-    // Check if affiliate tables exist by trying a simple query
-    try {
-      await prisma.affiliate.findFirst({ take: 1 });
-    } catch (tableError) {
-      console.log('Affiliate tables not available in production');
-      return NextResponse.json({
-        affiliates: [],
-        message: 'Affiliate functionality not available in production'
-      });
-    }
-
     const affiliates = await prisma.affiliate.findMany({
       include: {
         codes: {
@@ -40,17 +29,6 @@ export async function GET() {
 // POST - Create new affiliate
 export async function POST(request: NextRequest) {
   try {
-    // Check if affiliate tables exist
-    try {
-      await prisma.affiliate.findFirst({ take: 1 });
-    } catch (tableError) {
-      console.log('Affiliate tables not available in production');
-      return NextResponse.json(
-        { error: 'Affiliate functionality not available in production environment' },
-        { status: 503 }
-      );
-    }
-
     const data = await request.json();
 
     const {
@@ -119,16 +97,6 @@ export async function POST(request: NextRequest) {
 // PUT - Update existing affiliate
 export async function PUT(request: NextRequest) {
   try {
-    // Check if affiliate tables exist
-    try {
-      await prisma.affiliate.findFirst({ take: 1 });
-    } catch (tableError) {
-      return NextResponse.json(
-        { error: 'Affiliate functionality not available in production environment' },
-        { status: 503 }
-      );
-    }
-
     const data = await request.json();
     const { id, ...updateData } = data;
 
@@ -174,16 +142,6 @@ export async function PUT(request: NextRequest) {
 // DELETE - Remove affiliate
 export async function DELETE(request: NextRequest) {
   try {
-    // Check if affiliate tables exist
-    try {
-      await prisma.affiliate.findFirst({ take: 1 });
-    } catch (tableError) {
-      return NextResponse.json(
-        { error: 'Affiliate functionality not available in production environment' },
-        { status: 503 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

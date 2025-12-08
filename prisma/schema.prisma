@@ -51,8 +51,8 @@ model Company {
   createdAt                  DateTime               @default(now())
   updatedAt                  DateTime               @updatedAt
   selectedSubscriptionPlan   String?
-  // affiliateCode              String?  // Doesn't exist in production DB
-  // affiliateId                String?  // Doesn't exist in production DB
+  affiliateCode              String?
+  affiliateId                String?
   subscriptionStatus         String?                @default("active") // 'active', 'paused', 'cancelled'
   subscriptionStartDate      DateTime?
   nextBillingDate            DateTime?
@@ -65,7 +65,7 @@ model Company {
   assessmentRecords          AssessmentRecord[]
   revenueRecords             RevenueRecord[]
   subscriptionEvents         SubscriptionEvent[]
-  // affiliate                  Affiliate?             @relation(fields: [affiliateId], references: [id])  // Doesn't exist in production DB
+  affiliate                  Affiliate?             @relation(fields: [affiliateId], references: [id])
   consultant                 Consultant?            @relation(fields: [consultantId], references: [id], onDelete: SetNull)
   profile                    CompanyProfile?
   financialRecords           FinancialRecord[]
@@ -75,7 +75,7 @@ model Company {
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
   @@index([consultantId])
-  // @@index([affiliateId])  // Doesn't exist in production DB
+  @@index([affiliateId])
 }
 
 model User {
@@ -370,45 +370,45 @@ model SystemSettings {
   @@index([key])
 }
 
-// model Affiliate {  // Doesn't exist in production DB
-//   id           String          @id @default(cuid())
-//   name         String          @unique
-//   contactName  String?
-//   contactEmail String?
-//   contactPhone String?
-//   address      String?
-//   city         String?
-//   state        String?
-//   zip          String?
-//   website      String?
-//   isActive     Boolean         @default(true)
-//   createdAt    DateTime        @default(now())
-//   updatedAt    DateTime        @updatedAt
-//   codes        AffiliateCode[]
-//   companies    Company[]
+model Affiliate {
+  id           String          @id @default(cuid())
+  name         String          @unique
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  address      String?
+  city         String?
+  state        String?
+  zip          String?
+  website      String?
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  codes        AffiliateCode[]
+  companies    Company[]
 
-//   @@index([name])
-// }
+  @@index([name])
+}
 
-// model AffiliateCode {  // Doesn't exist in production DB
-//   id             String    @id @default(cuid())
-//   affiliateId    String
-//   code           String    @unique
-//   description    String?
-//   isActive       Boolean   @default(true)
-//   expiresAt      DateTime?
-//   maxUses        Int?
-//   currentUses    Int       @default(0)
-//   createdAt      DateTime  @default(now())
-//   updatedAt      DateTime  @updatedAt
-//   annualPrice    Float     @default(0)
-//   monthlyPrice   Float     @default(0)
-//   quarterlyPrice Float     @default(0)
-//   affiliate      Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+model AffiliateCode {
+  id             String    @id @default(cuid())
+  affiliateId    String
+  code           String    @unique
+  description    String?
+  isActive       Boolean   @default(true)
+  expiresAt      DateTime?
+  maxUses        Int?
+  currentUses    Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  annualPrice    Float     @default(0)
+  monthlyPrice   Float     @default(0)
+  quarterlyPrice Float     @default(0)
+  affiliate      Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
 
-//   @@index([affiliateId])
-//   @@index([code])
-// }
+  @@index([affiliateId])
+  @@index([code])
+}
 
 model Subscription {
   id                 String               @id @default(cuid())
