@@ -17,11 +17,9 @@ import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, Asse
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
-const Charts = dynamic(() => import('./components/charts/Charts'), { ssr: false });
-
-// Create dynamic chart components
-const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => ({ default: mod.LineChart })), { ssr: false });
-const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => ({ default: mod.ProjectionChart })), { ssr: false });
+// Dynamic chart components
+const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.LineChart), { ssr: false });
+const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 const CompanyDetailsModal = dynamic(() => import('./components/modals/CompanyDetailsModal'), { ssr: false });
 const DataReviewTab = dynamic(() => import('./components/dashboard/DataReviewTab'), { ssr: false });
 const TeamManagementTab = dynamic(() => import('./components/dashboard/TeamManagementTab'), { ssr: false });
