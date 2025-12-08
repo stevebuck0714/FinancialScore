@@ -144,6 +144,7 @@ export async function POST(request: NextRequest) {
         console.log('🔍 Using default consultant pricing:', { monthlyPrice, quarterlyPrice, annualPrice });
       } else {
         // Normal validation for other codes
+        console.log('🔍 Normal affiliate code validation for:', affiliateCode.toUpperCase());
         try {
           const affiliateCodeRecord = await prisma.affiliateCode.findUnique({
             where: { code: affiliateCode.toUpperCase() },
@@ -270,7 +271,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
     // Fetch default pricing from SystemSettings
-    console.log('🔍 Fetching default pricing from SystemSettings...');
+    console.log('🔍 No affiliate code provided, fetching default pricing from SystemSettings...');
     let defaultPricing = await prisma.systemSettings.findUnique({
       where: { key: 'default_pricing' }
     });
@@ -294,6 +295,11 @@ export async function POST(request: NextRequest) {
         console.log('🔍 SystemSettings created successfully:', defaultPricing);
       } catch (createError) {
         console.error('❌ Error creating SystemSettings:', createError);
+        console.error('❌ SystemSettings create error details:', {
+          message: createError.message,
+          code: createError.code,
+          meta: createError.meta
+        });
         throw createError;
       }
     }
@@ -311,7 +317,7 @@ export async function POST(request: NextRequest) {
       : (defaultPricing.consultantAnnualPrice ?? 1750);
     }
 
-    console.log('🔍 Creating company with data:', {
+    console.log('🔍 About to create company with final data:', {
       name,
       consultantId,
       addressStreet,
@@ -327,25 +333,35 @@ export async function POST(request: NextRequest) {
       affiliateId: affiliateId
     });
 
-    const company = await prisma.company.create({
-      data: {
-        name,
-        consultantId,
-        addressStreet,
-        addressCity,
-        addressState,
-        addressZip,
-        addressCountry,
-        industrySector,
-        subscriptionMonthlyPrice: monthlyPrice,
-        subscriptionQuarterlyPrice: quarterlyPrice,
-        subscriptionAnnualPrice: annualPrice,
-        affiliateCode: validatedAffiliateCode,
-        affiliateId: affiliateId
-      }
-    });
+    try {
+      const company = await prisma.company.create({
+        data: {
+          name,
+          consultantId,
+          addressStreet,
+          addressCity,
+          addressState,
+          addressZip,
+          addressCountry,
+          industrySector,
+          subscriptionMonthlyPrice: monthlyPrice,
+          subscriptionQuarterlyPrice: quarterlyPrice,
+          subscriptionAnnualPrice: annualPrice,
+          affiliateCode: validatedAffiliateCode,
+          affiliateId: affiliateId
+        }
+      });
 
-    console.log('🔍 Company created successfully:', company);
+      console.log('🔍 Company created successfully:', company);
+    } catch (companyCreateError) {
+      console.error('❌ Error creating company:', companyCreateError);
+      console.error('❌ Company create error details:', {
+        message: companyCreateError.message,
+        code: companyCreateError.code,
+        meta: companyCreateError.meta
+      });
+      throw companyCreateError;
+    }
 
     return NextResponse.json({ company }, { status: 201 });
   } catch (error) {
