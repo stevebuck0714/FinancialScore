@@ -107,20 +107,28 @@ export async function POST(request: NextRequest) {
           }
         });
 
+        // STORE FINAL PRICING DIRECTLY - NO AFFILIATE CODE REFERENCES
+        const finalPricing = {
+          monthly: pricingToUse?.businessMonthlyPrice ?? 195,
+          quarterly: pricingToUse?.businessQuarterlyPrice ?? 500,
+          annual: pricingToUse?.businessAnnualPrice ?? 1750,
+          requiresPayment: !affiliateCode || (pricingToUse?.businessMonthlyPrice ?? 195) > 0 ||
+                          (pricingToUse?.businessQuarterlyPrice ?? 500) > 0 ||
+                          (pricingToUse?.businessAnnualPrice ?? 1750) > 0
+        };
+
         const companyData: any = {
           name: name, // Use the business name as company name
           consultantId: null, // Standalone business - no consultant
-          subscriptionMonthlyPrice: pricingToUse?.businessMonthlyPrice ?? 0,
-          subscriptionQuarterlyPrice: pricingToUse?.businessQuarterlyPrice ?? 0,
-          subscriptionAnnualPrice: pricingToUse?.businessAnnualPrice ?? 0
+          userDefinedAllocations: {
+            pricing: finalPricing,
+            allocations: []
+          }
           // DO NOT set selectedSubscriptionPlan - they must pay first
         };
-        
-        // If affiliate code was used, save it to the company
-        if (affiliateId && affiliateCode) {
-          companyData.affiliateId = affiliateId;
-          companyData.affiliateCode = affiliateCode.toUpperCase();
-        }
+
+        // DO NOT store affiliate code or affiliate ID with company
+        // Affiliate codes are used ONLY to determine pricing, then discarded
         
         const company = await tx.company.create({
           data: companyData

@@ -324,11 +324,18 @@ export async function POST(request: NextRequest) {
           // subscriptionMonthlyPrice: monthlyPrice,
           // subscriptionQuarterlyPrice: quarterlyPrice,
           // subscriptionAnnualPrice: annualPrice,
-          affiliateCode: validatedAffiliateCode,
-          affiliate: affiliateId ? {
-            connect: { id: affiliateId }
-          } : undefined
-          // Explicitly exclude userDefinedAllocations which doesn't exist in production DB
+          // STORE FINAL PRICING DIRECTLY - NO AFFILIATE CODE REFERENCES
+          userDefinedAllocations: {
+            pricing: {
+              monthly: monthlyPrice,
+              quarterly: quarterlyPrice,
+              annual: annualPrice,
+              requiresPayment: monthlyPrice > 0 || quarterlyPrice > 0 || annualPrice > 0
+            },
+            allocations: []
+          }
+          // DO NOT store affiliate code or affiliate ID with company
+          // Affiliate codes are used ONLY to determine pricing, then discarded
         },
         select: {
           id: true,
