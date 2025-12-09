@@ -2751,7 +2751,7 @@ function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('? Password does not meet requirements:\n\n� At least 8 characters\n� One uppercase letter (A-Z)\n� One lowercase letter (a-z)\n� One number (0-9)\n� One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('⚠️ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -3858,7 +3858,7 @@ function FinancialScorePage() {
     }
 
     // Show confirmation
-    const reportNames = printQueue.map(p => p.title).join('\n� ');
+    const reportNames = printQueue.map(p => p.title).join('\n• ');
     if (!confirm(`You are about to print the following reports in sequence:\n\n� ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
       return;
     }
@@ -5216,7 +5216,7 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h2>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    Imported from QuickBooks � {loadedMonthlyData.length} months of data verified
+                    ✅ Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
                   </p>
 
                   {/* Summary Stats */}
