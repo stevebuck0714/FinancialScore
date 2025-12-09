@@ -71,7 +71,13 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Saving ${mappings.length} mappings for company ${companyId}`);
-    
+    console.log('First few mappings:', mappings.slice(0, 3));
+
+    // Filter out mappings with empty targetField (unmapped accounts)
+    const validMappings = mappings.filter((m: any) => m.targetField && m.targetField.trim() !== '');
+    console.log(`Filtered to ${validMappings.length} valid mappings (removed ${mappings.length - validMappings.length} unmapped accounts)`);
+    console.log('Valid mappings sample:', validMappings.slice(0, 2));
+
     // Save the LOB names to the Company record if provided
     if (linesOfBusiness && Array.isArray(linesOfBusiness) && linesOfBusiness.length > 0) {
       await prisma.company.update({
@@ -80,16 +86,16 @@ export async function POST(request: NextRequest) {
       });
       console.log(`Saved ${linesOfBusiness.length} LOB names to company record`);
     }
-    
+
     // Delete existing mappings for this company
     const deleted = await prisma.accountMapping.deleteMany({
       where: { companyId },
     });
     console.log(`Deleted ${deleted.count} existing mappings`);
 
-        // Create new mappings
+        // Create new mappings (only valid ones with targetField)
         const createdMappings = await prisma.accountMapping.createMany({
-          data: mappings.map((m: any) => ({
+          data: validMappings.map((m: any) => ({
             companyId,
             qbAccount: m.qbAccount,
             qbAccountId: m.qbAccountId || null,
@@ -102,7 +108,7 @@ export async function POST(request: NextRequest) {
         });
 
     console.log(`Created ${createdMappings.count} new mappings`);
-    
+
     // Verify they were saved
     const verification = await prisma.accountMapping.findMany({
       where: { companyId },
@@ -112,6 +118,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       count: createdMappings.count,
+      filtered: mappings.length - validMappings.length,
       verified: verification.length
     });
   } catch (error: any) {

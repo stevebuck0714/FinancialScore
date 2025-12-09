@@ -242,6 +242,15 @@ export default function AccountMappingTable({
                   }
                 });
                 updates.lobAllocations = headcountAllocations;
+              } else if (newMethod === 'custom' && linesOfBusiness.length > 0) {
+                // Apply custom-based allocations
+                const customAllocations: { [lobName: string]: number } = {};
+                linesOfBusiness.forEach((lob) => {
+                  if (lob.name && lob.name.trim() !== '') {
+                    customAllocations[lob.name] = lob.customPercentage || 0;
+                  }
+                });
+                updates.lobAllocations = customAllocations;
               } else if (newMethod === 'equal') {
                 // Apply equal distribution across all LOBs
                 const equalAllocations: { [lobName: string]: number } = {};
@@ -251,15 +260,6 @@ export default function AccountMappingTable({
                   equalAllocations[lob.name] = equalPercent;
                 });
                 updates.lobAllocations = equalAllocations;
-              } else if (newMethod === 'user-defined') {
-                // Apply user-defined allocations from company settings
-                const userDefinedAllocationsMap: { [lobName: string]: number } = {};
-                userDefinedAllocations.forEach((alloc) => {
-                  if (alloc.lobName && alloc.percentage > 0) {
-                    userDefinedAllocationsMap[alloc.lobName] = alloc.percentage;
-                  }
-                });
-                updates.lobAllocations = userDefinedAllocationsMap;
               }
 
               onMappingChange(globalIdx, updates);
@@ -274,8 +274,8 @@ export default function AccountMappingTable({
             }}
           >
             <option value="manual">Manual Entry</option>
-            <option value="user-defined">User Defined</option>
             <option value="headcount">Headcount Based</option>
+            <option value="custom">Custom %</option>
             <option value="equal">Equal Distribution</option>
           </select>
         </td>
@@ -286,8 +286,10 @@ export default function AccountMappingTable({
             {activeLOBs.map((lob, lobIdx) => {
               const currentPercent = lobAllocations[lob.name] !== undefined ? lobAllocations[lob.name] : 0;
               const isHeadcountBased = mapping.allocationMethod === 'headcount';
+              const isCustomBased = mapping.allocationMethod === 'custom';
               const headcountValue = lob.headcountPercentage || 0;
-              const displayValue = isHeadcountBased ? headcountValue : currentPercent;
+              const customValue = lob.customPercentage || 0;
+              const displayValue = isHeadcountBased ? headcountValue : isCustomBased ? customValue : currentPercent;
 
               return (
                 <td key={lobIdx} style={{
@@ -301,9 +303,9 @@ export default function AccountMappingTable({
                     min="0"
                     max="100"
                     value={displayValue}
-                    disabled={isHeadcountBased}
+                    disabled={isHeadcountBased || isCustomBased}
                     onChange={(e) => {
-                      if (isHeadcountBased) return; // Don't allow changes when headcount-based
+                      if (isHeadcountBased || isCustomBased) return; // Don't allow changes when headcount-based or custom-based
                       const newValue = parseInt(e.target.value) || 0;
                       const newAllocations = { ...lobAllocations, [lob.name]: newValue };
                       onMappingChange(globalIdx, { lobAllocations: newAllocations });
@@ -311,12 +313,12 @@ export default function AccountMappingTable({
                     style={{
                       width: '100%',
                       padding: '4px',
-                      border: isHeadcountBased ? '1px solid #d1d5db' : '1px solid #cbd5e1',
+                      border: (isHeadcountBased || isCustomBased) ? '1px solid #d1d5db' : '1px solid #cbd5e1',
                       borderRadius: '3px',
                       fontSize: '12px',
                       textAlign: 'center',
-                      background: isHeadcountBased ? '#f9fafb' : 'white',
-                      color: isHeadcountBased ? '#6b7280' : '#1e293b'
+                      background: (isHeadcountBased || isCustomBased) ? '#f9fafb' : 'white',
+                      color: (isHeadcountBased || isCustomBased) ? '#6b7280' : '#1e293b'
                     }}
                   />
                 </td>

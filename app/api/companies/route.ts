@@ -34,12 +34,14 @@ export async function GET(request: NextRequest) {
         industrySector: true,
         linesOfBusiness: true,
         userDefinedAllocations: true,
-        createdAt: true
-        // subscriptionMonthlyPrice: true, // These fields may not exist in production DB
-        // subscriptionQuarterlyPrice: true,
-        // subscriptionAnnualPrice: true,
-        // affiliateCode: true,
-        // affiliateId: true,
+        createdAt: true,
+        // Skip problematic fields in production
+        ...(process.env.NODE_ENV === 'production' ? {} : {
+          affiliateCode: true,
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true
+        })
       },
       orderBy: { createdAt: 'desc' },
       take: limit
@@ -63,10 +65,23 @@ export async function GET(request: NextRequest) {
 // POST create new company
 export async function POST(request: NextRequest) {
   console.log('🔍 ===== API COMPANIES POST REQUEST RECEIVED =====');
+  console.log('🔍 NODE_ENV:', process.env.NODE_ENV);
   try {
     console.log('🔍 ===== STARTING COMPANY CREATION =====');
 
-    const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode, linesOfBusiness } = await request.json();
+    let requestBody;
+    try {
+      requestBody = await request.json();
+      console.log('🔍 Request body parsed successfully');
+    } catch (parseError) {
+      console.error('❌ Failed to parse request JSON:', parseError);
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body', debug: { nodeEnv: process.env.NODE_ENV } },
+        { status: 400 }
+      );
+    }
+
+    const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode, linesOfBusiness } = requestBody;
 
     console.log('🔍 Received data:', { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode });
 
@@ -78,6 +93,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Skip to real database operations for staging/dev testing
+    console.log('🔍 Using real database operations for staging/dev, NODE_ENV:', process.env.NODE_ENV);
+
+    // STAGING/DEV: Full pricing logic
     // Get consultant to check their type
     console.log('🔍 Looking up consultant with ID:', consultantId);
     const consultant = await prisma.consultant.findUnique({
@@ -261,17 +280,17 @@ export async function POST(request: NextRequest) {
           console.log('🔍 SystemSettings created successfully:', defaultPricing);
         }
 
-        // Use pricing from database if available, otherwise use defaults
+        // Use appropriate default pricing based on user type
         if (defaultPricing) {
-          // Use consultant pricing for regular consultants, business pricing for business consultants
-          const isBusinessConsultant = consultant?.type === 'business';
-          monthlyPrice = isBusinessConsultant
+          // Individual businesses get business pricing, consultants get consultant pricing
+          const isBusinessUser = consultant?.type === 'business';
+          monthlyPrice = isBusinessUser
             ? (defaultPricing.businessMonthlyPrice ?? 195)
             : (defaultPricing.consultantMonthlyPrice ?? 195);
-          quarterlyPrice = isBusinessConsultant
+          quarterlyPrice = isBusinessUser
             ? (defaultPricing.businessQuarterlyPrice ?? 500)
             : (defaultPricing.consultantQuarterlyPrice ?? 500);
-          annualPrice = isBusinessConsultant
+          annualPrice = isBusinessUser
             ? (defaultPricing.businessAnnualPrice ?? 1750)
             : (defaultPricing.consultantAnnualPrice ?? 1750);
         } else {
@@ -320,15 +339,25 @@ export async function POST(request: NextRequest) {
           addressZip,
           addressCountry,
           industrySector,
-          // subscription pricing fields don't exist in production DB
-          // subscriptionMonthlyPrice: monthlyPrice,
-          // subscriptionQuarterlyPrice: quarterlyPrice,
-          // subscriptionAnnualPrice: annualPrice,
-          affiliateCode: validatedAffiliateCode,
-          affiliate: affiliateId ? {
-            connect: { id: affiliateId }
-          } : undefined
-          // Explicitly exclude userDefinedAllocations which doesn't exist in production DB
+          // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES USED ONLY FOR LOOKUP
+          // Store in dedicated fields (now that database supports them)
+          subscriptionMonthlyPrice: monthlyPrice,
+          subscriptionQuarterlyPrice: quarterlyPrice,
+          subscriptionAnnualPrice: annualPrice,
+          subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active",
+          // Store pricing in userDefinedAllocations as backup
+          userDefinedAllocations: {
+            subscriptionPricing: {
+              monthly: monthlyPrice,
+              quarterly: quarterlyPrice,
+              annual: annualPrice,
+              isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0,
+              source: 'affiliate_code',
+              createdAt: new Date().toISOString()
+            }
+          },
+          // DO NOT store affiliate code or affiliate ID with company
+          // Affiliate codes are used ONLY to determine pricing, then discarded
         },
         select: {
           id: true,
@@ -344,20 +373,20 @@ export async function POST(request: NextRequest) {
           industrySector: true,
           linesOfBusiness: true,
           userDefinedAllocations: true,
-          affiliateCode: true, // This field exists in production
-          affiliate: {
-            select: { id: true, name: true }
-          },
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true,
           createdAt: true
         }
       });
 
       console.log('🔍 Company created successfully:', company);
 
-      // Transform the response to include consultantId for backward compatibility
+      // Transform the response to include consultantId (pricing is now stored in DB)
       const transformedCompany = {
         ...company,
         consultantId: company.consultant?.id
+        // Pricing is now stored permanently in database fields
       };
 
       console.log('🔍 ===== COMPANY CREATION COMPLETED SUCCESSFULLY =====');
@@ -429,11 +458,9 @@ export async function PATCH(request: NextRequest) {
       console.log('📝 Updating linesOfBusiness:', linesOfBusiness);
     }
 
-    if (headcountAllocations !== undefined && process.env.NODE_ENV !== 'development') {
+    if (headcountAllocations !== undefined) {
       updateData.headcountAllocations = headcountAllocations;
       console.log('📝 Updating headcountAllocations:', headcountAllocations);
-    } else if (headcountAllocations !== undefined && process.env.NODE_ENV === 'development') {
-      console.log('⚠️ Skipping headcountAllocations update in dev - field does not exist');
     }
 
     console.log('🔄 Final update data:', updateData);
@@ -445,11 +472,11 @@ export async function PATCH(request: NextRequest) {
       linesOfBusiness: true
     };
 
-    // Only select headcountAllocations if it exists (not in dev)
+    // Select headcountAllocations if it exists (now that database column is added)
     if (process.env.NODE_ENV !== 'development') {
       selectFields.headcountAllocations = true;
-      selectFields.userDefinedAllocations = true;
     }
+    selectFields.userDefinedAllocations = true;
 
     const company = await prisma.company.update({
       where: { id: companyId },

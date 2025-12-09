@@ -45,9 +45,9 @@ model Company {
   addressZip                 String?
   addressCountry             String?
   industrySector             Int?
-  // subscriptionMonthlyPrice   Float?  // Doesn't exist in production DB
-  // subscriptionQuarterlyPrice Float?  // Doesn't exist in production DB
-  // subscriptionAnnualPrice    Float?  // Doesn't exist in production DB
+  subscriptionMonthlyPrice   Float?
+  subscriptionQuarterlyPrice Float?
+  subscriptionAnnualPrice    Float?
   createdAt                  DateTime               @default(now())
   updatedAt                  DateTime               @updatedAt
   selectedSubscriptionPlan   String?
@@ -58,6 +58,7 @@ model Company {
   nextBillingDate            DateTime?
   lastBillingDate            DateTime?
   linesOfBusiness            Json?                  // Array of LOB objects: [{name: string, headcountPercentage: number}]
+  headcountAllocations       Json?                  // Array of headcount allocation objects: [{lobName: string, percentage: number}]
   userDefinedAllocations     Json?                  // Array of user defined allocation templates: [{lobName: string, percentage: number}]
   accountMappings            AccountMapping[]
   accountingConnections      AccountingConnection[]

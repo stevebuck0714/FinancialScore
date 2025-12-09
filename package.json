@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "node server.js",
-    "dev:vercel": "next dev",
+    "dev:vercel": "node scripts/clean-dev-servers.js && next dev",
+    "dev:clean": "node scripts/clean-dev-servers.js",
     "build": "next build",
     "start": "node server.js",
     "start:vercel": "next start",

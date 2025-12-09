@@ -1420,19 +1420,19 @@ export default function SiteAdminDashboard(props: any) {
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px', color: '#475569', fontSize: '11px' }}>
                                   <span>${code.monthlyPrice}/mo</span>
-                                  <span>�</span>
+                                  <span>|</span>
                                   <span>${code.quarterlyPrice}/qtr</span>
-                                  <span>�</span>
+                                  <span>|</span>
                                   <span>${code.annualPrice}/yr</span>
                                   {code.maxUses && (
                                     <>
-                                      <span>�</span>
+                                      <span>|</span>
                                       <span>{code.currentUses || 0}/{code.maxUses} uses</span>
                                     </>
                                   )}
                                   {code.expiresAt && (
                                     <>
-                                      <span>�</span>
+                                      <span>|</span>
                                       <span>Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>
                                     </>
                                   )}
@@ -1906,12 +1906,12 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                               </div>
                                               <div style={{ fontSize: '11px', color: '#64748b' }}>
-                                                {code.description && <span>{code.description} � </span>}
+                                                {code.description && <span>{code.description} - </span>}
                                                 <span>Uses: {code.currentUses}{code.maxUses ? `/${code.maxUses}` : ''}</span>
-                                                {code.expiresAt && <span> � Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>}
+                                                {code.expiresAt && <span> - Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>}
                                               </div>
                                               <div style={{ fontSize: '11px', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>
-                                                Pricing: ${code.monthlyPrice}/mo � ${code.quarterlyPrice}/qtr � ${code.annualPrice}/yr
+                                                Pricing: ${code.monthlyPrice}/mo | ${code.quarterlyPrice}/qtr | ${code.annualPrice}/yr
                                               </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '6px' }}>

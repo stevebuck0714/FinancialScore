@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 interface LOBData {
   name: string;
   headcountPercentage: number;
+  customPercentage: number;
 }
 
 interface UserDefinedAllocation {
@@ -44,7 +45,8 @@ export default function CompanySettingsTab({
               // Convert from stored format to component format
               const loadedLOBs = company.linesOfBusiness.map((lob: any) => ({
                 name: typeof lob === 'string' ? lob : (lob.name || ''),
-                headcountPercentage: typeof lob === 'object' ? (lob.headcountPercentage || 0) : 0
+                headcountPercentage: typeof lob === 'object' ? (lob.headcountPercentage || 0) : 0,
+                customPercentage: typeof lob === 'object' ? (lob.customPercentage || 0) : 0
               }));
               setLobs(loadedLOBs);
 
@@ -60,14 +62,14 @@ export default function CompanySettingsTab({
               }
             } else {
               // No LOBs defined yet, start with empty state
-              setLobs([{ name: '', headcountPercentage: 0 }]);
+              setLobs([{ name: '', headcountPercentage: 0, customPercentage: 0 }]);
               setUserDefinedAllocations([]);
             }
           }
         }
       } catch (error) {
         console.error('Error loading LOB data:', error);
-        setLobs([{ name: '', headcountPercentage: 0 }]);
+        setLobs([{ name: '', headcountPercentage: 0, customPercentage: 0 }]);
       } finally {
         setIsLoading(false);
       }
@@ -98,7 +100,7 @@ export default function CompanySettingsTab({
 
   const addLOB = () => {
     if (lobs.length < 5) {
-      const newLOBs = [...lobs, { name: '', headcountPercentage: 0 }];
+      const newLOBs = [...lobs, { name: '', headcountPercentage: 0, customPercentage: 0 }];
       setLobs(newLOBs);
       onLOBChange(newLOBs);
     }
@@ -131,6 +133,7 @@ export default function CompanySettingsTab({
   };
 
   const totalHeadcountPercentage = lobs.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
+  const totalCustomPercentage = lobs.reduce((sum, lob) => sum + (lob.customPercentage || 0), 0);
 
   const saveSettings = async () => {
     setIsSaving(true);
@@ -140,7 +143,8 @@ export default function CompanySettingsTab({
         .filter(lob => lob.name.trim() !== '')
         .map(lob => ({
           name: lob.name.trim(),
-          headcountPercentage: lob.headcountPercentage || 0
+          headcountPercentage: lob.headcountPercentage || 0,
+          customPercentage: lob.customPercentage || 0
         }));
 
       const filteredAllocations = userDefinedAllocations.filter(alloc => alloc.percentage > 0);
@@ -202,10 +206,7 @@ export default function CompanySettingsTab({
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
       <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-          Company Settings
-        </h1>
-        <p style={{ fontSize: '16px', color: '#64748b' }}>
+        <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#64748b' }}>
           Configure Lines of Business and allocation settings for {selectedCompany.name}
         </p>
       </div>
@@ -242,7 +243,7 @@ export default function CompanySettingsTab({
         {/* Header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2fr 1fr 50px',
+          gridTemplateColumns: '2fr 1fr 1fr 50px',
           gap: '12px',
           marginBottom: '8px',
           paddingBottom: '8px',
@@ -250,6 +251,7 @@ export default function CompanySettingsTab({
         }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Line of Business</div>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Headcount %</div>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Custom %</div>
           <div></div>
         </div>
 
@@ -257,7 +259,7 @@ export default function CompanySettingsTab({
         {lobs.map((lob, index) => (
           <div key={index} style={{
             display: 'grid',
-            gridTemplateColumns: '2fr 1fr 50px',
+            gridTemplateColumns: '2fr 1fr 1fr 50px',
             gap: '12px',
             marginBottom: '8px',
             alignItems: 'center'
@@ -283,6 +285,26 @@ export default function CompanySettingsTab({
                 step="0.1"
                 value={lob.headcountPercentage || ''}
                 onChange={(e) => updateLOB(index, 'headcountPercentage', parseFloat(e.target.value) || 0)}
+                placeholder="0.0"
+                style={{
+                  padding: '8px 12px',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  width: '100%'
+                }}
+              />
+              <span style={{ fontSize: '12px', color: '#64748b' }}>%</span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={lob.customPercentage || ''}
+                onChange={(e) => updateLOB(index, 'customPercentage', parseFloat(e.target.value) || 0)}
                 placeholder="0.0"
                 style={{
                   padding: '8px 12px',
@@ -322,109 +344,40 @@ export default function CompanySettingsTab({
           borderRadius: '6px',
           border: '1px solid #e2e8f0'
         }}>
-          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
+          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
             <strong>Total Headcount Allocation:</strong> {totalHeadcountPercentage.toFixed(1)}%
           </div>
           {Math.abs(totalHeadcountPercentage - 100) > 0.1 && (
             <div style={{
               fontSize: '11px',
-              color: Math.abs(totalHeadcountPercentage - 100) > 5 ? '#dc2626' : '#d97706'
+              color: Math.abs(totalHeadcountPercentage - 100) > 5 ? '#dc2626' : '#d97706',
+              marginBottom: '8px'
             }}>
               ⚠️ Headcount percentages should total 100% for accurate allocation
             </div>
           )}
+
+          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+            <strong>Total Custom Allocation:</strong> {totalCustomPercentage.toFixed(1)}%
+          </div>
+          {Math.abs(totalCustomPercentage - 100) > 0.1 && (
+            <div style={{
+              fontSize: '11px',
+              color: Math.abs(totalCustomPercentage - 100) > 5 ? '#dc2626' : '#d97706',
+              marginBottom: '8px'
+            }}>
+              ⚠️ Custom percentages should total 100% for accurate allocation
+            </div>
+          )}
+
           {lobs.length === 5 && (
-            <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: '#6b7280' }}>
               Maximum of 5 lines of business reached
             </div>
           )}
         </div>
       </div>
 
-      {/* User Defined Allocation Percentages Section */}
-      {lobs.filter(lob => lob.name.trim() !== '').length > 0 && (
-        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '24px' }}>
-          <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-            User Defined Allocation Percentages
-          </h2>
-
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-            Define custom allocation percentages for each line of business (used by the "User Defined" allocation method)
-          </p>
-
-          {/* Header */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '2fr 1fr',
-            gap: '12px',
-            marginBottom: '8px',
-            paddingBottom: '8px',
-            borderBottom: '1px solid #e2e8f0'
-          }}>
-            <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Line of Business</div>
-            <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Allocation %</div>
-          </div>
-
-          {/* Allocation Rows */}
-          {lobs.filter(lob => lob.name.trim() !== '').map((lob) => {
-            const allocation = userDefinedAllocations.find(alloc => alloc.lobName === lob.name);
-            return (
-              <div key={lob.name} style={{
-                display: 'grid',
-                gridTemplateColumns: '2fr 1fr',
-                gap: '12px',
-                marginBottom: '8px',
-                alignItems: 'center'
-              }}>
-                <div style={{ fontSize: '14px', color: '#1e293b' }}>
-                  {lob.name}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={allocation?.percentage || ''}
-                    onChange={(e) => updateUserDefinedAllocation(lob.name, parseFloat(e.target.value) || 0)}
-                    placeholder="0.0"
-                    style={{
-                      padding: '8px 12px',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      width: '100%'
-                    }}
-                  />
-                  <span style={{ fontSize: '12px', color: '#64748b' }}>%</span>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Summary */}
-          <div style={{
-            marginTop: '16px',
-            padding: '12px',
-            background: '#f8fafc',
-            borderRadius: '6px',
-            border: '1px solid #e2e8f0'
-          }}>
-            <div style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
-              <strong>Total User Defined Allocation:</strong> {userDefinedAllocations.reduce((sum, alloc) => sum + (alloc.percentage || 0), 0).toFixed(1)}%
-            </div>
-            {Math.abs(userDefinedAllocations.reduce((sum, alloc) => sum + (alloc.percentage || 0), 0) - 100) > 0.1 && (
-              <div style={{
-                fontSize: '11px',
-                color: Math.abs(userDefinedAllocations.reduce((sum, alloc) => sum + (alloc.percentage || 0), 0) - 100) > 5 ? '#dc2626' : '#d97706'
-              }}>
-                ⚠️ Percentages should total 100% for proper allocation
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Save Button */}
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
