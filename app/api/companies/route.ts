@@ -93,72 +93,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // PRODUCTION ONLY: Use mock operations for production environment
-    console.log('🔍 Checking environment for affiliate compatibility');
-    if (process.env.NODE_ENV === 'production') {
-      console.log('🏭 PRODUCTION MODE DETECTED: Simulating company creation for UI compatibility');
-
-      // Generate a fake company ID for UI purposes
-      const fakeCompanyId = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Determine pricing based on affiliate code (simplified logic)
-      let monthlyPrice = 195; // Default
-      let quarterlyPrice = 500; // Default
-      let annualPrice = 1750; // Default
-
-      if (affiliateCode) {
-        // Check for known free codes (expanded list for production mock)
-        const freeCodes = ['PROMO2026', 'FREE', 'TESTFREE', 'DEMO', 'PROMO', 'TEST', 'ZERO', 'GRATIS'];
-        const upperCode = affiliateCode.toUpperCase();
-
-        // Check for free patterns
-        const isFreeCode = freeCodes.some(code => upperCode.includes(code)) ||
-                          upperCode.includes('FREE') ||
-                          upperCode.includes('TEST') ||
-                          upperCode.includes('DEMO') ||
-                          upperCode.includes('PROMO');
-
-        if (isFreeCode) {
-          monthlyPrice = 0;
-          quarterlyPrice = 0;
-          annualPrice = 0;
-          console.log('🎁 FREE affiliate code detected in production mock:', affiliateCode);
-        } else {
-          console.log('💰 Paid affiliate code detected, using default pricing:', affiliateCode);
-        }
-      }
-
-      // Return a mock company object for frontend compatibility
-      const mockCompany = {
-        id: fakeCompanyId,
-        name,
-        consultantId,
-        addressStreet,
-        addressCity,
-        addressState,
-        addressZip,
-        addressCountry,
-        industrySector,
-        linesOfBusiness,
-        subscriptionMonthlyPrice: monthlyPrice,
-        subscriptionQuarterlyPrice: quarterlyPrice,
-        subscriptionAnnualPrice: annualPrice,
-        createdAt: new Date().toISOString(),
-        debug: {
-          nodeEnv: process.env.NODE_ENV,
-          mode: 'production_mock',
-          affiliateCode: affiliateCode,
-          pricing: { monthlyPrice, quarterlyPrice, annualPrice },
-          timestamp: new Date().toISOString()
-        }
-      };
-
-      console.log('✅ Mock company created in production:', mockCompany);
-
-      return NextResponse.json({ company: mockCompany }, { status: 201 });
-    } else {
-      console.log('🔍 NOT production mode, NODE_ENV:', process.env.NODE_ENV);
-    }
+    // Skip to real database operations for staging/dev testing
+    console.log('🔍 Using real database operations for staging/dev, NODE_ENV:', process.env.NODE_ENV);
 
     // STAGING/DEV: Full pricing logic
     // Get consultant to check their type
