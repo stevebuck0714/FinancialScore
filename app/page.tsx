@@ -347,10 +347,10 @@ function FinancialScorePage() {
   const handleViewChange = (newView: string) => {
     console.log('🔄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
     if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
-      console.log('? View not allowed, redirecting to ma-welcome');
+      console.log('🚫 View not allowed, redirecting to ma-welcome');
       setCurrentView('ma-welcome');
     } else {
-      console.log('? Setting view to:', newView);
+      console.log('🔄 Setting view to:', newView);
       setCurrentView(newView as any);
     }
   };
@@ -829,7 +829,7 @@ function FinancialScorePage() {
       const result = await response.json();
       
       if (result.success) {
-        alert('? Payment method updated successfully!');
+        alert('✅ Payment method updated successfully!');
         setShowUpdatePaymentModal(false);
         // Reset form
         setUpdatePaymentData({
@@ -850,11 +850,11 @@ function FinancialScorePage() {
           setActiveSubscription(subData.subscription);
         }
       } else {
-        alert(`? Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
+        alert(`❌ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
       }
     } catch (error) {
       console.error('Update payment method error:', error);
-      alert('? An error occurred while updating your payment method. Please try again.');
+      alert('❌ An error occurred while updating your payment method. Please try again.');
     } finally {
       setUpdatingPayment(false);
     }
@@ -916,7 +916,7 @@ function FinancialScorePage() {
       }
     } catch (error) {
       console.error('Error deleting company:', error);
-      alert('? An error occurred while deleting the company');
+      alert('❌ An error occurred while deleting the company');
     }
   };
 
