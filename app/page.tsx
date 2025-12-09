@@ -3859,7 +3859,7 @@ function FinancialScorePage() {
 
     // Show confirmation
     const reportNames = printQueue.map(p => p.title).join('\n• ');
-    if (!confirm(`You are about to print the following reports in sequence:\n\n� ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
+    if (!confirm(`You are about to print the following reports in sequence:\n\n• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
       return;
     }
 
@@ -5659,7 +5659,7 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                   <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h3>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    Synced successfully � {loadedMonthlyData.length} months of data imported
+                    ✅ Synced successfully - {loadedMonthlyData.length} months of data imported
                   </p>
 
                   {/* Summary Stats */}
@@ -6260,7 +6260,7 @@ function FinancialScorePage() {
                     onClick={() => setShowUpdatePaymentModal(false)}
                     style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                   >
-                    �
+                    ×
                   </button>
                 </div>
 
@@ -6814,7 +6814,7 @@ function FinancialScorePage() {
                       ];
                       
                       if (expenseCategories.includes(item) && expenseGoals[item]) {
-                        // Calculate goal as: Goal % � Revenue for each month
+                        // Calculate goal as: Goal % × Revenue for each month
                         return monthly.map(m => {
                           const revenue = m.revenue || 0;
                               const goalPct = expenseGoals[item] / 100;
@@ -7762,7 +7762,7 @@ function FinancialScorePage() {
                   lineHeight: 1
                 }}
               >
-                �
+                ×
               </button>
             </div>
             
@@ -9339,7 +9339,7 @@ function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      🖨� Print Priority Ratios
+                      🖨️ Print Priority Ratios
                     </button>
                   </div>
                   <div className="priority-ratios-print-content">
@@ -10311,9 +10311,9 @@ function FinancialScorePage() {
                          revTrend > -15 ? <span style={{ color: '#f59e0b' }}>, suggesting slowing momentum requiring attention</span> :
                          <span style={{ color: '#ef4444' }}>, indicating significant contraction requiring strategic intervention</span>}.
                         <strong> Expense</strong> trends show {expTrend > 0 ? 'growth' : 'reduction'} of <strong style={{ color: Math.abs(expTrend) < Math.abs(revTrend) ? '#10b981' : '#ef4444' }}>{Math.abs(expTrend).toFixed(1)}%</strong> over the same period
-                        {expTrend < revTrend ? <span style={{ color: '#10b981' }}>, with expenses growing {revTrend - expTrend > 10 ? 'significantly ' : ''}slower than revenue�excellent operational leverage</span> :
+                        {expTrend < revTrend ? <span style={{ color: '#10b981' }}>, with expenses growing {revTrend - expTrend > 10 ? 'significantly ' : ''}slower than revenue - excellent operational leverage</span> :
                          expTrend === revTrend ? ', matching revenue growth pace' :
-                         <span style={{ color: '#ef4444' }}>, outpacing revenue growth by {(expTrend - revTrend).toFixed(1)} percentage points�margin compression risk</span>}.
+                         <span style={{ color: '#ef4444' }}>, outpacing revenue growth by {(expTrend - revTrend).toFixed(1)} percentage points - margin compression risk</span>}.
                         <strong> Net margin</strong> {marginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: marginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(marginChange).toFixed(1)}</strong> percentage points to <strong>{recentMargin.toFixed(1)}%</strong>
                         {marginChange > 3 ? <span style={{ color: '#10b981' }}>, reflecting improving profitability and strong operational efficiency</span> :
                          marginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
@@ -10322,7 +10322,7 @@ function FinancialScorePage() {
                         {assetGrowth !== 0 && (
                           <>
                             <strong> Asset base</strong> {assetGrowth > 0 ? 'grew' : 'declined'} by <strong style={{ color: assetGrowth > 0 ? '#667eea' : '#f59e0b' }}>{Math.abs(assetGrowth).toFixed(1)}%</strong> year-over-year
-                            {assetGrowth > revTrend + 10 ? <span style={{ color: '#f59e0b' }}>, growing faster than revenue�monitor asset efficiency and ROA</span> :
+                            {assetGrowth > revTrend + 10 ? <span style={{ color: '#f59e0b' }}>, growing faster than revenue - monitor asset efficiency and ROA</span> :
                              assetGrowth > 5 ? ', supporting business expansion' :
                              assetGrowth > -5 ? ', remaining relatively stable' :
                              <span style={{ color: '#64748b' }}>, contracting which may improve asset turnover ratios</span>}.
@@ -10483,7 +10483,7 @@ function FinancialScorePage() {
                          <span style={{ color: '#ef4444' }}>, indicating negative working capital position requiring immediate attention and potential financing needs</span>}.
                         The working capital ratio of <strong>{wcRatio.toFixed(2)}</strong> has {wcRatioChange > 0 ? 'improved' : wcRatioChange < 0 ? 'declined' : 'remained stable'} 
                         {Math.abs(wcRatioChange) > 5 ? <span> by <strong style={{ color: wcRatioChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(wcRatioChange).toFixed(1)}%</strong> from {priorWCRatio.toFixed(2)} a year ago</span> : ' over the past year'}
-                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assets�a concerning liquidity position</span> :
+                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assets - a concerning liquidity position</span> :
                          wcRatio < 1.5 ? <span style={{ color: '#f59e0b' }}>, suggesting tight liquidity that may limit operational flexibility</span> :
                          wcRatio > 3.0 ? <span style={{ color: '#10b981' }}>, reflecting exceptionally strong liquidity, though potentially excess capital that could be deployed more productively</span> :
                          ', indicating adequate short-term liquidity'}.
@@ -10523,7 +10523,7 @@ function FinancialScorePage() {
                         {monthly.length >= 13 && Math.abs(cccChange) > 5 && (
                           <span> has {cccChange > 0 ? 'lengthened' : 'shortened'} by <strong style={{ color: cccChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(cccChange).toFixed(0)} days</strong> year-over-year</span>
                         )}
-                        {ccc < 0 ? <span style={{ color: '#10b981' }}>, indicating the business receives payment before paying suppliers�an exceptionally favorable working capital dynamic generating float</span> :
+                        {ccc < 0 ? <span style={{ color: '#10b981' }}>, indicating the business receives payment before paying suppliers - an exceptionally favorable working capital dynamic generating float</span> :
                          ccc < 30 ? <span style={{ color: '#10b981' }}>, demonstrating highly efficient working capital management with rapid cash generation cycles</span> :
                          ccc < 60 ? ', reflecting reasonable working capital efficiency' :
                          ccc < 90 ? <span style={{ color: '#f59e0b' }}>, suggesting extended working capital cycle that ties up significant cash in operations</span> :
@@ -10674,15 +10674,15 @@ function FinancialScorePage() {
                          opCFMargin > 0 ? <span style={{ color: '#f59e0b' }}>, suggesting opportunities to improve working capital efficiency</span> :
                          <span style={{ color: '#ef4444' }}>, indicating cash outflow from operations requiring immediate attention</span>}.
                         Working capital changes {changeInWC > 0 ? 'contributed' : 'consumed'} <strong>{formatDollar(changeInWC)}</strong>
-                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capital�review receivables and inventory management</span> :
+                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capital - review receivables and inventory management</span> :
                          changeInWC > ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, with efficient working capital management releasing cash for other uses</span> :
                          ''}.
                         <strong> Investing activities</strong> {investingCF < 0 ? 'deployed' : 'generated'} <strong style={{ color: '#667eea' }}>{formatDollar(investingCF)}</strong>
-                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flow�monitor return on invested capital</span> :
+                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flow - monitor return on invested capital</span> :
                          capEx > 0 ? ', supporting maintenance and growth of the asset base' :
                          ', with minimal capital investment in fixed assets'}.
                         <strong> Financing activities</strong> {financingCF > 0 ? 'provided' : 'consumed'} <strong style={{ color: financingCF > 0 ? '#667eea' : '#64748b' }}>{formatDollar(financingCF)}</strong>
-                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of {formatDollar(changeInDebt)}�monitor leverage ratios</span> :
+                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of {formatDollar(changeInDebt)} - monitor leverage ratios</span> :
                          changeInDebt < -ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, reducing debt by {formatDollar(changeInDebt)} and strengthening the balance sheet</span> :
                          ''}.
                         <strong> Free cash flow</strong> of <strong style={{ color: freeCF > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(freeCF)}</strong>
@@ -10691,7 +10691,7 @@ function FinancialScorePage() {
                          <span style={{ color: '#ef4444' }}> indicates operations are not generating sufficient cash to cover capital needs</span>}.
                         Net cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#f59e0b' }}>{formatDollar(cashChange)}</strong> to <strong>{formatDollar(last12[last12.length - 1].cash)}</strong>
                         {cashChange / ltmRev > 0.15 ? <span style={{ color: '#10b981' }}>, building substantial cash reserves and financial resilience</span> :
-                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reserves�monitor cash runway and funding needs</span> :
+                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reserves - monitor cash runway and funding needs</span> :
                          ''}.
                       </>
                     );
@@ -12878,7 +12878,7 @@ function FinancialScorePage() {
                     cursor: 'pointer',
                     boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                   }}>
-                  🖨� Print
+                  🖨️ Print
                 </button>
               )}
             </div>
@@ -13012,10 +13012,10 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Percentage of revenue converted to operating cash flow. Higher percentages indicate better cash generation efficiency.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> (Operating Cash Flow � Revenue) � 100
+                    <strong>Formula:</strong> (Operating Cash Flow ÷ Revenue) × 100
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 � $250,000) � 100 = <strong>23.2%</strong>
+                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 ÷ $250,000) × 100 = <strong>23.2%</strong>
                   </p>
                 </div>
 
@@ -13026,10 +13026,10 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Number of days the company can operate with its current cash balance at the current cash flow rate. Indicates financial runway.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Ending Cash � (Operating Cash Flow � 30)
+                    <strong>Formula:</strong> Ending Cash ÷ (Operating Cash Flow × 30)
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 � ($58,000 � 30) = <strong>38.8 days</strong>
+                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 ÷ ($58,000 × 30) = <strong>38.8 days</strong>
                   </p>
                 </div>
 
@@ -13040,11 +13040,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days inventory is held before being sold. Lower values indicate faster inventory turnover and better working capital management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 � Inventory Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS � Avg Inventory</span>
+                    <strong>Formula:</strong> 365 ÷ Inventory Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS ÷ Avg Inventory</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 � 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 ÷ 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -13055,11 +13055,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days to collect payment from customers after a sale. Lower values indicate faster cash collection and better receivables management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 � Receivables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue � Avg A/R</span>
+                    <strong>Formula:</strong> 365 ÷ Receivables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue ÷ Avg A/R</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 � 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 ÷ 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -13070,11 +13070,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days the company takes to pay its suppliers. Higher values can indicate better use of supplier credit, but be careful not to damage supplier relationships.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 � Payables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS � Avg A/P</span>
+                    <strong>Formula:</strong> 365 ÷ Payables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS ÷ Avg A/P</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 � 8 = <strong>45.6 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 ÷ 8 = <strong>45.6 days</strong>
                   </p>
                 </div>
 
@@ -13211,7 +13211,7 @@ function FinancialScorePage() {
                   Conclusion: Liquidity is the Key to Resilience
                 </h3>
                 <p style={{ marginBottom: '0' }}>
-                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters most�growing your business.
+                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters most - growing your business.
                 </p>
               </div>
               </details>
@@ -13672,7 +13672,7 @@ function FinancialScorePage() {
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>??� Negative Operating Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Negative Operating Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           The company consumed ${Math.abs(totalOperatingCF / 1000).toFixed(0)}K in cash from operations, which may indicate operational challenges.
                         </div>
@@ -13688,7 +13688,7 @@ function FinancialScorePage() {
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>??� Negative Free Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️ Negative Free Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#b45309' }}>
                           Capital expenditures exceed operating cash flow by ${Math.abs(totalFreeCF / 1000).toFixed(0)}K, requiring external financing.
                         </div>
@@ -13704,7 +13704,7 @@ function FinancialScorePage() {
                       </div>
                     ) : avgCashFlowMargin < 5 ? (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>??� Low Cash Flow Margin</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Low Cash Flow Margin</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           Cash flow margin of {avgCashFlowMargin.toFixed(1)}% suggests challenges in converting revenue to cash. Review receivables collection and expense timing.
                         </div>
@@ -13734,7 +13734,7 @@ function FinancialScorePage() {
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
               {hasCsvData
-                ? `Map Trial Balance accounts to your standardized financial fields � Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} � ${csvTrialBalanceData.dates?.length || 0} periods`
+                ? `Map Trial Balance accounts to your standardized financial fields - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} - ${csvTrialBalanceData.dates?.length || 0} periods`
                 : `${aiMappings.length} saved account mappings loaded from database`
               }
             </p>
@@ -14180,7 +14180,7 @@ function FinancialScorePage() {
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              Map QuickBooks accounts to your standardized financial fields � Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
+              Map QuickBooks accounts to your standardized financial fields - Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
             </p>
 
 
@@ -14395,7 +14395,7 @@ function FinancialScorePage() {
                   >
                     {isGeneratingMappings ? (
                       <>
-                        <span>�</span>
+                        <span>🤖</span>
                         <span>Generating Mappings...</span>
                       </>
                     ) : (
@@ -14914,7 +14914,7 @@ function FinancialScorePage() {
                               
                               // Debug mappings for first month
                               if (i === 1) {
-                                console.log(`\n🗺� Total mappings: ${aiMappings.length}`);
+                                console.log(`\n🗺️ Total mappings: ${aiMappings.length}`);
                                 const targetFieldCounts: Record<string, number> = {};
                                 aiMappings.forEach(m => {
                                   targetFieldCounts[m.targetField] = (targetFieldCounts[m.targetField] || 0) + 1;
@@ -15465,7 +15465,7 @@ function FinancialScorePage() {
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-              QuickBooks Data � Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
+              QuickBooks Data - Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
             </p>
 
             {/* Tab Navigation */}
@@ -15912,7 +15912,7 @@ function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                       <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
-                      <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} � All items shown as % of Revenue</div>
+                      <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} - All items shown as % of Revenue</div>
                     </div>
 
                     {/* Column Headers */}
@@ -18899,7 +18899,7 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                     <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
-                    <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} � All items shown as % of Revenue</div>
+                    <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} - All items shown as % of Revenue</div>
                   </div>
 
                   {/* Column Headers */}
@@ -20963,7 +20963,7 @@ function FinancialScorePage() {
                     </div>
                     {unansweredQuestions.includes(question.id) && (
                       <div style={{ marginTop: '8px', fontSize: '12px', color: '#ef4444', fontWeight: '600' }}>
-                        ??� Please select a rating
+                        ⚠️ Please select a rating
                       </div>
                     )}
                   </div>
