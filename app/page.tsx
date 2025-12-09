@@ -469,8 +469,7 @@ function FinancialScorePage() {
   const [subscriptionQuarterlyPrice, setSubscriptionQuarterlyPrice] = useState<number | undefined>();
   const [subscriptionAnnualPrice, setSubscriptionAnnualPrice] = useState<number | undefined>();
 
-  // Cache for affiliate pricing to prevent reload failures
-  const [affiliatePriceCache, setAffiliatePriceCache] = useState<{[code: string]: {monthly: number, quarterly: number, annual: number}}>({});
+  // Affiliate pricing cache removed - pricing now stored permanently in database
 
   // Check if payment is required for the current company
   const isPaymentRequired = useCallback(() => {
@@ -482,20 +481,14 @@ function FinancialScorePage() {
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
 
-    // ABSOLUTE PRIORITY: Check for guaranteed free affiliate codes FIRST
-    if (selectedCompany.affiliateCode) {
-      const GUARANTEED_FREE_CODES = ['PROMO2025', 'FREETRIAL', 'DEMO', 'FREEACCESS', 'TESTFREE'];
-      if (GUARANTEED_FREE_CODES.includes(selectedCompany.affiliateCode.toUpperCase())) {
-        console.log(`🎯 GUARANTEED FREE: ${selectedCompany.affiliateCode} - no payment required`);
-        return false; // ABSOLUTE FREE - no questions asked
-      }
-    }
-
-    // Check if the loaded pricing is all $0 (free access)
-    // This applies to affiliate codes where pricing is $0, or any company with $0 pricing
-    if (subscriptionMonthlyPrice === 0 && subscriptionQuarterlyPrice === 0 && subscriptionAnnualPrice === 0) {
-      console.log('🔒 Pricing is $0 - granting free access');
-      return false; // Free access - all pricing is $0
+    // Check if company is free (either $0 pricing or marked as free)
+    // This applies to companies created with free affiliate codes
+    if (selectedCompany.subscriptionStatus === "free" ||
+        (selectedCompany.subscriptionMonthlyPrice === 0 &&
+         selectedCompany.subscriptionQuarterlyPrice === 0 &&
+         selectedCompany.subscriptionAnnualPrice === 0)) {
+      console.log('🔒 Company has free access - no payment required');
+      return false; // Free access - no payment required
     }
 
     // If pricing hasn't loaded yet, don't block (avoid false positives)
@@ -1558,189 +1551,36 @@ function FinancialScorePage() {
           console.log('?? Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
         }
 
-        // Load subscription pricing for this company
-        if (company) {
-          console.log('🔍 Loading pricing for company:', {
-            name: company.name,
-            id: company.id,
-            affiliateCode: company.affiliateCode,
-            allKeys: Object.keys(company)
-          });
-
-          // FIRST: Check localStorage cache for affiliate pricing (expires in 24 hours)
-          if (company.affiliateCode) {
-            const cacheKey = `affiliate_${company.affiliateCode}`;
-            const cacheTimestampKey = `${cacheKey}_timestamp`;
-            const cachedPricing = localStorage.getItem(cacheKey);
-            const cacheTimestamp = localStorage.getItem(cacheTimestampKey);
-
-            console.log('🔍 Checking affiliate cache:', {
-              code: company.affiliateCode,
-              hasCache: !!cachedPricing,
-              hasTimestamp: !!cacheTimestamp
+          // Load subscription pricing for this company (now stored permanently in DB)
+          if (company) {
+            console.log('🔍 Loading pricing from company data:', {
+              name: company.name,
+              id: company.id,
+              monthly: company.subscriptionMonthlyPrice,
+              quarterly: company.subscriptionQuarterlyPrice,
+              annual: company.subscriptionAnnualPrice
             });
 
-            if (cachedPricing && cacheTimestamp) {
-              const cacheAge = Date.now() - parseInt(cacheTimestamp);
-              const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+            // Set pricing directly from company data (no more API calls or caching needed)
+            // Handle case where pricing fields might not exist in DB yet (migration pending)
+            const monthly = company.subscriptionMonthlyPrice;
+            const quarterly = company.subscriptionQuarterlyPrice;
+            const annual = company.subscriptionAnnualPrice;
 
-              if (cacheAge < maxAge) {
-                try {
-                  const { monthly, quarterly, annual } = JSON.parse(cachedPricing);
-                  console.log('💾 USING CACHED affiliate pricing:', {
-                    monthly, quarterly, annual,
-                    age: Math.round(cacheAge/1000/60) + 'min ago',
-                    cacheKey
-                  });
-                  setSubscriptionMonthlyPrice(monthly);
-                  setSubscriptionQuarterlyPrice(quarterly);
-                  setSubscriptionAnnualPrice(annual);
-                  // Continue to API call in background to refresh cache
-                } catch (e) {
-                  console.log('⚠️ Invalid cached pricing, loading from API');
-                  localStorage.removeItem(cacheKey);
-                  localStorage.removeItem(cacheTimestampKey);
-                }
-              } else {
-                console.log('⏰ Cached pricing expired, refreshing from API');
-                localStorage.removeItem(cacheKey);
-                localStorage.removeItem(cacheTimestampKey);
-              }
-            } else {
-              console.log('📭 No cached pricing found, will load from API');
-            }
-          } else {
-            console.log('⚠️ No affiliate code on company, skipping cache check');
+            // If pricing exists in DB, use it; otherwise fall back to defaults
+            setSubscriptionMonthlyPrice(monthly !== null && monthly !== undefined ? monthly : 195);
+            setSubscriptionQuarterlyPrice(quarterly !== null && quarterly !== undefined ? quarterly : 500);
+            setSubscriptionAnnualPrice(annual !== null && annual !== undefined ? annual : 1750);
+
+            console.log('✅ Pricing loaded from database:', {
+              monthly: company.subscriptionMonthlyPrice ?? 195,
+              quarterly: company.subscriptionQuarterlyPrice ?? 500,
+              annual: company.subscriptionAnnualPrice ?? 1750,
+              isFree: (company.subscriptionMonthlyPrice ?? 195) === 0 &&
+                      (company.subscriptionQuarterlyPrice ?? 500) === 0 &&
+                      (company.subscriptionAnnualPrice ?? 1750) === 0
+            });
           }
-
-          // If company has an affiliate code, load the affiliate pricing
-          if (company.affiliateCode) {
-            console.log('🔍 Company has affiliate code, loading affiliate pricing');
-            console.log('🔍 Affiliate code value:', company.affiliateCode);
-
-            // Try up to 5 times with longer timeouts for reliability
-            let attempts = 0;
-            const maxAttempts = 5;
-
-            while (attempts < maxAttempts) {
-              try {
-                console.log(`🔍 Attempt ${attempts + 1}/${maxAttempts} to load affiliate pricing for ${company.affiliateCode}`);
-
-                // Find the affiliate code to get pricing
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-                const affiliateCodeResponse = await fetch(`/api/affiliates/codes?code=${encodeURIComponent(company.affiliateCode)}`, {
-                  cache: 'no-cache',
-                  headers: {
-                    'Cache-Control': 'no-cache'
-                  },
-                  signal: controller.signal
-                });
-
-                clearTimeout(timeoutId);
-
-                console.log('🔍 Affiliate API response status:', affiliateCodeResponse.status);
-
-                if (affiliateCodeResponse.ok) {
-                  const affiliateCodeData = await affiliateCodeResponse.json();
-                  console.log('🔍 Affiliate API response data:', affiliateCodeData);
-
-                  if (affiliateCodeData.code && affiliateCodeData.code.isActive !== false) {
-                    console.log('✅ Found active affiliate code pricing:', affiliateCodeData.code);
-                    const monthly = affiliateCodeData.code.monthlyPrice || 0;
-                    const quarterly = affiliateCodeData.code.quarterlyPrice || 0;
-                    const annual = affiliateCodeData.code.annualPrice || 0;
-
-                    setSubscriptionMonthlyPrice(monthly);
-                    setSubscriptionQuarterlyPrice(quarterly);
-                    setSubscriptionAnnualPrice(annual);
-
-                    console.log('✅ Affiliate pricing loaded:', {
-                      code: company.affiliateCode,
-                      monthly, quarterly, annual,
-                      isFree: monthly === 0 && quarterly === 0 && annual === 0,
-                      attempts: attempts + 1
-                    });
-
-                    // CACHE SUCCESSFUL PRICING to survive page refreshes and API failures
-                    const cacheKey = `affiliate_${company.affiliateCode}`;
-                    const cacheTimestampKey = `${cacheKey}_timestamp`;
-                    const pricingData = { monthly, quarterly, annual };
-                    localStorage.setItem(cacheKey, JSON.stringify(pricingData));
-                    localStorage.setItem(cacheTimestampKey, Date.now().toString());
-                    console.log('💾 Cached affiliate pricing for offline/failure recovery');
-
-                    return; // SUCCESS - we have affiliate pricing
-                  } else if (affiliateCodeData.code && affiliateCodeData.code.isActive === false) {
-                    console.log('⚠️ Affiliate code exists but is inactive');
-                    break; // Don't retry if code is inactive
-                  } else {
-                    console.log('⚠️ Affiliate API returned success but no valid code data');
-                  }
-                } else {
-                  const errorText = await affiliateCodeResponse.text();
-                  console.log('⚠️ Affiliate API failed:', affiliateCodeResponse.status, errorText);
-                }
-
-                attempts++;
-                if (attempts < maxAttempts) {
-                  const delay = Math.min(2000 * Math.pow(1.3, attempts), 15000); // Progressive delay: 2s, 2.6s, 3.4s, 4.4s, 5.7s (max 15s)
-                  console.log(`⏳ Retrying affiliate loading in ${delay}ms...`);
-                  await new Promise(resolve => setTimeout(resolve, delay));
-                }
-
-              } catch (affiliateError) {
-                if (affiliateError.name === 'AbortError') {
-                  console.log(`⏰ Affiliate API timeout on attempt ${attempts + 1}`);
-                } else {
-                  console.error(`❌ Affiliate loading error (attempt ${attempts + 1}):`, affiliateError.message);
-                }
-                attempts++;
-                if (attempts < maxAttempts) {
-                  const delay = Math.min(2000 * Math.pow(1.3, attempts), 15000);
-                  console.log(`⏳ Retrying after error in ${delay}ms...`);
-                  await new Promise(resolve => setTimeout(resolve, delay));
-                }
-            }
-            }
-
-            console.log('⚠️ All attempts failed, falling back to default pricing');
-          }
-
-          // No affiliate code or affiliate pricing failed - load default pricing
-          console.log('🔍 Loading default pricing for company');
-          try {
-            const settingsResponse = await fetch('/api/settings');
-            if (settingsResponse.ok) {
-              const settingsData = await settingsResponse.json();
-              const settings = settingsData.settings;
-              // Use consultant pricing for consultants, business pricing for businesses
-              const isBusinessUser = currentUser?.role === 'siteadmin' || (company.consultantId && currentUser?.consultantId !== company.consultantId);
-              setSubscriptionMonthlyPrice(isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice);
-              setSubscriptionQuarterlyPrice(isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice);
-              setSubscriptionAnnualPrice(isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice);
-              console.log('✅ Default pricing loaded:', {
-                monthly: isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice,
-                quarterly: isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice,
-                annual: isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice,
-                type: isBusinessUser ? 'business' : 'consultant'
-              });
-            } else {
-              // Fallback pricing
-              console.log('⚠️ Could not load default pricing, using fallback');
-              setSubscriptionMonthlyPrice(195);
-              setSubscriptionQuarterlyPrice(500);
-              setSubscriptionAnnualPrice(1750);
-            }
-          } catch (pricingError) {
-            console.error('❌ Error loading default pricing:', pricingError);
-            // Fallback pricing
-            setSubscriptionMonthlyPrice(195);
-            setSubscriptionQuarterlyPrice(500);
-            setSubscriptionAnnualPrice(1750);
-          }
-        }
 
         // Check QuickBooks connection status
         await checkQBStatus(selectedCompanyId);

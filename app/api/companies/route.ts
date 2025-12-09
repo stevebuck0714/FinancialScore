@@ -34,12 +34,10 @@ export async function GET(request: NextRequest) {
         industrySector: true,
         linesOfBusiness: true,
         userDefinedAllocations: true,
-        createdAt: true
-        // subscriptionMonthlyPrice: true, // These fields may not exist in production DB
-        // subscriptionQuarterlyPrice: true,
-        // subscriptionAnnualPrice: true,
-        // affiliateCode: true,
-        // affiliateId: true,
+        createdAt: true,
+        subscriptionMonthlyPrice: true,
+        subscriptionQuarterlyPrice: true,
+        subscriptionAnnualPrice: true
       },
       orderBy: { createdAt: 'desc' },
       take: limit
@@ -261,17 +259,17 @@ export async function POST(request: NextRequest) {
           console.log('🔍 SystemSettings created successfully:', defaultPricing);
         }
 
-        // Use pricing from database if available, otherwise use defaults
+        // Use appropriate default pricing based on user type
         if (defaultPricing) {
-          // Use consultant pricing for regular consultants, business pricing for business consultants
-          const isBusinessConsultant = consultant?.type === 'business';
-          monthlyPrice = isBusinessConsultant
+          // Individual businesses get business pricing, consultants get consultant pricing
+          const isBusinessUser = consultant?.type === 'business';
+          monthlyPrice = isBusinessUser
             ? (defaultPricing.businessMonthlyPrice ?? 195)
             : (defaultPricing.consultantMonthlyPrice ?? 195);
-          quarterlyPrice = isBusinessConsultant
+          quarterlyPrice = isBusinessUser
             ? (defaultPricing.businessQuarterlyPrice ?? 500)
             : (defaultPricing.consultantQuarterlyPrice ?? 500);
-          annualPrice = isBusinessConsultant
+          annualPrice = isBusinessUser
             ? (defaultPricing.businessAnnualPrice ?? 1750)
             : (defaultPricing.consultantAnnualPrice ?? 1750);
         } else {
@@ -320,20 +318,12 @@ export async function POST(request: NextRequest) {
           addressZip,
           addressCountry,
           industrySector,
-          // subscription pricing fields don't exist in production DB
-          // subscriptionMonthlyPrice: monthlyPrice,
-          // subscriptionQuarterlyPrice: quarterlyPrice,
-          // subscriptionAnnualPrice: annualPrice,
-          // STORE FINAL PRICING DIRECTLY - NO AFFILIATE CODE REFERENCES
-          userDefinedAllocations: {
-            pricing: {
-              monthly: monthlyPrice,
-              quarterly: quarterlyPrice,
-              annual: annualPrice,
-              requiresPayment: monthlyPrice > 0 || quarterlyPrice > 0 || annualPrice > 0
-            },
-            allocations: []
-          },
+          // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES USED ONLY FOR LOOKUP
+          subscriptionMonthlyPrice: monthlyPrice,
+          subscriptionQuarterlyPrice: quarterlyPrice,
+          subscriptionAnnualPrice: annualPrice,
+          // Automatically set subscription status for free companies
+          subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active",
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },
@@ -351,20 +341,20 @@ export async function POST(request: NextRequest) {
           industrySector: true,
           linesOfBusiness: true,
           userDefinedAllocations: true,
-          affiliateCode: true, // This field exists in production
-          affiliate: {
-            select: { id: true, name: true }
-          },
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true,
           createdAt: true
         }
       });
 
       console.log('🔍 Company created successfully:', company);
 
-      // Transform the response to include consultantId for backward compatibility
+      // Transform the response to include consultantId (pricing is now stored in DB)
       const transformedCompany = {
         ...company,
         consultantId: company.consultant?.id
+        // Pricing is now stored permanently in database fields
       };
 
       console.log('🔍 ===== COMPANY CREATION COMPLETED SUCCESSFULLY =====');

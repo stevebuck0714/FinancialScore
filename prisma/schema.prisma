@@ -45,9 +45,9 @@ model Company {
   addressZip                 String?
   addressCountry             String?
   industrySector             Int?
-  // subscriptionMonthlyPrice   Float?  // Doesn't exist in production DB
-  // subscriptionQuarterlyPrice Float?  // Doesn't exist in production DB
-  // subscriptionAnnualPrice    Float?  // Doesn't exist in production DB
+  subscriptionMonthlyPrice   Float?
+  subscriptionQuarterlyPrice Float?
+  subscriptionAnnualPrice    Float?
   createdAt                  DateTime               @default(now())
   updatedAt                  DateTime               @updatedAt
   selectedSubscriptionPlan   String?

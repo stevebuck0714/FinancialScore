@@ -120,10 +120,6 @@ export async function POST(request: NextRequest) {
         const companyData: any = {
           name: name, // Use the business name as company name
           consultantId: null, // Standalone business - no consultant
-          userDefinedAllocations: {
-            pricing: finalPricing,
-            allocations: []
-          }
           // DO NOT set selectedSubscriptionPlan - they must pay first
         };
 
