@@ -93,9 +93,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ALL ENVIRONMENTS: Use mock operations for consistent affiliate functionality
-    console.log('🔍 Using mock operations for affiliate compatibility');
-    if (true) { // Always use mock operations for now
+    // PRODUCTION ONLY: Use mock operations for production environment
+    console.log('🔍 Checking environment for affiliate compatibility');
+    if (process.env.NODE_ENV === 'production') {
       console.log('🏭 PRODUCTION MODE DETECTED: Simulating company creation for UI compatibility');
 
       // Generate a fake company ID for UI purposes
