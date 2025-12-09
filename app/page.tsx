@@ -13947,12 +13947,31 @@ function FinancialScorePage() {
                       <button
                         onClick={async () => {
                           try {
+                            console.log('🔍 Save Mappings Debug:', {
+                              currentCompany,
+                              currentCompanyId: currentCompany?.id,
+                              selectedCompanyId,
+                              aiMappingsCount: aiMappings?.length,
+                              aiMappingsSample: aiMappings?.slice(0, 2),
+                              linesOfBusinessCount: linesOfBusiness?.length
+                            });
+
+                            if (!currentCompany?.id) {
+                              alert(`Cannot save mappings: Company not found. Selected: ${selectedCompanyId}, Available companies: ${companies?.length || 0}`);
+                              return;
+                            }
+
+                            if (!aiMappings || aiMappings.length === 0) {
+                              alert('No mappings to save. Please generate AI mappings first.');
+                              return;
+                            }
+
                             setIsSavingMappings(true);
                             const response = await fetch('/api/account-mappings', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
-                                companyId: currentCompany?.id,
+                                companyId: currentCompany.id,
                                 mappings: aiMappings,
                                 linesOfBusiness: linesOfBusiness
                               })
