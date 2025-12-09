@@ -333,7 +333,7 @@ export async function POST(request: NextRequest) {
               requiresPayment: monthlyPrice > 0 || quarterlyPrice > 0 || annualPrice > 0
             },
             allocations: []
-          }
+          },
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },
