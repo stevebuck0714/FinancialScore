@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
 // POST create new company
 export async function POST(request: NextRequest) {
   console.log('🔍 ===== API COMPANIES POST REQUEST RECEIVED =====');
+  console.log('🔍 NODE_ENV:', process.env.NODE_ENV);
   try {
     console.log('🔍 ===== STARTING COMPANY CREATION =====');
 
