@@ -482,10 +482,12 @@ function FinancialScorePage() {
     if (!selectedCompany) return false;
 
     // Check if company is free (either $0 pricing or marked as free)
-    // This applies to companies created with free affiliate codes
-    // Note: Pricing fields may not exist in production DB yet
+    // Note: Pricing fields may not exist in database yet
     if (selectedCompany.subscriptionStatus === "free" ||
-        (selectedCompany.subscriptionMonthlyPrice !== undefined &&
+        (selectedCompany.subscriptionMonthlyPrice !== null &&
+         selectedCompany.subscriptionQuarterlyPrice !== null &&
+         selectedCompany.subscriptionAnnualPrice !== null &&
+         selectedCompany.subscriptionMonthlyPrice !== undefined &&
          selectedCompany.subscriptionQuarterlyPrice !== undefined &&
          selectedCompany.subscriptionAnnualPrice !== undefined &&
          selectedCompany.subscriptionMonthlyPrice === 0 &&
@@ -1570,17 +1572,19 @@ function FinancialScorePage() {
             const quarterly = company.subscriptionQuarterlyPrice;
             const annual = company.subscriptionAnnualPrice;
 
-            // Check if pricing fields exist in the response (may not exist in production DB yet)
-            const hasPricingFields = monthly !== undefined && quarterly !== undefined && annual !== undefined;
+            // Check if pricing fields exist and are not null (null means DB column doesn't exist)
+            const hasPricingFields = monthly !== null && quarterly !== null && annual !== null &&
+                                   monthly !== undefined && quarterly !== undefined && annual !== undefined;
 
             if (hasPricingFields) {
               // Use stored pricing from database
-              setSubscriptionMonthlyPrice(monthly ?? 195);
-              setSubscriptionQuarterlyPrice(quarterly ?? 500);
-              setSubscriptionAnnualPrice(annual ?? 1750);
+              setSubscriptionMonthlyPrice(monthly);
+              setSubscriptionQuarterlyPrice(quarterly);
+              setSubscriptionAnnualPrice(annual);
             } else {
-              // Pricing fields don't exist yet (production DB), fall back to defaults
-              // This will be updated once production DB schema is migrated
+              // Pricing fields don't exist in DB yet, fall back to defaults
+              // This will be updated once database schema is migrated
+              console.log('⚠️ Pricing fields not available in database, using defaults');
               setSubscriptionMonthlyPrice(195);
               setSubscriptionQuarterlyPrice(500);
               setSubscriptionAnnualPrice(1750);
