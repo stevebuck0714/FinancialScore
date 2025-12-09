@@ -1717,14 +1717,9 @@ function FinancialScorePage() {
               const settings = settingsData.settings;
               // Use consultant pricing for consultants, business pricing for businesses
               const isBusinessUser = currentUser?.role === 'siteadmin' || (company.consultantId && currentUser?.consultantId !== company.consultantId);
-              const monthlyPrice = isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice;
-              const quarterlyPrice = isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice;
-              const annualPrice = isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice;
-
-              // Ensure pricing is valid (not 0 or undefined)
-              setSubscriptionMonthlyPrice(monthlyPrice && monthlyPrice > 0 ? monthlyPrice : 195);
-              setSubscriptionQuarterlyPrice(quarterlyPrice && quarterlyPrice > 0 ? quarterlyPrice : 500);
-              setSubscriptionAnnualPrice(annualPrice && annualPrice > 0 ? annualPrice : 1750);
+              setSubscriptionMonthlyPrice(isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice);
+              setSubscriptionQuarterlyPrice(isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice);
+              setSubscriptionAnnualPrice(isBusinessUser ? settings.businessAnnualPrice : settings.consultantAnnualPrice);
               console.log('✅ Default pricing loaded:', {
                 monthly: isBusinessUser ? settings.businessMonthlyPrice : settings.consultantMonthlyPrice,
                 quarterly: isBusinessUser ? settings.businessQuarterlyPrice : settings.consultantQuarterlyPrice,
