@@ -10895,7 +10895,7 @@ function FinancialScorePage() {
 
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ef4444', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>??</span> Areas Requiring Management Attention
+                <span style={{ fontSize: '20px' }}>⚠️</span> Areas Requiring Management Attention
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.weaknesses.length > 0 ? (
@@ -10912,7 +10912,7 @@ function FinancialScorePage() {
 
             <div>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#667eea', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>??</span> Strategic Recommendations & Action Items
+                <span style={{ fontSize: '20px' }}>💡</span> Strategic Recommendations & Action Items
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.insights.length > 0 ? (
@@ -10961,7 +10961,7 @@ function FinancialScorePage() {
             {mdaAnalysis.insights.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>??</span> Strategic Insights
+                  <span style={{ fontSize: '24px' }}>🔍</span> Strategic Insights
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.insights.map((ins, idx) => (
@@ -10977,7 +10977,7 @@ function FinancialScorePage() {
           {mdaTab === 'key-metrics' && monthly.length >= 12 && (
           <div id="mda-key-metrics-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
-              ?? Critical Review Items
+              ⚠️ Critical Review Items
             </h2>
             
             <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' }}>
@@ -11580,7 +11580,7 @@ function FinancialScorePage() {
                         const bgColor = issue.severity === 'high' ? '#fee2e2' : issue.severity === 'medium' ? '#fef3c7' : '#dbeafe';
                         const borderColor = issue.severity === 'high' ? '#ef4444' : issue.severity === 'medium' ? '#f59e0b' : '#3b82f6';
                         const textColor = issue.severity === 'high' ? '#991b1b' : issue.severity === 'medium' ? '#92400e' : '#1e40af';
-                        const icon = issue.severity === 'high' ? '??' : issue.severity === 'medium' ? '??' : '??';
+                        const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🟢';
                         
                         return (
                           <div key={idx} style={{ background: bgColor, borderRadius: '12px', padding: '20px', border: `2px solid ${borderColor}` }}>
@@ -11614,7 +11614,7 @@ function FinancialScorePage() {
                   {/* Action Items */}
                   {issues.filter(i => i.severity === 'high').length > 0 && (
                     <div style={{ marginTop: '32px', background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #667eea' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>?? Recommended Actions</h3>
+                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>✅ Recommended Actions</h3>
                       <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
                         {issues.filter(i => i.severity === 'high').length > 0 && (
                           <li><strong>Immediate attention required:</strong> Address all high-priority issues within the next 30 days</li>
@@ -13815,7 +13815,7 @@ function FinancialScorePage() {
                       </>
                     ) : (
                       <>
-                        <span>??</span>
+                        <span>🤖</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -14381,7 +14381,7 @@ function FinancialScorePage() {
                       </>
                     ) : (
                       <>
-                        <span>??</span>
+                        <span>🤖</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -21531,7 +21531,7 @@ function FinancialScorePage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>??</div>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>🗑️</div>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Delete Company</h2>
               <p style={{ fontSize: '16px', color: '#64748b', lineHeight: '1.6' }}>
                 Are you sure you want to delete <strong style={{ color: '#ef4444' }}>"{companyToDelete.companyName}"</strong>?
