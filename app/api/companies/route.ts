@@ -35,9 +35,12 @@ export async function GET(request: NextRequest) {
         linesOfBusiness: true,
         userDefinedAllocations: true,
         createdAt: true,
-        subscriptionMonthlyPrice: true,
-        subscriptionQuarterlyPrice: true,
-        subscriptionAnnualPrice: true
+        // Pricing fields may not exist in production DB yet
+        ...(process.env.NODE_ENV === 'production' ? {} : {
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true
+        })
       },
       orderBy: { createdAt: 'desc' },
       take: limit
@@ -319,11 +322,13 @@ export async function POST(request: NextRequest) {
           addressCountry,
           industrySector,
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES USED ONLY FOR LOOKUP
-          subscriptionMonthlyPrice: monthlyPrice,
-          subscriptionQuarterlyPrice: quarterlyPrice,
-          subscriptionAnnualPrice: annualPrice,
-          // Automatically set subscription status for free companies
-          subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active",
+          // Note: Pricing fields may not exist in production DB yet
+          ...(process.env.NODE_ENV === 'production' ? {} : {
+            subscriptionMonthlyPrice: monthlyPrice,
+            subscriptionQuarterlyPrice: quarterlyPrice,
+            subscriptionAnnualPrice: annualPrice,
+            subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active"
+          }),
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },
