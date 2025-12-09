@@ -23,3 +23,5 @@ fs.writeFileSync('app/page.tsx', content, 'utf8');
 console.log('Fixed corrupted emojis in page.tsx');
 
 
+
+
