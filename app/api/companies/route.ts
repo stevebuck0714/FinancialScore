@@ -404,27 +404,22 @@ export async function POST(request: NextRequest) {
           addressCountry,
           industrySector,
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES USED ONLY FOR LOOKUP
-          // Store in dedicated fields only if they exist (staging), always use JSON backup
-          ...(process.env.NODE_ENV === 'production' ? {} : {
-            subscriptionMonthlyPrice: monthlyPrice,
-            subscriptionQuarterlyPrice: quarterlyPrice,
-            subscriptionAnnualPrice: annualPrice,
-            subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active"
-          }),
-          // Store pricing in userDefinedAllocations only if not in production
-          // Production has database schema issues, so skip JSON storage too
-          ...(process.env.NODE_ENV === 'production' ? {} : {
-            userDefinedAllocations: {
-              subscriptionPricing: {
-                monthly: monthlyPrice,
-                quarterly: quarterlyPrice,
-                annual: annualPrice,
-                isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0,
-                source: 'affiliate_code',
-                createdAt: new Date().toISOString()
-              }
+          // Store in dedicated fields (now that database supports them)
+          subscriptionMonthlyPrice: monthlyPrice,
+          subscriptionQuarterlyPrice: quarterlyPrice,
+          subscriptionAnnualPrice: annualPrice,
+          subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active",
+          // Store pricing in userDefinedAllocations as backup
+          userDefinedAllocations: {
+            subscriptionPricing: {
+              monthly: monthlyPrice,
+              quarterly: quarterlyPrice,
+              annual: annualPrice,
+              isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0,
+              source: 'affiliate_code',
+              createdAt: new Date().toISOString()
             }
-          }),
+          },
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },
