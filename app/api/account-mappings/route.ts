@@ -71,10 +71,12 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Saving ${mappings.length} mappings for company ${companyId}`);
+    console.log('First few mappings:', mappings.slice(0, 3));
 
     // Filter out mappings with empty targetField (unmapped accounts)
     const validMappings = mappings.filter((m: any) => m.targetField && m.targetField.trim() !== '');
     console.log(`Filtered to ${validMappings.length} valid mappings (removed ${mappings.length - validMappings.length} unmapped accounts)`);
+    console.log('Valid mappings sample:', validMappings.slice(0, 2));
 
     // Save the LOB names to the Company record if provided
     if (linesOfBusiness && Array.isArray(linesOfBusiness) && linesOfBusiness.length > 0) {
