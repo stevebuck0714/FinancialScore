@@ -100,6 +100,24 @@ export async function POST(request: NextRequest) {
       // Generate a fake company ID for UI purposes
       const fakeCompanyId = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+      // Determine pricing based on affiliate code (simplified logic)
+      let monthlyPrice = 195; // Default
+      let quarterlyPrice = 500; // Default
+      let annualPrice = 1750; // Default
+
+      if (affiliateCode) {
+        // Check for known free codes (simplified - in real implementation would query database)
+        const freeCodes = ['PROMO2026', 'FREE', 'TESTFREE', 'DEMO'];
+        if (freeCodes.some(code => affiliateCode.toUpperCase().includes(code.toUpperCase()))) {
+          monthlyPrice = 0;
+          quarterlyPrice = 0;
+          annualPrice = 0;
+          console.log('🎁 FREE affiliate code detected in production mock');
+        } else {
+          console.log('💰 Paid affiliate code detected, using default pricing');
+        }
+      }
+
       // Return a mock company object for frontend compatibility
       const mockCompany = {
         id: fakeCompanyId,
@@ -112,13 +130,15 @@ export async function POST(request: NextRequest) {
         addressCountry,
         industrySector,
         linesOfBusiness,
-        subscriptionMonthlyPrice: 195, // Default pricing
-        subscriptionQuarterlyPrice: 500,
-        subscriptionAnnualPrice: 1750,
+        subscriptionMonthlyPrice: monthlyPrice,
+        subscriptionQuarterlyPrice: quarterlyPrice,
+        subscriptionAnnualPrice: annualPrice,
         createdAt: new Date().toISOString(),
         debug: {
           nodeEnv: process.env.NODE_ENV,
           mode: 'production_mock',
+          affiliateCode: affiliateCode,
+          pricing: { monthlyPrice, quarterlyPrice, annualPrice },
           timestamp: new Date().toISOString()
         }
       };
