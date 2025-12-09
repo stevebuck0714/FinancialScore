@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
           consultantAnnualPrice: 1750
         }
       });
+    }
 
     return NextResponse.json({ settings }, { status: 200 });
   } catch (error) {
