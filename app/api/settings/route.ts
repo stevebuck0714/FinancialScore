@@ -21,6 +21,22 @@ export async function GET(request: NextRequest) {
           consultantAnnualPrice: 1750
         }
       });
+    } else {
+      // Ensure all pricing values are valid (not 0 or null)
+      const updates: any = {};
+      if (!settings.businessMonthlyPrice || settings.businessMonthlyPrice === 0) updates.businessMonthlyPrice = 195;
+      if (!settings.businessQuarterlyPrice || settings.businessQuarterlyPrice === 0) updates.businessQuarterlyPrice = 500;
+      if (!settings.businessAnnualPrice || settings.businessAnnualPrice === 0) updates.businessAnnualPrice = 1750;
+      if (!settings.consultantMonthlyPrice || settings.consultantMonthlyPrice === 0) updates.consultantMonthlyPrice = 195;
+      if (!settings.consultantQuarterlyPrice || settings.consultantQuarterlyPrice === 0) updates.consultantQuarterlyPrice = 500;
+      if (!settings.consultantAnnualPrice || settings.consultantAnnualPrice === 0) updates.consultantAnnualPrice = 1750;
+
+      if (Object.keys(updates).length > 0) {
+        settings = await prisma.systemSettings.update({
+          where: { key: 'default_pricing' },
+          data: updates
+        });
+      }
     }
 
     return NextResponse.json({ settings }, { status: 200 });
