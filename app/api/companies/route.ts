@@ -68,7 +68,19 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔍 ===== STARTING COMPANY CREATION =====');
 
-    const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode, linesOfBusiness } = await request.json();
+    let requestBody;
+    try {
+      requestBody = await request.json();
+      console.log('🔍 Request body parsed successfully');
+    } catch (parseError) {
+      console.error('❌ Failed to parse request JSON:', parseError);
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body', debug: { nodeEnv: process.env.NODE_ENV } },
+        { status: 400 }
+      );
+    }
+
+    const { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode, linesOfBusiness } = requestBody;
 
     console.log('🔍 Received data:', { name, consultantId, addressStreet, addressCity, addressState, addressZip, addressCountry, industrySector, affiliateCode });
 
@@ -81,8 +93,9 @@ export async function POST(request: NextRequest) {
     }
 
     // PRODUCTION: Skip database operations entirely for UI compatibility
+    console.log('🔍 Checking NODE_ENV for production mode:', process.env.NODE_ENV);
     if (process.env.NODE_ENV === 'production') {
-      console.log('🏭 Production mode: Simulating company creation for UI compatibility');
+      console.log('🏭 PRODUCTION MODE DETECTED: Simulating company creation for UI compatibility');
 
       // Generate a fake company ID for UI purposes
       const fakeCompanyId = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -102,12 +115,19 @@ export async function POST(request: NextRequest) {
         subscriptionMonthlyPrice: 195, // Default pricing
         subscriptionQuarterlyPrice: 500,
         subscriptionAnnualPrice: 1750,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        debug: {
+          nodeEnv: process.env.NODE_ENV,
+          mode: 'production_mock',
+          timestamp: new Date().toISOString()
+        }
       };
 
       console.log('✅ Mock company created in production:', mockCompany);
 
       return NextResponse.json({ company: mockCompany }, { status: 201 });
+    } else {
+      console.log('🔍 NOT production mode, NODE_ENV:', process.env.NODE_ENV);
     }
 
     // STAGING/DEV: Full pricing logic
