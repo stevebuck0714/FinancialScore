@@ -35,9 +35,12 @@ export async function GET(request: NextRequest) {
         linesOfBusiness: true,
         userDefinedAllocations: true,
         createdAt: true,
-        subscriptionMonthlyPrice: true,
-        subscriptionQuarterlyPrice: true,
-        subscriptionAnnualPrice: true
+        // Only select pricing fields if they exist (staging), skip in production
+        ...(process.env.NODE_ENV === 'production' ? {} : {
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true
+        })
       },
       orderBy: { createdAt: 'desc' },
       take: limit
@@ -319,12 +322,14 @@ export async function POST(request: NextRequest) {
           addressCountry,
           industrySector,
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES USED ONLY FOR LOOKUP
-          // Try to store in dedicated fields, fallback to userDefinedAllocations if fields don't exist
-          subscriptionMonthlyPrice: monthlyPrice,
-          subscriptionQuarterlyPrice: quarterlyPrice,
-          subscriptionAnnualPrice: annualPrice,
-          subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active",
-          // Also store in userDefinedAllocations as backup (in case DB fields don't exist)
+          // Store in dedicated fields only if they exist (staging), always use JSON backup
+          ...(process.env.NODE_ENV === 'production' ? {} : {
+            subscriptionMonthlyPrice: monthlyPrice,
+            subscriptionQuarterlyPrice: quarterlyPrice,
+            subscriptionAnnualPrice: annualPrice,
+            subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active"
+          }),
+          // Always store in userDefinedAllocations as backup (works in all environments)
           userDefinedAllocations: {
             subscriptionPricing: {
               monthly: monthlyPrice,
