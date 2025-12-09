@@ -14696,7 +14696,7 @@ function FinancialScorePage() {
                               cursor: aiMappings.length === 0 ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            ??? Clear All
+                            🧹 Clear All
                           </button>
                           <button
                             onClick={() => {
