@@ -527,11 +527,9 @@ export async function PATCH(request: NextRequest) {
       console.log('📝 Updating linesOfBusiness:', linesOfBusiness);
     }
 
-    if (headcountAllocations !== undefined && process.env.NODE_ENV !== 'development') {
+    if (headcountAllocations !== undefined) {
       updateData.headcountAllocations = headcountAllocations;
       console.log('📝 Updating headcountAllocations:', headcountAllocations);
-    } else if (headcountAllocations !== undefined && process.env.NODE_ENV === 'development') {
-      console.log('⚠️ Skipping headcountAllocations update in dev - field does not exist');
     }
 
     console.log('🔄 Final update data:', updateData);
@@ -543,11 +541,10 @@ export async function PATCH(request: NextRequest) {
       linesOfBusiness: true
     };
 
-    // Temporarily disabled headcountAllocations selection until Prisma client is regenerated
-    // TODO: Re-enable after Prisma client regeneration and staging deployment
-    // if (process.env.NODE_ENV !== 'development') {
-    //   selectFields.headcountAllocations = true;
-    // }
+    // Select headcountAllocations if it exists (now that database column is added)
+    if (process.env.NODE_ENV !== 'development') {
+      selectFields.headcountAllocations = true;
+    }
     selectFields.userDefinedAllocations = true;
 
     const company = await prisma.company.update({
