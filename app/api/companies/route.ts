@@ -35,12 +35,9 @@ export async function GET(request: NextRequest) {
         linesOfBusiness: true,
         userDefinedAllocations: true,
         createdAt: true,
-        // Pricing fields may not exist in production DB yet
-        ...(process.env.NODE_ENV === 'production' ? {} : {
-          subscriptionMonthlyPrice: true,
-          subscriptionQuarterlyPrice: true,
-          subscriptionAnnualPrice: true
-        })
+        subscriptionMonthlyPrice: true,
+        subscriptionQuarterlyPrice: true,
+        subscriptionAnnualPrice: true
       },
       orderBy: { createdAt: 'desc' },
       take: limit
@@ -322,13 +319,22 @@ export async function POST(request: NextRequest) {
           addressCountry,
           industrySector,
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES USED ONLY FOR LOOKUP
-          // Note: Pricing fields may not exist in production DB yet
-          ...(process.env.NODE_ENV === 'production' ? {} : {
-            subscriptionMonthlyPrice: monthlyPrice,
-            subscriptionQuarterlyPrice: quarterlyPrice,
-            subscriptionAnnualPrice: annualPrice,
-            subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active"
-          }),
+          // Try to store in dedicated fields, fallback to userDefinedAllocations if fields don't exist
+          subscriptionMonthlyPrice: monthlyPrice,
+          subscriptionQuarterlyPrice: quarterlyPrice,
+          subscriptionAnnualPrice: annualPrice,
+          subscriptionStatus: (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? "free" : "active",
+          // Also store in userDefinedAllocations as backup (in case DB fields don't exist)
+          userDefinedAllocations: {
+            subscriptionPricing: {
+              monthly: monthlyPrice,
+              quarterly: quarterlyPrice,
+              annual: annualPrice,
+              isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0,
+              source: 'affiliate_code',
+              createdAt: new Date().toISOString()
+            }
+          },
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },

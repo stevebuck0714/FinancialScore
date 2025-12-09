@@ -481,21 +481,35 @@ function FinancialScorePage() {
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
     if (!selectedCompany) return false;
 
-    // Check if company is free (either $0 pricing or marked as free)
-    // Note: Pricing fields may not exist in database yet
-    if (selectedCompany.subscriptionStatus === "free" ||
-        (selectedCompany.subscriptionMonthlyPrice !== null &&
-         selectedCompany.subscriptionQuarterlyPrice !== null &&
-         selectedCompany.subscriptionAnnualPrice !== null &&
-         selectedCompany.subscriptionMonthlyPrice !== undefined &&
-         selectedCompany.subscriptionQuarterlyPrice !== undefined &&
-         selectedCompany.subscriptionAnnualPrice !== undefined &&
-         selectedCompany.subscriptionMonthlyPrice === 0 &&
-         selectedCompany.subscriptionQuarterlyPrice === 0 &&
-         selectedCompany.subscriptionAnnualPrice === 0)) {
-      console.log('🔒 Company has free access - no payment required');
-      return false; // Free access - no payment required
+    // Check if company is free (multiple ways to detect)
+    // 1. Explicit free status
+    if (selectedCompany.subscriptionStatus === "free") {
+      console.log('🔒 Company marked as free - no payment required');
+      return false;
     }
+
+    // 2. Check dedicated pricing fields
+    let monthly = selectedCompany.subscriptionMonthlyPrice;
+    let quarterly = selectedCompany.subscriptionQuarterlyPrice;
+    let annual = selectedCompany.subscriptionAnnualPrice;
+
+    // 3. Fall back to userDefinedAllocations if dedicated fields are null
+    if ((monthly === null || monthly === undefined) &&
+        selectedCompany.userDefinedAllocations?.subscriptionPricing) {
+      monthly = selectedCompany.userDefinedAllocations.subscriptionPricing.monthly;
+      quarterly = selectedCompany.userDefinedAllocations.subscriptionPricing.quarterly;
+      annual = selectedCompany.userDefinedAllocations.subscriptionPricing.annual;
+    }
+
+    // 4. Check if pricing is $0
+    if (monthly === 0 && quarterly === 0 && annual === 0) {
+      console.log('🔒 Company has $0 pricing - no payment required');
+      return false;
+    }
+
+    // 5. If no pricing data or non-zero pricing, payment required
+    console.log('🔒 Payment required - no free pricing detected');
+    return true;
 
     // If pricing hasn't loaded yet, don't block (avoid false positives)
     if (subscriptionMonthlyPrice === undefined || subscriptionQuarterlyPrice === undefined || subscriptionAnnualPrice === undefined) {
@@ -1567,24 +1581,33 @@ function FinancialScorePage() {
               annual: company.subscriptionAnnualPrice
             });
 
-            // Load pricing from database if fields exist, otherwise use defaults
-            const monthly = company.subscriptionMonthlyPrice;
-            const quarterly = company.subscriptionQuarterlyPrice;
-            const annual = company.subscriptionAnnualPrice;
+            // Load pricing from database (try dedicated fields first, then userDefinedAllocations)
+            let monthly = company.subscriptionMonthlyPrice;
+            let quarterly = company.subscriptionQuarterlyPrice;
+            let annual = company.subscriptionAnnualPrice;
 
-            // Check if pricing fields exist and are not null (null means DB column doesn't exist)
-            const hasPricingFields = monthly !== null && quarterly !== null && annual !== null &&
-                                   monthly !== undefined && quarterly !== undefined && annual !== undefined;
+            // If dedicated pricing fields are null/undefined, try userDefinedAllocations backup
+            if ((monthly === null || monthly === undefined) &&
+                company.userDefinedAllocations?.subscriptionPricing) {
+              console.log('🔄 Using backup pricing from userDefinedAllocations');
+              monthly = company.userDefinedAllocations.subscriptionPricing.monthly;
+              quarterly = company.userDefinedAllocations.subscriptionPricing.quarterly;
+              annual = company.userDefinedAllocations.subscriptionPricing.annual;
+            }
 
-            if (hasPricingFields) {
+            // Check if we have valid pricing data
+            const hasPricingData = monthly !== null && quarterly !== null && annual !== null &&
+                                  monthly !== undefined && quarterly !== undefined && annual !== undefined;
+
+            if (hasPricingData) {
               // Use stored pricing from database
               setSubscriptionMonthlyPrice(monthly);
               setSubscriptionQuarterlyPrice(quarterly);
               setSubscriptionAnnualPrice(annual);
+              console.log('✅ Loaded pricing from database:', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
             } else {
-              // Pricing fields don't exist in DB yet, fall back to defaults
-              // This will be updated once database schema is migrated
-              console.log('⚠️ Pricing fields not available in database, using defaults');
+              // No pricing data available, fall back to defaults
+              console.log('⚠️ No pricing data available, using defaults');
               setSubscriptionMonthlyPrice(195);
               setSubscriptionQuarterlyPrice(500);
               setSubscriptionAnnualPrice(1750);
