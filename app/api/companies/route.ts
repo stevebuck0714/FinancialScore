@@ -543,11 +543,12 @@ export async function PATCH(request: NextRequest) {
       linesOfBusiness: true
     };
 
-    // Only select headcountAllocations if it exists (not in dev)
-    if (process.env.NODE_ENV !== 'development') {
-      selectFields.headcountAllocations = true;
-      selectFields.userDefinedAllocations = true;
-    }
+    // Temporarily disabled headcountAllocations selection until Prisma client is regenerated
+    // TODO: Re-enable after Prisma client regeneration and staging deployment
+    // if (process.env.NODE_ENV !== 'development') {
+    //   selectFields.headcountAllocations = true;
+    // }
+    selectFields.userDefinedAllocations = true;
 
     const company = await prisma.company.update({
       where: { id: companyId },
