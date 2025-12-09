@@ -35,8 +35,9 @@ export async function GET(request: NextRequest) {
         linesOfBusiness: true,
         userDefinedAllocations: true,
         createdAt: true,
-        // Only select pricing fields if they exist (staging), skip in production
+        // Skip problematic fields in production
         ...(process.env.NODE_ENV === 'production' ? {} : {
+          affiliateCode: true,
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true
@@ -106,15 +107,24 @@ export async function POST(request: NextRequest) {
       let annualPrice = 1750; // Default
 
       if (affiliateCode) {
-        // Check for known free codes (simplified - in real implementation would query database)
-        const freeCodes = ['PROMO2026', 'FREE', 'TESTFREE', 'DEMO'];
-        if (freeCodes.some(code => affiliateCode.toUpperCase().includes(code.toUpperCase()))) {
+        // Check for known free codes (expanded list for production mock)
+        const freeCodes = ['PROMO2026', 'FREE', 'TESTFREE', 'DEMO', 'PROMO', 'TEST', 'ZERO', 'GRATIS'];
+        const upperCode = affiliateCode.toUpperCase();
+
+        // Check for free patterns
+        const isFreeCode = freeCodes.some(code => upperCode.includes(code)) ||
+                          upperCode.includes('FREE') ||
+                          upperCode.includes('TEST') ||
+                          upperCode.includes('DEMO') ||
+                          upperCode.includes('PROMO');
+
+        if (isFreeCode) {
           monthlyPrice = 0;
           quarterlyPrice = 0;
           annualPrice = 0;
-          console.log('🎁 FREE affiliate code detected in production mock');
+          console.log('🎁 FREE affiliate code detected in production mock:', affiliateCode);
         } else {
-          console.log('💰 Paid affiliate code detected, using default pricing');
+          console.log('💰 Paid affiliate code detected, using default pricing:', affiliateCode);
         }
       }
 
