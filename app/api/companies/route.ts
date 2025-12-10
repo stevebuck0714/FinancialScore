@@ -507,60 +507,91 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH update company LOB settings
+// PATCH update company details or LOB settings
 export async function PATCH(request: NextRequest) {
   try {
-    const { companyId, linesOfBusiness, headcountAllocations, userDefinedAllocations } = await request.json();
+    console.log('🔄 ===== PATCH REQUEST RECEIVED =====');
+    const body = await request.json();
+    console.log('🔄 Request body:', body);
 
-    if (!companyId) {
+    // Handle both formats: { id, ...fields } (from frontend) and { companyId, ...lobFields } (legacy)
+    const { id, companyId, ...updateFields } = body;
+    const targetCompanyId = id || companyId;
+
+    if (!targetCompanyId) {
+      console.error('❌ No company ID provided (neither id nor companyId)');
       return NextResponse.json(
         { error: 'Company ID required' },
         { status: 400 }
       );
     }
 
-    // Prepare update data
+    console.log('🔄 Target company ID:', targetCompanyId);
+    console.log('🔄 Update fields:', updateFields);
+
+    // Prepare update data - allow all valid company fields
     const updateData: any = {};
 
-    if (linesOfBusiness !== undefined) {
-      updateData.linesOfBusiness = linesOfBusiness;
-      console.log('📝 Updating linesOfBusiness:', linesOfBusiness);
-    }
+    // Address fields
+    if (updateFields.addressStreet !== undefined) updateData.addressStreet = updateFields.addressStreet;
+    if (updateFields.addressCity !== undefined) updateData.addressCity = updateFields.addressCity;
+    if (updateFields.addressState !== undefined) updateData.addressState = updateFields.addressState;
+    if (updateFields.addressZip !== undefined) updateData.addressZip = updateFields.addressZip;
+    if (updateFields.addressCountry !== undefined) updateData.addressCountry = updateFields.addressCountry;
 
-    if (headcountAllocations !== undefined) {
-      updateData.headcountAllocations = headcountAllocations;
-      console.log('📝 Updating headcountAllocations:', headcountAllocations);
-    }
+    // Industry sector
+    if (updateFields.industrySector !== undefined) updateData.industrySector = updateFields.industrySector;
+
+    // Name
+    if (updateFields.name !== undefined) updateData.name = updateFields.name;
+
+    // Lines of Business and allocations (legacy LOB endpoint usage)
+    if (updateFields.linesOfBusiness !== undefined) updateData.linesOfBusiness = updateFields.linesOfBusiness;
+    if (updateFields.headcountAllocations !== undefined) updateData.headcountAllocations = updateFields.headcountAllocations;
+    if (updateFields.userDefinedAllocations !== undefined) updateData.userDefinedAllocations = updateFields.userDefinedAllocations;
 
     console.log('🔄 Final update data:', updateData);
 
-    // Build select object dynamically based on environment
+    // Build select object - include fields that exist in production DB
     const selectFields: any = {
       id: true,
       name: true,
-      linesOfBusiness: true
+      consultantId: true,
+      addressStreet: true,
+      addressCity: true,
+      addressState: true,
+      addressZip: true,
+      addressCountry: true,
+      industrySector: true,
+      linesOfBusiness: true,
+      // userDefinedAllocations: true, // Column doesn't exist in production DB
+      createdAt: true
     };
 
     // Select headcountAllocations if it exists (now that database column is added)
     if (process.env.NODE_ENV !== 'development') {
       selectFields.headcountAllocations = true;
     }
-    selectFields.userDefinedAllocations = true;
+
+    console.log('🔄 Select fields:', selectFields);
 
     const company = await prisma.company.update({
-      where: { id: companyId },
+      where: { id: targetCompanyId },
       data: updateData,
       select: selectFields
     });
 
+    console.log('✅ Company updated successfully:', company);
     return NextResponse.json({ company }, { status: 200 });
   } catch (error: any) {
+    console.error('❌ ===== PATCH ERROR =====');
     console.error('❌ Error updating company:', error);
     console.error('❌ Error details:', {
       message: error.message,
       code: error.code,
       meta: error.meta,
-      name: error.name
+      name: error.name,
+      stack: error.stack
     });
     return NextResponse.json(
       { error: 'Failed to update company', details: error.message },
