@@ -1,6 +1,6 @@
 /**
  * LOB (Line of Business) Allocation Processor
- * 
+ *
  * This module handles the allocation of QuickBooks account values across
  * multiple Lines of Business based on percentage splits defined in account mappings.
  */
@@ -56,7 +56,7 @@ export interface MonthlyLOBData {
 export function applyLOBAllocations(
   accountValues: AccountValue[],
   accountMappings: AccountMapping[],
-  companyLOBs: CompanyLOB[] = []
+  companyLOBs: CompanyLOB[] = [],
 ): MonthlyLOBData {
   // Initialize result structure
   const totals: { [fieldName: string]: number } = {};
@@ -71,10 +71,12 @@ export function applyLOBAllocations(
   // Process each account value
   for (const accountValue of accountValues) {
     const mapping = mappingMap.get(accountValue.accountName);
-    
+
     if (!mapping) {
       // No mapping found - skip this account
-      console.warn(`No mapping found for QB account: "${accountValue.accountName}"`);
+      console.warn(
+        `No mapping found for QB account: "${accountValue.accountName}"`,
+      );
       continue;
     }
 
@@ -98,10 +100,13 @@ export function applyLOBAllocations(
     totals[targetField] += amount;
 
     // Apply LOB allocations based on allocation method
-    if (mapping.allocationMethod === 'headcount' && companyLOBs.length > 0) {
+    if (mapping.allocationMethod === "headcount" && companyLOBs.length > 0) {
       // Use headcount-based allocation
       for (const companyLOB of companyLOBs) {
-        if (companyLOB.name.trim() !== '' && companyLOB.headcountPercentage > 0) {
+        if (
+          companyLOB.name.trim() !== "" &&
+          companyLOB.headcountPercentage > 0
+        ) {
           const lobAmount = (amount * companyLOB.headcountPercentage) / 100;
 
           if (!breakdowns[targetField][companyLOB.name]) {
@@ -110,15 +115,56 @@ export function applyLOBAllocations(
           breakdowns[targetField][companyLOB.name] += lobAmount;
         }
       }
-    } else if (mapping.lobAllocations && typeof mapping.lobAllocations === 'object') {
+    } else if (
+      mapping.lobAllocations &&
+      typeof mapping.lobAllocations === "object"
+    ) {
       // Use manual LOB allocations
-      const lobAllocations = mapping.lobAllocations as { [lob: string]: number };
+      const lobAllocations = mapping.lobAllocations as {
+        [lob: string]: number;
+      };
 
-      // Validate that percentages add up to 100 (with small tolerance for rounding)
-      const totalPercentage = Object.values(lobAllocations).reduce((sum, pct) => sum + pct, 0);
+      // Validate and normalize percentages to ensure they sum to 100
+      let totalPercentage = Object.values(lobAllocations).reduce(
+        (sum, pct) => sum + pct,
+        0,
+      );
+
+      // If percentages don't sum to 100 (within tolerance), normalize them
       if (Math.abs(totalPercentage - 100) > 0.01 && totalPercentage > 0) {
         console.warn(
-          `LOB allocations for "${accountValue.accountName}" sum to ${totalPercentage}% instead of 100%`
+          `LOB allocations for "${accountValue.accountName}" sum to ${totalPercentage}% instead of 100%, normalizing...`,
+        );
+
+        // Normalize percentages to sum to 100
+        const normalizedAllocations: { [lob: string]: number } = {};
+        const lobEntries = Object.entries(lobAllocations);
+        let remainingPercentage = 100;
+
+        // Process all but the last LOB
+        for (let i = 0; i < lobEntries.length - 1; i++) {
+          const [lobName, percentage] = lobEntries[i];
+          const normalizedPct =
+            Math.round((percentage / totalPercentage) * 100 * 100) / 100; // Round to 2 decimals
+          normalizedAllocations[lobName] = normalizedPct;
+          remainingPercentage -= normalizedPct;
+        }
+
+        // Last LOB gets the remaining percentage to ensure exact 100% sum
+        const [lastLobName] = lobEntries[lobEntries.length - 1];
+        normalizedAllocations[lastLobName] =
+          Math.round(remainingPercentage * 100) / 100;
+
+        // Update the allocations with normalized values
+        for (const [lobName, normalizedPct] of Object.entries(
+          normalizedAllocations,
+        )) {
+          mapping.lobAllocations[lobName] = normalizedPct;
+        }
+
+        console.log(
+          `✅ Normalized LOB allocations for "${accountValue.accountName}":`,
+          normalizedAllocations,
         );
       }
 
@@ -139,7 +185,7 @@ export function applyLOBAllocations(
       // Alternatively, you could add it to a default "General" LOB
 
       // Option: Add to "Unallocated" LOB
-      const unallocatedLOB = 'Unallocated';
+      const unallocatedLOB = "Unallocated";
       if (!breakdowns[targetField][unallocatedLOB]) {
         breakdowns[targetField][unallocatedLOB] = 0;
       }
@@ -158,7 +204,7 @@ export function applyLOBAllocations(
   }
 
   // Calculate total expense breakdown by summing all expense field LOB breakdowns
-  if (Object.keys(breakdowns).some(field => isExpenseField(field))) {
+  if (Object.keys(breakdowns).some((field) => isExpenseField(field))) {
     result.expenseBreakdown = {};
     for (const [field, lobBreakdown] of Object.entries(breakdowns)) {
       if (isExpenseField(field)) {
@@ -173,7 +219,7 @@ export function applyLOBAllocations(
   }
 
   // Calculate total COGS breakdown
-  if (Object.keys(breakdowns).some(field => isCOGSField(field))) {
+  if (Object.keys(breakdowns).some((field) => isCOGSField(field))) {
     result.cogsBreakdown = {};
     for (const [field, lobBreakdown] of Object.entries(breakdowns)) {
       if (isCOGSField(field)) {
@@ -195,10 +241,24 @@ export function applyLOBAllocations(
  */
 function isExpenseField(fieldName: string): boolean {
   const expenseFields = [
-    'payroll', 'ownerBasePay', 'benefits', 'insurance', 'professionalFees',
-    'subcontractors', 'rent', 'taxLicense', 'phoneComm', 'infrastructure',
-    'autoTravel', 'salesExpense', 'marketing', 'trainingCert', 'mealsEntertainment',
-    'interestExpense', 'depreciationAmortization', 'otherExpense'
+    "payroll",
+    "ownerBasePay",
+    "benefits",
+    "insurance",
+    "professionalFees",
+    "subcontractors",
+    "rent",
+    "taxLicense",
+    "phoneComm",
+    "infrastructure",
+    "autoTravel",
+    "salesExpense",
+    "marketing",
+    "trainingCert",
+    "mealsEntertainment",
+    "interestExpense",
+    "depreciationAmortization",
+    "otherExpense",
   ];
   return expenseFields.includes(fieldName);
 }
@@ -208,8 +268,12 @@ function isExpenseField(fieldName: string): boolean {
  */
 function isCOGSField(fieldName: string): boolean {
   const cogsFields = [
-    'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials',
-    'cogsCommissions', 'cogsOther'
+    "cogsPayroll",
+    "cogsOwnerPay",
+    "cogsContractors",
+    "cogsMaterials",
+    "cogsCommissions",
+    "cogsOther",
   ];
   return cogsFields.includes(fieldName);
 }
@@ -228,12 +292,12 @@ export function roundBreakdown(breakdown: LOBBreakdown): LOBBreakdown {
 /**
  * Round all field breakdowns
  */
-export function roundAllBreakdowns(breakdowns: FieldBreakdowns): FieldBreakdowns {
+export function roundAllBreakdowns(
+  breakdowns: FieldBreakdowns,
+): FieldBreakdowns {
   const rounded: FieldBreakdowns = {};
   for (const [fieldName, lobBreakdown] of Object.entries(breakdowns)) {
     rounded[fieldName] = roundBreakdown(lobBreakdown);
   }
   return rounded;
 }
-
-

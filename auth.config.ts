@@ -4,6 +4,7 @@ import { verifyPassword } from './lib/auth';
 import prisma from './lib/prisma';
 
 export const authConfig: NextAuthConfig = {
+  trustHost: true,
   pages: {
     signIn: '/',
   },

@@ -3,6 +3,7 @@
 import React from 'react';
 import ProfileTab from '../dashboard/ProfileTab';
 import CompanyDetailsTab from './CompanyDetailsTab';
+import { useFinancialData } from '../../hooks/useFinancialData';
 
 interface CompanyManagementTabProps {
   companyManagementSubTab: string;
@@ -51,12 +52,12 @@ interface CompanyManagementTabProps {
   company: any;
   companyProfiles: any[];
   setCompanyProfiles: (profiles: any[]) => void;
-  monthly: any[];
   trendData: any;
   setIsLoading: (loading: boolean) => void;
 }
 
 export default function CompanyManagementTab(props: CompanyManagementTabProps) {
+  const { monthlyData } = useFinancialData();
   return (
     <div className="company-management-container" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       {/* Sub-tab Navigation */}
@@ -158,7 +159,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
               company={props.company}
               companyProfiles={props.companyProfiles}
               setCompanyProfiles={props.setCompanyProfiles}
-              monthly={props.monthly}
+              monthly={monthlyData}
               trendData={props.trendData}
               isLoading={props.isLoading}
               setIsLoading={props.setIsLoading}

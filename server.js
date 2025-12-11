@@ -18,7 +18,9 @@ if (process.env.NODE_ENV === 'development' && !process.env.DATABASE_URL?.include
 // Log which database we're connecting to
 console.log('🔗 DATABASE:', process.env.DATABASE_URL?.includes('cold-frost') ? 'DEV (cold-frost)' : 'PROD (orange-poetry)');
 
-const dev = process.env.NODE_ENV !== 'production';
+// Force development mode for dev script
+const dev = true;
+console.log('🔧 Forced dev mode:', dev);
 const hostname = 'localhost';
 const port = parseInt(process.env.PORT || '3000', 10);
 

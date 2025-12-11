@@ -2,12 +2,12 @@
 
 import React from 'react';
 import { applyLOBAllocations } from '@/lib/lob-allocator';
+import type { MonthlyDataRow, Mappings } from '../../types';
 
 interface LOBReportingTabProps {
   company: any;
-  monthly: any[];
-  qbRawData: any;
-  accountMappings: any[];
+  monthly: MonthlyDataRow[];
+  accountMappings: Mappings[];
   statementType: 'income-statement' | 'balance-sheet' | 'income-statement-percent';
   selectedLineOfBusiness: string;
   statementPeriod: string;
@@ -21,7 +21,6 @@ interface LOBReportingTabProps {
 export default function LOBReportingTab({
   company,
   monthly,
-  qbRawData,
   accountMappings,
   statementType,
   selectedLineOfBusiness,
@@ -93,9 +92,9 @@ export default function LOBReportingTab({
   
   // Auto-select first LOB if none selected or invalid (but allow "all")
   React.useEffect(() => {
-    if (!selectedLineOfBusiness || (selectedLineOfBusiness !== 'all' && !linesOfBusiness.includes(selectedLineOfBusiness))) {
+    if (!selectedLineOfBusiness || (selectedLineOfBusiness !== 'all' && !linesOfBusiness.some((lob: any) => lob.name === selectedLineOfBusiness))) {
       if (linesOfBusiness.length > 0) {
-        onLineOfBusinessChange(linesOfBusiness[0]);
+        onLineOfBusinessChange(linesOfBusiness[0].name);
       }
     }
   }, [selectedLineOfBusiness, linesOfBusiness, onLineOfBusinessChange]);
@@ -255,7 +254,38 @@ export default function LOBReportingTab({
           }
         });
       }
-      
+
+      // Calculate total COGS and expense for each LOB in this month
+      linesOfBusiness.forEach((lob: any) => {
+        const lobName = lob.name;
+
+        // Calculate total COGS
+        const cogsComponents = ['cogsContractors', 'cogsPayroll', 'cogsMaterials'];
+        let totalCogs = 0;
+        cogsComponents.forEach(component => {
+          if (monthBreakdowns[component]?.[lobName]) {
+            totalCogs += Number(monthBreakdowns[component][lobName]) || 0;
+          }
+        });
+        if (!monthBreakdowns.cogs) {
+          monthBreakdowns.cogs = {};
+        }
+        monthBreakdowns.cogs[lobName] = totalCogs;
+
+        // Calculate total expenses
+        const expenseComponents = ['payroll', 'rent', 'utilities', 'insurance', 'professionalFees', 'salesExpense', 'taxLicense', 'otherExpense', 'benefits', 'autoTravel', 'phoneComm', 'infrastructure', 'mealsEntertainment'];
+        let totalExpense = 0;
+        expenseComponents.forEach(component => {
+          if (monthBreakdowns[component]?.[lobName]) {
+            totalExpense += Number(monthBreakdowns[component][lobName]) || 0;
+          }
+        });
+        if (!monthBreakdowns.expense) {
+          monthBreakdowns.expense = {};
+        }
+        monthBreakdowns.expense[lobName] = totalExpense;
+      });
+
       // Extract values based on selected LOB
       if (selectedLineOfBusiness === 'all') {
         // Sum across all LOBs (use totals)
@@ -387,7 +417,38 @@ export default function LOBReportingTab({
         });
       });
     });
-    
+
+    // Calculate total COGS and expense by summing their components
+    linesOfBusiness.forEach((lob: any) => {
+      const lobName = lob.name;
+
+      // Calculate total COGS
+      const cogsComponents = ['cogsContractors', 'cogsPayroll', 'cogsMaterials'];
+      let totalCogs = 0;
+      cogsComponents.forEach(component => {
+        if (aggregatedBreakdowns[component]?.[lobName]) {
+          totalCogs += Number(aggregatedBreakdowns[component][lobName]) || 0;
+        }
+      });
+      if (!aggregatedBreakdowns.cogs) {
+        aggregatedBreakdowns.cogs = {};
+      }
+      aggregatedBreakdowns.cogs[lobName] = totalCogs;
+
+      // Calculate total expenses
+      const expenseComponents = ['payroll', 'rent', 'utilities', 'insurance', 'professionalFees', 'salesExpense', 'taxLicense', 'otherExpense', 'benefits', 'autoTravel', 'phoneComm', 'infrastructure', 'mealsEntertainment'];
+      let totalExpense = 0;
+      expenseComponents.forEach(component => {
+        if (aggregatedBreakdowns[component]?.[lobName]) {
+          totalExpense += Number(aggregatedBreakdowns[component][lobName]) || 0;
+        }
+      });
+      if (!aggregatedBreakdowns.expense) {
+        aggregatedBreakdowns.expense = {};
+      }
+      aggregatedBreakdowns.expense[lobName] = totalExpense;
+    });
+
     detailedBreakdowns = aggregatedBreakdowns;
     
     // Now group by display type (monthly, quarterly, annual)
@@ -713,8 +774,8 @@ export default function LOBReportingTab({
               }}
             >
               <option value="all">All Lines of Business</option>
-              {linesOfBusiness.map((lob: string) => (
-                <option key={lob} value={lob}>{lob}</option>
+              {linesOfBusiness.map((lob: any) => (
+                <option key={lob.name} value={lob.name}>{lob.name}</option>
               ))}
             </select>
           </div>
@@ -794,9 +855,9 @@ export default function LOBReportingTab({
                 <thead>
                   <tr style={{ borderBottom: '2px solid #cbd5e1' }}>
                     <th style={{ textAlign: 'left', padding: '12px 8px', fontWeight: '600', color: '#1e293b' }}>Line Item</th>
-                    {linesOfBusiness.map((lob: string) => (
-                      <th key={lob} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '600', color: '#1e293b', minWidth: '120px' }}>
-                        {lob}
+                    {linesOfBusiness.map((lob: any) => (
+                      <th key={lob.name} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '600', color: '#1e293b', minWidth: '120px' }}>
+                        {lob.name}
                       </th>
                     ))}
                     <th style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: '#1e293b', minWidth: '120px', background: '#e2e8f0' }}>
@@ -815,10 +876,10 @@ export default function LOBReportingTab({
                   {/* Total Revenue */}
                   <tr style={{ borderBottom: '2px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
                     <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Revenue</td>
-                    {linesOfBusiness.map((lob: string) => {
-                      const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                       return (
-                        <td key={lob} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#059669' }}>
+                        <td key={lob.name} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#059669' }}>
                           {fmt(lobRev)}
                         </td>
                       );
@@ -836,13 +897,13 @@ export default function LOBReportingTab({
                   </tr>
                   
                   {/* COGS - Contractors */}
-                  {linesOfBusiness.some((lob: string) => (detailedBreakdowns.cogsContractors?.[lob] || 0) > 0) && (
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.cogsContractors?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Contractors</td>
-                      {linesOfBusiness.map((lob: string) => {
-                        const val = detailedBreakdowns.cogsContractors?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.cogsContractors?.[lob.name] || 0;
                         return (
-                          <td key={lob} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
                             {fmt(val)}
                           </td>
                         );
@@ -854,13 +915,13 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* COGS - Payroll */}
-                  {linesOfBusiness.some((lob: string) => (detailedBreakdowns.cogsPayroll?.[lob] || 0) > 0) && (
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.cogsPayroll?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>COGS Payroll</td>
-                      {linesOfBusiness.map((lob: string) => {
-                        const val = detailedBreakdowns.cogsPayroll?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.cogsPayroll?.[lob.name] || 0;
                         return (
-                          <td key={lob} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
                             {fmt(val)}
                           </td>
                         );
@@ -872,13 +933,13 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* COGS - Materials */}
-                  {linesOfBusiness.some((lob: string) => (detailedBreakdowns.cogsMaterials?.[lob] || 0) > 0) && (
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.cogsMaterials?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Materials</td>
-                      {linesOfBusiness.map((lob: string) => {
-                        const val = detailedBreakdowns.cogsMaterials?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.cogsMaterials?.[lob.name] || 0;
                         return (
-                          <td key={lob} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
                             {fmt(val)}
                           </td>
                         );
@@ -892,10 +953,10 @@ export default function LOBReportingTab({
                   {/* Total COGS */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
                     <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Cost of Goods Sold</td>
-                    {linesOfBusiness.map((lob: string) => {
-                      const lobCogs = detailedBreakdowns.cogs?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any) => {
+                      const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
                       return (
-                        <td key={lob} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#dc2626' }}>
+                        <td key={lob.name} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#dc2626' }}>
                           {fmt(lobCogs)}
                         </td>
                       );
@@ -908,12 +969,12 @@ export default function LOBReportingTab({
                   {/* Gross Profit */}
                   <tr style={{ borderBottom: '2px solid #cbd5e1', background: '#f1f5f9' }}>
                     <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Gross Profit</td>
-                    {linesOfBusiness.map((lob: string) => {
-                      const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
-                      const lobCogs = detailedBreakdowns.cogs?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                      const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
                       const gp = lobRev - lobCogs;
                       return (
-                        <td key={lob} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: gp >= 0 ? '#059669' : '#dc2626' }}>
+                        <td key={lob.name} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: gp >= 0 ? '#059669' : '#dc2626' }}>
                           {fmt(gp)}
                         </td>
                       );
@@ -931,13 +992,13 @@ export default function LOBReportingTab({
                   </tr>
                   
                   {/* Payroll */}
-                  {linesOfBusiness.some((lob: string) => (detailedBreakdowns.payroll?.[lob] || 0) > 0) && (
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.payroll?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Payroll</td>
-                      {linesOfBusiness.map((lob: string) => {
-                        const val = detailedBreakdowns.payroll?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.payroll?.[lob.name] || 0;
                         return (
-                          <td key={lob} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
                             {fmt(val)}
                           </td>
                         );
@@ -949,13 +1010,13 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* Taxes & Licenses */}
-                  {linesOfBusiness.some((lob: string) => (detailedBreakdowns.taxLicense?.[lob] || 0) > 0) && (
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.taxLicense?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Taxes & Licenses</td>
-                      {linesOfBusiness.map((lob: string) => {
-                        const val = detailedBreakdowns.taxLicense?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.taxLicense?.[lob.name] || 0;
                         return (
-                          <td key={lob} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
                             {fmt(val)}
                           </td>
                         );
@@ -967,13 +1028,13 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* Other Expenses */}
-                  {linesOfBusiness.some((lob: string) => (detailedBreakdowns.otherExpense?.[lob] || 0) > 0) && (
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.otherExpense?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Other Expenses</td>
-                      {linesOfBusiness.map((lob: string) => {
-                        const val = detailedBreakdowns.otherExpense?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.otherExpense?.[lob.name] || 0;
                         return (
-                          <td key={lob} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
                             {fmt(val)}
                           </td>
                         );
@@ -987,10 +1048,10 @@ export default function LOBReportingTab({
                   {/* Total Operating Expenses */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
                     <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</td>
-                    {linesOfBusiness.map((lob: string) => {
-                      const lobExp = detailedBreakdowns.expense?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any) => {
+                      const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
                       return (
-                        <td key={lob} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#dc2626' }}>
+                        <td key={lob.name} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#dc2626' }}>
                           {fmt(lobExp)}
                         </td>
                       );
@@ -1003,13 +1064,13 @@ export default function LOBReportingTab({
                   {/* Net Income */}
                   <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
                     <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>Net Income</td>
-                    {linesOfBusiness.map((lob: string) => {
-                      const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
-                      const lobCogs = detailedBreakdowns.cogs?.[lob] || 0;
-                      const lobExp = detailedBreakdowns.expense?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                      const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
+                      const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
                       const ni = lobRev - lobCogs - lobExp;
                       return (
-                        <td key={lob} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: ni >= 0 ? '#059669' : '#dc2626' }}>
+                        <td key={lob.name} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: ni >= 0 ? '#059669' : '#dc2626' }}>
                           {fmt(ni)}
                         </td>
                       );
@@ -1024,9 +1085,9 @@ export default function LOBReportingTab({
               {/* Margin Summary by LOB */}
               <div style={{ marginTop: '20px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${linesOfBusiness.length}, 1fr)`, gap: '16px' }}>
-                  {linesOfBusiness.map((lob: string) => {
-                    const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
-                    const lobCogs = detailedBreakdowns.cogs?.[lob] || 0;
+                  {linesOfBusiness.map((lob: any) => {
+                    const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                    const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
                     const lobExp = detailedBreakdowns.expense?.[lob] || 0;
                     const gp = lobRev - lobCogs;
                     const ni = lobRev - lobCogs - lobExp;
@@ -1034,8 +1095,8 @@ export default function LOBReportingTab({
                     const nm = lobRev > 0 ? (ni / lobRev) * 100 : 0;
                     
                     return (
-                      <div key={lob} style={{ borderLeft: '3px solid #3b82f6', paddingLeft: '12px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{lob}</div>
+                      <div key={lob.name} style={{ borderLeft: '3px solid #3b82f6', paddingLeft: '12px' }}>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{lob.name}</div>
                         <div style={{ marginBottom: '4px' }}>
                           <div style={{ fontSize: '11px', color: '#64748b' }}>Gross Margin</div>
                           <div style={{ fontSize: '16px', fontWeight: '700', color: gm >= 0 ? '#059669' : '#dc2626' }}>
@@ -1069,9 +1130,9 @@ export default function LOBReportingTab({
                     <th style={{ textAlign: 'left', padding: '12px 8px', fontWeight: '600', color: '#1e293b' }}>Line Item</th>
                     {monthLabels.map((period, pidx) => (
                       <React.Fragment key={pidx}>
-                        {linesOfBusiness.map((lob: string, lobIdx) => (
-                          <th key={lob} colSpan={2} style={{ textAlign: 'center', padding: '12px 8px', fontWeight: '600', color: '#1e293b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0', fontSize: '11px' }}>
-                            {period}<br/>{lob}
+                        {linesOfBusiness.map((lob: any, lobIdx) => (
+                          <th key={lob.name} colSpan={2} style={{ textAlign: 'center', padding: '12px 8px', fontWeight: '600', color: '#1e293b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0', fontSize: '11px' }}>
+                            {period}<br/>{lob.name}
                           </th>
                         ))}
                       </React.Fragment>
@@ -1084,16 +1145,16 @@ export default function LOBReportingTab({
                     <th></th>
                     {monthLabels.map((period, pidx) => (
                       <React.Fragment key={pidx}>
-                        {linesOfBusiness.map((lob: string, lobIdx) => (
-                          <React.Fragment key={lob}>
+                        {linesOfBusiness.map((lob: any, lobIdx) => (
+                          <React.Fragment key={lob.name}>
                             <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '600', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>$</th>
                             <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '600', color: '#64748b' }}>%</th>
                           </React.Fragment>
                         ))}
                       </React.Fragment>
                     ))}
-                    {linesOfBusiness.map((lob: string, lobIdx) => (
-                      <React.Fragment key={lob}>
+                    {linesOfBusiness.map((lob: any, lobIdx) => (
+                      <React.Fragment key={lob.name}>
                         <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '700', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>$</th>
                         <th style={{ textAlign: 'right', padding: '8px 4px', fontSize: '11px', fontWeight: '700', color: '#64748b', background: '#e2e8f0' }}>%</th>
                       </React.Fragment>
@@ -1113,10 +1174,10 @@ export default function LOBReportingTab({
                     <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Revenue</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
-                        {linesOfBusiness.map((lob: string, lobIdx) => {
-                          const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                        {linesOfBusiness.map((lob: any, lobIdx) => {
+                          const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                           return (
-                            <React.Fragment key={lob}>
+                            <React.Fragment key={lob.name}>
                               <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '600', color: '#059669', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                 {fmt(lobRev)}
                               </td>
@@ -1128,10 +1189,10 @@ export default function LOBReportingTab({
                         })}
                       </React.Fragment>
                     ))}
-                    {linesOfBusiness.map((lob: string, lobIdx) => {
-                      const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any, lobIdx) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                       return (
-                        <React.Fragment key={lob}>
+                        <React.Fragment key={lob.name}>
                           <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#059669', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                             {fmt(lobRev)}
                           </td>
@@ -1151,17 +1212,17 @@ export default function LOBReportingTab({
                   </tr>
                   
                   {/* COGS - Contractors */}
-                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.cogsContractors?.[lob] || 0) > 0)) && (
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.cogsContractors?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Contractors</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
-                          {linesOfBusiness.map((lob: string, lobIdx) => {
-                            const val = m.breakdowns?.cogsContractors?.[lob] || 0;
-                            const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.cogsContractors?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1173,12 +1234,12 @@ export default function LOBReportingTab({
                           })}
                         </React.Fragment>
                       ))}
-                      {linesOfBusiness.map((lob: string, lobIdx) => {
-                        const val = detailedBreakdowns.cogsContractors?.[lob] || 0;
-                        const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.cogsContractors?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1192,17 +1253,17 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* COGS - Payroll */}
-                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.cogsPayroll?.[lob] || 0) > 0)) && (
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.cogsPayroll?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>COGS Payroll</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
-                          {linesOfBusiness.map((lob: string, lobIdx) => {
-                            const val = m.breakdowns?.cogsPayroll?.[lob] || 0;
-                            const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.cogsPayroll?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1214,12 +1275,12 @@ export default function LOBReportingTab({
                           })}
                         </React.Fragment>
                       ))}
-                      {linesOfBusiness.map((lob: string, lobIdx) => {
-                        const val = detailedBreakdowns.cogsPayroll?.[lob] || 0;
-                        const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.cogsPayroll?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1233,17 +1294,17 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* COGS - Materials */}
-                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.cogsMaterials?.[lob] || 0) > 0)) && (
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.cogsMaterials?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Materials</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
-                          {linesOfBusiness.map((lob: string, lobIdx) => {
-                            const val = m.breakdowns?.cogsMaterials?.[lob] || 0;
-                            const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.cogsMaterials?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1255,12 +1316,12 @@ export default function LOBReportingTab({
                           })}
                         </React.Fragment>
                       ))}
-                      {linesOfBusiness.map((lob: string, lobIdx) => {
-                        const val = detailedBreakdowns.cogsMaterials?.[lob] || 0;
-                        const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.cogsMaterials?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1278,12 +1339,12 @@ export default function LOBReportingTab({
                     <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Cost of Goods Sold</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
-                        {linesOfBusiness.map((lob: string, lobIdx) => {
-                          const lobCogs = m.breakdowns?.cogs?.[lob] || 0;
-                          const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                        {linesOfBusiness.map((lob: any, lobIdx) => {
+                          const lobCogs = m.breakdowns?.cogs?.[lob.name] || 0;
+                          const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                           const pct = lobRev > 0 ? (lobCogs / lobRev) * 100 : 0;
                           return (
-                            <React.Fragment key={lob}>
+                            <React.Fragment key={lob.name}>
                               <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '600', color: '#dc2626', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                 {fmt(lobCogs)}
                               </td>
@@ -1295,9 +1356,9 @@ export default function LOBReportingTab({
                         })}
                       </React.Fragment>
                     ))}
-                    {linesOfBusiness.map((lob: string, lobIdx) => {
-                      const lobCogs = detailedBreakdowns.cogs?.[lob] || 0;
-                      const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any, lobIdx) => {
+                      const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                       const pct = lobRev > 0 ? (lobCogs / lobRev) * 100 : 0;
                       return (
                         <React.Fragment key={lob}>
@@ -1317,13 +1378,13 @@ export default function LOBReportingTab({
                     <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Gross Profit</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
-                        {linesOfBusiness.map((lob: string, lobIdx) => {
-                          const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                        {linesOfBusiness.map((lob: any, lobIdx) => {
+                          const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                           const lobCogs = m.breakdowns?.cogs?.[lob] || 0;
                           const gp = lobRev - lobCogs;
                           const pct = lobRev > 0 ? (gp / lobRev) * 100 : 0;
                           return (
-                            <React.Fragment key={lob}>
+                            <React.Fragment key={lob.name}>
                               <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '600', color: gp >= 0 ? '#059669' : '#dc2626', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                 {fmt(gp)}
                               </td>
@@ -1335,8 +1396,8 @@ export default function LOBReportingTab({
                         })}
                       </React.Fragment>
                     ))}
-                    {linesOfBusiness.map((lob: string, lobIdx) => {
-                      const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any, lobIdx) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                       const lobCogs = detailedBreakdowns.cogs?.[lob] || 0;
                       const gp = lobRev - lobCogs;
                       const pct = lobRev > 0 ? (gp / lobRev) * 100 : 0;
@@ -1361,17 +1422,17 @@ export default function LOBReportingTab({
                   </tr>
                   
                   {/* Payroll */}
-                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.payroll?.[lob] || 0) > 0)) && (
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.payroll?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Payroll</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
-                          {linesOfBusiness.map((lob: string, lobIdx) => {
-                            const val = m.breakdowns?.payroll?.[lob] || 0;
-                            const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.payroll?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1383,12 +1444,12 @@ export default function LOBReportingTab({
                           })}
                         </React.Fragment>
                       ))}
-                      {linesOfBusiness.map((lob: string, lobIdx) => {
-                        const val = detailedBreakdowns.payroll?.[lob] || 0;
-                        const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.payroll?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1402,17 +1463,17 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* Rent/Lease */}
-                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.rent?.[lob] || 0) > 0)) && (
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.rent?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Rent/Lease</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
-                          {linesOfBusiness.map((lob: string, lobIdx) => {
-                            const val = m.breakdowns?.rent?.[lob] || 0;
-                            const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.rent?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1429,7 +1490,7 @@ export default function LOBReportingTab({
                         const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1443,7 +1504,7 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* Utilities */}
-                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.utilities?.[lob] || 0) > 0)) && (
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.utilities?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Utilities</td>
                       {monthlyLOBData.map((m, pidx) => (
@@ -1453,7 +1514,7 @@ export default function LOBReportingTab({
                             const lobRev = m.breakdowns?.revenue?.[lob] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1470,7 +1531,7 @@ export default function LOBReportingTab({
                         const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1484,7 +1545,7 @@ export default function LOBReportingTab({
                   )}
                   
                   {/* Insurance */}
-                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.insurance?.[lob] || 0) > 0)) && (
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.insurance?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Insurance</td>
                       {monthlyLOBData.map((m, pidx) => (
@@ -1494,7 +1555,7 @@ export default function LOBReportingTab({
                             const lobRev = m.breakdowns?.revenue?.[lob] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1511,7 +1572,7 @@ export default function LOBReportingTab({
                         const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1535,7 +1596,7 @@ export default function LOBReportingTab({
                             const lobRev = m.breakdowns?.revenue?.[lob] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1552,7 +1613,7 @@ export default function LOBReportingTab({
                         const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1576,7 +1637,7 @@ export default function LOBReportingTab({
                             const lobRev = m.breakdowns?.revenue?.[lob] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1593,7 +1654,7 @@ export default function LOBReportingTab({
                         const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1617,7 +1678,7 @@ export default function LOBReportingTab({
                             const lobRev = m.breakdowns?.revenue?.[lob] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1634,7 +1695,7 @@ export default function LOBReportingTab({
                         const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1658,7 +1719,7 @@ export default function LOBReportingTab({
                             const lobRev = m.breakdowns?.revenue?.[lob] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1675,7 +1736,7 @@ export default function LOBReportingTab({
                         const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1699,7 +1760,7 @@ export default function LOBReportingTab({
                             const lobRev = m.breakdowns?.revenue?.[lob] || 0;
                             const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                             return (
-                              <React.Fragment key={lob}>
+                              <React.Fragment key={lob.name}>
                                 <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                   {fmt(val)}
                                 </td>
@@ -1716,7 +1777,7 @@ export default function LOBReportingTab({
                         const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                         const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
                         return (
-                          <React.Fragment key={lob}>
+                          <React.Fragment key={lob.name}>
                             <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                               {fmt(val)}
                             </td>
@@ -1734,12 +1795,12 @@ export default function LOBReportingTab({
                     <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
-                        {linesOfBusiness.map((lob: string, lobIdx) => {
-                          const lobExp = m.breakdowns?.expense?.[lob] || 0;
-                          const lobRev = m.breakdowns?.revenue?.[lob] || 0;
+                        {linesOfBusiness.map((lob: any, lobIdx) => {
+                          const lobExp = m.breakdowns?.expense?.[lob.name] || 0;
+                          const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                           const pct = lobRev > 0 ? (lobExp / lobRev) * 100 : 0;
                           return (
-                            <React.Fragment key={lob}>
+                            <React.Fragment key={lob.name}>
                               <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '600', color: '#dc2626', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                 {fmt(lobExp)}
                               </td>
@@ -1752,7 +1813,7 @@ export default function LOBReportingTab({
                       </React.Fragment>
                     ))}
                     {linesOfBusiness.map((lob: string, lobIdx) => {
-                      const lobExp = detailedBreakdowns.expense?.[lob] || 0;
+                      const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
                       const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
                       const pct = lobRev > 0 ? (lobExp / lobRev) * 100 : 0;
                       return (
@@ -1773,14 +1834,14 @@ export default function LOBReportingTab({
                     <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>Net Income</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
-                        {linesOfBusiness.map((lob: string, lobIdx) => {
-                          const lobRev = m.breakdowns?.revenue?.[lob] || 0;
-                          const lobCogs = m.breakdowns?.cogs?.[lob] || 0;
-                          const lobExp = m.breakdowns?.expense?.[lob] || 0;
+                        {linesOfBusiness.map((lob: any, lobIdx) => {
+                          const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
+                          const lobCogs = m.breakdowns?.cogs?.[lob.name] || 0;
+                          const lobExp = m.breakdowns?.expense?.[lob.name] || 0;
                           const ni = lobRev - lobCogs - lobExp;
                           const pct = lobRev > 0 ? (ni / lobRev) * 100 : 0;
                           return (
-                            <React.Fragment key={lob}>
+                            <React.Fragment key={lob.name}>
                               <td style={{ textAlign: 'right', padding: '12px 4px', fontWeight: '700', color: ni >= 0 ? '#059669' : '#dc2626', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                                 {fmt(ni)}
                               </td>
@@ -1792,10 +1853,10 @@ export default function LOBReportingTab({
                         })}
                       </React.Fragment>
                     ))}
-                    {linesOfBusiness.map((lob: string, lobIdx) => {
-                      const lobRev = detailedBreakdowns.revenue?.[lob] || 0;
+                    {linesOfBusiness.map((lob: any, lobIdx) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                       const lobCogs = detailedBreakdowns.cogs?.[lob] || 0;
-                      const lobExp = detailedBreakdowns.expense?.[lob] || 0;
+                      const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
                       const ni = lobRev - lobCogs - lobExp;
                       const pct = lobRev > 0 ? (ni / lobRev) * 100 : 0;
                       return (

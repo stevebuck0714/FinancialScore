@@ -24,3 +24,6 @@ SELECT column_name FROM information_schema.columns
 WHERE table_name = 'Company'
 AND column_name IN ('linesOfBusiness', 'userDefinedAllocations', 'headcountAllocations')
 ORDER BY column_name;
+
+
+

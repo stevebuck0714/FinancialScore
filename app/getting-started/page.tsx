@@ -148,7 +148,7 @@ export default function GettingStartedPage() {
               <li><strong>Excel Import</strong> - Import financial data from Excel files</li>
               <li><strong>Accounting API Connections</strong> - Connect to QuickBooks</li>
               <li><strong>Data Review</strong> - Review imported data</li>
-              <li><strong>Data Mapping</strong> - Map accounts to financial categories</li>
+              <li><strong>Account Mapping</strong> - Map accounts to financial categories</li>
             </ul>
           </section>
 
@@ -378,7 +378,7 @@ export default function GettingStartedPage() {
             
             <ol style={{ marginLeft: '24px', marginBottom: '20px', lineHeight: '1.8', color: '#475569' }}>
               <li>Go to the <strong>"Data Review"</strong> tab to verify the data looks correct</li>
-              <li>Return to <strong>"Data Mapping"</strong> tab</li>
+              <li>Return to <strong>"Account Mapping"</strong> tab</li>
               <li>Click <strong>"⚙️ Process & Save Monthly Data"</strong></li>
               <li>Wait for processing to complete</li>
               <li>Navigate to any analysis section to verify data is displaying correctly</li>

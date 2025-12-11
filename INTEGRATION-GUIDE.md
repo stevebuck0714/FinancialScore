@@ -72,7 +72,7 @@ to its matching closing `)}` with the code above.
 ## Test After Integration
 
 1. Upload CSV file
-2. Go to Data Mapping
+2. Go to Account Mapping
 3. Run AI mapping
 4. Verify sections are collapsible
 5. Verify LOB allocations still work

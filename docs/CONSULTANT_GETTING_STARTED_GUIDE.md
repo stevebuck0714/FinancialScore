@@ -183,8 +183,8 @@ For clients without QuickBooks Online or with other accounting systems:
 
 This is the most important step! Mapping tells Corelytics how to categorize each account for financial analysis.
 
-### Step 1: Go to Data Mapping
-Navigate to the **"Data Mapping"** tab after importing data.
+### Step 1: Go to Account Mapping
+Navigate to the **"Account Mapping"** tab after importing data.
 
 ### Step 2: Understanding the Mapping Interface
 
@@ -261,7 +261,7 @@ After mapping is complete, process the data for analysis:
 3. Check for any obvious errors or missing periods
 
 ### Step 2: Process Data
-1. Return to **"Data Mapping"** tab
+1. Return to **"Account Mapping"** tab
 2. Click **"⚙️ Process & Save Monthly Data"**
 3. Wait for processing to complete
 4. You'll see a success message when done
