@@ -98,17 +98,31 @@ export async function DELETE(
       });
     }
 
-    // STAGING/DEV: Attempt actual database operation
+    // STAGING/DEV: Actually delete the company from database
     console.log(`Attempting database delete for ${companyId}`);
 
     try {
-      await prisma.$executeRaw`UPDATE "Company" SET "consultantId" = NULL WHERE "id" = ${companyId}`;
-      console.log(`Successfully hid company ${companyId} from consultant view`);
+      // Delete related records first to avoid foreign key constraints
+      await prisma.$executeRaw`DELETE FROM "PaymentTransaction" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "RevenueRecord" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "SubscriptionEvent" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "Subscription" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "CompanyProfile" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "FinancialRecord" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "AssessmentRecord" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "User" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "AccountingConnection" WHERE "companyId" = ${companyId}`;
+      await prisma.$executeRaw`DELETE FROM "AccountMapping" WHERE "companyId" = ${companyId}`;
+
+      // Finally delete the company
+      await prisma.$executeRaw`DELETE FROM "Company" WHERE "id" = ${companyId}`;
+
+      console.log(`Successfully deleted company ${companyId} from database`);
 
       return NextResponse.json({
         success: true,
-        message: 'Company has been removed from your dashboard.',
-        hidden: true
+        message: 'Company has been permanently deleted.',
+        deleted: true
       });
     } catch (dbError: any) {
       console.error('Database error during delete:', dbError);
