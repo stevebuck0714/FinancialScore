@@ -1700,7 +1700,9 @@ export default function SiteAdminDashboard(props: any) {
                                           alert('Please enter a code');
                                           return;
                                         }
-                                        if (!newAffiliateCode.monthlyPrice || !newAffiliateCode.quarterlyPrice || !newAffiliateCode.annualPrice) {
+                                        if (newAffiliateCode.monthlyPrice === null || newAffiliateCode.monthlyPrice === undefined || newAffiliateCode.monthlyPrice === '' ||
+                                            newAffiliateCode.quarterlyPrice === null || newAffiliateCode.quarterlyPrice === undefined || newAffiliateCode.quarterlyPrice === '' ||
+                                            newAffiliateCode.annualPrice === null || newAffiliateCode.annualPrice === undefined || newAffiliateCode.annualPrice === '') {
                                           alert('Please enter all pricing fields');
                                           return;
                                         }
