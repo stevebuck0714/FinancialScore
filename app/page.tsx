@@ -15740,28 +15740,26 @@ function FinancialScorePage() {
                 const grossProfit = revenue - cogs;
                 const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
-                // Operating Expenses
+                // Operating Expenses - All fields that have data from DataReviewTab
                 const payroll = currentMonth.payroll || 0;
-                const ownerBasePay = currentMonth.ownerBasePay || 0;
-                const ownersRetirement = currentMonth.ownersRetirement || 0;
+                const benefits = currentMonth.benefits || 0;
+                const insurance = currentMonth.insurance || 0;
                 const professionalFees = currentMonth.professionalFees || 0;
+                const subcontractors = currentMonth.subcontractors || 0;
                 const rent = currentMonth.rent || 0;
+                const taxLicense = currentMonth.taxLicense || 0;
+                const phoneComm = currentMonth.phoneComm || 0;
                 const infrastructure = currentMonth.infrastructure || 0;
                 const autoTravel = currentMonth.autoTravel || 0;
-                const insurance = currentMonth.insurance || 0;
                 const salesExpense = currentMonth.salesExpense || 0;
-                const subcontractors = currentMonth.subcontractors || 0;
-                const depreciationAmortization = currentMonth.depreciationAmortization || 0;
                 const marketing = currentMonth.marketing || 0;
+                const mealsEntertainment = currentMonth.mealsEntertainment || 0;
+                const otherExpense = currentMonth.otherExpense || 0;
 
-                // Calculate total operating expenses including all possible expense fields
-                const totalOpex = (currentMonth.cogsPayroll || 0) + (currentMonth.cogsOwnerPay || 0) +
-                                 (currentMonth.cogsContractors || 0) + (currentMonth.cogsMaterials || 0) +
-                                 (currentMonth.cogsCommissions || 0) + (currentMonth.cogsOther || 0) +
-                                 payroll + ownerBasePay + ownersRetirement + subcontractors +
-                                 salesExpense + rent + infrastructure + autoTravel +
-                                 professionalFees + insurance + marketing + depreciationAmortization +
-                                 (currentMonth.interestExpense || 0) + (currentMonth.otherExpense || 0);
+                // Calculate total operating expenses including all expense fields from DataReviewTab
+                const totalOpex = payroll + benefits + insurance + professionalFees + subcontractors +
+                                 rent + taxLicense + phoneComm + infrastructure + autoTravel +
+                                 salesExpense + marketing + mealsEntertainment + otherExpense;
 
                 const operatingIncome = grossProfit - totalOpex;
                 const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -15854,16 +15852,16 @@ function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {ownerBasePay > 0 && (
+                        {benefits > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                            <span style={{ color: '#475569' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>Benefits</span>
+                            <span style={{ color: '#475569' }}>${benefits.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {ownersRetirement > 0 && (
+                        {insurance > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Owner's Retirement</span>
-                            <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            <span style={{ color: '#475569' }}>Insurance</span>
+                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {professionalFees > 0 && (
@@ -15872,15 +15870,33 @@ function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
+                        {subcontractors > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Subcontractors</span>
+                            <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
                         {rent > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Rent/Lease</span>
                             <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
+                        {taxLicense > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Tax & License</span>
+                            <span style={{ color: '#475569' }}>${taxLicense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
+                        {phoneComm > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Phone & Communication</span>
+                            <span style={{ color: '#475569' }}>${phoneComm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
                         {infrastructure > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Infrastructure</span>
+                            <span style={{ color: '#475569' }}>Infrastructure/Utilities</span>
                             <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
@@ -15890,34 +15906,28 @@ function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {insurance > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Insurance</span>
-                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
                         {salesExpense > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Sales & Marketing</span>
                             <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        {subcontractors > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Contractors Distribution</span>
-                            <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {depreciationAmortization > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                            <span style={{ color: '#475569' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
                         {marketing > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Other Operating Expenses</span>
+                            <span style={{ color: '#475569' }}>Marketing</span>
                             <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
+                        {mealsEntertainment > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Meals & Entertainment</span>
+                            <span style={{ color: '#475569' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
+                        {otherExpense > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Other Expenses</span>
+                            <span style={{ color: '#475569' }}>${otherExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -15998,28 +16008,26 @@ function FinancialScorePage() {
                 const grossProfit = revenue - cogs;
                 const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
-                // Operating Expenses
+                // Operating Expenses - All fields that have data from DataReviewTab
                 const payroll = currentMonth.payroll || 0;
-                const ownerBasePay = currentMonth.ownerBasePay || 0;
-                const ownersRetirement = currentMonth.ownersRetirement || 0;
+                const benefits = currentMonth.benefits || 0;
+                const insurance = currentMonth.insurance || 0;
                 const professionalFees = currentMonth.professionalFees || 0;
+                const subcontractors = currentMonth.subcontractors || 0;
                 const rent = currentMonth.rent || 0;
+                const taxLicense = currentMonth.taxLicense || 0;
+                const phoneComm = currentMonth.phoneComm || 0;
                 const infrastructure = currentMonth.infrastructure || 0;
                 const autoTravel = currentMonth.autoTravel || 0;
-                const insurance = currentMonth.insurance || 0;
                 const salesExpense = currentMonth.salesExpense || 0;
-                const subcontractors = currentMonth.subcontractors || 0;
-                const depreciationAmortization = currentMonth.depreciationAmortization || 0;
                 const marketing = currentMonth.marketing || 0;
+                const mealsEntertainment = currentMonth.mealsEntertainment || 0;
+                const otherExpense = currentMonth.otherExpense || 0;
 
-                // Calculate total operating expenses including all possible expense fields
-                const totalOpex = (currentMonth.cogsPayroll || 0) + (currentMonth.cogsOwnerPay || 0) +
-                                 (currentMonth.cogsContractors || 0) + (currentMonth.cogsMaterials || 0) +
-                                 (currentMonth.cogsCommissions || 0) + (currentMonth.cogsOther || 0) +
-                                 payroll + ownerBasePay + ownersRetirement + subcontractors +
-                                 salesExpense + rent + infrastructure + autoTravel +
-                                 professionalFees + insurance + marketing + depreciationAmortization +
-                                 (currentMonth.interestExpense || 0) + (currentMonth.otherExpense || 0);
+                // Calculate total operating expenses including all expense fields from DataReviewTab
+                const totalOpex = payroll + benefits + insurance + professionalFees + subcontractors +
+                                 rent + taxLicense + phoneComm + infrastructure + autoTravel +
+                                 salesExpense + marketing + mealsEntertainment + otherExpense;
 
                 const operatingIncome = grossProfit - totalOpex;
                 const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -16129,18 +16137,18 @@ function FinancialScorePage() {
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(payroll).toFixed(1)}%</span>
                         </div>
                       )}
-                      {ownerBasePay > 0 && (
+                      {benefits > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner's Base Pay</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownerBasePay).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Benefits</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${benefits.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(benefits).toFixed(1)}%</span>
                         </div>
                       )}
-                      {ownersRetirement > 0 && (
+                      {insurance > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner's Retirement</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownersRetirement).toFixed(1)}%</span>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Insurance</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(insurance).toFixed(1)}%</span>
                         </div>
                       )}
                       {professionalFees > 0 && (
@@ -16150,6 +16158,13 @@ function FinancialScorePage() {
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
                         </div>
                       )}
+                      {subcontractors > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Subcontractors</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
+                        </div>
+                      )}
                       {rent > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Rent/Lease</span>
@@ -16157,9 +16172,23 @@ function FinancialScorePage() {
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rent).toFixed(1)}%</span>
                         </div>
                       )}
+                      {taxLicense > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Tax & License</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${taxLicense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(taxLicense).toFixed(1)}%</span>
+                        </div>
+                      )}
+                      {phoneComm > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Phone & Communication</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${phoneComm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(phoneComm).toFixed(1)}%</span>
+                        </div>
+                      )}
                       {infrastructure > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure</span>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure/Utilities</span>
                           <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(infrastructure).toFixed(1)}%</span>
                         </div>
@@ -16171,13 +16200,6 @@ function FinancialScorePage() {
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(autoTravel).toFixed(1)}%</span>
                         </div>
                       )}
-                      {insurance > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Insurance</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(insurance).toFixed(1)}%</span>
-                        </div>
-                      )}
                       {salesExpense > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Sales & Marketing</span>
@@ -16185,25 +16207,25 @@ function FinancialScorePage() {
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(salesExpense).toFixed(1)}%</span>
                         </div>
                       )}
-                      {subcontractors > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Contractors Distribution</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {depreciationAmortization > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Depreciation & Amortization</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(depreciationAmortization).toFixed(1)}%</span>
-                        </div>
-                      )}
                       {marketing > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Operating Expenses</span>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Marketing</span>
                           <span style={{ color: '#475569', textAlign: 'right' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           <span style={{ color: '#475569', textAlign: 'right' }}>{pct(marketing).toFixed(1)}%</span>
+                        </div>
+                      )}
+                      {mealsEntertainment > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Meals & Entertainment</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(mealsEntertainment).toFixed(1)}%</span>
+                        </div>
+                      )}
+                      {otherExpense > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Expenses</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>${otherExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(otherExpense).toFixed(1)}%</span>
                         </div>
                       )}
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -16610,9 +16632,9 @@ function FinancialScorePage() {
               };
               
               const displayPeriods = groupMonthsByDisplay();
-              
+
               // INCOME STATEMENT - Aggregate across period
-              if (statementType === 'income-statement') {
+              if (statementType === 'income-statement' || statementType === 'income-statement-percent') {
                 // Check if showing multiple periods side-by-side
                 if (displayPeriods.length > 1) {
                   const calc = (months: any[], field: string) => months.reduce((sum, m) => sum + (m[field] || 0), 0);
@@ -16630,13 +16652,11 @@ function FinancialScorePage() {
                     const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
                     const grossProfit = revenue - cogs;
 
-                    // Dynamically calculate all expense fields
+                    // Dynamically calculate operating expense fields only
                     const expenseFields = [
-                      'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                      'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors',
-                      'salesExpense', 'rent', 'infrastructure', 'autoTravel',
-                      'professionalFees', 'insurance', 'marketing', 'interestExpense',
-                      'depreciationAmortization', 'otherExpense'
+                      'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
+                      'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
+                      'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
                     ];
 
                     const expenses: { [key: string]: number } = {};
@@ -16660,19 +16680,40 @@ function FinancialScorePage() {
                       totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome
                     };
                   });
+
+                  // Helper function for percentage calculations
+                  const isPercentMode = statementType === 'income-statement-percent';
+                  const formatValue = (value: number, revenue: number) => {
+                    if (isPercentMode) {
+                      const pct = revenue > 0 ? (value / revenue) * 100 : 0;
+                      return `${pct.toFixed(1)}%`;
+                    }
+                    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                  };
+
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                       <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
-                      {values.map((v: number, i: number) => (
-                        <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                      ))}
+                      {values.map((v: number, i: number) => {
+                        const revenue = periodsData[i].revenue;
+                        return (
+                          <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>
+                            {formatValue(v, revenue)}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                   return (
                     <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
                       <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Income Statement</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
+                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
+                          {isPercentMode ? 'Comparative Income Statement - Common Size Analysis' : 'Comparative Income Statement'}
+                        </h2>
+                        <div style={{ fontSize: '14px', color: '#64748b' }}>
+                          {periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}
+                          {isPercentMode ? ' - All items shown as % of Revenue' : ''}
+                        </div>
                       </div>
                       <div style={{ minWidth: `${200 + (periodsData.length * 110)}px` }}>
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', fontSize: '13px' }}>
@@ -16683,33 +16724,26 @@ function FinancialScorePage() {
                         <Row label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Gross Profit</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
+                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{formatValue(p.grossProfit, p.revenue)}</div>)}
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
                         {(() => {
                           // Define all possible expense fields with their display names
                           const expenseFieldDefinitions = [
-                            // COGS Breakdown
-                            { key: 'cogsPayroll', label: 'COGS - Payroll' },
-                            { key: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-                            { key: 'cogsContractors', label: 'COGS - Contractors' },
-                            { key: 'cogsMaterials', label: 'COGS - Materials' },
-                            { key: 'cogsCommissions', label: 'COGS - Commissions' },
-                            { key: 'cogsOther', label: 'COGS - Other' },
-                            // Operating Expenses
+                            // Operating Expenses - Complete list in correct order
                             { key: 'payroll', label: 'Payroll' },
-                            { key: 'ownerBasePay', label: 'Owner Base Pay' },
-                            { key: 'ownersRetirement', label: "Owner's Retirement" },
+                            { key: 'benefits', label: 'Benefits' },
+                            { key: 'insurance', label: 'Insurance' },
+                            { key: 'professionalFees', label: 'Professional Services' },
                             { key: 'subcontractors', label: 'Subcontractors' },
-                            { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'rent', label: 'Rent/Lease' },
+                            { key: 'taxLicense', label: 'Tax & License' },
+                            { key: 'phoneComm', label: 'Phone & Communication' },
                             { key: 'infrastructure', label: 'Infrastructure/Utilities' },
                             { key: 'autoTravel', label: 'Auto & Travel' },
-                            { key: 'professionalFees', label: 'Professional Services' },
-                            { key: 'insurance', label: 'Insurance' },
+                            { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'marketing', label: 'Marketing' },
-                            { key: 'interestExpense', label: 'Interest Expense' },
-                            { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+                            { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
                             { key: 'otherExpense', label: 'Other Expenses' }
                           ];
 
@@ -16732,7 +16766,7 @@ function FinancialScorePage() {
                         <Row label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Operating Income</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>${p.operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>)}
+                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{formatValue(p.operatingIncome, p.revenue)}</div>)}
                         </div>
                         {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
                           <>
@@ -16744,11 +16778,14 @@ function FinancialScorePage() {
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
-                          {periodsData.map((p, i) => (
-                            <div key={i} style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                              {p.netIncome >= 0 ? '$' : '($'}{Math.abs(p.netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.netIncome < 0 ? ')' : ''}
-                            </div>
-                          ))}
+                          {periodsData.map((p, i) => {
+                            const formattedValue = formatValue(Math.abs(p.netIncome), p.revenue);
+                            return (
+                              <div key={i} style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
+                                {p.netIncome >= 0 ? (isPercentMode ? formattedValue : '$' + formattedValue.slice(1)) : `(${formattedValue})`}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -17017,13 +17054,11 @@ function FinancialScorePage() {
                       const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
                       const grossProfit = revenue - cogs;
 
-                      // Dynamically calculate all expense fields
+                      // Dynamically calculate operating expense fields only
                       const expenseFields = [
-                        'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                        'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors',
-                        'salesExpense', 'rent', 'infrastructure', 'autoTravel',
-                        'professionalFees', 'insurance', 'marketing', 'interestExpense',
-                        'depreciationAmortization', 'otherExpense'
+                        'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
+                        'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
+                        'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
                       ];
 
                       const expenses: { [key: string]: number } = {};
@@ -17095,27 +17130,20 @@ function FinancialScorePage() {
                           {(() => {
                             // Define all possible expense fields with their display names
                             const expenseFieldDefinitions = [
-                              // COGS Breakdown
-                              { key: 'cogsPayroll', label: 'COGS - Payroll' },
-                              { key: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-                              { key: 'cogsContractors', label: 'COGS - Contractors' },
-                              { key: 'cogsMaterials', label: 'COGS - Materials' },
-                              { key: 'cogsCommissions', label: 'COGS - Commissions' },
-                              { key: 'cogsOther', label: 'COGS - Other' },
-                              // Operating Expenses
+                              // Operating Expenses - Complete list in correct order
                               { key: 'payroll', label: 'Payroll' },
-                              { key: 'ownerBasePay', label: 'Owner Base Pay' },
-                              { key: 'ownersRetirement', label: "Owner's Retirement" },
+                              { key: 'benefits', label: 'Benefits' },
+                              { key: 'insurance', label: 'Insurance' },
+                              { key: 'professionalFees', label: 'Professional Services' },
                               { key: 'subcontractors', label: 'Subcontractors' },
-                              { key: 'salesExpense', label: 'Sales & Marketing' },
                               { key: 'rent', label: 'Rent/Lease' },
+                              { key: 'taxLicense', label: 'Tax & License' },
+                              { key: 'phoneComm', label: 'Phone & Communication' },
                               { key: 'infrastructure', label: 'Infrastructure/Utilities' },
                               { key: 'autoTravel', label: 'Auto & Travel' },
-                              { key: 'professionalFees', label: 'Professional Services' },
-                              { key: 'insurance', label: 'Insurance' },
+                              { key: 'salesExpense', label: 'Sales & Marketing' },
                               { key: 'marketing', label: 'Marketing' },
-                              { key: 'interestExpense', label: 'Interest Expense' },
-                              { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+                              { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
                               { key: 'otherExpense', label: 'Other Expenses' }
                             ];
 
@@ -18804,28 +18832,26 @@ function FinancialScorePage() {
               const grossProfit = revenue - cogs;
               const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
-              // Operating Expenses
+              // Operating Expenses - All fields that have data from DataReviewTab
               const payroll = currentMonth.payroll || 0;
-              const ownerBasePay = currentMonth.ownerBasePay || 0;
-              const ownersRetirement = currentMonth.ownersRetirement || 0;
+              const benefits = currentMonth.benefits || 0;
+              const insurance = currentMonth.insurance || 0;
               const professionalFees = currentMonth.professionalFees || 0;
+              const subcontractors = currentMonth.subcontractors || 0;
               const rent = currentMonth.rent || 0;
+              const taxLicense = currentMonth.taxLicense || 0;
+              const phoneComm = currentMonth.phoneComm || 0;
               const infrastructure = currentMonth.infrastructure || 0;
               const autoTravel = currentMonth.autoTravel || 0;
-              const insurance = currentMonth.insurance || 0;
               const salesExpense = currentMonth.salesExpense || 0;
-              const subcontractors = currentMonth.subcontractors || 0;
-              const depreciationAmortization = currentMonth.depreciationAmortization || 0;
               const marketing = currentMonth.marketing || 0;
+              const mealsEntertainment = currentMonth.mealsEntertainment || 0;
+              const otherExpense = currentMonth.otherExpense || 0;
 
-              // Calculate total operating expenses including all possible expense fields
-              const totalOpex = (currentMonth.cogsPayroll || 0) + (currentMonth.cogsOwnerPay || 0) +
-                               (currentMonth.cogsContractors || 0) + (currentMonth.cogsMaterials || 0) +
-                               (currentMonth.cogsCommissions || 0) + (currentMonth.cogsOther || 0) +
-                               payroll + ownerBasePay + ownersRetirement + subcontractors +
-                               salesExpense + rent + infrastructure + autoTravel +
-                               professionalFees + insurance + marketing + depreciationAmortization +
-                               (currentMonth.interestExpense || 0) + (currentMonth.otherExpense || 0);
+              // Calculate total operating expenses including all expense fields from DataReviewTab
+              const totalOpex = payroll + benefits + insurance + professionalFees + subcontractors +
+                               rent + taxLicense + phoneComm + infrastructure + autoTravel +
+                               salesExpense + marketing + mealsEntertainment + otherExpense;
 
               const operatingIncome = grossProfit - totalOpex;
               const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -18915,27 +18941,20 @@ function FinancialScorePage() {
                     {(() => {
                       // Define all possible expense fields with their display names
                       const expenseFields = [
-                        // COGS Breakdown
-                        { key: 'cogsPayroll', label: 'COGS Payroll' },
-                        { key: 'cogsOwnerPay', label: 'COGS Owner Pay' },
-                        { key: 'cogsContractors', label: 'COGS Contractors' },
-                        { key: 'cogsMaterials', label: 'COGS Materials' },
-                        { key: 'cogsCommissions', label: 'COGS Commissions' },
-                        { key: 'cogsOther', label: 'COGS Other' },
-                        // Operating Expenses
+                        // Operating Expenses - Complete list in correct order
                         { key: 'payroll', label: 'Payroll' },
-                        { key: 'ownerBasePay', label: 'Owner Base Pay' },
-                        { key: 'ownersRetirement', label: "Owner's Retirement" },
-                        { key: 'subcontractors', label: 'Subcontractors' },
-                        { key: 'salesExpense', label: 'Sales & Marketing' },
-                        { key: 'rent', label: 'Rent/Lease' },
-                        { key: 'infrastructure', label: 'Infrastructure' },
-                        { key: 'autoTravel', label: 'Auto & Travel' },
-                        { key: 'professionalFees', label: 'Professional Services' },
+                        { key: 'benefits', label: 'Benefits' },
                         { key: 'insurance', label: 'Insurance' },
+                        { key: 'professionalFees', label: 'Professional Services' },
+                        { key: 'subcontractors', label: 'Subcontractors' },
+                        { key: 'rent', label: 'Rent/Lease' },
+                        { key: 'taxLicense', label: 'Tax & License' },
+                        { key: 'phoneComm', label: 'Phone & Communication' },
+                        { key: 'infrastructure', label: 'Infrastructure/Utilities' },
+                        { key: 'autoTravel', label: 'Auto & Travel' },
+                        { key: 'salesExpense', label: 'Sales & Marketing' },
                         { key: 'marketing', label: 'Marketing' },
-                        { key: 'interestExpense', label: 'Interest Expense' },
-                        { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+                        { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
                         { key: 'otherExpense', label: 'Other Expenses' }
                       ];
 
@@ -19040,23 +19059,22 @@ function FinancialScorePage() {
               const grossProfit = revenue - cogs;
               const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
               
-              // Operating Expenses
+              // Operating Expenses - All fields that have data from DataReviewTab
               const payroll = currentMonth.payroll || 0;
-              const ownerBasePay = currentMonth.ownerBasePay || 0;
-              const ownersRetirement = currentMonth.ownersRetirement || 0;
+              const benefits = currentMonth.benefits || 0;
+              const insurance = currentMonth.insurance || 0;
               const professionalFees = currentMonth.professionalFees || 0;
+              const subcontractors = currentMonth.subcontractors || 0;
               const rent = currentMonth.rent || 0;
+              const taxLicense = currentMonth.taxLicense || 0;
+              const phoneComm = currentMonth.phoneComm || 0;
               const infrastructure = currentMonth.infrastructure || 0;
               const autoTravel = currentMonth.autoTravel || 0;
-              const insurance = currentMonth.insurance || 0;
               const salesExpense = currentMonth.salesExpense || 0;
-              const subcontractors = currentMonth.subcontractors || 0;
-              const depreciationAmortization = currentMonth.depreciationAmortization || 0;
               const marketing = currentMonth.marketing || 0;
-              
-              // const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees +
-              //                  rent + infrastructure + autoTravel + insurance +
-              //                  salesExpense + subcontractors + depreciationAmortization + marketing;
+              const mealsEntertainment = currentMonth.mealsEntertainment || 0;
+              const otherExpense = currentMonth.otherExpense || 0;
+
               // totalOpex is now calculated dynamically in the expense rendering section
               const totalOpex = 0; // Placeholder - calculated dynamically below
               
@@ -19168,53 +19186,11 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(payroll).toFixed(1)}%</span>
                       </div>
                     )}
-                    {ownerBasePay > 0 && (
+                    {benefits > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner's Base Pay</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownerBasePay).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {ownersRetirement > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner's Retirement</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownersRetirement).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {professionalFees > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Professional Services</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {rent > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Rent/Lease</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rent).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {infrastructure > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(utilities).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {infrastructure > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(equipment).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {autoTravel > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Auto & Travel</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(travel).toFixed(1)}%</span>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Benefits</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${benefits.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(benefits).toFixed(1)}%</span>
                       </div>
                     )}
                     {insurance > 0 && (
@@ -19224,6 +19200,55 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(insurance).toFixed(1)}%</span>
                       </div>
                     )}
+                    {professionalFees > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Professional Services</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {subcontractors > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Subcontractors</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {rent > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Rent/Lease</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rent).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {taxLicense > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Tax & License</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${taxLicense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(taxLicense).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {phoneComm > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Phone & Communication</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${phoneComm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(phoneComm).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {infrastructure > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure/Utilities</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(infrastructure).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {autoTravel > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Auto & Travel</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(autoTravel).toFixed(1)}%</span>
+                      </div>
+                    )}
                     {salesExpense > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Sales & Marketing</span>
@@ -19231,25 +19256,25 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(salesExpense).toFixed(1)}%</span>
                       </div>
                     )}
-                    {subcontractors > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Contractors Distribution</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {depreciationAmortization > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Depreciation & Amortization</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(depreciationAmortization).toFixed(1)}%</span>
-                      </div>
-                    )}
                     {marketing > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Operating Expenses</span>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Marketing</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(marketing).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {mealsEntertainment > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Meals & Entertainment</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(mealsEntertainment).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {otherExpense > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Expenses</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${otherExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(otherExpense).toFixed(1)}%</span>
                       </div>
                     )}
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
@@ -19690,13 +19715,11 @@ function FinancialScorePage() {
                   const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
                   const grossProfit = revenue - cogs;
 
-                  // Dynamically calculate all expense fields
+                  // Dynamically calculate operating expense fields only
                   const expenseFields = [
-                    'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                    'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors',
-                    'salesExpense', 'rent', 'infrastructure', 'autoTravel',
-                    'professionalFees', 'insurance', 'marketing', 'interestExpense',
-                    'depreciationAmortization', 'otherExpense'
+                    'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
+                    'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
+                    'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
                   ];
 
                   const expenses: { [key: string]: number } = {};
@@ -19836,27 +19859,20 @@ function FinancialScorePage() {
                         {(() => {
                           // Define all possible expense fields with their display names
                           const expenseFieldDefinitions = [
-                            // COGS Breakdown
-                            { key: 'cogsPayroll', label: 'COGS - Payroll' },
-                            { key: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-                            { key: 'cogsContractors', label: 'COGS - Contractors' },
-                            { key: 'cogsMaterials', label: 'COGS - Materials' },
-                            { key: 'cogsCommissions', label: 'COGS - Commissions' },
-                            { key: 'cogsOther', label: 'COGS - Other' },
-                            // Operating Expenses
+                            // Operating Expenses - Complete list in correct order
                             { key: 'payroll', label: 'Payroll' },
-                            { key: 'ownerBasePay', label: 'Owner Base Pay' },
-                            { key: 'ownersRetirement', label: "Owner's Retirement" },
+                            { key: 'benefits', label: 'Benefits' },
+                            { key: 'insurance', label: 'Insurance' },
+                            { key: 'professionalFees', label: 'Professional Services' },
                             { key: 'subcontractors', label: 'Subcontractors' },
-                            { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'rent', label: 'Rent/Lease' },
+                            { key: 'taxLicense', label: 'Tax & License' },
+                            { key: 'phoneComm', label: 'Phone & Communication' },
                             { key: 'infrastructure', label: 'Infrastructure/Utilities' },
                             { key: 'autoTravel', label: 'Auto & Travel' },
-                            { key: 'professionalFees', label: 'Professional Services' },
-                            { key: 'insurance', label: 'Insurance' },
+                            { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'marketing', label: 'Marketing' },
-                            { key: 'interestExpense', label: 'Interest Expense' },
-                            { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+                            { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
                             { key: 'otherExpense', label: 'Other Expenses' }
                           ];
 
@@ -20277,27 +20293,20 @@ function FinancialScorePage() {
                         {(() => {
                           // Define all possible expense fields with their display names
                           const expenseFieldDefinitions = [
-                            // COGS Breakdown
-                            { key: 'cogsPayroll', label: 'COGS - Payroll' },
-                            { key: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-                            { key: 'cogsContractors', label: 'COGS - Contractors' },
-                            { key: 'cogsMaterials', label: 'COGS - Materials' },
-                            { key: 'cogsCommissions', label: 'COGS - Commissions' },
-                            { key: 'cogsOther', label: 'COGS - Other' },
-                            // Operating Expenses
+                            // Operating Expenses - Complete list in correct order
                             { key: 'payroll', label: 'Payroll' },
-                            { key: 'ownerBasePay', label: 'Owner Base Pay' },
-                            { key: 'ownersRetirement', label: "Owner's Retirement" },
+                            { key: 'benefits', label: 'Benefits' },
+                            { key: 'insurance', label: 'Insurance' },
+                            { key: 'professionalFees', label: 'Professional Services' },
                             { key: 'subcontractors', label: 'Subcontractors' },
-                            { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'rent', label: 'Rent/Lease' },
+                            { key: 'taxLicense', label: 'Tax & License' },
+                            { key: 'phoneComm', label: 'Phone & Communication' },
                             { key: 'infrastructure', label: 'Infrastructure/Utilities' },
                             { key: 'autoTravel', label: 'Auto & Travel' },
-                            { key: 'professionalFees', label: 'Professional Services' },
-                            { key: 'insurance', label: 'Insurance' },
+                            { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'marketing', label: 'Marketing' },
-                            { key: 'interestExpense', label: 'Interest Expense' },
-                            { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+                            { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
                             { key: 'otherExpense', label: 'Other Expenses' }
                           ];
 
@@ -20369,13 +20378,11 @@ function FinancialScorePage() {
                 
                 const grossProfit = revenue - cogs;
 
-                // Dynamically calculate all expense fields
+                // Dynamically calculate operating expense fields only - Complete list matching DataReviewTab
                 const expenseFields = [
-                  'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                  'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors',
-                  'salesExpense', 'rent', 'infrastructure', 'autoTravel',
-                  'professionalFees', 'insurance', 'marketing', 'interestExpense',
-                  'depreciationAmortization', 'otherExpense'
+                  'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
+                  'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
+                  'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
                 ];
 
                 const expenses: { [key: string]: number } = {};
@@ -20482,27 +20489,20 @@ function FinancialScorePage() {
                         {(() => {
                           // Define all possible expense fields with their display names
                           const expenseFieldDefinitions = [
-                            // COGS Breakdown
-                            { key: 'cogsPayroll', label: 'COGS - Payroll' },
-                            { key: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-                            { key: 'cogsContractors', label: 'COGS - Contractors' },
-                            { key: 'cogsMaterials', label: 'COGS - Materials' },
-                            { key: 'cogsCommissions', label: 'COGS - Commissions' },
-                            { key: 'cogsOther', label: 'COGS - Other' },
-                            // Operating Expenses
+                            // Operating Expenses - Complete list in correct order
                             { key: 'payroll', label: 'Payroll' },
-                            { key: 'ownerBasePay', label: 'Owner Base Pay' },
-                            { key: 'ownersRetirement', label: "Owner's Retirement" },
+                            { key: 'benefits', label: 'Benefits' },
+                            { key: 'insurance', label: 'Insurance' },
+                            { key: 'professionalFees', label: 'Professional Services' },
                             { key: 'subcontractors', label: 'Subcontractors' },
-                            { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'rent', label: 'Rent/Lease' },
+                            { key: 'taxLicense', label: 'Tax & License' },
+                            { key: 'phoneComm', label: 'Phone & Communication' },
                             { key: 'infrastructure', label: 'Infrastructure/Utilities' },
                             { key: 'autoTravel', label: 'Auto & Travel' },
-                            { key: 'professionalFees', label: 'Professional Services' },
-                            { key: 'insurance', label: 'Insurance' },
+                            { key: 'salesExpense', label: 'Sales & Marketing' },
                             { key: 'marketing', label: 'Marketing' },
-                            { key: 'interestExpense', label: 'Interest Expense' },
-                            { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+                            { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
                             { key: 'otherExpense', label: 'Other Expenses' }
                           ];
 
