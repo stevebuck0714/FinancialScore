@@ -1701,9 +1701,15 @@ export default function SiteAdminDashboard(props: any) {
                                           alert('Please enter a code');
                                           return;
                                         }
+                                        // Allow 0 as valid pricing
                                         if (newAffiliateCode.monthlyPrice === null || newAffiliateCode.monthlyPrice === undefined || newAffiliateCode.monthlyPrice === '' ||
                                             newAffiliateCode.quarterlyPrice === null || newAffiliateCode.quarterlyPrice === undefined || newAffiliateCode.quarterlyPrice === '' ||
                                             newAffiliateCode.annualPrice === null || newAffiliateCode.annualPrice === undefined || newAffiliateCode.annualPrice === '') {
+                                          console.log('Validation failed - missing pricing:', {
+                                            monthly: newAffiliateCode.monthlyPrice,
+                                            quarterly: newAffiliateCode.quarterlyPrice,
+                                            annual: newAffiliateCode.annualPrice
+                                          });
                                           alert('Please enter all pricing fields');
                                           return;
                                         }
@@ -1823,7 +1829,6 @@ export default function SiteAdminDashboard(props: any) {
                                                     console.log('Monthly price input changed:', { value, numValue, isNaN: isNaN(numValue) });
                                                     setEditingAffiliateCode({...editingAffiliateCode, monthlyPrice: numValue});
                                                   }}
-                                                  step="0.01"
                                                   min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
@@ -1840,7 +1845,6 @@ export default function SiteAdminDashboard(props: any) {
                                                     const numValue = value === '' ? '' : parseFloat(value);
                                                     setEditingAffiliateCode({...editingAffiliateCode, quarterlyPrice: numValue});
                                                   }}
-                                                  step="0.01"
                                                   min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
@@ -1857,7 +1861,6 @@ export default function SiteAdminDashboard(props: any) {
                                                     const numValue = value === '' ? '' : parseFloat(value);
                                                     setEditingAffiliateCode({...editingAffiliateCode, annualPrice: numValue});
                                                   }}
-                                                  step="0.01"
                                                   min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
@@ -1872,6 +1875,7 @@ export default function SiteAdminDashboard(props: any) {
                                               </button>
                                               <button
                                                 onClick={async () => {
+                                                  console.log('Submitting affiliate code update:', editingAffiliateCode);
                                                   try {
                                                     const response = await fetch('/api/affiliates/codes', {
                                                       method: 'PUT',
@@ -1880,6 +1884,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     });
 
                                                     const data = await response.json();
+                                                    console.log('API response:', data);
                                                     if (!response.ok) {
                                                       alert(data.error || 'Failed to update code');
                                                       return;
