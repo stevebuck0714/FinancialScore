@@ -2294,7 +2294,10 @@ function FinancialScorePage() {
       
       // Automatically select the newly created company
       setSelectedCompanyId(company.id);
-      
+
+      // Redirect to payments tab for new company setup
+      setAdminDashboardTab('payments');
+
       alert('Company created successfully!');
     } catch (error) {
       console.error('Error creating company:', error);

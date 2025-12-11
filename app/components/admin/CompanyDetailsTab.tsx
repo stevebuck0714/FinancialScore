@@ -225,7 +225,7 @@ export default function CompanyDetailsTab({
               </div>
 
               <button
-                onClick={() => setShowCompanyDetailsModal(true)}
+                onClick={addCompany}
                 disabled={isLoading || !newCompanyName.trim()}
                 style={{
                   padding: "12px 24px",
