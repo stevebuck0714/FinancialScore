@@ -87,16 +87,9 @@ export async function DELETE(
 
     console.log(`Processing delete for company ${companyId} in ${process.env.NODE_ENV} environment (VERCEL_ENV: ${process.env.VERCEL_ENV})`);
 
-    // PRODUCTION: Always return success for UI compatibility
-    if (process.env.VERCEL_ENV === 'production') {
-      console.log('Production: Skipping database operation, returning success for UI');
-      return NextResponse.json({
-        success: true,
-        message: 'Company has been removed from your dashboard.',
-        hidden: true,
-        note: 'Operation completed for UI compatibility'
-      });
-    }
+    // PRODUCTION: Actually delete companies from database (same as staging)
+    console.log('Production: Actually deleting company from database');
+    // Continue with deletion logic below
 
     // STAGING/PREVIEW/DEV: Actually delete the company from database
     console.log(`🔥 STAGING/DEV: Actually deleting company ${companyId} from database`);
