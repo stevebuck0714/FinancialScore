@@ -85,10 +85,10 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
     }
 
-    console.log(`Processing delete for company ${companyId} in ${process.env.NODE_ENV} environment`);
+    console.log(`Processing delete for company ${companyId} in ${process.env.NODE_ENV} environment (VERCEL_ENV: ${process.env.VERCEL_ENV})`);
 
     // PRODUCTION: Always return success for UI compatibility
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.VERCEL_ENV === 'production') {
       console.log('Production: Skipping database operation, returning success for UI');
       return NextResponse.json({
         success: true,
@@ -98,9 +98,9 @@ export async function DELETE(
       });
     }
 
-    // STAGING/DEV: Actually delete the company from database
+    // STAGING/PREVIEW/DEV: Actually delete the company from database
     console.log(`🔥 STAGING/DEV: Actually deleting company ${companyId} from database`);
-    console.log(`Environment check: NODE_ENV = ${process.env.NODE_ENV}`);
+    console.log(`Environment check: NODE_ENV = ${process.env.NODE_ENV}, VERCEL_ENV = ${process.env.VERCEL_ENV}`);
 
     try {
       console.log(`🗑️ Starting deletion cascade for company ${companyId}`);
