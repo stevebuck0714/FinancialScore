@@ -1665,6 +1665,7 @@ export default function SiteAdminDashboard(props: any) {
                                         onChange={(e) => setNewAffiliateCode({...newAffiliateCode, monthlyPrice: e.target.value})}
                                         placeholder="0.00"
                                         step="0.01"
+                                        min="0"
                                         style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                       />
                                     </div>
@@ -1816,8 +1817,14 @@ export default function SiteAdminDashboard(props: any) {
                                                 <input
                                                   type="number"
                                                   value={editingAffiliateCode.monthlyPrice || ''}
-                                                  onChange={(e) => setEditingAffiliateCode({...editingAffiliateCode, monthlyPrice: parseFloat(e.target.value)})}
+                                                  onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    const numValue = value === '' ? '' : parseFloat(value);
+                                                    console.log('Monthly price input changed:', { value, numValue, isNaN: isNaN(numValue) });
+                                                    setEditingAffiliateCode({...editingAffiliateCode, monthlyPrice: numValue});
+                                                  }}
                                                   step="0.01"
+                                                  min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
                                               </div>
@@ -1828,8 +1835,13 @@ export default function SiteAdminDashboard(props: any) {
                                                 <input
                                                   type="number"
                                                   value={editingAffiliateCode.quarterlyPrice || ''}
-                                                  onChange={(e) => setEditingAffiliateCode({...editingAffiliateCode, quarterlyPrice: parseFloat(e.target.value)})}
+                                                  onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    const numValue = value === '' ? '' : parseFloat(value);
+                                                    setEditingAffiliateCode({...editingAffiliateCode, quarterlyPrice: numValue});
+                                                  }}
                                                   step="0.01"
+                                                  min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
                                               </div>
@@ -1840,8 +1852,13 @@ export default function SiteAdminDashboard(props: any) {
                                                 <input
                                                   type="number"
                                                   value={editingAffiliateCode.annualPrice || ''}
-                                                  onChange={(e) => setEditingAffiliateCode({...editingAffiliateCode, annualPrice: parseFloat(e.target.value)})}
+                                                  onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    const numValue = value === '' ? '' : parseFloat(value);
+                                                    setEditingAffiliateCode({...editingAffiliateCode, annualPrice: numValue});
+                                                  }}
                                                   step="0.01"
+                                                  min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
                                               </div>
