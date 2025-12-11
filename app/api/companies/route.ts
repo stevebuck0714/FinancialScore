@@ -275,6 +275,8 @@ export async function POST(request: NextRequest) {
           quarterlyPrice,
           annualPrice,
           affiliateId,
+          affiliateCode: validatedAffiliateCode,
+          isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0
         });
       } catch (affiliateError) {
         console.error(
@@ -306,6 +308,7 @@ export async function POST(request: NextRequest) {
     if (affiliateCode && !useAffiliatePricing) {
       console.error(
         "❌ Affiliate code provided but validation failed silently",
+        { affiliateCode, monthlyPrice, quarterlyPrice, annualPrice }
       );
       return NextResponse.json(
         { error: `Invalid affiliate code: ${affiliateCode}` },
@@ -411,40 +414,31 @@ export async function POST(request: NextRequest) {
           addressZip,
           addressCountry,
           industrySector,
-          // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES USED ONLY FOR LOOKUP
-          // Store in dedicated fields only if they exist (staging), always use JSON backup
-          ...(process.env.NODE_ENV === "production"
-            ? {}
-            : {
-                subscriptionMonthlyPrice: monthlyPrice,
-                subscriptionQuarterlyPrice: quarterlyPrice,
-                subscriptionAnnualPrice: annualPrice,
-                subscriptionStatus:
-                  monthlyPrice === 0 &&
-                  quarterlyPrice === 0 &&
-                  annualPrice === 0
-                    ? "free"
-                    : "active",
-              }),
-          // Store pricing in userDefinedAllocations only if not in production
-          // Production has database schema issues, so skip JSON storage too
-          ...(process.env.NODE_ENV === "production"
-            ? {}
-            : {
-                userDefinedAllocations: {
-                  subscriptionPricing: {
-                    monthly: monthlyPrice,
-                    quarterly: quarterlyPrice,
-                    annual: annualPrice,
-                    isFree:
-                      monthlyPrice === 0 &&
-                      quarterlyPrice === 0 &&
-                      annualPrice === 0,
-                    source: "affiliate_code",
-                    createdAt: new Date().toISOString(),
-                  },
-                },
-              }),
+          // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES WORK IN BOTH ENVIRONMENTS
+          // Always store pricing fields regardless of environment for affiliate codes
+          subscriptionMonthlyPrice: monthlyPrice,
+          subscriptionQuarterlyPrice: quarterlyPrice,
+          subscriptionAnnualPrice: annualPrice,
+          subscriptionStatus:
+            monthlyPrice === 0 &&
+            quarterlyPrice === 0 &&
+            annualPrice === 0
+              ? "free"
+              : "active",
+          // Store pricing in userDefinedAllocations for affiliate codes (works in all environments)
+          userDefinedAllocations: {
+            subscriptionPricing: {
+              monthly: monthlyPrice,
+              quarterly: quarterlyPrice,
+              annual: annualPrice,
+              isFree:
+                monthlyPrice === 0 &&
+                quarterlyPrice === 0 &&
+                annualPrice === 0,
+              source: "affiliate_code",
+              createdAt: new Date().toISOString(),
+            },
+          },
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },

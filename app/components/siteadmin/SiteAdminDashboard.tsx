@@ -1665,6 +1665,7 @@ export default function SiteAdminDashboard(props: any) {
                                         onChange={(e) => setNewAffiliateCode({...newAffiliateCode, monthlyPrice: e.target.value})}
                                         placeholder="0.00"
                                         step="0.01"
+                                        min="0"
                                         style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                       />
                                     </div>
@@ -1700,7 +1701,15 @@ export default function SiteAdminDashboard(props: any) {
                                           alert('Please enter a code');
                                           return;
                                         }
-                                        if (!newAffiliateCode.monthlyPrice || !newAffiliateCode.quarterlyPrice || !newAffiliateCode.annualPrice) {
+                                        // Allow 0 as valid pricing
+                                        if (newAffiliateCode.monthlyPrice === null || newAffiliateCode.monthlyPrice === undefined || newAffiliateCode.monthlyPrice === '' ||
+                                            newAffiliateCode.quarterlyPrice === null || newAffiliateCode.quarterlyPrice === undefined || newAffiliateCode.quarterlyPrice === '' ||
+                                            newAffiliateCode.annualPrice === null || newAffiliateCode.annualPrice === undefined || newAffiliateCode.annualPrice === '') {
+                                          console.log('Validation failed - missing pricing:', {
+                                            monthly: newAffiliateCode.monthlyPrice,
+                                            quarterly: newAffiliateCode.quarterlyPrice,
+                                            annual: newAffiliateCode.annualPrice
+                                          });
                                           alert('Please enter all pricing fields');
                                           return;
                                         }
@@ -1813,9 +1822,18 @@ export default function SiteAdminDashboard(props: any) {
                                                 </label>
                                                 <input
                                                   type="number"
-                                                  value={editingAffiliateCode.monthlyPrice || ''}
-                                                  onChange={(e) => setEditingAffiliateCode({...editingAffiliateCode, monthlyPrice: parseFloat(e.target.value)})}
-                                                  step="0.01"
+                                                  value={(() => {
+                                                    const displayValue = editingAffiliateCode.monthlyPrice === 0 ? '0' : (editingAffiliateCode.monthlyPrice || '');
+                                                    console.log('Monthly display value:', { raw: editingAffiliateCode.monthlyPrice, display: displayValue });
+                                                    return displayValue;
+                                                  })()}
+                                                  onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    const numValue = value === '' ? '' : parseFloat(value);
+                                                    console.log('Monthly price input changed:', { value, numValue, isNaN: isNaN(numValue) });
+                                                    setEditingAffiliateCode({...editingAffiliateCode, monthlyPrice: numValue});
+                                                  }}
+                                                  min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
                                               </div>
@@ -1825,9 +1843,13 @@ export default function SiteAdminDashboard(props: any) {
                                                 </label>
                                                 <input
                                                   type="number"
-                                                  value={editingAffiliateCode.quarterlyPrice || ''}
-                                                  onChange={(e) => setEditingAffiliateCode({...editingAffiliateCode, quarterlyPrice: parseFloat(e.target.value)})}
-                                                  step="0.01"
+                                                  value={editingAffiliateCode.quarterlyPrice === 0 ? '0' : (editingAffiliateCode.quarterlyPrice || '')}
+                                                  onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    const numValue = value === '' ? '' : parseFloat(value);
+                                                    setEditingAffiliateCode({...editingAffiliateCode, quarterlyPrice: numValue});
+                                                  }}
+                                                  min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
                                               </div>
@@ -1837,9 +1859,13 @@ export default function SiteAdminDashboard(props: any) {
                                                 </label>
                                                 <input
                                                   type="number"
-                                                  value={editingAffiliateCode.annualPrice || ''}
-                                                  onChange={(e) => setEditingAffiliateCode({...editingAffiliateCode, annualPrice: parseFloat(e.target.value)})}
-                                                  step="0.01"
+                                                  value={editingAffiliateCode.annualPrice === 0 ? '0' : (editingAffiliateCode.annualPrice || '')}
+                                                  onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    const numValue = value === '' ? '' : parseFloat(value);
+                                                    setEditingAffiliateCode({...editingAffiliateCode, annualPrice: numValue});
+                                                  }}
+                                                  min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                                 />
                                               </div>
@@ -1853,6 +1879,7 @@ export default function SiteAdminDashboard(props: any) {
                                               </button>
                                               <button
                                                 onClick={async () => {
+                                                  console.log('Submitting affiliate code update:', editingAffiliateCode);
                                                   try {
                                                     const response = await fetch('/api/affiliates/codes', {
                                                       method: 'PUT',
@@ -1861,6 +1888,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     });
 
                                                     const data = await response.json();
+                                                    console.log('API response:', data);
                                                     if (!response.ok) {
                                                       alert(data.error || 'Failed to update code');
                                                       return;
