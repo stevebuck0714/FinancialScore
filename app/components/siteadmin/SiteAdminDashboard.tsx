@@ -1822,7 +1822,11 @@ export default function SiteAdminDashboard(props: any) {
                                                 </label>
                                                 <input
                                                   type="number"
-                                                  value={editingAffiliateCode.monthlyPrice || ''}
+                                                  value={(() => {
+                                                    const displayValue = editingAffiliateCode.monthlyPrice === 0 ? '0' : (editingAffiliateCode.monthlyPrice || '');
+                                                    console.log('Monthly display value:', { raw: editingAffiliateCode.monthlyPrice, display: displayValue });
+                                                    return displayValue;
+                                                  })()}
                                                   onChange={(e) => {
                                                     const value = e.target.value;
                                                     const numValue = value === '' ? '' : parseFloat(value);
@@ -1839,7 +1843,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 </label>
                                                 <input
                                                   type="number"
-                                                  value={editingAffiliateCode.quarterlyPrice || ''}
+                                                  value={editingAffiliateCode.quarterlyPrice === 0 ? '0' : (editingAffiliateCode.quarterlyPrice || '')}
                                                   onChange={(e) => {
                                                     const value = e.target.value;
                                                     const numValue = value === '' ? '' : parseFloat(value);
@@ -1855,7 +1859,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 </label>
                                                 <input
                                                   type="number"
-                                                  value={editingAffiliateCode.annualPrice || ''}
+                                                  value={editingAffiliateCode.annualPrice === 0 ? '0' : (editingAffiliateCode.annualPrice || '')}
                                                   onChange={(e) => {
                                                     const value = e.target.value;
                                                     const numValue = value === '' ? '' : parseFloat(value);
