@@ -99,33 +99,102 @@ export async function DELETE(
     }
 
     // STAGING/DEV: Actually delete the company from database
-    console.log(`Attempting database delete for ${companyId}`);
+    console.log(`🔥 STAGING/DEV: Actually deleting company ${companyId} from database`);
+    console.log(`Environment check: NODE_ENV = ${process.env.NODE_ENV}`);
 
     try {
+      console.log(`🗑️ Starting deletion cascade for company ${companyId}`);
+
+      // Check if company exists before deletion
+      const companyExists = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { id: true, name: true, consultantId: true }
+      });
+
+      if (!companyExists) {
+        console.log(`❌ Company ${companyId} does not exist in database`);
+        return NextResponse.json({
+          success: true,
+          message: 'Company was already deleted.',
+          deleted: true
+        });
+      }
+
+      console.log(`📋 Company exists: ${companyExists.name} (consultantId: ${companyExists.consultantId})`);
+
       // Delete related records first to avoid foreign key constraints
-      await prisma.$executeRaw`DELETE FROM "PaymentTransaction" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "RevenueRecord" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "SubscriptionEvent" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "Subscription" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "CompanyProfile" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "FinancialRecord" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "AssessmentRecord" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "User" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "AccountingConnection" WHERE "companyId" = ${companyId}`;
-      await prisma.$executeRaw`DELETE FROM "AccountMapping" WHERE "companyId" = ${companyId}`;
+      console.log(`🗑️ Deleting PaymentTransaction records...`);
+      const paymentDeleted = await prisma.$executeRaw`DELETE FROM "PaymentTransaction" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${paymentDeleted} PaymentTransaction records`);
+
+      console.log(`🗑️ Deleting RevenueRecord records...`);
+      const revenueDeleted = await prisma.$executeRaw`DELETE FROM "RevenueRecord" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${revenueDeleted} RevenueRecord records`);
+
+      console.log(`🗑️ Deleting SubscriptionEvent records...`);
+      const subscriptionEventDeleted = await prisma.$executeRaw`DELETE FROM "SubscriptionEvent" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${subscriptionEventDeleted} SubscriptionEvent records`);
+
+      console.log(`🗑️ Deleting Subscription records...`);
+      const subscriptionDeleted = await prisma.$executeRaw`DELETE FROM "Subscription" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${subscriptionDeleted} Subscription records`);
+
+      console.log(`🗑️ Deleting CompanyProfile records...`);
+      const profileDeleted = await prisma.$executeRaw`DELETE FROM "CompanyProfile" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${profileDeleted} CompanyProfile records`);
+
+      console.log(`🗑️ Deleting FinancialRecord records...`);
+      const financialDeleted = await prisma.$executeRaw`DELETE FROM "FinancialRecord" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${financialDeleted} FinancialRecord records`);
+
+      console.log(`🗑️ Deleting AssessmentRecord records...`);
+      const assessmentDeleted = await prisma.$executeRaw`DELETE FROM "AssessmentRecord" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${assessmentDeleted} AssessmentRecord records`);
+
+      console.log(`🗑️ Deleting User records...`);
+      const userDeleted = await prisma.$executeRaw`DELETE FROM "User" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${userDeleted} User records`);
+
+      console.log(`🗑️ Deleting AccountingConnection records...`);
+      const accountingDeleted = await prisma.$executeRaw`DELETE FROM "AccountingConnection" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${accountingDeleted} AccountingConnection records`);
+
+      console.log(`🗑️ Deleting AccountMapping records...`);
+      const mappingDeleted = await prisma.$executeRaw`DELETE FROM "AccountMapping" WHERE "companyId" = ${companyId}`;
+      console.log(`✅ Deleted ${mappingDeleted} AccountMapping records`);
 
       // Finally delete the company
-      await prisma.$executeRaw`DELETE FROM "Company" WHERE "id" = ${companyId}`;
+      console.log(`🗑️ Deleting the Company record...`);
+      const companyDeleted = await prisma.$executeRaw`DELETE FROM "Company" WHERE "id" = ${companyId}`;
+      console.log(`✅ Deleted ${companyDeleted} Company record`);
 
-      console.log(`Successfully deleted company ${companyId} from database`);
+      if (companyDeleted === 0) {
+        console.log(`❌ Company ${companyId} was not found for deletion (might have been deleted already)`);
+      } else {
+        console.log(`🎉 Successfully deleted company ${companyId} from database`);
+      }
 
       return NextResponse.json({
         success: true,
         message: 'Company has been permanently deleted.',
-        deleted: true
+        deleted: true,
+        recordsDeleted: {
+          paymentTransactions: paymentDeleted,
+          revenueRecords: revenueDeleted,
+          subscriptionEvents: subscriptionEventDeleted,
+          subscriptions: subscriptionDeleted,
+          companyProfiles: profileDeleted,
+          financialRecords: financialDeleted,
+          assessmentRecords: assessmentDeleted,
+          users: userDeleted,
+          accountingConnections: accountingDeleted,
+          accountMappings: mappingDeleted,
+          companies: companyDeleted
+        }
       });
     } catch (dbError: any) {
-      console.error('Database error during delete:', dbError);
+      console.error('❌ Database error during delete:', dbError);
+      console.error('Stack trace:', dbError.stack);
       throw dbError;
     }
 
