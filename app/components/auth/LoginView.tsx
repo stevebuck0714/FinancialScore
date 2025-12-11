@@ -74,7 +74,7 @@ export default function LoginView(props: LoginViewProps) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '40px 20px' }}>
-      <div style={{ maxWidth: '480px', margin: '0 auto', background: 'white', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: '40px' }}>
+      <div style={{ maxWidth: '480px', margin: '0 auto', background: 'white', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: '40px', boxSizing: 'border-box' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <div style={{ fontSize: '48px', fontWeight: '700', color: '#667eea', marginBottom: '16px', letterSpacing: '-1px' }}>
             Corelytics<sup style={{ fontSize: '18px', fontWeight: '400' }}>TM</sup>
@@ -107,7 +107,7 @@ export default function LoginView(props: LoginViewProps) {
               value={resetEmail} 
               onChange={(e) => { setResetEmail(e.target.value); setLoginError(''); }} 
               autoComplete="off"
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             <button 
               onClick={async () => {
@@ -147,7 +147,7 @@ export default function LoginView(props: LoginViewProps) {
                 }
               }}
               disabled={isLoading}
-              style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1 }}
+              style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1, boxSizing: 'border-box' }}
             >
               {isLoading ? 'Sending...' : 'Send Reset Instructions'}
             </button>
@@ -171,7 +171,7 @@ export default function LoginView(props: LoginViewProps) {
               onChange={(e) => setLoginName(e.target.value)} 
               autoComplete="off" 
               required
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             <input 
               type="text" 
@@ -181,7 +181,7 @@ export default function LoginView(props: LoginViewProps) {
               onChange={(e) => setLoginEmail(e.target.value)} 
               autoComplete="off" 
               required
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             <input 
               type="tel" 
@@ -191,7 +191,7 @@ export default function LoginView(props: LoginViewProps) {
               onChange={(e) => setLoginPhone(formatPhoneNumber(e.target.value))} 
               autoComplete="off" 
               required
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             <input 
               type="text" 
@@ -201,7 +201,7 @@ export default function LoginView(props: LoginViewProps) {
               onChange={(e) => setLoginCompanyName(e.target.value)} 
               autoComplete="off" 
               required
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             
             {/* Company Address Fields */}
@@ -269,7 +269,7 @@ export default function LoginView(props: LoginViewProps) {
               value={loginCompanyWebsite} 
               onChange={(e) => setLoginCompanyWebsite(e.target.value)} 
               autoComplete="off" 
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             
             {/* Password field with toggle */}
@@ -305,26 +305,26 @@ export default function LoginView(props: LoginViewProps) {
         ) : (
           <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (!isLoading) handleLogin(); }}>
             <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Sign In</h2>
-            <input 
-              type="text" 
+            <input
+              type="text"
               name={`email_${Date.now()}`}
-              placeholder="Email" 
-              value={loginEmail} 
-              onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }} 
-              autoComplete="off" 
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+              placeholder="Email"
+              value={loginEmail}
+              onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }}
+              autoComplete="off"
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
             />
             
             {/* Password field with toggle */}
             <div style={{ position: 'relative', marginBottom: '12px' }}>
-              <input 
-                type={showPassword ? "text" : "password"} 
+              <input
+                type={showPassword ? "text" : "password"}
                 name={`password_${Date.now()}`}
-                placeholder="Password" 
-                value={loginPassword} 
-                onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }} 
+                placeholder="Password"
+                value={loginPassword}
+                onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
                 autoComplete="new-password"
-                style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
               />
               <button
                 type="button"

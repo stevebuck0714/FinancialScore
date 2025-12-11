@@ -36,7 +36,10 @@ export default function ProfileTab({
   // Load LOB data when component mounts or company changes
   React.useEffect(() => {
     if (company?.linesOfBusiness) {
-      const lobs = [...company.linesOfBusiness];
+      // Extract LOB names from objects (in case they're objects with name property)
+      const lobs = company.linesOfBusiness.map(lob =>
+        typeof lob === 'string' ? lob : (lob as any)?.name || ''
+      );
       while (lobs.length < 5) lobs.push('');
       setLinesOfBusiness(lobs);
     }
@@ -45,7 +48,7 @@ export default function ProfileTab({
       setHeadcountAllocations(company.headcountAllocations as { [lobName: string]: number });
     }
 
-    if (company?.userDefinedAllocations) {
+    if (company?.userDefinedAllocations && Array.isArray(company.userDefinedAllocations)) {
       setUserDefinedAllocations(company.userDefinedAllocations as { lobName: string; percentage: number }[]);
     }
   }, [company]);
@@ -715,7 +718,7 @@ export default function ProfileTab({
               Define the percentage of your total headcount allocated to each line of business. This will be used for automatic expense allocation.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-              {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, index) => (
+              {linesOfBusiness.filter(lob => typeof lob === 'string' && lob.trim() !== '').map((lob, index) => (
                 <div key={index}>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                     {lob} (%)
@@ -746,7 +749,7 @@ export default function ProfileTab({
                 </div>
               ))}
             </div>
-            {linesOfBusiness.filter(lob => lob.trim() !== '').length > 0 && (
+            {linesOfBusiness.filter(lob => typeof lob === 'string' && lob.trim() !== '').length > 0 && (
               <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748b' }}>
                 Total: {Object.values(headcountAllocations).reduce((sum, pct) => sum + pct, 0).toFixed(1)}%
                 {Math.abs(Object.values(headcountAllocations).reduce((sum, pct) => sum + pct, 0) - 100) > 0.1 && (
@@ -784,7 +787,7 @@ export default function ProfileTab({
                 + Add Allocation Template
               </button>
             </div>
-            {userDefinedAllocations.map((allocation, index) => (
+            {Array.isArray(userDefinedAllocations) && userDefinedAllocations.map((allocation, index) => (
               <div key={index} style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 120px 40px',
@@ -803,7 +806,7 @@ export default function ProfileTab({
                   <select
                     value={allocation.lobName}
                     onChange={(e) => {
-                      const updated = [...userDefinedAllocations];
+                      const updated = Array.isArray(userDefinedAllocations) ? [...userDefinedAllocations] : [];
                       updated[index] = { ...updated[index], lobName: e.target.value };
                       setUserDefinedAllocations(updated);
                     }}
@@ -817,7 +820,7 @@ export default function ProfileTab({
                     }}
                   >
                     <option value="">Select LOB</option>
-                    {linesOfBusiness.filter(lob => lob.trim() !== '').map((lob, lobIndex) => (
+                    {linesOfBusiness.filter(lob => typeof lob === 'string' && lob.trim() !== '').map((lob, lobIndex) => (
                       <option key={lobIndex} value={lob}>{lob}</option>
                     ))}
                   </select>
@@ -833,7 +836,7 @@ export default function ProfileTab({
                     step="0.1"
                     value={allocation.percentage}
                     onChange={(e) => {
-                      const updated = [...userDefinedAllocations];
+                      const updated = Array.isArray(userDefinedAllocations) ? [...userDefinedAllocations] : [];
                       updated[index] = { ...updated[index], percentage: parseFloat(e.target.value) || 0 };
                       setUserDefinedAllocations(updated);
                     }}
@@ -851,7 +854,7 @@ export default function ProfileTab({
                 <div>
                   <button
                     onClick={() => {
-                      const updated = userDefinedAllocations.filter((_, i) => i !== index);
+                      const updated = Array.isArray(userDefinedAllocations) ? userDefinedAllocations.filter((_, i) => i !== index) : [];
                       setUserDefinedAllocations(updated);
                     }}
                     style={{
@@ -874,7 +877,7 @@ export default function ProfileTab({
                 </div>
               </div>
             ))}
-            {userDefinedAllocations.length === 0 && (
+            {Array.isArray(userDefinedAllocations) && userDefinedAllocations.length === 0 && (
               <div style={{
                 padding: '24px',
                 textAlign: 'center',
@@ -898,9 +901,9 @@ export default function ProfileTab({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       companyId: selectedCompanyId,
-                      linesOfBusiness: linesOfBusiness.filter(lob => lob.trim() !== ''),
+                      linesOfBusiness: linesOfBusiness.filter(lob => typeof lob === 'string' && lob.trim() !== ''),
                       headcountAllocations,
-                      userDefinedAllocations: userDefinedAllocations.filter(alloc => alloc.lobName.trim() !== '' && alloc.percentage > 0)
+                      userDefinedAllocations: Array.isArray(userDefinedAllocations) ? userDefinedAllocations.filter(alloc => alloc.lobName.trim() !== '' && alloc.percentage > 0) : []
                     })
                   });
 

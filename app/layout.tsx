@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-// import './fonts.css' // CSS loader causing issues
+// import './fonts.css' // CSS loader issues - disabled for stability
 import { Providers } from './providers'
 
 export const metadata: Metadata = {
