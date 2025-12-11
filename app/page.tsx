@@ -896,6 +896,21 @@ function FinancialScorePage() {
         // Clear localStorage companies data to prevent reappearance on navigation
         if (typeof window !== 'undefined') {
           localStorage.removeItem('fs_companies');
+          console.log('🗑️ Cleared localStorage companies data after deletion');
+        }
+
+        // Force reload companies from API to ensure deletion took effect
+        if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
+          console.log('🔄 Reloading companies from API after deletion');
+          setTimeout(async () => {
+            try {
+              const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
+              safeSetCompanies(freshCompanies || []);
+              console.log('✅ Reloaded companies after deletion:', freshCompanies?.length || 0, 'companies');
+            } catch (error) {
+              console.error('❌ Failed to reload companies after deletion:', error);
+            }
+          }, 1000); // Small delay to ensure deletion is processed
         }
 
         // Remove the business/consultant from the consultants list
@@ -916,6 +931,21 @@ function FinancialScorePage() {
         // Clear localStorage companies data to prevent reappearance on navigation
         if (typeof window !== 'undefined') {
           localStorage.removeItem('fs_companies');
+          console.log('🗑️ Cleared localStorage companies data after deletion (server error)');
+        }
+
+        // Force reload companies from API to ensure deletion took effect
+        if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
+          console.log('🔄 Reloading companies from API after deletion (server error)');
+          setTimeout(async () => {
+            try {
+              const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
+              safeSetCompanies(freshCompanies || []);
+              console.log('✅ Reloaded companies after deletion (server error):', freshCompanies?.length || 0, 'companies');
+            } catch (error) {
+              console.error('❌ Failed to reload companies after deletion (server error):', error);
+            }
+          }, 1000); // Small delay to ensure deletion is processed
         }
 
         setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
