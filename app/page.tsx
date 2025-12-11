@@ -893,6 +893,11 @@ function FinancialScorePage() {
         // This ensures the company disappears from the user's view immediately
         safeSetCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
 
+        // Clear localStorage companies data to prevent reappearance on navigation
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('fs_companies');
+        }
+
         // Remove the business/consultant from the consultants list
         setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
 
@@ -907,6 +912,12 @@ function FinancialScorePage() {
         console.log('Server reported failure, but removing from UI anyway for better user experience');
 
         safeSetCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
+
+        // Clear localStorage companies data to prevent reappearance on navigation
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('fs_companies');
+        }
+
         setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
 
         alert(`✅ Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
