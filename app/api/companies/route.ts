@@ -275,6 +275,8 @@ export async function POST(request: NextRequest) {
           quarterlyPrice,
           annualPrice,
           affiliateId,
+          affiliateCode: validatedAffiliateCode,
+          isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0
         });
       } catch (affiliateError) {
         console.error(
@@ -306,6 +308,7 @@ export async function POST(request: NextRequest) {
     if (affiliateCode && !useAffiliatePricing) {
       console.error(
         "❌ Affiliate code provided but validation failed silently",
+        { affiliateCode, monthlyPrice, quarterlyPrice, annualPrice }
       );
       return NextResponse.json(
         { error: `Invalid affiliate code: ${affiliateCode}` },
