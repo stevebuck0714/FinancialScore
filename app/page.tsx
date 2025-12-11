@@ -2329,6 +2329,12 @@ function FinancialScorePage() {
         affiliateCode: selectedAffiliateCodeForNewCompany || undefined
       });
       console.log('Company created:', company);
+      console.log('Company pricing in response:', {
+        monthly: company.subscriptionMonthlyPrice,
+        quarterly: company.subscriptionQuarterlyPrice,
+        annual: company.subscriptionAnnualPrice,
+        hasPricing: !!(company.subscriptionMonthlyPrice || company.subscriptionQuarterlyPrice || company.subscriptionAnnualPrice)
+      });
       safeSetCompanies(Array.isArray(companies) ? [...companies, company] : [company]);
       setNewCompanyName('');
       setSelectedAffiliateCodeForNewCompany('');
