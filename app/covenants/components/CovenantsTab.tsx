@@ -625,14 +625,25 @@ export default function CovenantsTab({
   });
 
   // Calculate real financial ratios from actual data
-  const financialRatios = React.useMemo(() => calculateFinancialRatios(monthly), [monthly]);
+  const financialRatios = React.useMemo(() => {
+    const ratios = calculateFinancialRatios(monthly);
+    console.log('📊 calculateFinancialRatios result:', ratios);
+    console.log('📊 Ratios properties:', Object.keys(ratios || {}));
+    if (ratios) {
+      console.log('📊 cash:', ratios.cash, 'ebitda:', ratios.ebitda);
+    }
+    return ratios;
+  }, [monthly]);
 
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
+    console.log('🔄 CovenantData useMemo - financialRatios:', financialRatios);
     if (!financialRatios) {
+      console.log('❌ No financialRatios, using mock data');
       return mockCovenantData; // Fallback to mock if no data
     }
 
+    console.log('✅ Using real data, mapping covenants...');
     return mockCovenantData.map(covenant => {
       let currentValue = null;
       let status: 'compliant' | 'warning' | 'breached' = 'compliant';
