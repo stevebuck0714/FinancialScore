@@ -652,8 +652,8 @@ export default function CovenantsTab({
           currentValue = financialRatios.quickRatio;
           break;
         case 'minimum_liquidity':
-          // Cash + Accounts Receivable (quick liquid assets)
-          currentValue = financialRatios.cash + (financialRatios.ar || 0);
+          // Cash only (since we don't have revolver/line of credit data)
+          currentValue = financialRatios.cash;
           break;
         case 'minimum_ebitda':
           currentValue = financialRatios.ebitda;
