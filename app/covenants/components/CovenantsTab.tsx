@@ -967,6 +967,7 @@ export default function CovenantsTab({
 
                         {covenant.currentValue !== null && covenant.threshold !== null && (covenantApplicability[covenant.id] ?? covenant.applicable) && (
                           <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '8px', marginTop: '8px' }}>
+                            {covenant.id === '8' && console.log('🎯 Rendering Minimum Liquidity - currentValue:', covenant.currentValue)}
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                               <div>
                                 <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px', fontWeight: '500' }}>Current</div>
