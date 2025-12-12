@@ -3,11 +3,10 @@
 import React from 'react';
 import TeamManagementTab from '../dashboard/TeamManagementTab';
 import CompanyListTab from './CompanyListTab';
+// import CovenantsTab from '../../covenants/components/CovenantsTab'; // Removed - covenants only in Company Management
 
 interface ConsultantDashboardProps {
-  currentUser: {
-    isPrimaryContact?: boolean;
-  };
+  currentUser: any;
   consultantDashboardTab: string;
   setConsultantDashboardTab: (tab: string) => void;
   consultantTeamMembers: any[];
@@ -31,6 +30,9 @@ interface ConsultantDashboardProps {
   setCompanyToDelete: (company: { companyId: string; businessId: string; companyName: string }) => void;
   setShowDeleteConfirmation: (show: boolean) => void;
   isLoading: boolean;
+  selectedCompanyId?: string;
+  monthly?: any[];
+  companyName?: string;
 }
 
 export default function ConsultantDashboard({
@@ -51,7 +53,10 @@ export default function ConsultantDashboard({
   setCompanyManagementSubTab,
   setCompanyToDelete,
   setShowDeleteConfirmation,
-  isLoading
+  isLoading,
+  selectedCompanyId,
+  monthly,
+  companyName
 }: ConsultantDashboardProps) {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
@@ -127,6 +132,7 @@ export default function ConsultantDashboard({
           setShowDeleteConfirmation={setShowDeleteConfirmation}
         />
       )}
+
     </div>
   );
 }

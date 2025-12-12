@@ -29,6 +29,12 @@ const LOBReportingTab = dynamic(() => import('./components/dashboard/LOBReportin
 const ConsultantDashboard = dynamic(() => import('./components/consultant/ConsultantDashboard'), { ssr: false });
 const CompanyManagementTab = dynamic(() => import('./components/admin/CompanyManagementTab'), { ssr: false });
 const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySettingsTab'), { ssr: false });
+
+// Feature flag for covenants module
+const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true; // Default to enabled for development
+
+const CovenantsTab = COVENANTS_ENABLED ? dynamic(() => import('./covenants/components/CovenantsTab'), { ssr: false }) : null;
+
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
 const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
@@ -223,7 +229,7 @@ function FinancialScorePage() {
   };
 
   // Handle admin dashboard tab navigation with payment gate
-  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping') => {
+  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'covenants') => {
     // Always allow payments tab
     if (tab === 'payments') {
       setAdminDashboardTab(tab);
@@ -354,8 +360,8 @@ function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
-  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'covenants'>('company-management');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'covenants'>('details');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('team-management');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
@@ -5049,6 +5055,9 @@ function FinancialScorePage() {
                 setCompanyToDelete={setCompanyToDelete}
                 setShowDeleteConfirmation={setShowDeleteConfirmation}
                 isLoading={isLoading}
+                selectedCompanyId={selectedCompanyId}
+                monthly={monthly}
+                companyName={companyName}
               />
             </div>
           )}
@@ -5190,6 +5199,23 @@ function FinancialScorePage() {
               }}
             >
               Data Review
+            </button>
+            <button
+              onClick={() => handleAdminTabNavigation('covenants')}
+              style={{
+                padding: '12px 24px',
+                background: adminDashboardTab === 'covenants' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'covenants' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'covenants' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Covenants
             </button>
           </div>
           
@@ -6006,6 +6032,27 @@ function FinancialScorePage() {
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and payments.</p>
+            </div>
+          )}
+
+          {/* Covenants Tab */}
+          {(adminDashboardTab === 'covenants' && currentView === 'admin') &&
+           selectedCompanyId && CovenantsTab && (
+            <CovenantsTab
+              selectedCompanyId={selectedCompanyId}
+              currentUser={currentUser}
+              monthly={monthly}
+              companyName={companyName}
+            />
+          )}
+
+          {!selectedCompanyId && (
+            (adminDashboardTab === 'covenants' && currentView === 'admin') ||
+            (consultantDashboardTab === 'covenants' && currentView === 'consultant-dashboard')
+          ) && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage covenants.</p>
             </div>
           )}
 

@@ -3,7 +3,11 @@
 import React from 'react';
 import ProfileTab from '../dashboard/ProfileTab';
 import CompanyDetailsTab from './CompanyDetailsTab';
+import CovenantsTab from '../../covenants/components/CovenantsTab';
 import { useFinancialData } from '../../hooks/useFinancialData';
+
+// Feature flag for covenants module
+const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true; // Default to enabled for development
 
 interface CompanyManagementTabProps {
   companyManagementSubTab: string;
@@ -96,6 +100,25 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
         >
           Profile
         </button>
+        {COVENANTS_ENABLED && (
+          <button
+            onClick={() => props.setCompanyManagementSubTab('covenants')}
+            style={{
+              padding: '10px 20px',
+              background: props.companyManagementSubTab === 'covenants' ? '#667eea' : 'transparent',
+              color: props.companyManagementSubTab === 'covenants' ? 'white' : '#64748b',
+              border: 'none',
+              borderBottom: props.companyManagementSubTab === 'covenants' ? '3px solid #667eea' : '3px solid transparent',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              borderRadius: '6px 6px 0 0',
+              transition: 'all 0.2s'
+            }}
+          >
+            Covenants
+          </button>
+        )}
       </div>
       
       {/* Company Details Sub-tab */}
@@ -166,6 +189,16 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
             />
           )}
         </div>
+      )}
+
+      {/* Covenants Sub-tab */}
+      {props.companyManagementSubTab === 'covenants' && COVENANTS_ENABLED && (
+        <CovenantsTab
+          selectedCompanyId={props.selectedCompanyId}
+          currentUser={props.currentUser}
+          monthly={monthlyData}
+          companyName={props.company?.name || ''}
+        />
       )}
     </div>
   );
