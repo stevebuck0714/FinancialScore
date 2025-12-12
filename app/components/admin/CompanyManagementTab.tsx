@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import ProfileTab from '../dashboard/ProfileTab';
 import CompanyDetailsTab from './CompanyDetailsTab';
 import CovenantsTab from '../../covenants/components/CovenantsTab';
@@ -61,7 +61,15 @@ interface CompanyManagementTabProps {
 }
 
 export default function CompanyManagementTab(props: CompanyManagementTabProps) {
-  const { monthlyData } = useFinancialData();
+  const { monthlyData, loadFinancialData } = useFinancialData();
+
+  // Load financial data when component mounts or selectedCompanyId changes
+  useEffect(() => {
+    if (props.selectedCompanyId && props.company?.name) {
+      console.log('🏢 CompanyManagementTab: Loading financial data for company:', props.selectedCompanyId);
+      loadFinancialData(props.selectedCompanyId, props.company.name);
+    }
+  }, [props.selectedCompanyId, props.company?.name, loadFinancialData]);
   return (
     <div className="company-management-container" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       {/* Sub-tab Navigation */}
