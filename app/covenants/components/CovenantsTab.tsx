@@ -412,11 +412,17 @@ const calculateFinancialRatios = (monthlyData: MonthlyDataRow[]) => {
   // Get the most recent month's data
   const latestData = monthlyData[monthlyData.length - 1];
 
-  // Calculate EBITDA (Earnings Before Interest, Taxes, Depreciation, and Amortization)
-  const ebitda = latestData.netProfit +
-                 latestData.interestExpense +
-                 latestData.depreciationAmortization +
-                 (latestData.taxLicense || 0); // Adding back taxes if available
+  // Calculate EBITDA using same formula as main reports
+  // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add back interest)
+  // EBITDA = EBIT + Depreciation & Amortization
+  const revenue = latestData.revenue || 0;
+  const cogsTotal = latestData.cogsTotal || 0;
+  const expense = latestData.expense || 0;
+  const interestExpense = latestData.interestExpense || 0;
+  const depreciationAmortization = latestData.depreciationAmortization || 0;
+
+  const ebit = revenue - cogsTotal - expense + interestExpense;
+  const ebitda = ebit + depreciationAmortization;
 
   // Calculate financial ratios
   return {
