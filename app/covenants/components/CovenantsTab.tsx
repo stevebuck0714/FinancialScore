@@ -684,6 +684,11 @@ export default function CovenantsTab({
       switch (covenant.id) {
         case '1': // Total Leverage Ratio
           currentValue = financialRatios.totalLeverageRatio;
+          console.log('📊 Total Leverage Ratio calculation:', {
+            totalDebt: latestData.totalLAndE,
+            ebitda: financialRatios.ebitda,
+            ratio: financialRatios.totalLeverageRatio
+          });
           break;
         case '2': // Net Leverage Ratio
           currentValue = financialRatios.netLeverageRatio;
