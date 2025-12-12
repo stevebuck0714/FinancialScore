@@ -641,6 +641,7 @@ export default function CovenantsTab({
 
     console.log('✅ Using real financial data, cash value:', financialRatios.cash);
     return mockCovenantData.map(covenant => {
+      console.log('🔄 Processing covenant:', covenant.name, 'type:', covenant.covenantType);
       let currentValue = null;
       let status: 'compliant' | 'warning' | 'breached' = 'compliant';
 
@@ -695,11 +696,15 @@ export default function CovenantsTab({
         }
       }
 
-      return {
+      const result = {
         ...covenant,
         currentValue,
         status
       };
+      if (covenant.id === '8') { // Minimum Liquidity
+        console.log('🎯 Minimum Liquidity final result:', result);
+      }
+      return result;
     });
   }, [financialRatios, covenantThresholds]);
 
