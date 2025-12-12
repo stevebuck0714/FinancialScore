@@ -532,7 +532,8 @@ export default function CovenantsTab({
   monthly,
   companyName
 }: CovenantsTabProps) {
-  console.log('🏢 CovenantsTab props:', { selectedCompanyId, companyName, monthlyLength: monthly?.length });
+  console.log('🏢 CovenantsTab RENDER - props:', { selectedCompanyId, companyName, monthlyLength: monthly?.length });
+  console.log('🏢 CovenantsTab RENDER - covenantData length:', covenantData?.length);
   // Feature flag check
   if (!COVENANTS_ENABLED) {
     return (
@@ -634,13 +635,14 @@ export default function CovenantsTab({
 
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
+    console.log('🔄 CovenantData useMemo triggered, financialRatios exists:', !!financialRatios);
     if (!financialRatios) {
       console.log('⚠️ Using mock covenant data - financialRatios is null');
       return mockCovenantData; // Fallback to mock if no data
     }
 
-      console.log('✅ Using real financial data, cash value:', financialRatios.cash);
-    return mockCovenantData.map(covenant => {
+    console.log('✅ Using real financial data, cash value:', financialRatios.cash);
+    const result = mockCovenantData.map(covenant => {
       console.log('🔄 Processing covenant:', covenant.name, 'type:', covenant.covenantType, 'original currentValue:', covenant.currentValue);
       let currentValue = null;
       let status: 'compliant' | 'warning' | 'breached' = 'compliant';
@@ -704,6 +706,7 @@ export default function CovenantsTab({
       console.log('📊', covenant.name, 'final currentValue:', currentValue, 'status:', status);
       return result;
     });
+    console.log('🎯 CovenantData useMemo completed, returning array of length:', result.length);
   }, [financialRatios, covenantThresholds]);
 
   // Initialize selectedCovenant with first available covenant that has data
