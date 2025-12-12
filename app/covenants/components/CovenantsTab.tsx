@@ -644,12 +644,22 @@ export default function CovenantsTab({
     const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
     const quickRatio = currentLiab > 0 ? quickAssets / currentLiab : 0;
 
-    // Calculate EBITDA using same formula as main app
+    // Calculate EBITDA using same formula as main app (match monthly processing)
     const revenue = latestData.revenue || 0;
     const cogsTotal = latestData.cogsTotal || 0;
-    const expense = latestData.expense || 0;
     const interestExpense = latestData.interestExpense || 0;
     const depreciationAmortization = latestData.depreciationAmortization || 0;
+
+    // Calculate total operating expense same as monthly processing
+    const opexCategories = [
+      'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
+      'insurance', 'rent', 'infrastructure', 'autoTravel',
+      'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
+    ];
+    const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((latestData as any)[key] || 0), 0);
+
+    // Use calculated total if expense field is not set or is 0 (same as monthly processing)
+    const expense = latestData.expense || totalOperatingExpense;
 
     const ebit = revenue - cogsTotal - expense + interestExpense;
     const ebitda = ebit + depreciationAmortization;
