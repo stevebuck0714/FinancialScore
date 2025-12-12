@@ -624,12 +624,16 @@ export default function CovenantsTab({
     };
   });
 
+  // Get latest month data (November 2025)
+  const latestData = React.useMemo(() => {
+    if (!monthly || monthly.length === 0) return null;
+    return monthly[monthly.length - 1];
+  }, [monthly]);
+
   // Calculate financial ratios using same logic as main application
   const financialRatios = React.useMemo(() => {
-    if (!monthly || monthly.length === 0) return null;
+    if (!latestData) return null;
 
-    // Use the latest month (November 2025) like the main app
-    const latestData = monthly[monthly.length - 1];
     console.log('📊 Using latest month data:', latestData);
 
     // Calculate using same logic as main application
@@ -665,7 +669,7 @@ export default function CovenantsTab({
 
     console.log('📊 Calculated ratios:', ratios);
     return ratios;
-  }, [monthly]);
+  }, [latestData]);
 
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
