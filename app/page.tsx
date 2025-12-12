@@ -3065,11 +3065,13 @@ function FinancialScorePage() {
     }));
   }, [rawRows, mapping, loadedMonthlyData]).map(m => {
     // Calculate Total Operating Expenses using standard chart of accounts (same as Data Review)
+    // Use the SAME calculation as Data Review for Total Operating Expenses
     const opexCategories = [
-      'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
-      'insurance', 'rent', 'infrastructure', 'autoTravel',
-      'salesExpense', 'marketing', 'depreciationAmortization'
-      // Note: interestExpense excluded from operating expenses (it's financing expense)
+      'payroll', 'ownerBasePay', 'ownersRetirement', 'professionalFees',
+      'rent', 'utilities', 'infrastructure', 'autoTravel', 'insurance',
+      'salesExpense', 'subcontractors', 'depreciationAmortization', 'interestExpense',
+      'marketing', 'benefits', 'taxLicense', 'phoneComm', 'trainingCert',
+      'mealsEntertainment', 'otherExpense'
     ];
     const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((m as any)[key] || 0), 0);
 
@@ -3085,8 +3087,8 @@ function FinancialScorePage() {
 
     // Gross Profit = Revenue - COGS
     const grossProfit = revenue - cogsTotal;
-    // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add interest back since it's financing, not operating)
-    const ebit = revenue - cogsTotal - expense + interestExpense;
+    // EBIT = Revenue - COGS - Operating Expenses (interest already included in operating expenses)
+    const ebit = revenue - cogsTotal - expense;
     // EBITDA = EBIT + Depreciation + Amortization
     // (Since we don't have separate income taxes field, this is the proper EBITDA formula)
     const ebitda = ebit + depreciationAmortization;

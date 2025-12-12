@@ -57,13 +57,14 @@ const mockMonthlyData = [
   }
 ];
 
-// Calculate total operating expenses (same logic as main app)
+// Calculate total operating expenses (SAME as Data Review)
 function calculateTotalOperatingExpense(m) {
   const opexCategories = [
-    'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
-    'insurance', 'rent', 'infrastructure', 'autoTravel',
-    'salesExpense', 'marketing', 'depreciationAmortization'
-    // Note: interestExpense excluded from operating expenses (it's financing expense)
+    'payroll', 'ownerBasePay', 'ownersRetirement', 'professionalFees',
+    'rent', 'utilities', 'infrastructure', 'autoTravel', 'insurance',
+    'salesExpense', 'subcontractors', 'depreciationAmortization', 'interestExpense',
+    'marketing', 'benefits', 'taxLicense', 'phoneComm', 'trainingCert',
+    'mealsEntertainment', 'otherExpense'
   ];
 
   return opexCategories.reduce((sum, key) => sum + (m[key] || 0), 0);

@@ -652,18 +652,20 @@ export default function CovenantsTab({
     const netProfit = latestData.netProfit || 0;
 
     // Calculate total operating expense same as monthly processing
+    // Use the SAME calculation as Data Review for Total Operating Expenses
     const opexCategories = [
-      'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
-      'insurance', 'rent', 'infrastructure', 'autoTravel',
-      'salesExpense', 'marketing', 'depreciationAmortization'
-      // Note: interestExpense excluded from operating expenses (it's financing expense)
+      'payroll', 'ownerBasePay', 'ownersRetirement', 'professionalFees',
+      'rent', 'utilities', 'infrastructure', 'autoTravel', 'insurance',
+      'salesExpense', 'subcontractors', 'depreciationAmortization', 'interestExpense',
+      'marketing', 'benefits', 'taxLicense', 'phoneComm', 'trainingCert',
+      'mealsEntertainment', 'otherExpense'
     ];
     const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((latestData as any)[key] || 0), 0);
 
     // Use CSV expense field if available, otherwise calculated total
     const expense = latestData.expense || totalOperatingExpense;
 
-    const ebit = revenue - cogsTotal - expense + interestExpense;
+    const ebit = revenue - cogsTotal - expense;
     // EBITDA = EBIT + Depreciation + Amortization
     const ebitda = ebit + depreciationAmortization;
 
