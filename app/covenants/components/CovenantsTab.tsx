@@ -639,14 +639,20 @@ export default function CovenantsTab({
         case 'interest_coverage_ratio':
           currentValue = financialRatios.interestCoverageRatio;
           break;
-        case 'minimum_ebitda':
-          currentValue = financialRatios.ebitda;
+        case 'debt_service_coverage_ratio':
+          currentValue = financialRatios.debtServiceCoverageRatio;
           break;
         case 'current_ratio':
           currentValue = financialRatios.currentRatio;
           break;
+        case 'quick_ratio':
+          currentValue = financialRatios.quickRatio;
+          break;
         case 'minimum_liquidity':
           currentValue = financialRatios.cash;
+          break;
+        case 'minimum_ebitda':
+          currentValue = financialRatios.ebitda;
           break;
         default:
           currentValue = covenant.currentValue; // Keep mock values for qualitative covenants
@@ -1009,7 +1015,7 @@ export default function CovenantsTab({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             {covenantData
               .filter(covenant => covenant.currentValue !== null && covenant.threshold !== null && (covenantApplicability[covenant.id] ?? covenant.applicable))
-              .slice(0, 5) // Show first 5 applicable covenants with thresholds
+              .slice(0, 9) // Show all applicable quantitative covenants with thresholds
               .map((covenant, index) => (
               <div key={covenant.id} style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
