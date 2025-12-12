@@ -628,8 +628,12 @@ export default function CovenantsTab({
 
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
-    if (!financialRatios) return mockCovenantData; // Fallback to mock if no data
+    if (!financialRatios) {
+      console.log('⚠️ Using mock covenant data - financialRatios is null');
+      return mockCovenantData; // Fallback to mock if no data
+    }
 
+    console.log('✅ Using real financial data, cash value:', financialRatios.cash);
     return mockCovenantData.map(covenant => {
       let currentValue = null;
       let status: 'compliant' | 'warning' | 'breached' = 'compliant';
@@ -660,6 +664,7 @@ export default function CovenantsTab({
         case 'minimum_liquidity':
           // Cash only (since we don't have revolver/line of credit data)
           currentValue = financialRatios.cash;
+          console.log('💰 Minimum Liquidity calculated:', currentValue);
           break;
         case 'minimum_ebitda':
           currentValue = financialRatios.ebitda;
