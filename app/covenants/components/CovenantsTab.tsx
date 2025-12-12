@@ -625,26 +625,19 @@ export default function CovenantsTab({
   });
 
   // Calculate real financial ratios from actual data
-  const financialRatios = React.useMemo(() => {
-    console.log('📊 Monthly data received:', monthly);
-    const ratios = calculateFinancialRatios(monthly);
-    console.log('📈 Financial ratios calculated:', ratios);
-    return ratios;
-  }, [monthly]);
+  const financialRatios = React.useMemo(() => calculateFinancialRatios(monthly), [monthly]);
 
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
-    console.log('🔄 CovenantData useMemo triggered, financialRatios exists:', !!financialRatios);
     if (!financialRatios) {
-      console.log('⚠️ Using mock covenant data - financialRatios is null');
       return mockCovenantData; // Fallback to mock if no data
     }
 
-    console.log('✅ Using real financial data, cash value:', financialRatios.cash);
-    const result = mockCovenantData.map(covenant => {
-      console.log('🔄 Processing covenant:', covenant.name, 'type:', covenant.covenantType, 'original currentValue:', covenant.currentValue);
+    return mockCovenantData.map(covenant => {
       let currentValue = null;
       let status: 'compliant' | 'warning' | 'breached' = 'compliant';
+
+      // Map covenant types to calculated financial ratios
 
       // Map covenant types to calculated financial ratios
       switch (covenant.covenantType) {
@@ -672,7 +665,6 @@ export default function CovenantsTab({
         case 'minimum_liquidity':
           // Cash only (since we don't have revolver/line of credit data)
           currentValue = financialRatios.cash;
-          console.log('💰 Minimum Liquidity calculated:', currentValue);
           break;
         case 'minimum_ebitda':
           currentValue = financialRatios.ebitda;
@@ -697,18 +689,13 @@ export default function CovenantsTab({
         }
       }
 
-      const result = {
+      return {
         ...covenant,
         currentValue,
         status
       };
-      console.log('📊', covenant.name, 'final currentValue:', currentValue, 'status:', status);
-      return result;
     });
-    console.log('🎯 CovenantData useMemo completed, returning array of length:', result.length);
   }, [financialRatios, covenantThresholds]);
-
-  console.log('🏢 CovenantsTab RENDER - covenantData length:', covenantData?.length);
 
   // Initialize selectedCovenant with first available covenant that has data
   React.useEffect(() => {
@@ -720,7 +707,7 @@ export default function CovenantsTab({
     }
   }, [covenantData, selectedCovenant, covenantApplicability]);
 
-  const applicableCovenants = covenantData.filter(c => covenantApplicability[c.id] ?? c.applicable);
+  const applicableCovenants = (covenantData || []).filter(c => covenantApplicability[c.id] ?? c.applicable);
   const compliantCount = applicableCovenants.filter(c => c.status === 'compliant').length;
   const warningCount = applicableCovenants.filter(c => c.status === 'warning').length;
   const breachedCount = applicableCovenants.filter(c => c.status === 'breached').length;
