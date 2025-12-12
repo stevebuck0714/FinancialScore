@@ -1470,10 +1470,8 @@ export default function CovenantsTab({
 
       {activeTab === 'settings' && (
         <div>
-          {/* Debug: Show active tab */}
-          <div style={{ background: '#fef3c7', borderRadius: '4px', padding: '8px', marginBottom: '16px', fontSize: '12px', color: '#92400e' }}>
-            Debug: Active tab is '{activeTab}' - Loan Information section should appear below
-          </div>
+          {/* Debug log for settings tab */}
+          {console.log('🎛️ Settings tab is active and rendering')}
 
           {/* Loan Information */}
           <div style={{ background: 'white', borderRadius: '8px', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: '16px' }}>
