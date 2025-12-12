@@ -666,8 +666,8 @@ export default function CovenantsTab({
     const expense = totalOperatingExpense;
 
     const ebit = revenue - cogsTotal - expense;
-    // EBITDA = EBIT + Depreciation + Amortization
-    const ebitda = ebit + depreciationAmortization;
+    // EBITDA = Net Income + Interest Expense + Depreciation + Amortization
+    const ebitda = netProfit + interestExpense + depreciationAmortization;
 
     const ratios = {
       currentRatio,
