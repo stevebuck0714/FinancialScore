@@ -649,8 +649,7 @@ export default function CovenantsTab({
       let status: 'compliant' | 'warning' | 'breached' = 'compliant';
 
       // Map covenant types to calculated financial ratios
-
-      // Map covenant types to calculated financial ratios
+      console.log('🔄 Mapping covenant:', covenant.name, 'type:', covenant.covenantType, 'original value:', covenant.currentValue);
       switch (covenant.covenantType) {
         case 'total_leverage_ratio':
           currentValue = financialRatios.totalLeverageRatio;
@@ -676,9 +675,11 @@ export default function CovenantsTab({
         case 'minimum_liquidity':
           // Cash only (since we don't have revolver/line of credit data)
           currentValue = financialRatios.cash;
+          console.log('💰 Setting minimum_liquidity to:', currentValue);
           break;
         case 'minimum_ebitda':
           currentValue = financialRatios.ebitda;
+          console.log('📊 Setting minimum_ebitda to:', currentValue);
           break;
         default:
           currentValue = covenant.currentValue; // Keep mock values for qualitative covenants
