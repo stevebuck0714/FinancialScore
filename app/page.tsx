@@ -3090,16 +3090,6 @@ function FinancialScorePage() {
     // (Since we don't have separate income taxes field, this is the proper EBITDA formula)
     const ebitda = ebit + depreciationAmortization;
 
-    // Debug logging for all months
-    console.log('🔍 EBITDA Debug for', m.month, ':', {
-      revenue,
-      cogsTotal,
-      expense,
-      interestExpense,
-      depreciationAmortization,
-      ebit,
-      ebitda
-    });
     
     return {
       ...m,

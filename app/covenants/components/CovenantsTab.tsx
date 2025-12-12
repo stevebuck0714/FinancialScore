@@ -666,18 +666,6 @@ export default function CovenantsTab({
     // EBITDA = EBIT + Depreciation + Amortization
     const ebitda = ebit + depreciationAmortization;
 
-    // Debug logging for covenants
-    console.log('🔍 Covenants EBITDA Debug:', {
-      revenue,
-      cogsTotal,
-      expense,
-      interestExpense,
-      depreciationAmortization,
-      ebit,
-      ebitda,
-      netProfit
-    });
-
     const ratios = {
       currentRatio,
       quickRatio,
