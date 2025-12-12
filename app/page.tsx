@@ -3086,9 +3086,9 @@ function FinancialScorePage() {
     const grossProfit = revenue - cogsTotal;
     // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add back interest)
     const ebit = revenue - cogsTotal - expense + interestExpense;
-    // EBITDA = Net Income + Interest Expense + Depreciation + Amortization
-    // (This accounts for income taxes being embedded in expenses)
-    const ebitda = netProfit + interestExpense + depreciationAmortization;
+    // EBITDA = EBIT + Depreciation + Amortization
+    // (Since we don't have separate income taxes field, this is the proper EBITDA formula)
+    const ebitda = ebit + depreciationAmortization;
     
     return {
       ...m,
