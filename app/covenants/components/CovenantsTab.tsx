@@ -624,14 +624,45 @@ export default function CovenantsTab({
     };
   });
 
-  // Calculate real financial ratios from actual data
+  // Calculate financial ratios using same logic as main application
   const financialRatios = React.useMemo(() => {
-    const ratios = calculateFinancialRatios(monthly);
-    console.log('📊 calculateFinancialRatios result:', ratios);
-    console.log('📊 Ratios properties:', Object.keys(ratios || {}));
-    if (ratios) {
-      console.log('📊 cash:', ratios.cash, 'ebitda:', ratios.ebitda);
-    }
+    if (!monthly || monthly.length === 0) return null;
+
+    // Use the latest month (November 2025) like the main app
+    const latestData = monthly[monthly.length - 1];
+    console.log('📊 Using latest month data:', latestData);
+
+    // Calculate using same logic as main application
+    const currentAssets = latestData.tca || ((latestData.cash || 0) + (latestData.ar || 0) + (latestData.inventory || 0) + (latestData.otherCA || 0));
+    const currentLiab = Math.abs(latestData.tcl || ((latestData.ap || 0) + (latestData.otherCL || 0)));
+    const quickAssets = (latestData.cash || 0) + (latestData.ar || 0);
+
+    const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
+    const quickRatio = currentLiab > 0 ? quickAssets / currentLiab : 0;
+
+    // Calculate EBITDA using same formula as main app
+    const revenue = latestData.revenue || 0;
+    const cogsTotal = latestData.cogsTotal || 0;
+    const expense = latestData.expense || 0;
+    const interestExpense = latestData.interestExpense || 0;
+    const depreciationAmortization = latestData.depreciationAmortization || 0;
+
+    const ebit = revenue - cogsTotal - expense + interestExpense;
+    const ebitda = ebit + depreciationAmortization;
+
+    const ratios = {
+      currentRatio,
+      quickRatio,
+      cash: latestData.cash || 0,
+      ebitda,
+      totalLeverageRatio: latestData.totalLAndE > 0 ? latestData.totalLAndE / ebitda : 0,
+      netLeverageRatio: latestData.totalLAndE > 0 && latestData.cash ? (latestData.totalLAndE - latestData.cash) / ebitda : 0,
+      debtToEquityRatio: latestData.totalEquity > 0 ? latestData.totalLAndE / latestData.totalEquity : 0,
+      interestCoverageRatio: latestData.interestExpense > 0 ? ebitda / latestData.interestExpense : 0,
+      debtServiceCoverageRatio: latestData.interestExpense > 0 ? latestData.netProfit / latestData.interestExpense : 0,
+    };
+
+    console.log('📊 Calculated ratios:', ratios);
     return ratios;
   }, [monthly]);
 
@@ -668,9 +699,11 @@ export default function CovenantsTab({
           break;
         case '6': // Current Ratio
           currentValue = financialRatios.currentRatio;
+          console.log('📊 Setting current_ratio to:', currentValue);
           break;
         case '7': // Quick Ratio
           currentValue = financialRatios.quickRatio;
+          console.log('📊 Setting quick_ratio to:', currentValue);
           break;
         case '8': // Minimum Liquidity
           currentValue = financialRatios.cash;
