@@ -3072,8 +3072,8 @@ function FinancialScorePage() {
     ];
     const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((m as any)[key] || 0), 0);
 
-    // Use calculated total if expense field is not set or is 0
-    const expense = m.expense || totalOperatingExpense;
+    // Always use the calculated total operating expenses (includes all opex categories)
+    const expense = totalOperatingExpense;
 
     // Calculate Gross Profit, EBIT and EBITDA for each month
     const revenue = m.revenue || 0;
@@ -3084,24 +3084,22 @@ function FinancialScorePage() {
 
     // Gross Profit = Revenue - COGS
     const grossProfit = revenue - cogsTotal;
-    // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add back interest)
-    const ebit = revenue - cogsTotal - expense + interestExpense;
+    // EBIT = Revenue - COGS - Operating Expenses (interest already included in expenses)
+    const ebit = revenue - cogsTotal - expense;
     // EBITDA = EBIT + Depreciation + Amortization
     // (Since we don't have separate income taxes field, this is the proper EBITDA formula)
     const ebitda = ebit + depreciationAmortization;
 
-    // Debug logging for November 2025
-    if (m.month === '11-2025' || m.month === '2025-11') {
-      console.log('🔍 EBITDA Debug for', m.month, ':', {
-        revenue,
-        cogsTotal,
-        expense,
-        interestExpense,
-        depreciationAmortization,
-        ebit,
-        ebitda
-      });
-    }
+    // Debug logging for all months
+    console.log('🔍 EBITDA Debug for', m.month, ':', {
+      revenue,
+      cogsTotal,
+      expense,
+      interestExpense,
+      depreciationAmortization,
+      ebit,
+      ebitda
+    });
     
     return {
       ...m,

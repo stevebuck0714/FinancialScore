@@ -659,10 +659,10 @@ export default function CovenantsTab({
     ];
     const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((latestData as any)[key] || 0), 0);
 
-    // Use calculated total if expense field is not set or is 0 (same as monthly processing)
-    const expense = latestData.expense || totalOperatingExpense;
+    // Always use the calculated total operating expenses (includes all opex categories)
+    const expense = totalOperatingExpense;
 
-    const ebit = revenue - cogsTotal - expense + interestExpense;
+    const ebit = revenue - cogsTotal - expense;
     // EBITDA = EBIT + Depreciation + Amortization
     const ebitda = ebit + depreciationAmortization;
 
