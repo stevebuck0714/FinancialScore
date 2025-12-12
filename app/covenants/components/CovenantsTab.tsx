@@ -648,36 +648,35 @@ export default function CovenantsTab({
       let currentValue = null;
       let status: 'compliant' | 'warning' | 'breached' = 'compliant';
 
-      // Map covenant types to calculated financial ratios
-      console.log('🔄 Mapping covenant:', covenant.name, 'type:', covenant.covenantType, 'original value:', covenant.currentValue);
-      switch (covenant.covenantType) {
-        case 'total_leverage_ratio':
+      // Map covenant IDs to calculated financial ratios
+      console.log('🔄 Mapping covenant:', covenant.name, 'ID:', covenant.id, 'original value:', covenant.currentValue);
+      switch (covenant.id) {
+        case '1': // Total Leverage Ratio
           currentValue = financialRatios.totalLeverageRatio;
           break;
-        case 'net_leverage_ratio':
+        case '2': // Net Leverage Ratio
           currentValue = financialRatios.netLeverageRatio;
           break;
-        case 'debt_to_equity_ratio':
+        case '3': // Debt-to-Equity Ratio
           currentValue = financialRatios.debtToEquityRatio;
           break;
-        case 'interest_coverage_ratio':
+        case '4': // Interest Coverage Ratio
           currentValue = financialRatios.interestCoverageRatio;
           break;
-        case 'debt_service_coverage_ratio':
+        case '5': // Debt Service Coverage Ratio
           currentValue = financialRatios.debtServiceCoverageRatio;
           break;
-        case 'current_ratio':
+        case '6': // Current Ratio
           currentValue = financialRatios.currentRatio;
           break;
-        case 'quick_ratio':
+        case '7': // Quick Ratio
           currentValue = financialRatios.quickRatio;
           break;
-        case 'minimum_liquidity':
-          // Cash only (since we don't have revolver/line of credit data)
+        case '8': // Minimum Liquidity
           currentValue = financialRatios.cash;
           console.log('💰 Setting minimum_liquidity to:', currentValue);
           break;
-        case 'minimum_ebitda':
+        case '9': // Minimum EBITDA
           currentValue = financialRatios.ebitda;
           console.log('📊 Setting minimum_ebitda to:', currentValue);
           break;
