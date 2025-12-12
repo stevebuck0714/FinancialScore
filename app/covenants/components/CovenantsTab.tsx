@@ -656,12 +656,14 @@ export default function CovenantsTab({
       const threshold = covenantThresholds[covenant.id] ?? covenant.threshold;
       if (currentValue !== null && threshold !== null && threshold !== undefined) {
         if (covenant.covenantType === 'minimum') {
+          // For minimum covenants (higher values are better): below threshold = breach
           if (currentValue < threshold) {
-            status = currentValue < threshold * 0.9 ? 'breached' : 'warning';
+            status = 'breached';
           }
         } else if (covenant.covenantType === 'maximum') {
+          // For maximum covenants (lower values are better): above threshold = breach
           if (currentValue > threshold) {
-            status = currentValue > threshold * 1.1 ? 'breached' : 'warning';
+            status = 'breached';
           }
         }
       }
