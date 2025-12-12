@@ -3231,9 +3231,9 @@ function FinancialScorePage() {
       
       const cur = monthly[i];
       const currentAssets = cur.tca || ((cur.cash || 0) + (cur.ar || 0) + (cur.inventory || 0) + (cur.otherCA || 0));
-      const currentLiab = cur.tcl || ((cur.ap || 0) + (cur.otherCL || 0));
+      const currentLiab = Math.abs(cur.tcl || ((cur.ap || 0) + (cur.otherCL || 0)));
       const quickAssets = (cur.cash || 0) + (cur.ar || 0);
-      
+
       const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
       const quickRatio = currentLiab > 0 ? quickAssets / currentLiab : 0;
       
@@ -3259,7 +3259,7 @@ function FinancialScorePage() {
       
       // Sales/Working Capital: Monthly revenue / Average WC (current + prior month)
       const priorMonthCurrentAssets = i > 0 ? (priorMonth.tca || ((priorMonth.cash || 0) + (priorMonth.ar || 0) + (priorMonth.inventory || 0) + (priorMonth.otherCA || 0))) : currentAssets;
-      const priorMonthCurrentLiab = i > 0 ? (priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.otherCL || 0))) : currentLiab;
+      const priorMonthCurrentLiab = i > 0 ? Math.abs(priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.otherCL || 0))) : currentLiab;
       const priorMonthWorkingCap = priorMonthCurrentAssets - priorMonthCurrentLiab;
       const avgWorkingCap = (workingCap + priorMonthWorkingCap) / 2;
       const salesWC = avgWorkingCap !== 0 ? (cur.revenue || 0) / avgWorkingCap : 0;
@@ -3427,7 +3427,7 @@ function FinancialScorePage() {
     // Working Capital Analysis
     const lastMonth = monthly[monthly.length - 1];
     const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
-    const currentLiab = lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0));
+    const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0)));
     const workingCapital = currentAssets - currentLiab;
     const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : 0;
     
