@@ -532,6 +532,7 @@ export default function CovenantsTab({
   monthly,
   companyName
 }: CovenantsTabProps) {
+  console.log('🏢 CovenantsTab props:', { selectedCompanyId, companyName, monthlyLength: monthly?.length });
   // Feature flag check
   if (!COVENANTS_ENABLED) {
     return (
@@ -624,7 +625,12 @@ export default function CovenantsTab({
   });
 
   // Calculate real financial ratios from actual data
-  const financialRatios = React.useMemo(() => calculateFinancialRatios(monthly), [monthly]);
+  const financialRatios = React.useMemo(() => {
+    console.log('📊 Monthly data received:', monthly);
+    const ratios = calculateFinancialRatios(monthly);
+    console.log('📈 Financial ratios calculated:', ratios);
+    return ratios;
+  }, [monthly]);
 
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
