@@ -921,9 +921,6 @@ export default function CovenantsTab({
             {loanName || 'Loan Covenants'}
             {loanAccountNumber && ` - Account #${loanAccountNumber}`}
           </h1>
-          <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-            {companyName} • {totalCount} covenants monitored
-          </p>
         </div>
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
