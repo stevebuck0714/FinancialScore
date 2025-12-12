@@ -627,6 +627,8 @@ export default function CovenantsTab({
   // Calculate real financial ratios from actual data
   const financialRatios = React.useMemo(() => calculateFinancialRatios(monthly), [monthly]);
 
+  console.log('🏢 CovenantsTab RENDER - financialRatios exists:', !!financialRatios, 'covenantData length:', covenantData?.length);
+
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
     if (!financialRatios) {
