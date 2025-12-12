@@ -655,14 +655,15 @@ export default function CovenantsTab({
     const opexCategories = [
       'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
       'insurance', 'rent', 'infrastructure', 'autoTravel',
-      'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
+      'salesExpense', 'marketing', 'depreciationAmortization'
+      // Note: interestExpense excluded from operating expenses (it's financing expense)
     ];
     const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((latestData as any)[key] || 0), 0);
 
-    // Always use the calculated total operating expenses (includes all opex categories)
-    const expense = totalOperatingExpense;
+    // Use CSV expense field if available, otherwise calculated total
+    const expense = latestData.expense || totalOperatingExpense;
 
-    const ebit = revenue - cogsTotal - expense;
+    const ebit = revenue - cogsTotal - expense + interestExpense;
     // EBITDA = EBIT + Depreciation + Amortization
     const ebitda = ebit + depreciationAmortization;
 
