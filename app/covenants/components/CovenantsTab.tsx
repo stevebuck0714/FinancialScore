@@ -555,6 +555,38 @@ export default function CovenantsTab({
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
 
+  const [loanName, setLoanName] = useState<string>(() => {
+    // Load from localStorage if available
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('covenantConfiguration');
+      if (saved) {
+        try {
+          const config = JSON.parse(saved);
+          return config.loanName || '';
+        } catch (e) {
+          console.warn('Failed to load saved loan name');
+        }
+      }
+    }
+    return '';
+  });
+
+  const [loanAccountNumber, setLoanAccountNumber] = useState<string>(() => {
+    // Load from localStorage if available
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('covenantConfiguration');
+      if (saved) {
+        try {
+          const config = JSON.parse(saved);
+          return config.loanAccountNumber || '';
+        } catch (e) {
+          console.warn('Failed to load saved loan account number');
+        }
+      }
+    }
+    return '';
+  });
+
   const [covenantThresholds, setCovenantThresholds] = useState<Record<string, number>>(() => {
     // Load from localStorage if available
     if (typeof window !== 'undefined') {
@@ -832,6 +864,8 @@ export default function CovenantsTab({
 
       // Save current configuration to localStorage for persistence
       const configuration = {
+        loanName,
+        loanAccountNumber,
         covenantThresholds,
         covenantApplicability,
         covenantAlertLevels,
@@ -884,7 +918,8 @@ export default function CovenantsTab({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 4px 0' }}>
-            Loan Covenants
+            {loanName || 'Loan Covenants'}
+            {loanAccountNumber && ` - Account #${loanAccountNumber}`}
           </h1>
           <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
             {companyName} • {totalCount} covenants monitored
@@ -1435,6 +1470,53 @@ export default function CovenantsTab({
 
       {activeTab === 'settings' && (
         <div>
+          {/* Loan Information */}
+          <div style={{ background: 'white', borderRadius: '8px', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+              Loan Information
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '4px' }}>
+                  Loan Name
+                </label>
+                <input
+                  type="text"
+                  value={loanName}
+                  onChange={(e) => setLoanName(e.target.value)}
+                  placeholder="Enter loan name"
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '4px',
+                    fontSize: '14px',
+                    color: '#374151'
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '4px' }}>
+                  Account Number
+                </label>
+                <input
+                  type="text"
+                  value={loanAccountNumber}
+                  onChange={(e) => setLoanAccountNumber(e.target.value)}
+                  placeholder="Enter account number"
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '4px',
+                    fontSize: '14px',
+                    color: '#374151'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Configuration Header */}
           <div style={{ background: 'white', borderRadius: '8px', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
