@@ -649,6 +649,7 @@ export default function CovenantsTab({
     const cogsTotal = latestData.cogsTotal || 0;
     const interestExpense = latestData.interestExpense || 0;
     const depreciationAmortization = latestData.depreciationAmortization || 0;
+    const netProfit = latestData.netProfit || 0;
 
     // Calculate total operating expense same as monthly processing
     const opexCategories = [
@@ -662,7 +663,8 @@ export default function CovenantsTab({
     const expense = latestData.expense || totalOperatingExpense;
 
     const ebit = revenue - cogsTotal - expense + interestExpense;
-    const ebitda = ebit + depreciationAmortization;
+    // EBITDA = Net Income + Interest Expense + Depreciation + Amortization
+    const ebitda = netProfit + interestExpense + depreciationAmortization;
 
     const ratios = {
       currentRatio,

@@ -3080,13 +3080,15 @@ function FinancialScorePage() {
     const cogsTotal = m.cogsTotal || 0;
     const interestExpense = m.interestExpense || 0;
     const depreciationAmortization = m.depreciationAmortization || 0;
-    
+    const netProfit = m.netProfit || 0;
+
     // Gross Profit = Revenue - COGS
     const grossProfit = revenue - cogsTotal;
     // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add back interest)
     const ebit = revenue - cogsTotal - expense + interestExpense;
-    // EBITDA = EBIT + Depreciation
-    const ebitda = ebit + depreciationAmortization;
+    // EBITDA = Net Income + Interest Expense + Depreciation + Amortization
+    // (This accounts for income taxes being embedded in expenses)
+    const ebitda = netProfit + interestExpense + depreciationAmortization;
     
     return {
       ...m,
