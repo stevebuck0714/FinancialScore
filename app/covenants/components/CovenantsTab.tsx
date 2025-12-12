@@ -533,7 +533,6 @@ export default function CovenantsTab({
   companyName
 }: CovenantsTabProps) {
   console.log('🏢 CovenantsTab RENDER - props:', { selectedCompanyId, companyName, monthlyLength: monthly?.length });
-  console.log('🏢 CovenantsTab RENDER - covenantData length:', covenantData?.length);
   // Feature flag check
   if (!COVENANTS_ENABLED) {
     return (
@@ -708,6 +707,8 @@ export default function CovenantsTab({
     });
     console.log('🎯 CovenantData useMemo completed, returning array of length:', result.length);
   }, [financialRatios, covenantThresholds]);
+
+  console.log('🏢 CovenantsTab RENDER - covenantData length:', covenantData?.length);
 
   // Initialize selectedCovenant with first available covenant that has data
   React.useEffect(() => {
