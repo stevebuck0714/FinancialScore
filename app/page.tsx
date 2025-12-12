@@ -3089,6 +3089,19 @@ function FinancialScorePage() {
     // EBITDA = EBIT + Depreciation + Amortization
     // (Since we don't have separate income taxes field, this is the proper EBITDA formula)
     const ebitda = ebit + depreciationAmortization;
+
+    // Debug logging for November 2025
+    if (m.month === '11-2025' || m.month === '2025-11') {
+      console.log('🔍 EBITDA Debug for', m.month, ':', {
+        revenue,
+        cogsTotal,
+        expense,
+        interestExpense,
+        depreciationAmortization,
+        ebit,
+        ebitda
+      });
+    }
     
     return {
       ...m,
