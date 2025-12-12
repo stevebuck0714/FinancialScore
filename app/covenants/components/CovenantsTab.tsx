@@ -655,9 +655,10 @@ export default function CovenantsTab({
       quickRatio,
       cash: latestData.cash || 0,
       ebitda,
-      totalLeverageRatio: latestData.totalLAndE > 0 ? latestData.totalLAndE / ebitda : 0,
+      // Use same leverage calculations as main app
+      totalLeverageRatio: latestData.totalEquity > 0 ? latestData.totalAssets / latestData.totalEquity : 0, // Leverage Ratio from main app
       netLeverageRatio: latestData.totalLAndE > 0 && latestData.cash ? (latestData.totalLAndE - latestData.cash) / ebitda : 0,
-      debtToEquityRatio: latestData.totalEquity > 0 ? latestData.totalLAndE / latestData.totalEquity : 0,
+      debtToEquityRatio: latestData.totalEquity > 0 ? latestData.totalLiab / latestData.totalEquity : 0, // Debt/Net Worth from main app
       interestCoverageRatio: latestData.interestExpense > 0 ? ebitda / latestData.interestExpense : 0,
       debtServiceCoverageRatio: latestData.interestExpense > 0 ? latestData.netProfit / latestData.interestExpense : 0,
     };
@@ -682,11 +683,11 @@ export default function CovenantsTab({
       // Map covenant IDs to calculated financial ratios
       console.log('🔄 Mapping covenant:', covenant.name, 'ID:', covenant.id, 'original value:', covenant.currentValue);
       switch (covenant.id) {
-        case '1': // Total Leverage Ratio
+        case '1': // Total Leverage Ratio (Leverage Ratio from main app)
           currentValue = financialRatios.totalLeverageRatio;
           console.log('📊 Total Leverage Ratio calculation:', {
-            totalDebt: latestData.totalLAndE,
-            ebitda: financialRatios.ebitda,
+            totalAssets: latestData.totalAssets,
+            totalEquity: latestData.totalEquity,
             ratio: financialRatios.totalLeverageRatio
           });
           break;
