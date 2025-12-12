@@ -3075,8 +3075,8 @@ function FinancialScorePage() {
     ];
     const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((m as any)[key] || 0), 0);
 
-    // Use CSV expense field if available, otherwise calculated total
-    const expense = m.expense || totalOperatingExpense;
+    // Always use calculated total operating expenses (matches Data Review)
+    const expense = totalOperatingExpense;
 
     // Calculate Gross Profit, EBIT and EBITDA for each month
     const revenue = m.revenue || 0;

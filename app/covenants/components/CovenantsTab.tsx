@@ -662,8 +662,8 @@ export default function CovenantsTab({
     ];
     const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((latestData as any)[key] || 0), 0);
 
-    // Use CSV expense field if available, otherwise calculated total
-    const expense = latestData.expense || totalOperatingExpense;
+    // Always use calculated total operating expenses (matches Data Review)
+    const expense = totalOperatingExpense;
 
     const ebit = revenue - cogsTotal - expense;
     // EBITDA = EBIT + Depreciation + Amortization
