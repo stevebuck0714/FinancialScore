@@ -443,6 +443,9 @@ const calculateFinancialRatios = (monthlyData: MonthlyDataRow[]) => {
     // Absolute values for thresholds
     totalDebt: latestData.totalLAndE,
     cash: latestData.cash,
+    ar: latestData.ar,
+    inventory: latestData.inventory,
+    otherCA: latestData.otherCA,
     ebitda: ebitda,
     netIncome: latestData.netProfit,
     totalAssets: latestData.totalAssets,
@@ -649,7 +652,8 @@ export default function CovenantsTab({
           currentValue = financialRatios.quickRatio;
           break;
         case 'minimum_liquidity':
-          currentValue = financialRatios.cash;
+          // Cash + Accounts Receivable (quick liquid assets)
+          currentValue = financialRatios.cash + (financialRatios.ar || 0);
           break;
         case 'minimum_ebitda':
           currentValue = financialRatios.ebitda;
