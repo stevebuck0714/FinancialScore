@@ -507,7 +507,7 @@ export default function CovenantsTab({
     );
   }
 
-  const [activeTab, setActiveTab] = useState<'manage-loans' | 'overview' | 'details' | 'alerts' | 'settings'>('manage-loans');
+  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'alerts' | 'settings' | 'add-loan'>('overview');
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [selectedCovenant, setSelectedCovenant] = useState<any>(null);
@@ -524,7 +524,9 @@ export default function CovenantsTab({
           if (data.loans && data.loans.length > 0 && !selectedLoan) {
             const firstActive = data.loans.find((l: Loan) => l.status === 'ACTIVE') || data.loans[0];
             setSelectedLoan(firstActive);
-            setActiveTab('overview');
+          } else if (!data.loans || data.loans.length === 0) {
+            // No loans, default to add-loan tab
+            setActiveTab('add-loan');
           }
         }
       } catch (err) {
@@ -964,17 +966,17 @@ export default function CovenantsTab({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 4px 0' }}>
-            {selectedLoan ? selectedLoan.loanName : 'Loan Covenants'}
-            {selectedLoan?.loanIdNumber && ` - ${selectedLoan.loanIdNumber}`}
+            {activeTab === 'add-loan' ? 'Loan Management' : (selectedLoan ? selectedLoan.loanName : 'Loan Covenants')}
+            {selectedLoan?.loanIdNumber && activeTab !== 'add-loan' && ` - ${selectedLoan.loanIdNumber}`}
           </h1>
-          {selectedLoan && (
+          {selectedLoan && activeTab !== 'add-loan' && (
             <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
               {selectedLoan.lenderName} • {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(selectedLoan.loanAmount)}
             </p>
           )}
         </div>
 
-        {selectedLoan && activeTab !== 'manage-loans' && (
+        {selectedLoan && activeTab !== 'add-loan' && (
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             {/* Loan Selector Dropdown */}
             <select
@@ -1023,31 +1025,31 @@ export default function CovenantsTab({
       {/* Navigation Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: '16px' }}>
         {[
-          { id: 'manage-loans', label: 'Manage Loans', icon: <Building2 size={16} /> },
           { id: 'overview', label: 'Overview' },
           { id: 'details', label: 'Details' },
           { id: 'alerts', label: 'Alerts' },
-          { id: 'settings', label: 'Settings' }
+          { id: 'settings', label: 'Settings' },
+          { id: 'add-loan', label: 'Add a Loan', icon: <Building2 size={16} /> }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            disabled={tab.id !== 'manage-loans' && !selectedLoan}
+            disabled={tab.id !== 'add-loan' && !selectedLoan}
             style={{
               padding: '8px 16px',
               background: activeTab === tab.id ? '#667eea' : 'transparent',
-              color: activeTab === tab.id ? 'white' : (tab.id !== 'manage-loans' && !selectedLoan) ? '#cbd5e1' : '#64748b',
+              color: activeTab === tab.id ? 'white' : (tab.id !== 'add-loan' && !selectedLoan) ? '#cbd5e1' : '#64748b',
               border: 'none',
               borderBottom: activeTab === tab.id ? '2px solid #667eea' : '2px solid transparent',
               fontSize: '14px',
               fontWeight: '500',
-              cursor: (tab.id !== 'manage-loans' && !selectedLoan) ? 'not-allowed' : 'pointer',
+              cursor: (tab.id !== 'add-loan' && !selectedLoan) ? 'not-allowed' : 'pointer',
               borderRadius: '6px 6px 0 0',
               transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              opacity: (tab.id !== 'manage-loans' && !selectedLoan) ? 0.5 : 1
+              opacity: (tab.id !== 'add-loan' && !selectedLoan) ? 0.5 : 1
             }}
           >
             {'icon' in tab && tab.icon}
@@ -1057,7 +1059,7 @@ export default function CovenantsTab({
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'manage-loans' && (
+      {activeTab === 'add-loan' && (
         <LoansManagement 
           companyId={selectedCompanyId} 
           onLoanSelected={handleLoanSelected}
