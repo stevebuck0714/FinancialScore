@@ -884,11 +884,11 @@ function FinancialScorePage() {
           setActiveSubscription(subData.subscription);
         }
       } else {
-        alert(`âŒ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
+        alert(`❌ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
       }
     } catch (error) {
       console.error('Update payment method error:', error);
-      alert('âŒ An error occurred while updating your payment method. Please try again.');
+      alert('❌ An error occurred while updating your payment method. Please try again.');
     } finally {
       setUpdatingPayment(false);
     }
@@ -942,7 +942,7 @@ function FinancialScorePage() {
               safeSetCompanies(freshCompanies || []);
               console.log('✅ Reloaded companies after deletion:', freshCompanies?.length || 0, 'companies');
             } catch (error) {
-              console.error('âŒ Failed to reload companies after deletion:', error);
+              console.error('❌ Failed to reload companies after deletion:', error);
             }
           }, 1000); // Small delay to ensure deletion is processed
         }
@@ -977,7 +977,7 @@ function FinancialScorePage() {
               safeSetCompanies(freshCompanies || []);
               console.log('✅ Reloaded companies after deletion (server error):', freshCompanies?.length || 0, 'companies');
             } catch (error) {
-              console.error('âŒ Failed to reload companies after deletion (server error):', error);
+              console.error('❌ Failed to reload companies after deletion (server error):', error);
             }
           }, 1000); // Small delay to ensure deletion is processed
         }
@@ -991,7 +991,7 @@ function FinancialScorePage() {
       }
     } catch (error) {
       console.error('Error deleting company:', error);
-      alert('âŒ An error occurred while deleting the company');
+      alert('❌ An error occurred while deleting the company');
     }
   };
 
@@ -2842,7 +2842,7 @@ function FinancialScorePage() {
         if (error.message.includes('already registered')) {
           alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
         } else if (error.message.includes('Password does not meet requirements')) {
-          alert('⚠️ Password does not meet requirements:\n\nâ• At least 8 characters\nâ• One uppercase letter (A-Z)\nâ• One lowercase letter (a-z)\nâ• One number (0-9)\nâ• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+          alert('⚠️ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -2926,7 +2926,7 @@ function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('⚠️ Password does not meet requirements:\n\nâ• At least 8 characters\nâ• One uppercase letter (A-Z)\nâ• One lowercase letter (a-z)\nâ• One number (0-9)\nâ• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('⚠️ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -4039,8 +4039,8 @@ function FinancialScorePage() {
     }
 
     // Show confirmation
-    const reportNames = printQueue.map(p => p.title).join('\nâ• ');
-    if (!confirm(`You are about to print the following reports in sequence:\n\nâ• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
+    const reportNames = printQueue.map(p => p.title).join('\n• ');
+    if (!confirm(`You are about to print the following reports in sequence:\n\n• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
       return;
     }
 
@@ -4258,7 +4258,7 @@ function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-intro' && 'âœ“ '}Introduction
+                    {currentView === 'fs-intro' && '✔ '}Introduction
                   </div>
                   <div
                     onClick={() => setCurrentView('fs-score')}
@@ -4286,7 +4286,7 @@ function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-score' && 'âœ“ '}Financial Score
+                    {currentView === 'fs-score' && '✔ '}Financial Score
                   </div>
                 </div>
               )}
@@ -4348,7 +4348,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-welcome' && 'âœ“ '}Welcome
+                  {currentView === 'ma-welcome' && '✔ '}Welcome
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-questionnaire')}
@@ -4376,7 +4376,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-questionnaire' && 'âœ“ '}Questionnaire
+                  {currentView === 'ma-questionnaire' && '✔ '}Questionnaire
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-your-results')}
@@ -4404,7 +4404,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-your-results' && 'âœ“ '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
+                  {currentView === 'ma-your-results' && '✔ '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scores-summary')}
@@ -4432,7 +4432,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scores-summary' && 'âœ“ '}Scores Summary
+                  {currentView === 'ma-scores-summary' && '✔ '}Scores Summary
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scoring-guide')}
@@ -4460,7 +4460,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scoring-guide' && 'âœ“ '}Scoring Guide
+                  {currentView === 'ma-scoring-guide' && '✔ '}Scoring Guide
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-charts')}
@@ -4488,7 +4488,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-charts' && 'âœ“ '}Charts
+                  {currentView === 'ma-charts' && '✔ '}Charts
                 </div>
               </div>
               )}
@@ -5507,10 +5507,10 @@ function FinancialScorePage() {
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      â• All {loadedMonthlyData.length} months have complete data<br/>
-                      â• Income Statement fields populated: Revenue, Expenses, COGS<br/>
-                      â• Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
-                      â• Ready for AI-assisted mapping
+                      • All {loadedMonthlyData.length} months have complete data<br/>
+                      • Income Statement fields populated: Revenue, Expenses, COGS<br/>
+                      • Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
+                      • Ready for AI-assisted mapping
                     </div>
                   </div>
                 </div>
@@ -5777,7 +5777,7 @@ function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? '✅ Connected' : qbStatus === 'ERROR' ? 'âŒ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? '✅ Connected' : qbStatus === 'ERROR' ? '❌ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -6021,10 +6021,10 @@ function FinancialScorePage() {
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac', marginBottom: '16px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      â• All {loadedMonthlyData.length} months have complete data<br/>
-                      â• Income Statement: Revenue, Expenses, COGS populated<br/>
-                      â• Balance Sheet: Assets, Liabilities, Equity populated<br/>
-                      â• Ready for AI-assisted account mapping
+                      • All {loadedMonthlyData.length} months have complete data<br/>
+                      • Income Statement: Revenue, Expenses, COGS populated<br/>
+                      • Balance Sheet: Assets, Liabilities, Equity populated<br/>
+                      • Ready for AI-assisted account mapping
                     </div>
                   </div>
 
@@ -12817,10 +12817,10 @@ function FinancialScorePage() {
                               if (masterDataResult.success) {
                                 console.log(`✅ Master data auto-created: ${masterDataResult.months} months`);
                               } else {
-                                console.error('âŒ Failed to auto-create master data:', masterDataResult.error);
+                                console.error('❌ Failed to auto-create master data:', masterDataResult.error);
                               }
                             } catch (masterDataError) {
-                              console.error('âŒ Error auto-creating master data:', masterDataError);
+                              console.error('❌ Error auto-creating master data:', masterDataError);
                             }
 
                             // Update local state
