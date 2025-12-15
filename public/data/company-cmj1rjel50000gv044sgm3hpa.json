@@ -4097,7 +4097,7 @@
     "professionalFees": 736.5,
     "subcontractors": 2554.56,
     "rent": 2500,
-    "taxLicense": 22275.62,
+    "taxLicense": 12936.8,
     "phoneComm": 1886.83,
     "infrastructure": 947.17,
     "autoTravel": 2874.42,
@@ -4120,10 +4120,10 @@
     "otherAssets": 0,
     "totalAssets": 564173.84,
     "ap": 19988.2,
-    "otherCL": 8694.720000000001,
-    "tcl": 28682.920000000002,
+    "otherCL": 18033.54,
+    "tcl": 38021.740000000005,
     "ltd": 121024.49,
-    "totalLiab": 149707.41,
+    "totalLiab": 159046.23,
     "ownersCapital": 0,
     "ownersDraw": -174305.49,
     "commonStock": 100,
@@ -4132,7 +4132,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 753738.59,
-    "totalLAndE": 903446,
+    "totalLAndE": 912784.82,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 418849.89
@@ -4153,10 +4153,7 @@
         "Unallocated": 19988.2
       },
       "otherCL": {
-        "Unallocated": 8694.720000000001
-      },
-      "taxLicense": {
-        "Unallocated": 22275.62
+        "Unallocated": 18033.54
       },
       "ltd": {
         "Unallocated": 121024.49
@@ -4223,13 +4220,16 @@
       },
       "mealsEntertainment": {
         "Unallocated": 5663.15
+      },
+      "taxLicense": {
+        "Unallocated": 12936.8
       }
     },
     "revenueBreakdown": {
       "Unallocated": 147940.64
     },
     "expenseBreakdown": {
-      "Unallocated": 67582.99999999999
+      "Unallocated": 58244.17999999999
     },
     "cogsBreakdown": {
       "Unallocated": 90020.5
@@ -4254,7 +4254,7 @@
     "professionalFees": 849,
     "subcontractors": 887.9,
     "rent": 9782.26,
-    "taxLicense": 22446.99,
+    "taxLicense": 12935.2,
     "phoneComm": 1662.75,
     "infrastructure": 678.6500000000001,
     "autoTravel": 1804.01,
@@ -4277,10 +4277,10 @@
     "otherAssets": 0,
     "totalAssets": 627763.3300000001,
     "ap": 26071.62,
-    "otherCL": 21137.189999999995,
-    "tcl": 47208.81,
+    "otherCL": 30648.979999999996,
+    "tcl": 56720.59999999999,
     "ltd": 119135.45000000001,
-    "totalLiab": 166344.26,
+    "totalLiab": 175856.05,
     "ownersCapital": 0,
     "ownersDraw": -181850.49,
     "commonStock": 100,
@@ -4289,7 +4289,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 815608.26,
-    "totalLAndE": 981952.52,
+    "totalLAndE": 991464.31,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 507138.17
@@ -4310,10 +4310,7 @@
         "Unallocated": 26071.62
       },
       "otherCL": {
-        "Unallocated": 21137.189999999995
-      },
-      "taxLicense": {
-        "Unallocated": 22446.99
+        "Unallocated": 30648.979999999996
       },
       "ltd": {
         "Unallocated": 119135.45000000001
@@ -4380,13 +4377,16 @@
       },
       "mealsEntertainment": {
         "Unallocated": 3827.0099999999998
+      },
+      "taxLicense": {
+        "Unallocated": 12935.2
       }
     },
     "revenueBreakdown": {
       "Unallocated": 149065.11
     },
     "expenseBreakdown": {
-      "Unallocated": 73364.15999999999
+      "Unallocated": 63852.37000000001
     },
     "cogsBreakdown": {
       "Unallocated": 89967.49
@@ -4411,7 +4411,7 @@
     "professionalFees": 360,
     "subcontractors": 937.9,
     "rent": 5338.66,
-    "taxLicense": 26539.14,
+    "taxLicense": 17091.21,
     "phoneComm": 1658.37,
     "infrastructure": 726.9399999999999,
     "autoTravel": 1684.3400000000001,
@@ -4434,10 +4434,10 @@
     "otherAssets": 0,
     "totalAssets": 698877.3,
     "ap": 35436.979999999996,
-    "otherCL": 42348.41,
-    "tcl": 77785.39,
+    "otherCL": 51796.340000000004,
+    "tcl": 87233.32,
     "ltd": 117241.93,
-    "totalLiab": 195027.32,
+    "totalLiab": 204475.25,
     "ownersCapital": 0,
     "ownersDraw": -184924.1,
     "commonStock": 100,
@@ -4446,7 +4446,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 864250.25,
-    "totalLAndE": 1059277.57,
+    "totalLAndE": 1068725.5,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 562723.5900000001
@@ -4467,10 +4467,7 @@
         "Unallocated": 35436.979999999996
       },
       "otherCL": {
-        "Unallocated": 42348.41
-      },
-      "taxLicense": {
-        "Unallocated": 26539.14
+        "Unallocated": 51796.340000000004
       },
       "ltd": {
         "Unallocated": 117241.93
@@ -4537,13 +4534,16 @@
       },
       "mealsEntertainment": {
         "Unallocated": 3531.01
+      },
+      "taxLicense": {
+        "Unallocated": 17091.21
       }
     },
     "revenueBreakdown": {
       "Unallocated": 147972.9
     },
     "expenseBreakdown": {
-      "Unallocated": 68575.31000000001
+      "Unallocated": 59127.38000000001
     },
     "cogsBreakdown": {
       "Unallocated": 92412.91
@@ -4568,7 +4568,7 @@
     "professionalFees": 2984,
     "subcontractors": 1287.9,
     "rent": 5338.66,
-    "taxLicense": 26366.89,
+    "taxLicense": 17015.059999999998,
     "phoneComm": 1748.03,
     "infrastructure": 664.17,
     "autoTravel": 1685.94,
@@ -4591,10 +4591,10 @@
     "otherAssets": 0,
     "totalAssets": 697830.6200000001,
     "ap": 26459.090000000004,
-    "otherCL": 17936.43,
-    "tcl": 44395.520000000004,
+    "otherCL": 27288.260000000002,
+    "tcl": 53747.350000000006,
     "ltd": 115343.93,
-    "totalLiab": 159739.45,
+    "totalLiab": 169091.28,
     "ownersCapital": 0,
     "ownersDraw": -191644.21000000002,
     "commonStock": 100,
@@ -4603,7 +4603,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 912027.76,
-    "totalLAndE": 1071767.21,
+    "totalLAndE": 1081119.04,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 526152.89
@@ -4624,10 +4624,7 @@
         "Unallocated": 26459.090000000004
       },
       "otherCL": {
-        "Unallocated": 17936.43
-      },
-      "taxLicense": {
-        "Unallocated": 26366.89
+        "Unallocated": 27288.260000000002
       },
       "ltd": {
         "Unallocated": 115343.93
@@ -4694,13 +4691,16 @@
       },
       "mealsEntertainment": {
         "Unallocated": 4043.36
+      },
+      "taxLicense": {
+        "Unallocated": 17015.059999999998
       }
     },
     "revenueBreakdown": {
       "Unallocated": 161269.40000000002
     },
     "expenseBreakdown": {
-      "Unallocated": 71722
+      "Unallocated": 62370.16999999999
     },
     "cogsBreakdown": {
       "Unallocated": 105224.33
@@ -4725,7 +4725,7 @@
     "professionalFees": 2596.5,
     "subcontractors": 1337.9,
     "rent": 5338.66,
-    "taxLicense": -156098.25,
+    "taxLicense": -167443.46,
     "phoneComm": 1672.46,
     "infrastructure": 403.64,
     "autoTravel": 3364.39,
@@ -4748,10 +4748,10 @@
     "otherAssets": 0,
     "totalAssets": 760656.44,
     "ap": 54155.25,
-    "otherCL": 17540.25,
-    "tcl": 71695.5,
+    "otherCL": 28885.46,
+    "tcl": 83040.70999999999,
     "ltd": 113441.11,
-    "totalLiab": 185136.61,
+    "totalLiab": 196481.82,
     "ownersCapital": 0,
     "ownersDraw": -398980.7,
     "commonStock": 100,
@@ -4760,7 +4760,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 1362136.02,
-    "totalLAndE": 1547272.63,
+    "totalLAndE": 1558617.84,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 569482.59
@@ -4781,10 +4781,7 @@
         "Unallocated": 54155.25
       },
       "otherCL": {
-        "Unallocated": 17540.25
-      },
-      "taxLicense": {
-        "Unallocated": -156098.25
+        "Unallocated": 28885.46
       },
       "ltd": {
         "Unallocated": 113441.11
@@ -4846,6 +4843,9 @@
       "professionalFees": {
         "Unallocated": 2596.5
       },
+      "taxLicense": {
+        "Unallocated": -167443.46
+      },
       "phoneComm": {
         "Unallocated": 1672.46
       },
@@ -4857,7 +4857,7 @@
       "Unallocated": 168293.16
     },
     "expenseBreakdown": {
-      "Unallocated": -94053.25999999997
+      "Unallocated": -105398.46999999999
     },
     "cogsBreakdown": {
       "Unallocated": 79958.55
@@ -4882,7 +4882,7 @@
     "professionalFees": 979,
     "subcontractors": 1079.04,
     "rent": 5188.59,
-    "taxLicense": 30956.23,
+    "taxLicense": 19410.88,
     "phoneComm": 1680.69,
     "infrastructure": 406.46000000000004,
     "autoTravel": 5702.76,
@@ -4905,10 +4905,10 @@
     "otherAssets": 0,
     "totalAssets": 700062.1200000001,
     "ap": 33286.810000000005,
-    "otherCL": -17192.890000000003,
-    "tcl": 16093.920000000002,
+    "otherCL": -5647.540000000002,
+    "tcl": 27639.270000000004,
     "ltd": 112773.05,
-    "totalLiab": 128866.97,
+    "totalLiab": 140412.32,
     "ownersCapital": 0,
     "ownersDraw": -413361.47,
     "commonStock": 100,
@@ -4917,7 +4917,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 1386372.74,
-    "totalLAndE": 1515239.71,
+    "totalLAndE": 1526785.06,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 541558.9500000001
@@ -4938,10 +4938,7 @@
         "Unallocated": 33286.810000000005
       },
       "otherCL": {
-        "Unallocated": -17192.890000000003
-      },
-      "taxLicense": {
-        "Unallocated": 30956.23
+        "Unallocated": -5647.540000000002
       },
       "ltd": {
         "Unallocated": 112773.05
@@ -5008,13 +5005,16 @@
       },
       "mealsEntertainment": {
         "Unallocated": 4753.47
+      },
+      "taxLicense": {
+        "Unallocated": 19410.88
       }
     },
     "revenueBreakdown": {
       "Unallocated": 134925.67
     },
     "expenseBreakdown": {
-      "Unallocated": 85719.12000000001
+      "Unallocated": 74173.77000000002
     },
     "cogsBreakdown": {
       "Unallocated": 106088.14
@@ -5039,7 +5039,7 @@
     "professionalFees": 399,
     "subcontractors": 937.9,
     "rent": 5188.59,
-    "taxLicense": 29388.82,
+    "taxLicense": 18551.84,
     "phoneComm": 1870.07,
     "infrastructure": 514.1800000000001,
     "autoTravel": 2996.3500000000004,
@@ -5062,10 +5062,10 @@
     "otherAssets": 0,
     "totalAssets": 743998.76,
     "ap": 39875.33,
-    "otherCL": -717.9499999999994,
-    "tcl": 39157.380000000005,
+    "otherCL": 10119.03,
+    "tcl": 49994.36,
     "ltd": 112104.48999999999,
-    "totalLiab": 151261.87,
+    "totalLiab": 162098.84999999998,
     "ownersCapital": 0,
     "ownersDraw": -417341.75,
     "commonStock": 100,
@@ -5074,7 +5074,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 1416583.4100000001,
-    "totalLAndE": 1567845.2800000003,
+    "totalLAndE": 1578682.2600000002,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 552166.64
@@ -5095,10 +5095,7 @@
         "Unallocated": 39875.33
       },
       "otherCL": {
-        "Unallocated": -717.9499999999994
-      },
-      "taxLicense": {
-        "Unallocated": 29388.82
+        "Unallocated": 10119.03
       },
       "ltd": {
         "Unallocated": 112104.48999999999
@@ -5165,13 +5162,16 @@
       },
       "mealsEntertainment": {
         "Unallocated": 3084.19
+      },
+      "taxLicense": {
+        "Unallocated": 18551.84
       }
     },
     "revenueBreakdown": {
       "Unallocated": 130197.45999999999
     },
     "expenseBreakdown": {
-      "Unallocated": 77287.56999999999
+      "Unallocated": 66450.59
     },
     "cogsBreakdown": {
       "Unallocated": 93233.37
@@ -5196,7 +5196,7 @@
     "professionalFees": 399,
     "subcontractors": 1875.8,
     "rent": 5188.59,
-    "taxLicense": 16197.19,
+    "taxLicense": 5656.030000000001,
     "phoneComm": 1739.94,
     "infrastructure": 568.8399999999999,
     "autoTravel": 2635.67,
@@ -5219,10 +5219,10 @@
     "otherAssets": 0,
     "totalAssets": 801829.8799999999,
     "ap": 31352.989999999998,
-    "otherCL": 1952.8900000000008,
-    "tcl": 33305.88,
+    "otherCL": 12494.050000000001,
+    "tcl": 43847.04,
     "ltd": 111435.43,
-    "totalLiab": 144741.31,
+    "totalLiab": 155282.47,
     "ownersCapital": 0,
     "ownersDraw": -423783.53,
     "commonStock": 873.34,
@@ -5231,7 +5231,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 1494114.47,
-    "totalLAndE": 1638855.78,
+    "totalLAndE": 1649396.94,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 577730.6599999999
@@ -5252,10 +5252,7 @@
         "Unallocated": 31352.989999999998
       },
       "otherCL": {
-        "Unallocated": 1952.8900000000008
-      },
-      "taxLicense": {
-        "Unallocated": 16197.19
+        "Unallocated": 12494.050000000001
       },
       "ltd": {
         "Unallocated": 111435.43
@@ -5317,6 +5314,9 @@
       "professionalFees": {
         "Unallocated": 399
       },
+      "taxLicense": {
+        "Unallocated": 5656.030000000001
+      },
       "phoneComm": {
         "Unallocated": 1739.94
       },
@@ -5328,7 +5328,7 @@
       "Unallocated": 153920.94
     },
     "expenseBreakdown": {
-      "Unallocated": 69306.5
+      "Unallocated": 58765.34
     },
     "cogsBreakdown": {
       "Unallocated": 78526.90999999999
@@ -5353,7 +5353,7 @@
     "professionalFees": 399,
     "subcontractors": 937.9,
     "rent": 5228.22,
-    "taxLicense": 45305.39,
+    "taxLicense": 33389.41,
     "phoneComm": 1815.0500000000002,
     "infrastructure": 2423.59,
     "autoTravel": 2488.8999999999996,
@@ -5376,10 +5376,10 @@
     "otherAssets": 0,
     "totalAssets": 653443.0700000001,
     "ap": 32765.91,
-    "otherCL": -78806.44,
-    "tcl": -46040.53,
+    "otherCL": -66890.46,
+    "tcl": -34124.55,
     "ltd": 110765.87,
-    "totalLiab": 64725.34,
+    "totalLiab": 76641.31999999999,
     "ownersCapital": 0,
     "ownersDraw": -442453.42,
     "commonStock": 873.34,
@@ -5388,7 +5388,7 @@
     "additionalPaidInCapital": 117202,
     "treasuryStock": 0,
     "totalEquity": 1461708.5899999999,
-    "totalLAndE": 1526433.93,
+    "totalLAndE": 1538349.91,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 456000.92000000004
@@ -5409,10 +5409,7 @@
         "Unallocated": 32765.91
       },
       "otherCL": {
-        "Unallocated": -78806.44
-      },
-      "taxLicense": {
-        "Unallocated": 45305.39
+        "Unallocated": -66890.46
       },
       "ltd": {
         "Unallocated": 110765.87
@@ -5474,6 +5471,9 @@
       "professionalFees": {
         "Unallocated": 399
       },
+      "taxLicense": {
+        "Unallocated": 33389.41
+      },
       "phoneComm": {
         "Unallocated": 1815.0500000000002
       },
@@ -5485,7 +5485,7 @@
       "Unallocated": 129381.67
     },
     "expenseBreakdown": {
-      "Unallocated": 98149.53
+      "Unallocated": 86233.55000000002
     },
     "cogsBreakdown": {
       "Unallocated": 86304.14
