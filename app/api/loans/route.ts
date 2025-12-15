@@ -60,10 +60,10 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    // Validation
-    if (!companyId || !loanName || !lenderName || loanAmount === undefined) {
+    // Validation - only loanName and companyId are required
+    if (!companyId || !loanName) {
       return NextResponse.json(
-        { error: "Missing required fields: companyId, loanName, lenderName, loanAmount" },
+        { error: "Missing required fields: companyId and loanName" },
         { status: 400 }
       );
     }
@@ -74,11 +74,11 @@ export async function POST(request: NextRequest) {
           companyId,
           loanName,
           loanIdNumber: loanIdNumber || null,
-          lenderName,
-          loanAmount: parseFloat(loanAmount),
+          lenderName: lenderName || "Unknown",
+          loanAmount: loanAmount ? parseFloat(loanAmount) : 0,
           interestRate: interestRate ? parseFloat(interestRate) : null,
           termMonths: termMonths ? parseInt(termMonths) : null,
-          startDate: new Date(startDate),
+          startDate: startDate ? new Date(startDate) : new Date(),
           endDate: endDate ? new Date(endDate) : null,
           loanType: loanType || "TERM",
           status: status || "ACTIVE",

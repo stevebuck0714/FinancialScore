@@ -191,159 +191,216 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
 
       {/* Add/Edit Form */}
       {isAddingLoan && (
-        <form onSubmit={handleSubmit} className="mb-6 p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-          <h3 className="text-lg font-semibold mb-4">{editingLoanId ? 'Edit Loan' : 'Add New Loan'}</h3>
-          
-          <div className="grid grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className="mb-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-lg border border-blue-200 overflow-hidden">
+          {/* Form Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              {editingLoanId ? 'Edit Loan Details' : 'Add New Loan'}
+            </h3>
+            <p className="text-blue-100 text-sm mt-1">Fill in the loan information below. Only the loan name is required.</p>
+          </div>
+
+          {/* Form Body */}
+          <div className="p-6 space-y-6">
+            {/* Essential Information */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Loan Name *</label>
-              <input
-                type="text"
-                required
-                value={formData.loanName}
-                onChange={(e) => setFormData({ ...formData, loanName: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., Equipment Finance Loan"
-              />
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <span className="w-1 h-4 bg-blue-600 rounded"></span>
+                Essential Information
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Loan Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.loanName}
+                    onChange={(e) => setFormData({ ...formData, loanName: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                    placeholder="e.g., Equipment Finance Loan, Working Capital Line"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan ID / Account Number</label>
+                  <input
+                    type="text"
+                    value={formData.loanIdNumber}
+                    onChange={(e) => setFormData({ ...formData, loanIdNumber: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                    placeholder="e.g., 12345-ABC"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Lender Name</label>
+                  <input
+                    type="text"
+                    value={formData.lenderName}
+                    onChange={(e) => setFormData({ ...formData, lenderName: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                    placeholder="e.g., Wells Fargo, Chase Bank"
+                  />
+                </div>
+              </div>
             </div>
 
+            {/* Financial Details */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Loan ID Number</label>
-              <input
-                type="text"
-                value={formData.loanIdNumber}
-                onChange={(e) => setFormData({ ...formData, loanIdNumber: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., 12345-ABC"
-              />
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <span className="w-1 h-4 bg-green-600 rounded"></span>
+                Financial Details
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-3.5 text-gray-500 font-medium">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.loanAmount}
+                      onChange={(e) => setFormData({ ...formData, loanAmount: parseFloat(e.target.value) || 0 })}
+                      className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Interest Rate</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.interestRate}
+                      onChange={(e) => setFormData({ ...formData, interestRate: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                      placeholder="0.00"
+                    />
+                    <span className="absolute right-4 top-3.5 text-gray-500 font-medium">%</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Term Length</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={formData.termMonths}
+                      onChange={(e) => setFormData({ ...formData, termMonths: parseInt(e.target.value) || 0 })}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-4 top-3.5 text-gray-500 text-sm">months</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
+            {/* Loan Classification */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lender Name *</label>
-              <input
-                type="text"
-                required
-                value={formData.lenderName}
-                onChange={(e) => setFormData({ ...formData, lenderName: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., Wells Fargo"
-              />
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <span className="w-1 h-4 bg-purple-600 rounded"></span>
+                Loan Classification
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type</label>
+                  <select
+                    value={formData.loanType}
+                    onChange={(e) => setFormData({ ...formData, loanType: e.target.value as any })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                  >
+                    <option value="TERM">Term Loan</option>
+                    <option value="REVOLVER">Revolver</option>
+                    <option value="BRIDGE">Bridge Loan</option>
+                    <option value="LINE_OF_CREDIT">Line of Credit</option>
+                    <option value="MORTGAGE">Mortgage</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                  <input
+                    type="date"
+                    value={formData.startDate as string}
+                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Maturity Date</label>
+                  <input
+                    type="date"
+                    value={formData.endDate as string}
+                    onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                  />
+                </div>
+              </div>
             </div>
 
+            {/* Status & Notes */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Loan Amount *</label>
-              <input
-                type="number"
-                required
-                value={formData.loanAmount}
-                onChange={(e) => setFormData({ ...formData, loanAmount: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="0"
-              />
-            </div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <span className="w-1 h-4 bg-orange-600 rounded"></span>
+                Status & Notes
+              </h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Current Status</label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
+                  >
+                    <option value="ACTIVE">Active</option>
+                    <option value="MATURING">Maturing</option>
+                    <option value="PAID_OFF">Paid Off</option>
+                    <option value="DEFAULTED">Defaulted</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </select>
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Interest Rate (%)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.interestRate}
-                onChange={(e) => setFormData({ ...formData, interestRate: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="0.00"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Term (Months)</label>
-              <input
-                type="number"
-                value={formData.termMonths}
-                onChange={(e) => setFormData({ ...formData, termMonths: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="0"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
-              <input
-                type="date"
-                required
-                value={formData.startDate as string}
-                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date (Maturity)</label>
-              <input
-                type="date"
-                value={formData.endDate as string}
-                onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Loan Type *</label>
-              <select
-                required
-                value={formData.loanType}
-                onChange={(e) => setFormData({ ...formData, loanType: e.target.value as any })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="TERM">Term Loan</option>
-                <option value="REVOLVER">Revolver</option>
-                <option value="BRIDGE">Bridge Loan</option>
-                <option value="LINE_OF_CREDIT">Line of Credit</option>
-                <option value="MORTGAGE">Mortgage</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status *</label>
-              <select
-                required
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="ACTIVE">Active</option>
-                <option value="MATURING">Maturing</option>
-                <option value="PAID_OFF">Paid Off</option>
-                <option value="DEFAULTED">Defaulted</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
-            </div>
-
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="Any additional notes about this loan..."
-              />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Additional Notes</label>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    rows={3}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm resize-none"
+                    placeholder="Add any special terms, conditions, or other relevant information..."
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-3 mt-4">
-            <button
-              type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            >
-              {editingLoanId ? 'Update Loan' : 'Create Loan'}
-            </button>
+          {/* Form Footer */}
+          <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
             <button
               type="button"
               onClick={resetForm}
-              className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition"
+              className="px-6 py-2.5 bg-white border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 hover:border-gray-400 transition shadow-sm"
             >
               Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 transition shadow-md flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              {editingLoanId ? 'Update Loan' : 'Create Loan'}
             </button>
           </div>
         </form>
