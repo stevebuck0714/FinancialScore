@@ -237,7 +237,7 @@ function FinancialScorePage() {
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
     if (isPaymentRequired()) {
-      alert('âš ï¸ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
+      alert('⚠️ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
       setAdminDashboardTab('payments');
       setCurrentView('admin');
       return;
@@ -255,7 +255,7 @@ function FinancialScorePage() {
 
     // Block other tabs if payment is required
     if (isPaymentRequired()) {
-      alert('âš ï¸ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
+      alert('⚠️ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
       setAdminDashboardTab('payments');
       return;
     }
@@ -369,19 +369,19 @@ function FinancialScorePage() {
 
   useEffect(() => {
     if (currentUser?.userType === 'assessment' && isLoggedIn && currentView !== 'login' && !isAssessmentUserViewAllowed(currentView)) {
-      console.log('ðŸš« useEffect redirecting from', currentView, 'to ma-welcome');
+      console.log('🚫 useEffect redirecting from', currentView, 'to ma-welcome');
       setCurrentView('ma-welcome');
     }
   }, [currentView, currentUser, isLoggedIn]);
 
   // Helper function to handle view changes for assessment users
   const handleViewChange = (newView: string) => {
-    console.log('ðŸ”„ handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
+    console.log('📄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
     if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
-      console.log('ðŸš« View not allowed, redirecting to ma-welcome');
+      console.log('🚫 View not allowed, redirecting to ma-welcome');
       setCurrentView('ma-welcome');
     } else {
-      console.log('ðŸ”„ Setting view to:', newView);
+      console.log('📄 Setting view to:', newView);
       setCurrentView(newView as any);
     }
   };
@@ -914,7 +914,7 @@ function FinancialScorePage() {
         const message = result.hidden
           ? `âœ… Company "${companyToDelete.companyName}" has been removed from your dashboard.`
           : result.softDelete
-          ? `âš ï¸ Company "${companyToDelete.companyName}" has been marked as deleted (temporary workaround). It will be fully removed after the next deployment.`
+          ? `⚠️ Company "${companyToDelete.companyName}" has been marked as deleted (temporary workaround). It will be fully removed after the next deployment.`
           : result.success
           ? `âœ… Company "${companyToDelete.companyName}" has been deleted successfully.`
           : `âœ… Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
@@ -930,12 +930,12 @@ function FinancialScorePage() {
         // Clear localStorage companies data to prevent reappearance on navigation
         if (typeof window !== 'undefined') {
           localStorage.removeItem('fs_companies');
-          console.log('ðŸ—‘ï¸ Cleared localStorage companies data after deletion');
+          console.log('🔒ï¸ Cleared localStorage companies data after deletion');
         }
 
         // Force reload companies from API to ensure deletion took effect
         if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
-          console.log('ðŸ”„ Reloading companies from API after deletion');
+          console.log('📄 Reloading companies from API after deletion');
           setTimeout(async () => {
             try {
               const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
@@ -965,12 +965,12 @@ function FinancialScorePage() {
         // Clear localStorage companies data to prevent reappearance on navigation
         if (typeof window !== 'undefined') {
           localStorage.removeItem('fs_companies');
-          console.log('ðŸ—‘ï¸ Cleared localStorage companies data after deletion (server error)');
+          console.log('🔒ï¸ Cleared localStorage companies data after deletion (server error)');
         }
 
         // Force reload companies from API to ensure deletion took effect
         if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
-          console.log('ðŸ”„ Reloading companies from API after deletion (server error)');
+          console.log('📄 Reloading companies from API after deletion (server error)');
           setTimeout(async () => {
             try {
               const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
@@ -1408,8 +1408,8 @@ function FinancialScorePage() {
               !Array.isArray(latestRecord.rawData) &&
               (latestRecord.rawData.profitAndLoss || latestRecord.rawData.balanceSheet)) {
             // QuickBooks data - use monthlyData directly
-            console.log(`ðŸ”„ Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
-            console.log(`ðŸ“„ Record belongs to company ID: ${latestRecord.companyId}`);
+            console.log(`📄 Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
+            console.log(`📄 Record belongs to company ID: ${latestRecord.companyId}`);
             console.log(`ðŸ“… QB Data sync date:`, latestRecord.rawData.syncDate);
             console.log(`ðŸ”‘ QB rawData object keys:`, Object.keys(latestRecord.rawData));
             console.log(`? SETTING qbRawData with sync date:`, latestRecord.rawData.syncDate);
@@ -1645,7 +1645,7 @@ function FinancialScorePage() {
             console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map((b: any) => b.metricName).join(', '));
           }
         } else {
-          console.log('âš ï¸ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
+          console.log('⚠️ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
         }
 
           // Load subscription pricing for this company (now stored permanently in DB)
@@ -1666,7 +1666,7 @@ function FinancialScorePage() {
             // If dedicated pricing fields are null/undefined, try userDefinedAllocations backup
             if ((monthly === null || monthly === undefined) &&
                 company.userDefinedAllocations?.subscriptionPricing) {
-              console.log('ðŸ”„ Using backup pricing from userDefinedAllocations');
+              console.log('📄 Using backup pricing from userDefinedAllocations');
               monthly = company.userDefinedAllocations.subscriptionPricing.monthly;
               quarterly = company.userDefinedAllocations.subscriptionPricing.quarterly;
               annual = company.userDefinedAllocations.subscriptionPricing.annual;
@@ -1684,7 +1684,7 @@ function FinancialScorePage() {
               console.log('âœ… Loaded pricing from database:', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
             } else {
               // No pricing data available, fall back to defaults
-              console.log('âš ï¸ No pricing data available, using defaults');
+              console.log('⚠️ No pricing data available, using defaults');
               setSubscriptionMonthlyPrice(195);
               setSubscriptionQuarterlyPrice(500);
               setSubscriptionAnnualPrice(1750);
@@ -2840,9 +2840,9 @@ function FinancialScorePage() {
       console.error('Error creating user:', error);
       if (error instanceof ApiError) {
         if (error.message.includes('already registered')) {
-          alert(`âš ï¸ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+          alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
         } else if (error.message.includes('Password does not meet requirements')) {
-          alert('âš ï¸ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+          alert('⚠️ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -2926,7 +2926,7 @@ function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('âš ï¸ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('⚠️ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -4686,7 +4686,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ðŸ›¡ï¸ Privacy Policy
+                🔒 Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4712,7 +4712,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ðŸ“„ License Agreement
+                📄 License Agreement
               </a>
             </div>
 
@@ -4961,7 +4961,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ðŸ›¡ï¸ Privacy Policy
+                🔒 Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4987,7 +4987,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ðŸ“„ License Agreement
+                📄 License Agreement
               </a>
             </div>
 
@@ -5777,7 +5777,7 @@ function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? 'âœ… Connected' : qbStatus === 'ERROR' ? 'âŒ Error' : qbStatus === 'EXPIRED' ? 'âš ï¸ Token Expired' : 'âš ï¸ Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? 'âœ… Connected' : qbStatus === 'ERROR' ? 'âŒ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -7015,7 +7015,7 @@ function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                ðŸ–¨ï¸ Print
+                🖨️ Print
               </button>
             </div>
           </div>
@@ -7338,7 +7338,7 @@ function FinancialScorePage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                ðŸ–¨ï¸ Print Dashboard
+                🖨️ Print Dashboard
               </button>
               <button
                 className="no-print"
@@ -8503,7 +8503,7 @@ function FinancialScorePage() {
             </div>
           ) : (
             <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
-              âš ï¸ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
+              ⚠️ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
             </div>
           )}
 
@@ -8717,7 +8717,7 @@ function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      ðŸ–¨ï¸ Print Priority Ratios
+                      🖨️ Print Priority Ratios
                     </button>
                   </div>
                   <div className="priority-ratios-print-content">
@@ -9103,7 +9103,7 @@ function FinancialScorePage() {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
                 onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
               >
-                ðŸ”„ Refresh Analysis
+                📄 Refresh Analysis
               </button>
               <button
                 className="no-print"
@@ -9136,7 +9136,7 @@ function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                ðŸ–¨ï¸ Print
+                🖨️ Print
               </button>
               <TextToSpeech 
                 targetElementId={
@@ -10273,7 +10273,7 @@ function FinancialScorePage() {
 
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ef4444', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>âš ï¸</span> Areas Requiring Management Attention
+                <span style={{ fontSize: '20px' }}>⚠️</span> Areas Requiring Management Attention
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.weaknesses.length > 0 ? (
@@ -10355,7 +10355,7 @@ function FinancialScorePage() {
           {mdaTab === 'key-metrics' && monthly.length >= 12 && (
           <div id="mda-key-metrics-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
-              âš ï¸ Critical Review Items
+              ⚠️ Critical Review Items
             </h2>
             
             <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' }}>
@@ -11093,7 +11093,7 @@ function FinancialScorePage() {
                   gap: '8px'
                 }}
               >
-                ðŸ–¨ï¸ Print Report
+                🖨️ Print Report
               </button>
             </div>
           </div>
@@ -11141,7 +11141,7 @@ function FinancialScorePage() {
                       {wcRatio.toFixed(2)}
                     </div>
                     <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-                      {wcRatio >= 1.5 ? 'ðŸ’ª Strong liquidity position' : wcRatio >= 1.0 ? 'âš ï¸ Adequate liquidity' : 'ðŸš¨ Needs attention'}
+                      {wcRatio >= 1.5 ? 'ðŸ’ª Strong liquidity position' : wcRatio >= 1.0 ? '⚠️ Adequate liquidity' : '🚨 Needs attention'}
                     </div>
                     <div style={{ fontSize: '12px', color: '#64748b' }}>
                       Industry standard: 1.2 - 2.0
@@ -11761,7 +11761,7 @@ function FinancialScorePage() {
                     cursor: 'pointer',
                     boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                   }}>
-                  ðŸ–¨ï¸ Print
+                  🖨️ Print
                 </button>
               )}
             </div>
@@ -12555,7 +12555,7 @@ function FinancialScorePage() {
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>âš ï¸ Negative Operating Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Negative Operating Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           The company consumed ${Math.abs(totalOperatingCF / 1000).toFixed(0)}K in cash from operations, which may indicate operational challenges.
                         </div>
@@ -12571,7 +12571,7 @@ function FinancialScorePage() {
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>âš ï¸ Negative Free Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️ Negative Free Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#b45309' }}>
                           Capital expenditures exceed operating cash flow by ${Math.abs(totalFreeCF / 1000).toFixed(0)}K, requiring external financing.
                         </div>
@@ -12587,7 +12587,7 @@ function FinancialScorePage() {
                       </div>
                     ) : avgCashFlowMargin < 5 ? (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>âš ï¸ Low Cash Flow Margin</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Low Cash Flow Margin</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           Cash flow margin of {avgCashFlowMargin.toFixed(1)}% suggests challenges in converting revenue to cash. Review receivables collection and expense timing.
                         </div>
@@ -12803,7 +12803,7 @@ function FinancialScorePage() {
 
                             // Automatically create master data from the processed data
                             try {
-                              console.log('ðŸ”„ Auto-creating master data...');
+                              console.log('📄 Auto-creating master data...');
                               const masterDataResponse = await fetch('/api/save-master-file', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -12992,7 +12992,7 @@ function FinancialScorePage() {
       {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && qbRawData) && (() => {
         // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
+          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
             <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>â³ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
@@ -13001,13 +13001,13 @@ function FinancialScorePage() {
         
         const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
-        console.log(`ðŸ”„ ========================================`);
-        console.log(`ðŸ”„ DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
-        console.log(`ðŸ”„ Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
-        console.log(`ðŸ”„ QB Data sync date:`, qbRawData.syncDate);
-        console.log(`ðŸ”„ Data belongs to company:`, qbRawData._companyId);
-        console.log(`ðŸ”„ Record ID:`, qbRawData._recordId);
-        console.log(`ðŸ”„ ========================================`);
+        console.log(`📄 ========================================`);
+        console.log(`📄 DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
+        console.log(`📄 Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
+        console.log(`📄 QB Data sync date:`, qbRawData.syncDate);
+        console.log(`📄 Data belongs to company:`, qbRawData._companyId);
+        console.log(`📄 Record ID:`, qbRawData._recordId);
+        console.log(`📄 ========================================`);
         
         // Helper function to recursively extract all rows from QB report
         // Extract from the last month column, not the total column
@@ -13744,7 +13744,7 @@ function FinancialScorePage() {
                           
                           setIsProcessingMonthlyData(true);
                           try {
-                            console.log('ðŸ”„ Processing 36 months of data using mappings...');
+                            console.log('📄 Processing 36 months of data using mappings...');
                             console.log('ðŸ“‹ Total mappings:', aiMappings.length);
                             
                             // DEBUG: Track Professional Services expense account
@@ -14307,7 +14307,7 @@ function FinancialScorePage() {
       {false && currentView === 'financial-statements' && selectedCompanyId && qbRawData && (() => {
         // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
+          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
             <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>â³ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
@@ -14821,7 +14821,7 @@ function FinancialScorePage() {
                     gap: '8px'
                   }}
                 >
-                  ðŸ–¨ï¸ Print
+                  🖨️ Print
                 </button>
               </div>
             </div>
@@ -17089,7 +17089,7 @@ function FinancialScorePage() {
                     </div>
                     {unansweredQuestions.includes(question.id) && (
                       <div style={{ marginTop: '8px', fontSize: '12px', color: '#ef4444', fontWeight: '600' }}>
-                        âš ï¸ Please select a rating
+                        ⚠️ Please select a rating
                       </div>
                     )}
                   </div>
@@ -17613,7 +17613,7 @@ function FinancialScorePage() {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                 onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
               >
-                ðŸ–¨ï¸ Generate Print Package
+                🖨️ Generate Print Package
               </button>
               <button
                 onClick={() => {
@@ -17676,7 +17676,7 @@ function FinancialScorePage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>ðŸ—‘ï¸</div>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒ï¸</div>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Delete Company</h2>
               <p style={{ fontSize: '16px', color: '#64748b', lineHeight: '1.6' }}>
                 Are you sure you want to delete <strong style={{ color: '#ef4444' }}>"{companyToDelete.companyName}"</strong>?
