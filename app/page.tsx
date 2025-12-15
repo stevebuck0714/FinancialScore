@@ -6798,7 +6798,7 @@ function FinancialScorePage() {
 
       {/* Data Review Tab */}
       {currentView === 'admin' && adminDashboardTab === 'data-review' && selectedCompanyId && (
-        <DataReviewTab monthly={monthly} companyName={companyName} accountMappings={aiMappings} />
+        <DataReviewTab selectedCompanyId={selectedCompanyId} companyName={companyName} accountMappings={aiMappings} />
       )}
 
       {/* Trend Analysis View */}

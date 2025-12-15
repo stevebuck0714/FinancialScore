@@ -3,14 +3,78 @@
 import React from "react";
 import { exportDataReviewToExcel } from "../../utils/excel-export";
 import type { MonthlyDataRow, Mappings } from "../../types";
+import { useMasterData } from "@/lib/master-data-store";
 
 interface DataReviewTabProps {
-  monthly: MonthlyDataRow[];
+  selectedCompanyId: string;
   companyName: string;
   accountMappings: Mappings[];
 }
 
-export default function DataReviewTab({ monthly, companyName, accountMappings }: DataReviewTabProps) {
+export default function DataReviewTab({ selectedCompanyId, companyName, accountMappings }: DataReviewTabProps) {
+  // Use master data store instead of receiving monthly data as prop
+  const { monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
+
+  // Check if master data exists
+  if (masterDataLoading) {
+    return (
+      <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "200px",
+            background: "white",
+            borderRadius: "12px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "48px", marginBottom: "16px" }}>⏳</div>
+            <div style={{ fontSize: "18px", fontWeight: "600", color: "#1e293b", marginBottom: "8px" }}>
+              Loading Data Review
+            </div>
+            <p style={{ fontSize: "14px", color: "#64748b" }}>
+              Loading financial data from master data store...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (masterDataError || !monthlyData || monthlyData.length === 0) {
+    return (
+      <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "200px",
+            background: "white",
+            borderRadius: "12px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "48px", marginBottom: "16px" }}>📊</div>
+            <div style={{ fontSize: "18px", fontWeight: "600", color: "#1e293b", marginBottom: "8px" }}>
+              No Data Available
+            </div>
+            <p style={{ fontSize: "14px", color: "#64748b" }}>
+              {masterDataError ? `Error: ${masterDataError}` : 'No master data available for data review.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Use master data as monthly data
+  const monthly = monthlyData;
+
   return (
     <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
       <div
