@@ -6328,7 +6328,7 @@ function FinancialScorePage() {
                       
                       {/* Billing Address Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>ðŸ“ Billing Address</h4>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>🏠 Billing Address</h4>
                         
                         <div style={{ marginBottom: '12px' }}>
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
@@ -6561,7 +6561,7 @@ function FinancialScorePage() {
                   {/* Billing Address Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                      ðŸ“ Billing Address
+                      🏠 Billing Address
                     </h4>
 
                     <div style={{ marginBottom: '12px' }}>
@@ -11121,7 +11121,7 @@ function FinancialScorePage() {
                       ${(workingCapital / 1000).toFixed(0)}K
                     </div>
                     <div style={{ fontSize: '14px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', marginBottom: '16px' }}>
-                      {wcChange >= 0 ? 'â†—ï¸ +' : 'â†˜ï¸ '}${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
+                      {wcChange >= 0 ? '↗️ +' : 'â†˜ï¸ '}${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
                       <div>
@@ -12612,7 +12612,7 @@ function FinancialScorePage() {
         return (
           <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>ðŸ”— Account Mapping</h1>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
@@ -13108,7 +13108,7 @@ function FinancialScorePage() {
         return (
           <div key={`data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>ðŸ”— Account Mapping</h1>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
@@ -13214,7 +13214,7 @@ function FinancialScorePage() {
                         
                         // DEBUG: Pick first revenue account to track through entire process
                         const testAccount = revenueDataRows[0]?.name || expenseDataRows[0]?.name || bsDataRows[0]?.name;
-                        console.log(`\nðŸ”¬ TRACKING TEST ACCOUNT: "${testAccount}"`);
+                        console.log(`\n🔬 TRACKING TEST ACCOUNT: "${testAccount}"`);
                         if (testAccount) {
                           const testRow = plRows.find(r => r.name === testAccount) || bsRows.find(r => r.name === testAccount);
                           console.log('Test account raw data:', testRow);
@@ -13298,7 +13298,7 @@ function FinancialScorePage() {
                         // DEBUG: Track test account through mapping
                         if (testAccount) {
                           const testMapping = data.mappings.find((m: any) => m.qbAccount === testAccount);
-                          console.log(`\nðŸ”¬ TEST ACCOUNT MAPPING:`, testMapping);
+                          console.log(`\n🔬 TEST ACCOUNT MAPPING:`, testMapping);
                         }
                         
                         setShowMappingSection(true);
@@ -13745,7 +13745,7 @@ function FinancialScorePage() {
                           setIsProcessingMonthlyData(true);
                           try {
                             console.log('📄 Processing 36 months of data using mappings...');
-                            console.log('ðŸ“‹ Total mappings:', aiMappings.length);
+                            console.log('📋 Total mappings:', aiMappings.length);
                             
                             // DEBUG: Track Professional Services expense account
                             const testMapping = aiMappings.find(m => 
@@ -13754,7 +13754,7 @@ function FinancialScorePage() {
                               m.qbAccount?.toLowerCase().includes('legal')
                             );
                             const testAccountName = testMapping?.qbAccount;
-                            console.log(`ðŸ”¬ TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
+                            console.log(`🔬 TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
                             
                             // Get column information from QB report
                             const plColumns = qbRawData.profitAndLoss.Columns?.Column || [];
@@ -13846,7 +13846,7 @@ function FinancialScorePage() {
                               
                               // Debug mappings for first month
                               if (i === 1) {
-                                console.log(`\nðŸ—ºï¸ Total mappings: ${aiMappings.length}`);
+                                console.log(`\n🗺ï¸ Total mappings: ${aiMappings.length}`);
                                 const targetFieldCounts: Record<string, number> = {};
                                 aiMappings.forEach(m => {
                                   targetFieldCounts[m.targetField] = (targetFieldCounts[m.targetField] || 0) + 1;
@@ -13925,7 +13925,7 @@ function FinancialScorePage() {
                                 
                                 // DEBUG: Track test account through every month
                                 if (qbAccount === testAccountName) {
-                                  console.log(`\nðŸ”¬ MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
+                                  console.log(`\n🔬 MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
                                     targetField,
                                     classification,
                                     isBalanceSheet,
@@ -14079,7 +14079,7 @@ function FinancialScorePage() {
                             if (testAccountName) {
                               const testMapping = aiMappings.find(m => m.qbAccount === testAccountName);
                               const targetField = testMapping?.targetField;
-                              console.log(`\nðŸ”¬ FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
+                              console.log(`\n🔬 FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
                               console.log(`Mapped to field: ${targetField}`);
                               console.log('Values across all months:');
                               monthlyData.forEach((month, idx) => {
@@ -17019,7 +17019,7 @@ function FinancialScorePage() {
         const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
         const canView = currentView === 'ma-questionnaire' && hasCompanyId && hasCorrectRole;
         
-        console.log('ðŸ“‹ Questionnaire render check:', {
+        console.log('📋 Questionnaire render check:', {
           currentView,
           isQuestionnaireView: currentView === 'ma-questionnaire',
           selectedCompanyId,
