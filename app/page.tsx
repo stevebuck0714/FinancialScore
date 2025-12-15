@@ -51,6 +51,7 @@ const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFin
 const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false });
 const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: false });
 const WorkingCapitalTab = dynamic(() => import('./components/WorkingCapitalTab'), { ssr: false });
+const ProjectionsTab = dynamic(() => import('./components/ProjectionsTab'), { ssr: false });
 import GoalsView from './components/GoalsView';
 import TrendAnalysisView from './components/TrendAnalysisView';
 import SimpleChart from './components/SimpleChart';
@@ -11035,22 +11036,12 @@ function FinancialScorePage() {
       )}
 
       {/* Projections View */}
-      {currentView === 'projections' && selectedCompanyId && projections.mostLikely.length > 0 && (
-        <div style={{ maxWidth: '100%', padding: '32px 32px 32px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Projections</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-
-          <div style={{ display: 'grid', gap: '32px' }}>
-            <ProjectionChart title="Revenue Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="revenue" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Expense Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="expense" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Net Income Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="netIncome" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Total Assets Projection" historicalData={monthly} projectedData={projections} valueKey="totalAssets" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Total Liabilities Projection" historicalData={monthly} projectedData={projections} valueKey="totalLiab" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Equity Projection" historicalData={monthly} projectedData={projections} valueKey="totalEquity" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-          </div>
-        </div>
+      {/* Projections View */}
+      {currentView === 'projections' && selectedCompanyId && (
+        <ProjectionsTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+        />
       )}
 
       {/* Goals View */}
