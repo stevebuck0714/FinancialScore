@@ -45,7 +45,11 @@ const MAScoresSummaryView = dynamic(() => import('./components/assessment/MAScor
 const MAYourResultsView = dynamic(() => import('./components/assessment/MAYourResultsView'), { ssr: false });
 const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), { ssr: false });
 import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
+import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
+import GoalsView from './components/GoalsView';
+import TrendAnalysisView from './components/TrendAnalysisView';
+import SimpleChart from './components/SimpleChart';
 import toast, { Toaster } from 'react-hot-toast';
 
 // Constants (now imported from ./constants)
@@ -135,6 +139,18 @@ function FinancialScorePage() {
   
   // State - Active Subscription Management
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
+
+  // Master data for dynamic categories
+  const masterData = useMasterData(selectedCompanyId);
+  const cogsCategories = masterData.data?.cogsCategories || [];
+  const expenseCategories = masterData.data?.expenseCategories || [];
+
+  // Clear master data cache when company changes
+  useEffect(() => {
+    if (selectedCompanyId) {
+      masterDataStore.clearCompanyCache(selectedCompanyId);
+    }
+  }, [selectedCompanyId]);
   const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [showUpdatePaymentModal, setShowUpdatePaymentModal] = useState(false);
   const [updatingPayment, setUpdatingPayment] = useState(false);
@@ -291,6 +307,14 @@ function FinancialScorePage() {
                     setSelectedCompanyId(newCompany.id);
                     setExpandedCompanyInfoId(newCompany.id);
                     needsPayment = !newCompany.selectedSubscriptionPlan;
+                  } else {
+                    // Fallback: try to select company with master data for testing
+                    const companyWithMasterData = loadedCompanies.find((c: any) => c.id === 'cmgmttbfh0004qhgwm6vd9oa5');
+                    if (companyWithMasterData) {
+                      setSelectedCompanyId(companyWithMasterData.id);
+                      setExpandedCompanyInfoId(companyWithMasterData.id);
+                      needsPayment = !companyWithMasterData.selectedSubscriptionPlan;
+                    }
                   }
                 } else if (loadedCompanies && loadedCompanies.length > 0) {
                   // Consultant with companies
@@ -361,6 +385,9 @@ function FinancialScorePage() {
     }
   };
   const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'covenants'>('company-management');
+
+  // Master data for dynamic goals
+  const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'covenants'>('details');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('team-management');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
@@ -536,7 +563,7 @@ function FinancialScorePage() {
   
   // State - Trend Analysis
   const [selectedTrendItem, setSelectedTrendItem] = useState<string>('revenue');
-  const [selectedTrendItems, setSelectedTrendItems] = useState<string[]>(['revenue']);
+  const [selectedTrendItems, setSelectedTrendItems] = useState<string[]>(['Revenue', 'Gross Profit', 'Total Operating Expenses', 'Net Income']);
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
 
   // State - Expense Analysis
@@ -2163,12 +2190,14 @@ function FinancialScorePage() {
             needsPayment = !userCompany.selectedSubscriptionPlan;
           }
         } else if (loadedCompanies && loadedCompanies.length > 0) {
-          // Consultant with companies - check if any company has unpaid status
-          // For now, if they have companies, select the first one
-          const firstCompany = loadedCompanies[0];
-          setSelectedCompanyId(firstCompany.id);
-          setExpandedCompanyInfoId(firstCompany.id);
-          needsPayment = !firstCompany.selectedSubscriptionPlan;
+                  // Consultant with companies - check if any company has unpaid status
+                  // For now, if they have companies, select the first one
+                  // But prioritize company with master data for Goals page testing
+                  const companyWithMasterData = loadedCompanies.find((c: any) => c.id === 'cmgmttbfh0004qhgwm6vd9oa5');
+                  const companyToSelect = companyWithMasterData || loadedCompanies[0];
+                  setSelectedCompanyId(companyToSelect.id);
+                  setExpandedCompanyInfoId(companyToSelect.id);
+                  needsPayment = !companyToSelect.selectedSubscriptionPlan;
         }
         
         // Always direct to company management on login
@@ -2306,6 +2335,94 @@ function FinancialScorePage() {
     setColumns([]);
     localStorage.removeItem('fs_currentUser');
     localStorage.removeItem('fs_selectedCompanyId');
+  };
+
+  // Load master data and extract categories for dynamic goals
+  const loadMasterDataForGoals = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+
+    try {
+      console.log('🎯 Loading master data for goals:', selectedCompanyId);
+      const response = await fetch(`/api/master-data?companyId=${selectedCompanyId}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(`Failed to load master data: ${data.error}`);
+        return;
+      }
+
+      // Extract categories from master data
+      const categories = extractCategoriesFromMasterData(data.monthlyData);
+      setMasterDataCategories(categories);
+
+      console.log('✅ Loaded categories from master data:', categories.length);
+      alert(`Loaded ${categories.length} expense categories from master data`);
+
+    } catch (error) {
+      console.error('Error loading master data:', error);
+      alert('Failed to load master data');
+    }
+  };
+
+  // Helper function to get nested object values
+  const getNestedValue = (obj: any, path: string) => {
+    return path.split('.').reduce((current, key) => current?.[key], obj);
+  };
+
+  // Extract COGS and expense categories from master data
+  const extractCategoriesFromMasterData = (monthlyData: any[]) => {
+    const cogsCategories = new Set<string>();
+    const expenseCategories = new Set<string>();
+
+    monthlyData.forEach(month => {
+      // Extract COGS categories
+      if (month.incomeStatement?.cogs) {
+        Object.keys(month.incomeStatement.cogs).forEach(key => {
+          if (month.incomeStatement.cogs[key] && month.incomeStatement.cogs[key] !== 0) {
+            cogsCategories.add(key);
+          }
+        });
+      }
+
+      // Extract operating expense categories
+      if (month.incomeStatement?.operatingExpenses) {
+        Object.keys(month.incomeStatement.operatingExpenses).forEach(key => {
+          if (month.incomeStatement.operatingExpenses[key] && month.incomeStatement.operatingExpenses[key] !== 0) {
+            expenseCategories.add(key);
+          }
+        });
+      }
+    });
+
+    // Convert to array format expected by goals table
+    const categories: any[] = [];
+
+    // Add COGS categories
+    Array.from(cogsCategories).sort().forEach(key => {
+      categories.push({
+        key: `cogs_${key}`,
+        label: `COGS - ${key.charAt(0).toUpperCase() + key.slice(1)}`,
+        category: 'COGS',
+        masterDataKey: key,
+        masterDataPath: `incomeStatement.cogs.${key}`
+      });
+    });
+
+    // Add expense categories
+    Array.from(expenseCategories).sort().forEach(key => {
+      categories.push({
+        key: `expense_${key}`,
+        label: `${key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')}`,
+        category: 'Expense',
+        masterDataKey: key,
+        masterDataPath: `incomeStatement.operatingExpenses.${key}`
+      });
+    });
+
+    return categories;
   };
 
   const addCompany = async () => {
@@ -3963,7 +4080,6 @@ function FinancialScorePage() {
     printNext();
   };
 
-  // LOGIN VIEW
   if (!isLoggedIn) {
     return (
       <LoginView
@@ -4008,8 +4124,6 @@ function FinancialScorePage() {
       />
     );
   }
-
-  console.log('🎨 RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
 
   return (
     <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -6689,921 +6803,16 @@ function FinancialScorePage() {
 
       {/* Trend Analysis View */}
       {currentView === 'trend-analysis' && selectedCompanyId && monthly.length > 0 && (
-        <div style={{ maxWidth: '100%', padding: '32px 32px 32px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Trend Analysis</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
-            <button 
-              onClick={() => setTrendAnalysisTab('item-trends')}
-              style={{ 
-                padding: '12px 24px', 
-                background: 'none', 
-                border: 'none', 
-                fontSize: '16px', 
-                fontWeight: '600', 
-                color: trendAnalysisTab === 'item-trends' ? '#667eea' : '#64748b', 
-                cursor: 'pointer',
-                borderBottom: trendAnalysisTab === 'item-trends' ? '3px solid #667eea' : '3px solid transparent',
-                marginBottom: '-2px'
-              }}
-            >
-              Item Trends
-            </button>
-            <button 
-              onClick={() => setTrendAnalysisTab('expense-analysis')}
-              style={{ 
-                padding: '12px 24px', 
-                background: 'none', 
-                border: 'none', 
-                fontSize: '16px', 
-                fontWeight: '600', 
-                color: trendAnalysisTab === 'expense-analysis' ? '#667eea' : '#64748b', 
-                cursor: 'pointer',
-                borderBottom: trendAnalysisTab === 'expense-analysis' ? '3px solid #667eea' : '3px solid transparent',
-                marginBottom: '-2px'
-              }}
-            >
-              Expense Analysis
-            </button>
-          </div>
-
-          {/* Item Trends Tab */}
-          {trendAnalysisTab === 'item-trends' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
-                  Add Items to Analyze (max 10):
-                </label>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                <select 
-                  value={selectedTrendItem} 
-                    onChange={(e) => {
-                      setSelectedTrendItem(e.target.value);
-                      if (e.target.value && !selectedTrendItems.includes(e.target.value) && selectedTrendItems.length < 10) {
-                        setSelectedTrendItems([...selectedTrendItems, e.target.value]);
-                      }
-                    }}
-                    style={{ flex: 1, maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
-                >
-                  <optgroup label="Income Statement">
-                    <option value="revenue">Total Revenue</option>
-                    <option value="expense">Total Expenses</option>
-                    {mapping.cogsTotal && <option value="cogsTotal">COGS Total</option>}
-                    {mapping.cogsPayroll && <option value="cogsPayroll">COGS Payroll</option>}
-                    {mapping.cogsOwnerPay && <option value="cogsOwnerPay">COGS Owner Pay</option>}
-                    {mapping.cogsContractors && <option value="cogsContractors">COGS Contractors</option>}
-                    {mapping.cogsMaterials && <option value="cogsMaterials">COGS Materials</option>}
-                    {mapping.cogsCommissions && <option value="cogsCommissions">COGS Commissions</option>}
-                    {mapping.cogsOther && <option value="cogsOther">COGS Other</option>}
-                    <option value="grossProfit">Gross Profit</option>
-                    {mapping.salesExpense && <option value="salesExpense">Sales & Marketing</option>}
-                    {mapping.rent && <option value="rent">Rent/Lease</option>}
-                    {mapping.infrastructure && <option value="infrastructure">Infrastructure/Utilities</option>}
-                    {mapping.autoTravel && <option value="autoTravel">Auto & Travel</option>}
-                    {mapping.professionalFees && <option value="professionalFees">Professional Fees</option>}
-                    {mapping.insurance && <option value="insurance">Insurance</option>}
-                    {mapping.marketing && <option value="marketing">OPEX Other</option>}
-                    {mapping.payroll && <option value="payroll">OPEX Payroll</option>}
-                    {mapping.ownerBasePay && <option value="ownerBasePay">Owners Base Pay</option>}
-                    {mapping.ownersRetirement && <option value="ownersRetirement">Owners Retirement</option>}
-                    {mapping.subcontractors && <option value="subcontractors">Contractors/Distribution</option>}
-                    {mapping.interestExpense && <option value="interestExpense">Interest Expense</option>}
-                    {mapping.depreciationAmortization && <option value="depreciationAmortization">Depreciation Expense</option>}
-                    {mapping.operatingExpenseTotal && <option value="operatingExpenseTotal">Operating Expense Total</option>}
-                    {mapping.nonOperatingIncome && <option value="nonOperatingIncome">Non-Operating Income</option>}
-                    {mapping.extraordinaryItems && <option value="extraordinaryItems">Extraordinary Items</option>}
-                    {mapping.netProfit && <option value="netProfit">Net Profit</option>}
-                    <option value="ebitda">EBITDA</option>
-                    <option value="ebit">EBIT</option>
-                  </optgroup>
-                  <optgroup label="Balance Sheet - Assets">
-                    <option value="totalAssets">Total Assets</option>
-                    <option value="cash">Cash</option>
-                    <option value="ar">Accounts Receivable</option>
-                    <option value="inventory">Inventory</option>
-                    {mapping.otherCA && <option value="otherCA">Other Current Assets</option>}
-                    {mapping.tca && <option value="tca">Total Current Assets</option>}
-                    {mapping.fixedAssets && <option value="fixedAssets">Fixed Assets</option>}
-                    {mapping.otherAssets && <option value="otherAssets">Other Assets</option>}
-                  </optgroup>
-                  <optgroup label="Balance Sheet - Liabilities">
-                    <option value="totalLiab">Total Liabilities</option>
-                    <option value="ap">Accounts Payable</option>
-                    {mapping.otherCL && <option value="otherCL">Other Current Liabilities</option>}
-                    {mapping.tcl && <option value="tcl">Total Current Liabilities</option>}
-                    {mapping.ltd && <option value="ltd">Long Term Debt</option>}
-                  </optgroup>
-                  <optgroup label="Balance Sheet - Equity">
-                    <option value="ownersCapital">Owner's Capital</option>
-                    <option value="ownersDraw">Owner's Draw</option>
-                    <option value="commonStock">Common Stock</option>
-                    <option value="preferredStock">Preferred Stock</option>
-                    <option value="retainedEarnings">Retained Earnings</option>
-                    <option value="additionalPaidInCapital">Additional Paid-In Capital</option>
-                    <option value="treasuryStock">Treasury Stock</option>
-                    <option value="totalEquity">Total Equity</option>
-                  </optgroup>
-                </select>
-                  <button
-                    onClick={() => {
-                      if (selectedTrendItem && !selectedTrendItems.includes(selectedTrendItem) && selectedTrendItems.length < 10) {
-                        setSelectedTrendItems([...selectedTrendItems, selectedTrendItem]);
-                      } else if (selectedTrendItems.length >= 10) {
-                        alert('Maximum of 10 items can be selected');
-                      }
-                    }}
-                    style={{
-                      padding: '12px 24px',
-                      background: selectedTrendItems.length >= 10 ? '#cbd5e1' : '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: selectedTrendItems.length >= 10 ? 'not-allowed' : 'pointer'
-                    }}
-                    disabled={selectedTrendItems.length >= 10}
-                  >
-                    Add Item
-                  </button>
-              </div>
-
-                {/* Selected Items Display */}
-                {selectedTrendItems.length > 0 && (
-                  <div style={{ marginBottom: '20px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                      Selected Items ({selectedTrendItems.length}/10):
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {selectedTrendItems.map((item, index) => (
-                        <div
-                          key={index}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            background: '#f0f9ff',
-                            border: '1px solid #667eea',
-                            borderRadius: '6px',
-                            padding: '6px 12px',
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: '#1e293b'
-                          }}
-                        >
-                          <span>{getTrendItemDisplayName(item)}</span>
-                          <button
-                            onClick={() => {
-                              setSelectedTrendItems(selectedTrendItems.filter((_, i) => i !== index));
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#ef4444',
-                              cursor: 'pointer',
-                              fontSize: '16px',
-                              padding: '0',
-                              lineHeight: '1'
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Render graphs for all selected items */}
-              <div style={{ display: 'grid', gap: '24px' }}>
-                {selectedTrendItems.map((item, index) => (
-                  <div key={index} style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <LineChart 
-                        title={`${getTrendItemDisplayName(item)} Trend`}
-                        data={monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
-                    color="#667eea"
-                    showTable={true}
-                    labelFormat="quarterly"
-                    goalLineData={(() => {
-                      // Check if selected item is "expense" (Total Expenses)
-                          if (item === 'expense') {
-                        // Sum all operating expense goals (not COGS)
-                        const opexCategories = [
-                          'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
-                          'insurance', 'rent', 'infrastructure', 'autoTravel', 
-                          'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                        ];
-                        const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                        
-                        if (totalGoalPct > 0) {
-                          return monthly.map(m => {
-                            const revenue = m.revenue || 0;
-                            return revenue * (totalGoalPct / 100);
-                          });
-                        }
-                      }
-                      
-                      // Check if selected item is an expense category with a goal
-                      const expenseCategories = [
-                        'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 'insurance', 
-                        'rent', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
-                        'depreciationAmortization', 'interestExpense'
-                      ];
-                      
-                      if (expenseCategories.includes(item) && expenseGoals[item]) {
-                        // Calculate goal as: Goal % × Revenue for each month
-                        return monthly.map(m => {
-                          const revenue = m.revenue || 0;
-                              const goalPct = expenseGoals[item] / 100;
-                          return revenue * goalPct;
-                        });
-                      }
-                      return undefined;
-                    })()}
-                  />
-                </div>
-                
-                <div style={{ width: '280px', flexShrink: 0 }}>
-                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0', position: 'sticky', top: '100px' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', textAlign: 'center' }}>Growth Analysis</h3>
-                    
-                    <div style={{ marginBottom: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
-                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Current Year</div>
-                      <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 24 ? 
-                        (() => {
-                          if (monthly.length < 24) return '#64748b';
-                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
-                          return growthRate >= 0 ? '#10b981' : '#ef4444';
-                        })()
-                        : '#64748b'
-                      }}>
-                        {monthly.length >= 24 ? (() => {
-                          if (monthly.length < 24) return 'N/A';
-                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
-                          return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
-                        })() : 'N/A'}
-                      </div>
-                    </div>
-
-                    <div style={{ padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
-                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Previous Year</div>
-                      <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 36 ? 
-                        (() => {
-                          if (monthly.length < 36) return '#64748b';
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
-                          return growthRate >= 0 ? '#10b981' : '#ef4444';
-                        })()
-                        : '#64748b'
-                      }}>
-                        {monthly.length >= 36 ? (() => {
-                          if (monthly.length < 36) return 'N/A';
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
-                          return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
-                        })() : 'N/A'}
-                      </div>
-                    </div>
-
-                    {/* Goal % for Expense Items */}
-                    {(() => {
-                      // Check if "expense" (Total Expenses) is selected
-                          if (item === 'expense') {
-                        const opexCategories = [
-                          'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
-                          'insurance', 'rent', 'infrastructure', 'autoTravel', 
-                          'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                        ];
-                        const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                        
-                        if (totalGoalPct > 0) {
-                          return (
-                            <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
-                              <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
-                              <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
-                                {totalGoalPct.toFixed(1)}%
-                              </div>
-                              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', textAlign: 'center' }}>
-                                (Sum of Operating Expenses)
-                              </div>
-                            </div>
-                          );
-                        }
-                      }
-                      
-                      const expenseCategories = [
-                        'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 'insurance', 
-                        'rent', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
-                        'depreciationAmortization', 'interestExpense'
-                      ];
-                      
-                          if (expenseCategories.includes(item) && expenseGoals[item]) {
-                        return (
-                          <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
-                            <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
-                            <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
-                                  {expenseGoals[item].toFixed(1)}%
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-                </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Expense Analysis Tab */}
-          {trendAnalysisTab === 'expense-analysis' && (
-            <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Expense Items as % of Total Revenue</h2>
-              
-              <div style={{ marginBottom: '12px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>💡 How to Use This Analysis</h3>
-                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#15803d', lineHeight: '1.6' }}>
-                  <li>Each chart shows an expense category as a <strong>percentage of total revenue</strong> over time</li>
-                  <li>Look for categories with <strong>increasing trends</strong> that may need cost control</li>
-                  <li>Compare percentages to industry benchmarks to identify inefficiencies</li>
-                  <li>Watch for sudden spikes that may indicate one-time events or problems</li>
-                </ul>
-              </div>
-
-              {/* Expense Field Selection */}
-              <div style={{ marginBottom: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#374151', marginBottom: '16px' }}>
-                  Select Expense Categories to Analyze (max 10):
-                </label>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                  <select
-                    value={selectedExpenseItem}
-                    onChange={(e) => {
-                      setSelectedExpenseItem(e.target.value);
-                      if (e.target.value && !selectedExpenseItems.includes(e.target.value) && selectedExpenseItems.length < 10) {
-                        setSelectedExpenseItems([...selectedExpenseItems, e.target.value]);
-                      }
-                    }}
-                    style={{ flex: 1, maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
-                  >
-                    <optgroup label="Expense Categories">
-                      <option value="total-expenses">Total Expenses</option>
-                      <option value="cogsTotal">COGS Total</option>
-                      <option value="cogsPayroll">COGS Payroll</option>
-                      <option value="cogsOwnerPay">COGS Owner Pay</option>
-                      <option value="cogsContractors">COGS Contractors</option>
-                      <option value="cogsMaterials">COGS Materials</option>
-                      <option value="cogsCommissions">COGS Commissions</option>
-                      <option value="cogsOther">COGS Other</option>
-                      <option value="payroll">Payroll</option>
-                      <option value="ownerBasePay">Owner Base Pay</option>
-                      <option value="ownersRetirement">Owner's Retirement</option>
-                      <option value="subcontractors">Subcontractors</option>
-                      <option value="professionalFees">Professional Services</option>
-                      <option value="insurance">Insurance</option>
-                      <option value="rent">Rent/Lease</option>
-                      <option value="phoneComm">Phone & Communications</option>
-                      <option value="infrastructure">Infrastructure/Utilities</option>
-                      <option value="autoTravel">Auto & Travel</option>
-                      <option value="salesExpense">Sales & Marketing</option>
-                      <option value="marketing">Marketing</option>
-                      <option value="trainingCert">Training & Certification</option>
-                      <option value="mealsEntertainment">Meals & Entertainment</option>
-                      <option value="interestExpense">Interest Expense</option>
-                      <option value="depreciationAmortization">Depreciation & Amortization</option>
-                      <option value="otherExpense">Other Expenses</option>
-                    </optgroup>
-                  </select>
-
-                  <button
-                    onClick={() => {
-                      if (selectedExpenseItem && !selectedExpenseItems.includes(selectedExpenseItem) && selectedExpenseItems.length < 10) {
-                        setSelectedExpenseItems([...selectedExpenseItems, selectedExpenseItem]);
-                      }
-                    }}
-                    disabled={selectedExpenseItems.length >= 10}
-                    style={{
-                      padding: '12px 20px',
-                      background: selectedExpenseItems.length >= 10 ? '#cbd5e1' : '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: selectedExpenseItems.length >= 10 ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Add Category
-                  </button>
-                </div>
-
-                {selectedExpenseItems.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '12px' }}>
-                      Selected Categories ({selectedExpenseItems.length}/10):
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {selectedExpenseItems.map((item, index) => (
-                        <div
-                          key={item}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '6px 12px',
-                            background: '#e0f2fe',
-                            border: '1px solid #0ea5e9',
-                            borderRadius: '20px',
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: '#0c4a6e'
-                          }}
-                        >
-                          <span>{getExpenseFieldDisplayName(item)}</span>
-                          <button
-                            onClick={() => {
-                              setSelectedExpenseItems(selectedExpenseItems.filter((_, i) => i !== index));
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#0c4a6e',
-                              cursor: 'pointer',
-                              fontSize: '16px',
-                              lineHeight: '1',
-                              padding: '0',
-                              marginLeft: '4px'
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
-                {/* Total Expenses */}
-                {selectedExpenseItems.includes('total-expenses') && (
-                  <LineChart
-                    title="Total Expenses (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? (m.expense / m.revenue) * 100 : 0
-                    }))}
-                    color="#ef4444"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={(() => {
-                      // Sum all operating expense goals (not COGS)
-                      const opexCategories = [
-                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
-                        'insurance', 'rent', 'infrastructure', 'autoTravel',
-                        'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                      ];
-                      const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                      return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
-                    })()}
-                  />
-                )}
-
-                {/* COGS Total */}
-                {selectedExpenseItems.includes('cogsTotal') && (
-                  <LineChart
-                    title="COGS Total (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsTotal || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#f59e0b"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsTotal ? monthly.map(() => expenseGoals.cogsTotal) : undefined}
-                  />
-                )}
-
-                {/* COGS Breakdown */}
-                {selectedExpenseItems.includes('cogsPayroll') && (
-                  <LineChart
-                    title="COGS Payroll (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsPayroll || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fb923c"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsPayroll ? monthly.map(() => expenseGoals.cogsPayroll) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsOwnerPay') && (
-                  <LineChart
-                    title="COGS Owner Pay (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsOwnerPay || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fdba74"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsOwnerPay ? monthly.map(() => expenseGoals.cogsOwnerPay) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsContractors') && (
-                  <LineChart
-                    title="COGS Contractors (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsContractors || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fed7aa"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsContractors ? monthly.map(() => expenseGoals.cogsContractors) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsMaterials') && (
-                  <LineChart
-                    title="COGS Materials (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsMaterials || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fde047"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsMaterials ? monthly.map(() => expenseGoals.cogsMaterials) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsCommissions') && (
-                  <LineChart
-                    title="COGS Commissions (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsCommissions || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#bef264"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsCommissions ? monthly.map(() => expenseGoals.cogsCommissions) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsOther') && (
-                  <LineChart
-                    title="COGS Other (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsOther || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#86efac"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsOther ? monthly.map(() => expenseGoals.cogsOther) : undefined}
-                  />
-                )}
-                
-                {mapping.operatingExpenseTotal && (
-                  <LineChart 
-                    title="Operating Expense Total (% of Revenue)"
-                    data={monthly.map(m => ({ 
-                      month: m.month, 
-                      value: m.revenue > 0 ? ((m.operatingExpenseTotal || 0) / m.revenue) * 100 : 0 
-                    }))}
-                    color="#3b82f6"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={(() => {
-                      // Sum all operating expense goals (not COGS)
-                      const opexCategories = [
-                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
-                        'insurance', 'rent', 'infrastructure', 'autoTravel', 
-                        'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                      ];
-                      const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                      return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
-                    })()}
-                  />
-                )}
-                
-                {selectedExpenseItems.includes('payroll') && (
-                  <LineChart
-                    title="OPEX Payroll (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.payroll || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#60a5fa"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.payroll ? monthly.map(() => expenseGoals.payroll) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('salesExpense') && (
-                  <LineChart
-                    title="Sales & Marketing (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.salesExpense || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#93c5fd"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.salesExpense ? monthly.map(() => expenseGoals.salesExpense) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('rent') && (
-                  <LineChart
-                    title="Rent/Lease (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.rent || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#8b5cf6"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.rent ? monthly.map(() => expenseGoals.rent) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('infrastructure') && (
-                  <LineChart
-                    title="Infrastructure/Utilities (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.infrastructure || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#a78bfa"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.infrastructure ? monthly.map(() => expenseGoals.infrastructure) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('phoneComm') && (
-                  <LineChart
-                    title="Phone & Communications (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.phoneComm || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#dbeafe"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.phoneComm ? monthly.map(() => expenseGoals.phoneComm) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('autoTravel') && (
-                  <LineChart
-                    title="Auto & Travel (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.autoTravel || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#ec4899"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.autoTravel ? monthly.map(() => expenseGoals.autoTravel) : undefined}
-                  />
-                )}
-                
-                {selectedExpenseItems.includes('professionalFees') && (
-                  <LineChart
-                    title="Professional Services (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.professionalFees || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#f472b6"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.professionalFees ? monthly.map(() => expenseGoals.professionalFees) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('insurance') && (
-                  <LineChart
-                    title="Insurance (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.insurance || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#f9a8d4"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.insurance ? monthly.map(() => expenseGoals.insurance) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('ownerBasePay') && (
-                  <LineChart
-                    title="Owners Base Pay (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.ownerBasePay || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#14b8a6"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.ownerBasePay ? monthly.map(() => expenseGoals.ownerBasePay) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('ownersRetirement') && (
-                  <LineChart
-                    title="Owners Retirement (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.ownersRetirement || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#2dd4bf"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('subcontractors') && (
-                  <LineChart
-                    title="Contractors/Distribution (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.subcontractors || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#5eead4"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.subcontractors ? monthly.map(() => expenseGoals.subcontractors) : undefined}
-                  />
-                )}
-                
-                {selectedExpenseItems.includes('interestExpense') && (
-                  <LineChart
-                    title="Interest Expense (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.interestExpense || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fb7185"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.interestExpense ? monthly.map(() => expenseGoals.interestExpense) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('depreciationAmortization') && (
-                  <LineChart
-                    title="Depreciation Expense (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.depreciationAmortization || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fca5a5"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.depreciationAmortization ? monthly.map(() => expenseGoals.depreciationAmortization) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('marketing') && (
-                  <LineChart
-                    title="Marketing (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.marketing || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fecaca"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.marketing ? monthly.map(() => expenseGoals.marketing) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('trainingCert') && (
-                  <LineChart
-                    title="Training & Certification (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.trainingCert || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fef3c7"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.trainingCert ? monthly.map(() => expenseGoals.trainingCert) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('mealsEntertainment') && (
-                  <LineChart
-                    title="Meals & Entertainment (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.mealsEntertainment || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fce7f3"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.mealsEntertainment ? monthly.map(() => expenseGoals.mealsEntertainment) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('otherExpense') && (
-                  <LineChart
-                    title="Other Expenses (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.otherExpense || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#e0f2fe"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.otherExpense ? monthly.map(() => expenseGoals.otherExpense) : undefined}
-                  />
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        <TrendAnalysisView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          monthly={monthly}
+          expenseGoals={expenseGoals}
+          selectedExpenseItems={selectedExpenseItems}
+          setSelectedExpenseItems={setSelectedExpenseItems}
+          selectedItemTrends={selectedTrendItems}
+          setSelectedItemTrends={setSelectedTrendItems}
+        />
       )}
 
       {/* Financial Score - Introduction View */}
@@ -11832,258 +11041,15 @@ function FinancialScorePage() {
 
       {/* Goals View */}
       {currentView === 'goals' && selectedCompanyId && monthly.length >= 6 && (
-        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
-            input[type=number].no-spinner::-webkit-outer-spin-button,
-            input[type=number].no-spinner::-webkit-inner-spin-button {
-              -webkit-appearance: none;
-              margin: 0;
-            }
-            input[type=number].no-spinner {
-              -moz-appearance: textfield;
-            }
-          `}</style>
-          
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Expense Goals</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Expense Category</th>
-                  {(() => {
-                    const last6 = monthly.slice(-6);
-                    return last6.map((m, i) => {
-                      const monthDate = m.date || m.month;
-                      const dateObj = monthDate instanceof Date ? monthDate : new Date(monthDate);
-                      const displayDate = !isNaN(dateObj.getTime()) 
-                        ? dateObj.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-                        : 'N/A';
-                      
-                      return (
-                        <th key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                          {displayDate}
-                          <br />
-                          <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
-                        </th>
-                      );
-                    });
-                  })()}
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                    6-Mo Avg<br />
-                    <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
-                  </th>
-                  <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#667eea' }}>
-                    Goal %<br />
-                    <span style={{ fontSize: '12px', fontWeight: '400' }}>of Revenue</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const last6 = monthly.slice(-6);
-                  const expenseCategories = [
-                    // COGS Breakdown
-                    { key: 'cogsPayroll', label: 'COGS - Payroll' },
-                    { key: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-                    { key: 'cogsContractors', label: 'COGS - Contractors' },
-                    { key: 'cogsMaterials', label: 'COGS - Materials' },
-                    { key: 'cogsCommissions', label: 'COGS - Commissions' },
-                    { key: 'cogsOther', label: 'COGS - Other' },
-                    // Operating Expenses
-                    { key: 'payroll', label: 'Payroll' },
-                    { key: 'ownerBasePay', label: 'Owner Base Pay' },
-                    { key: 'ownersRetirement', label: "Owner's Retirement" },
-                    { key: 'subcontractors', label: 'Subcontractors' },
-                    { key: 'salesExpense', label: 'Sales & Marketing' },
-                    { key: 'rent', label: 'Rent/Lease' },
-                    { key: 'infrastructure', label: 'Infrastructure/Utilities' },
-                    { key: 'autoTravel', label: 'Auto & Travel' },
-                    { key: 'professionalFees', label: 'Professional Services' },
-                    { key: 'insurance', label: 'Insurance' },
-                    { key: 'marketing', label: 'Marketing' },
-                    { key: 'interestExpense', label: 'Interest Expense' },
-                    { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
-                    { key: 'otherExpense', label: 'Other Expenses' }
-                  ];
-
-                  return expenseCategories.map((category) => {
-                    const last6Percentages = last6.map(m => {
-                      const revenue = m.revenue || 0;
-                      const expenseValue = (m as any)[category.key] || 0;
-                      return revenue > 0 ? (expenseValue / revenue) * 100 : 0;
-                    });
-                    
-                    const avg6mo = last6Percentages.reduce((sum, val) => sum + val, 0) / last6Percentages.length;
-                    const goalPct = expenseGoals[category.key];
-                    const hasGoal = goalPct && goalPct > 0;
-
-                    return (
-                      <tr key={category.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
-                          {category.label}
-                        </td>
-                        {last6Percentages.map((pct, i) => (
-                          <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: hasGoal && pct > goalPct ? '#ef4444' : '#64748b' }}>
-                            {pct.toFixed(1)}%
-                          </td>
-                        ))}
-                        <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: hasGoal && avg6mo > goalPct ? '#ef4444' : '#1e293b' }}>
-                          {avg6mo.toFixed(1)}%
-                        </td>
-                        <td style={{ textAlign: 'center', padding: '12px' }}>
-                          <input
-                            type="number"
-                            className="no-spinner"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            value={expenseGoals[category.key] || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setExpenseGoals(prev => {
-                                const newGoals = { ...prev };
-                                if (value === '' || value === null || value === undefined) {
-                                  // Remove the key if empty
-                                  delete newGoals[category.key];
-                                } else {
-                                  // Only set if it's a valid number
-                                  const numValue = parseFloat(value);
-                                  if (!isNaN(numValue) && numValue > 0) {
-                                    newGoals[category.key] = numValue;
-                                  } else {
-                                    delete newGoals[category.key];
-                                  }
-                                }
-                                return newGoals;
-                              });
-                            }}
-                            placeholder=""
-                            style={{
-                              width: '80px',
-                              padding: '8px 12px',
-                              fontSize: '14px',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '6px',
-                              textAlign: 'center',
-                              color: '#1e293b'
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  });
-                })()}
-                
-                {/* Total Operating Expenses Summary Row */}
-                {(() => {
-                  const last6 = monthly.slice(-6);
-                  const opexCategories = [
-                    'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
-                    'insurance', 'rent', 'infrastructure', 'autoTravel', 
-                    'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                  ];
-                  
-                  // Calculate totals for each month
-                  const last6Totals = last6.map(m => {
-                    const revenue = m.revenue || 0;
-                    if (revenue === 0) return 0;
-                    const totalExpense = opexCategories.reduce((sum, key) => sum + ((m as any)[key] || 0), 0);
-                    return (totalExpense / revenue) * 100;
-                  });
-                  
-                  const avg6mo = last6Totals.reduce((sum, val) => sum + val, 0) / last6Totals.length;
-                  const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                  
-                  return (
-                    <tr style={{ borderTop: '3px solid #667eea', background: '#f0f9ff' }}>
-                      <td style={{ padding: '12px', fontSize: '14px', color: '#667eea', fontWeight: '700' }}>
-                        TOTAL OPERATING EXPENSES
-                      </td>
-                      {last6Totals.map((pct, i) => (
-                        <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#667eea' }}>
-                          {pct.toFixed(1)}%
-                        </td>
-                      ))}
-                      <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#667eea' }}>
-                        {avg6mo.toFixed(1)}%
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#667eea' }}>
-                        {totalGoalPct.toFixed(1)}%
-                      </td>
-                    </tr>
-                  );
-                })()}
-              </tbody>
-            </table>
-
-            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
-              <div style={{ flex: 1, padding: '16px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
-                <p style={{ fontSize: '14px', color: '#0c4a6e', margin: 0 }}>
-                  <strong>Tip:</strong> Set goal percentages for each expense category as a percentage of revenue. Leave blank to use the 6-month average as the target.
-                </p>
-              </div>
-              <button
-                onClick={async () => {
-                  if (!selectedCompanyId) return;
-                  
-                  // Filter out zero/invalid values before saving
-                  const goalsToSave: {[key: string]: number} = {};
-                  Object.entries(expenseGoals).forEach(([key, value]) => {
-                    if (typeof value === 'number' && value > 0) {
-                      goalsToSave[key] = value;
-                    }
-                  });
-                  
-                  console.log('?? Saving expense goals for company:', selectedCompanyId, goalsToSave);
-                  setGoalsSaveStatus('saving');
-                  try {
-                    const response = await fetch('/api/expense-goals', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        companyId: selectedCompanyId,
-                        goals: goalsToSave
-                      })
-                    });
-                    const result = await response.json();
-                    console.log('?? Save response:', result);
-                    if (response.ok) {
-                      setGoalsSaveStatus('saved');
-                      setTimeout(() => setGoalsSaveStatus('idle'), 3000);
-                    } else {
-                      console.error('? Failed to save goals:', result);
-                      setGoalsSaveStatus('error');
-                      setTimeout(() => setGoalsSaveStatus('idle'), 3000);
-                    }
-                  } catch (error) {
-                    console.error('? Error saving goals:', error);
-                    setGoalsSaveStatus('error');
-                    setTimeout(() => setGoalsSaveStatus('idle'), 3000);
-                  }
-                }}
-                disabled={goalsSaveStatus === 'saving'}
-                style={{
-                  padding: '12px 32px',
-                  background: goalsSaveStatus === 'saved' ? '#10b981' : goalsSaveStatus === 'error' ? '#ef4444' : goalsSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: goalsSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.3s ease'
-                }}
-              >
-                {goalsSaveStatus === 'saving' ? '?? Saving...' : goalsSaveStatus === 'saved' ? '? Saved!' : goalsSaveStatus === 'error' ? '? Error' : 'Save Goals'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <GoalsView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          monthly={monthly}
+          expenseGoals={expenseGoals}
+          setExpenseGoals={setExpenseGoals}
+          masterDataCategories={masterDataCategories}
+          setMasterDataCategories={setMasterDataCategories}
+        />
       )}
 
       {/* Working Capital View */}
@@ -12092,475 +11058,221 @@ function FinancialScorePage() {
           <style>{`
             @media print {
               @page {
-                size: landscape;
-                margin: 0.15in;
+                size: portrait;
+                margin: 0.3in;
               }
-              
+
               /* Hide navigation and UI elements */
               .no-print,
-              header,
-              nav,
-              aside,
-              [role="navigation"],
-              button {
+              .dashboard-header-print-hide {
                 display: none !important;
-              }
-              
-              /* Remove background colors and shadows */
-              * {
-                box-shadow: none !important;
-              }
-              
-              /* Page breaks */
-              .page-break-after {
-                page-break-after: always;
-              }
-              
-              /* Show second page header only when printing */
-              .wc-page-2-header {
-                display: block !important;
-                margin-top: 0 !important;
-                padding-top: 24px !important;
-              }
-              
-              /* Ensure content fits on landscape pages */
-              .wc-print-content {
-                width: 100%;
-              }
-              
-              /* Scale down first page content to fit */
-              .wc-first-page-content,
-              .page-break-after {
-                transform: scale(0.85);
-                transform-origin: top left;
-                width: 117.65%; /* Compensate for scale */
-              }
-              
-              /* Additionally scale the chart horizontally to fit within page */
-              .page-break-after svg {
-                transform: scaleX(0.95) !important;
-                transform-origin: left center !important;
-                overflow: visible !important;
-              }
-              
-              /* Ensure chart container doesn't clip overflow labels */
-              .page-break-after > div {
-                overflow: visible !important;
-              }
-              
-              /* Reduce spacing for print */
-              @media print {
-                h1 {
-                  font-size: 24px !important;
-                  margin-bottom: 16px !important;
-                }
-                
-                h2 {
-                  font-size: 16px !important;
-                  margin-bottom: 12px !important;
-                }
-                
-                .wc-first-page-content {
-                  margin-bottom: 16px !important;
-                  gap: 8px !important;
-                }
-                
-                .page-break-after {
-                  margin-bottom: 16px !important;
-                  padding: 16px !important;
-                }
-                
-                /* Reduce padding and font sizes in metric cards */
-                .wc-first-page-content > div {
-                  padding: 10px !important;
-                }
-                
-                .wc-first-page-content > div h3 {
-                  font-size: 11px !important;
-                  margin-bottom: 6px !important;
-                }
-                
-                .wc-first-page-content > div > div:first-of-type {
-                  font-size: 22px !important;
-                  margin-bottom: 2px !important;
-                }
-                
-                .wc-first-page-content > div > div:last-of-type {
-                  font-size: 10px !important;
-                }
-                
-                /* Compress second page - Components Breakdown */
-                .wc-components-breakdown {
-                  margin-bottom: 12px !important;
-                  gap: 16px !important;
-                }
-                
-                .wc-components-breakdown > div {
-                  padding: 16px !important;
-                }
-                
-                .wc-components-breakdown h2 {
-                  font-size: 16px !important;
-                  margin-bottom: 12px !important;
-                }
-                
-                .wc-components-breakdown > div > div {
-                  gap: 8px !important;
-                }
-                
-                .wc-components-breakdown > div > div > div {
-                  padding: 8px !important;
-                  font-size: 12px !important;
-                }
-                
-                /* Compress second page - Insights Section */
-                .wc-insights {
-                  padding: 16px !important;
-                  margin-bottom: 0 !important;
-                }
-                
-                .wc-insights h2 {
-                  font-size: 16px !important;
-                  margin-bottom: 12px !important;
-                }
-                
-                .wc-insights > div {
-                  gap: 10px !important;
-                }
-                
-                .wc-insights > div > div {
-                  padding: 10px !important;
-                  font-size: 11px !important;
-                  line-height: 1.4 !important;
-                }
-                
-                .wc-insights > div > div > div:first-child {
-                  font-size: 12px !important;
-                  margin-bottom: 4px !important;
-                }
-                
-                .wc-insights > div > div > div:last-child {
-                  font-size: 11px !important;
-                }
               }
             }
           `}</style>
-          
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Working Capital Analysis</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>Working Capital Analysis</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-              <button 
-                className="no-print"
-                onClick={() => window.print()} 
-                style={{ 
-                  padding: '12px 24px', 
-                  background: '#667eea', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <button
+                onClick={() => window.print()}
+                style={{
+                  padding: '12px 24px',
+                  background: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
                   cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
-                }}>
-                🖨️ Print
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                🖨️ Print Report
               </button>
             </div>
           </div>
-          
-          {(() => {
-            // Calculate working capital for each month
-            const wcData = monthly.map(m => {
-              const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
-              const cl = m.tcl || ((m.ap || 0) + (m.otherCL || 0));
-              return {
-                month: m.month,
-                currentAssets: ca,
-                currentLiabilities: cl,
-                workingCapital: ca - cl,
-                revenue: m.revenue
-              };
-            });
-            
-            // Current period metrics
-            const current = wcData[wcData.length - 1];
-            const prior = wcData.length >= 13 ? wcData[wcData.length - 13] : wcData[0];
-            
-            const currentWC = current.workingCapital;
-            const wcRatio = current.currentLiabilities !== 0 ? current.currentAssets / current.currentLiabilities : 0;
-            const wcChange = currentWC - prior.workingCapital;
-            const wcChangePercent = prior.workingCapital !== 0 ? (wcChange / Math.abs(prior.workingCapital)) * 100 : 0;
-            
-            // Calculate days working capital (WC / daily revenue)
-            const last12Months = monthly.slice(-12);
-            const annualRevenue = last12Months.reduce((sum, m) => sum + m.revenue, 0);
-            const dailyRevenue = annualRevenue / 365;
-            const daysWC = dailyRevenue !== 0 ? currentWC / dailyRevenue : 0;
-            
-            // Working Capital Cycle components
-            const daysAR = current.revenue !== 0 ? (current.currentAssets * 0.4 / (current.revenue * 12)) * 365 : 0; // Estimate AR as 40% of current assets
-            const daysAP = current.revenue !== 0 ? (current.currentLiabilities * 0.6 / (current.revenue * 12 * 0.7)) * 365 : 0; // Estimate AP
-            const daysInventory = current.revenue !== 0 ? (current.currentAssets * 0.2 / (current.revenue * 12 * 0.7)) * 365 : 0; // Estimate inventory
-            const cashConversionCycle = daysAR + daysInventory - daysAP;
-            
-            // Historical averages
-            const avgWC = wcData.reduce((sum, d) => sum + d.workingCapital, 0) / wcData.length;
-            const minWC = Math.min(...wcData.map(d => d.workingCapital));
-            const maxWC = Math.max(...wcData.map(d => d.workingCapital));
-            
-            return (
-              <>
-                {/* Key Metrics Cards */}
-                <div className="wc-first-page-content" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 200px))', gap: '20px', marginBottom: '32px', justifyContent: 'center' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Current Working Capital</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
-                      ${(currentWC / 1000).toFixed(0)}K
+
+          {/* Working Capital Overview */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px', marginBottom: '32px' }}>
+            {(() => {
+              const lastMonth = monthly[monthly.length - 1];
+              const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
+              const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0)));
+              const workingCapital = currentAssets - currentLiab;
+              const wcRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
+
+              // Calculate trend (compare to previous month)
+              const prevMonth = monthly.length > 1 ? monthly[monthly.length - 2] : null;
+              const prevWC = prevMonth ? (prevMonth.tca || ((prevMonth.cash || 0) + (prevMonth.ar || 0) + (prevMonth.inventory || 0) + (prevMonth.otherCA || 0))) - Math.abs(prevMonth.tcl || ((prevMonth.ap || 0) + (prevMonth.otherCL || 0))) : workingCapital;
+              const wcChange = workingCapital - prevWC;
+              const wcChangePercent = prevWC !== 0 ? (wcChange / Math.abs(prevWC)) * 100 : 0;
+
+              return (
+                <>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>💼 Current Working Capital</h3>
+                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+                      ${(workingCapital / 1000).toFixed(0)}K
                     </div>
-                    <div style={{ fontSize: '12px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                      {wcChange >= 0 ? '?' : '?'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%) vs. 1Y ago
+                    <div style={{ fontSize: '14px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', marginBottom: '16px' }}>
+                      {wcChange >= 0 ? '↗️ +' : '↘️ '}${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
+                      <div>
+                        <div style={{ color: '#64748b', marginBottom: '4px' }}>Current Assets</div>
+                        <div style={{ fontWeight: '600', color: '#1e293b' }}>${(currentAssets / 1000).toFixed(0)}K</div>
+                      </div>
+                      <div>
+                        <div style={{ color: '#64748b', marginBottom: '4px' }}>Current Liabilities</div>
+                        <div style={{ fontWeight: '600', color: '#1e293b' }}>${(currentLiab / 1000).toFixed(0)}K</div>
+                      </div>
                     </div>
                   </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Working Capital Ratio</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: wcRatio >= 1.5 ? '#10b981' : wcRatio >= 1.0 ? '#f59e0b' : '#ef4444', marginBottom: '4px' }}>
+
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>📊 Working Capital Ratio</h3>
+                    <div style={{ fontSize: '36px', fontWeight: '700', color: wcRatio >= 1.5 ? '#10b981' : wcRatio >= 1.0 ? '#f59e0b' : '#ef4444', marginBottom: '8px' }}>
                       {wcRatio.toFixed(2)}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      {wcRatio >= 1.5 ? 'Strong' : wcRatio >= 1.0 ? 'Adequate' : 'Needs Attention'}
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Days Working Capital</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                      {daysWC.toFixed(0)}
+                    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                      {wcRatio >= 1.5 ? '💪 Strong liquidity position' : wcRatio >= 1.0 ? '⚠️ Adequate liquidity' : '🚨 Needs attention'}
                     </div>
                     <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      Days of revenue covered
+                      Industry standard: 1.2 - 2.0
                     </div>
                   </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Cash Conversion Cycle</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                      {cashConversionCycle.toFixed(0)}
+
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>⏱️ Days Working Capital</h3>
+                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+                      {(() => {
+                        const avgRevenue = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0) / Math.max(monthly.slice(-12).length, 1);
+                        const daysWC = workingCapital > 0 && avgRevenue > 0 ? (workingCapital / avgRevenue) * 365 : 0;
+                        return daysWC.toFixed(0);
+                      })()}
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                      Days of revenue covered by working capital
                     </div>
                     <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      Days (estimated)
+                      Benchmark: 30-90 days
                     </div>
                   </div>
-                </div>
-                
-                {/* Working Capital Trend Chart */}
-                <div className="page-break-after" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend & 12-Month Projection</h2>
-                  {(() => {
-                    // Holt-Winters Exponential Smoothing with Seasonality
-                    const holtWintersProjection = (data: number[], seasons: number = 12, periods: number = 12) => {
-                      if (data.length < seasons * 2) return [];
-                      
-                      const alpha = 0.3; // Level smoothing
-                      const beta = 0.1;  // Trend smoothing
-                      const gamma = 0.3; // Seasonal smoothing
-                      
-                      let level = data.slice(0, seasons).reduce((a, b) => a + b) / seasons;
-                      let trend = 0;
-                      const seasonal: number[] = [];
-                      
-                      for (let i = 0; i < seasons; i++) {
-                        seasonal[i] = data[i] / level;
-                      }
-                      
-                      for (let i = seasons; i < data.length; i++) {
-                        const oldLevel = level;
-                        const seasonalIndex = i % seasons;
-                        
-                        level = alpha * (data[i] / seasonal[seasonalIndex]) + (1 - alpha) * (oldLevel + trend);
-                        trend = beta * (level - oldLevel) + (1 - beta) * trend;
-                        seasonal[seasonalIndex] = gamma * (data[i] / level) + (1 - gamma) * seasonal[seasonalIndex];
-                      }
-                      
-                      const forecasts: number[] = [];
-                      for (let i = 0; i < periods; i++) {
-                        const seasonalIndex = (data.length + i) % seasons;
-                        forecasts.push((level + (i + 1) * trend) * seasonal[seasonalIndex]);
-                      }
-                      
-                      return forecasts;
-                    };
-                    
-                    // Use last 36 months (3 years) for projection if available
-                    const historicalData = wcData.slice(-36);
-                    const tcaValues = historicalData.map(d => d.currentAssets);
-                    const tclValues = historicalData.map(d => d.currentLiabilities);
-                    
-                    // Project TCA and TCL separately
-                    const tcaProjections = holtWintersProjection(tcaValues, 12, 12);
-                    const tclProjections = holtWintersProjection(tclValues, 12, 12);
-                    const wcProjections = tcaProjections.map((tca, i) => tca - tclProjections[i]);
-                    
-                    // Generate month labels for projections
-                    const lastMonth = new Date(historicalData[historicalData.length - 1].month);
-                    const projectedMonths = Array.from({ length: 12 }, (_, i) => {
-                      const date = new Date(lastMonth);
-                      date.setMonth(date.getMonth() + i + 1);
-                      return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-                    });
-                    
-                    const projectedData = projectedMonths.map((month, i) => ({
-                      month,
-                      value: wcProjections[i]
-                    }));
-                    
-                    return <ProjectionChart 
-                      title="" 
-                      historicalData={wcData.map(d => ({ month: d.month, value: d.workingCapital }))}
-                      projectedData={{
-                        mostLikely: projectedData,
-                        bestCase: projectedData.map(d => ({ ...d, value: d.value * 1.1 })),
-                        worstCase: projectedData.map(d => ({ ...d, value: d.value * 0.9 }))
-                      }}
-                      valueKey="value"
-                      formatValue={(val) => `$${Math.round(val).toLocaleString()}`}
-                      showTable={false}
-                    />;
-                  })()}
-                  
-                  {/* Custom Quarterly Table */}
-                  <div style={{ marginTop: '16px', overflowX: 'auto' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <tbody>
-                        <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                          <td style={{ padding: '8px 12px', fontWeight: '700', color: '#1e293b', minWidth: '80px' }}>
-                            Quarter
-                          </td>
-                          {wcData.filter((_, i) => i % 3 === 2).map((d, i) => (
-                            <td key={`quarter-${i}`} style={{ padding: '8px 12px', textAlign: 'center', fontWeight: '600', color: '#64748b' }}>
-                              {d.month}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '8px 12px', fontWeight: '700', color: '#1e293b' }}>
-                            Value
-                          </td>
-                          {wcData.filter((_, i) => i % 3 === 2).map((d, i) => (
-                            <td key={`val-${i}`} style={{ padding: '8px 12px', textAlign: 'center', fontWeight: '700', color: '#667eea' }}>
-                              ${Math.round(d.workingCapital).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                
-                {/* Second Page Header */}
-                <div className="wc-page-2-header" style={{ display: 'none', marginTop: '32px', marginBottom: '12px', textAlign: 'center' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                    Working Capital Analysis - {companyName}
-                  </h2>
-                </div>
-                
-                {/* Components Breakdown */}
-                <div className="wc-components-breakdown" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '12px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Current Assets</h2>
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Cash</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentAssets * 0.3 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Accounts Receivable</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentAssets * 0.4 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Inventory</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentAssets * 0.2 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Other Current Assets</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentAssets * 0.1 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#667eea', borderRadius: '8px', marginTop: '8px' }}>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: 'white' }}>Total Current Assets</span>
-                        <span style={{ fontSize: '20px', fontWeight: '700', color: 'white' }}>${(current.currentAssets / 1000).toFixed(0)}K</span>
-                      </div>
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Working Capital Components Analysis */}
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '24px' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Working Capital Components</h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+              {(() => {
+                const lastMonth = monthly[monthly.length - 1];
+                const components = [
+                  {
+                    name: 'Cash',
+                    value: lastMonth.cash || 0,
+                    category: 'Current Assets',
+                    color: '#10b981'
+                  },
+                  {
+                    name: 'Accounts Receivable',
+                    value: lastMonth.ar || 0,
+                    category: 'Current Assets',
+                    color: '#3b82f6'
+                  },
+                  {
+                    name: 'Inventory',
+                    value: lastMonth.inventory || 0,
+                    category: 'Current Assets',
+                    color: '#8b5cf6'
+                  },
+                  {
+                    name: 'Other Current Assets',
+                    value: lastMonth.otherCA || 0,
+                    category: 'Current Assets',
+                    color: '#06b6d4'
+                  },
+                  {
+                    name: 'Accounts Payable',
+                    value: Math.abs(lastMonth.ap || 0),
+                    category: 'Current Liabilities',
+                    color: '#ef4444'
+                  },
+                  {
+                    name: 'Other Current Liabilities',
+                    value: Math.abs(lastMonth.otherCL || 0),
+                    category: 'Current Liabilities',
+                    color: '#f59e0b'
+                  }
+                ];
+
+                return components.map((component, index) => (
+                  <div key={index} style={{
+                    padding: '16px',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.9) 100%)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#374151' }}>{component.name}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280', background: component.color + '20', padding: '2px 8px', borderRadius: '12px' }}>
+                        {component.category}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: component.color }}>
+                      ${(component.value / 1000).toFixed(1)}K
                     </div>
                   </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Current Liabilities</h2>
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Accounts Payable</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentLiabilities * 0.6 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Accrued Expenses</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentLiabilities * 0.25 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Other Current Liabilities</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentLiabilities * 0.15 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#ef4444', borderRadius: '8px', marginTop: '60px' }}>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: 'white' }}>Total Current Liabilities</span>
-                        <span style={{ fontSize: '20px', fontWeight: '700', color: 'white' }}>${(current.currentLiabilities / 1000).toFixed(0)}K</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Working Capital Analysis */}
-                <div className="wc-insights" style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Insights</h2>
-                  
-                  <div style={{ display: 'grid', gap: '16px' }}>
-                    {currentWC > 0 && wcRatio >= 1.5 && (
-                      <div style={{ padding: '16px', background: '#f0fdf4', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '4px' }}>? Strong Liquidity Position</div>
-                        <div style={{ fontSize: '13px', color: '#166534', lineHeight: '1.6' }}>
-                          Your working capital ratio of {wcRatio} indicates strong short-term financial health with ${(currentWC / 1000).toFixed(0)}K in working capital available to cover operational needs.
-                        </div>
-                      </div>
-                    )}
-                    
-                    {currentWC > 0 && wcRatio < 1.5 && wcRatio >= 1.0 && (
-                      <div style={{ padding: '16px', background: '#fffbeb', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️ Adequate but Monitor Closely</div>
-                        <div style={{ fontSize: '13px', color: '#92400e', lineHeight: '1.6' }}>
-                          Your working capital ratio of {wcRatio} is adequate but below ideal levels. Consider improving cash flow or reducing short-term liabilities to strengthen your position.
-                        </div>
-                      </div>
-                    )}
-                    
-                    {wcRatio < 1.0 && (
-                      <div style={{ padding: '16px', background: '#fef2f2', borderRadius: '8px', borderLeft: '4px solid #ef4444' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Liquidity Concern</div>
-                        <div style={{ fontSize: '13px', color: '#991b1b', lineHeight: '1.6' }}>
-                          Your working capital ratio of {wcRatio} indicates current liabilities exceed current assets. Immediate attention to cash flow management and working capital optimization is recommended.
-                        </div>
-                      </div>
-                    )}
-                    
-                    {wcChange > 0 && (
-                      <div style={{ padding: '16px', background: '#f0f9ff', borderRadius: '8px', borderLeft: '4px solid #0284c7' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px' }}>? Positive Trend</div>
-                        <div style={{ fontSize: '13px', color: '#0c4a6e', lineHeight: '1.6' }}>
-                          Working capital has increased by ${(wcChange / 1000).toFixed(0)}K ({wcChangePercent.toFixed(1)}%) over the past year, indicating improved operational efficiency and financial stability.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            );
-          })()}
+                ));
+              })()}
+            </div>
+          </div>
+
+          {/* Working Capital Trend Analysis */}
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend (Last 12 Months)</h3>
+
+            <div style={{ height: '300px', position: 'relative' }}>
+              <SimpleChart
+                data={monthly.slice(-12).map((month, index) => {
+                  const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
+                  const currentLiab = Math.abs(month.tcl || ((month.ap || 0) + (month.otherCL || 0)));
+                  const wc = currentAssets - currentLiab;
+
+                  return {
+                    month: month.month ? new Date(month.month).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : `M${index + 1}`,
+                    workingCapital: wc / 1000, // Convert to thousands
+                    currentAssets: currentAssets / 1000,
+                    currentLiabilities: currentLiab / 1000
+                  };
+                })}
+                valueKey="workingCapital"
+                title=""
+                formatValue={(v) => `$${v.toFixed(0)}K`}
+                showGrid={true}
+                showLegend={false}
+                color="#667eea"
+              />
+            </div>
+
+            <div style={{ marginTop: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Key Insights</h4>
+              <ul style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', margin: 0, paddingLeft: '20px' }}>
+                <li>Working capital represents the funds available for day-to-day operations</li>
+                <li>A ratio above 1.0 indicates positive working capital (assets &gt; liabilities)</li>
+                <li>Consistent positive trends suggest improving liquidity position</li>
+                <li>Monitor accounts receivable and payable cycles for optimization opportunities</li>
+              </ul>
+            </div>
+          </div>
         </div>
       )}
 
@@ -14087,6 +12799,28 @@ function FinancialScorePage() {
 
                             const result = await response.json();
                             console.log(`? Processed and saved ${processedData.length} months of CSV data`);
+
+                            // Automatically create master data from the processed data
+                            try {
+                              console.log('🔄 Auto-creating master data...');
+                              const masterDataResponse = await fetch('/api/save-master-file', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  companyId: selectedCompanyId,
+                                  monthlyData: processedData
+                                })
+                              });
+
+                              const masterDataResult = await masterDataResponse.json();
+                              if (masterDataResult.success) {
+                                console.log(`✅ Master data auto-created: ${masterDataResult.months} months`);
+                              } else {
+                                console.error('❌ Failed to auto-create master data:', masterDataResult.error);
+                              }
+                            } catch (masterDataError) {
+                              console.error('❌ Error auto-creating master data:', masterDataError);
+                            }
 
                             // Update local state
                             setLoadedMonthlyData(processedData);
