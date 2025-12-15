@@ -1650,7 +1650,7 @@ function FinancialScorePage() {
 
           // Load subscription pricing for this company (now stored permanently in DB)
           if (company) {
-            console.log('ðŸ” Loading pricing from company data:', {
+            console.log('🔍 Loading pricing from company data:', {
               name: company.name,
               id: company.id,
               monthly: company.subscriptionMonthlyPrice,
@@ -10339,7 +10339,7 @@ function FinancialScorePage() {
             {mdaAnalysis.insights.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>ðŸ”</span> Strategic Insights
+                  <span style={{ fontSize: '24px' }}>🔍</span> Strategic Insights
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.insights.map((ins, idx) => (
@@ -12852,7 +12852,7 @@ function FinancialScorePage() {
                       <button
                         onClick={async () => {
                           try {
-                            console.log('ðŸ” Save Mappings Debug:', {
+                            console.log('🔍 Save Mappings Debug:', {
                               currentCompany,
                               currentCompanyId: currentCompany?.id,
                               selectedCompanyId,
@@ -12994,7 +12994,7 @@ function FinancialScorePage() {
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
           console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>â³ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⏳ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
@@ -13136,8 +13136,8 @@ function FinancialScorePage() {
                         const accountClassifications: Record<string, string> = {};
                         const chartOfAccounts = qbRawData?.chartOfAccounts?.QueryResponse?.Account || [];
                         
-                        console.log('ðŸ” Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
-                        console.log('ðŸ” Total accounts in chart:', chartOfAccounts.length);
+                        console.log('🔍 Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
+                        console.log('🔍 Total accounts in chart:', chartOfAccounts.length);
                         
                         chartOfAccounts.forEach((account: any) => {
                           const accountName = account.Name;
@@ -13208,9 +13208,9 @@ function FinancialScorePage() {
                         // For Balance Sheet: Get individual items (all detail accounts)
                         const bsDataRows = bsRows.filter(r => r.type === 'data' && !r.isHeader && !r.isTotal);
                         
-                        console.log('ðŸ” Revenue individual items:', revenueDataRows.length);
-                        console.log('ðŸ” Expense individual items:', expenseDataRows.length);
-                        console.log('ðŸ” BS individual items:', bsDataRows.length);
+                        console.log('🔍 Revenue individual items:', revenueDataRows.length);
+                        console.log('🔍 Expense individual items:', expenseDataRows.length);
+                        console.log('🔍 BS individual items:', bsDataRows.length);
                         
                         // DEBUG: Pick first revenue account to track through entire process
                         const testAccount = revenueDataRows[0]?.name || expenseDataRows[0]?.name || bsDataRows[0]?.name;
@@ -13275,8 +13275,8 @@ function FinancialScorePage() {
                         
                         console.log(`📊 BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
                         
-                        console.log('ðŸ” TOTAL accounts to map:', qbAccountsWithClass.length);
-                        console.log('ðŸ” First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
+                        console.log('🔍 TOTAL accounts to map:', qbAccountsWithClass.length);
+                        console.log('🔍 First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
 
                         const response = await fetch('/api/ai-mapping/enhanced', {
                           method: 'POST',
@@ -13838,7 +13838,7 @@ function FinancialScorePage() {
                               
                               // Debug logging for first few months
                               if (i <= 3) {
-                                console.log(`\nðŸ” Month ${i} extraction debug:`);
+                                console.log(`\n🔍 Month ${i} extraction debug:`);
                                 console.log(`P&L data keys:`, Object.keys(plData).slice(0, 10));
                                 console.log(`P&L sample values:`, Object.entries(plData).slice(0, 5));
                                 console.log(`BS data keys:`, Object.keys(bsData).slice(0, 10));
@@ -14309,7 +14309,7 @@ function FinancialScorePage() {
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
           console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>â³ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⏳ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
