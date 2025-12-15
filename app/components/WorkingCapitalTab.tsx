@@ -235,10 +235,11 @@ export default function WorkingCapitalTab({
             })}
             valueKey="workingCapital"
             title=""
-            formatValue={(v) => `$${v.toFixed(0)}K`}
+            formatter={(v) => `$${v.toFixed(0)}K`}
             showGrid={true}
             showLegend={false}
             color="#667eea"
+            compact={false}
           />
         </div>
 

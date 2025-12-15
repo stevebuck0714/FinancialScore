@@ -9,9 +9,21 @@ interface SimpleChartProps {
   title: string;
   color: string;
   formatter?: (val: number) => string;
+  compact?: boolean;
+  showGrid?: boolean;
+  showLegend?: boolean;
 }
 
-export default function SimpleChart({ data, valueKey = 'value', title, color, formatter }: SimpleChartProps) {
+export default function SimpleChart({ 
+  data, 
+  valueKey = 'value', 
+  title, 
+  color, 
+  formatter,
+  compact = true,
+  showGrid,
+  showLegend
+}: SimpleChartProps) {
   // Transform data to have a 'value' property based on valueKey
   const transformedData = data.map(item => ({
     month: item.month,
@@ -24,7 +36,7 @@ export default function SimpleChart({ data, valueKey = 'value', title, color, fo
       data={transformedData}
       color={color}
       formatter={formatter}
-      compact={true}
+      compact={compact}
     />
   );
 }
