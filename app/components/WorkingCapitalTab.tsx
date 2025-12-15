@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useMasterData } from '@/lib/master-data-store';
-import SimpleChart from './charts/SimpleChart';
+import SimpleChart from './SimpleChart';
 
 interface WorkingCapitalTabProps {
   selectedCompanyId: string;
