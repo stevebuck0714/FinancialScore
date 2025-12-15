@@ -242,46 +242,6 @@ export default function WorkingCapitalTab({
           />
         </div>
 
-        {/* Working Capital Statistics */}
-        <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', paddingLeft: '12px', paddingRight: '12px' }}>
-          {(() => {
-            const wcValues = monthly.slice(-36).map(month => {
-              const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
-              const currentLiab = Math.abs(month.tcl || ((month.ap || 0) + (month.otherCL || 0)));
-              return currentAssets - currentLiab;
-            });
-
-            const current = wcValues[wcValues.length - 1] || 0;
-            const avg = wcValues.reduce((sum, val) => sum + val, 0) / wcValues.length;
-            const min = Math.min(...wcValues);
-            const max = Math.max(...wcValues);
-
-            const stats = [
-              { label: 'CURRENT', value: current, color: '#667eea' },
-              { label: 'AVG', value: avg, color: '#10b981' },
-              { label: 'MIN', value: min, color: '#ef4444' },
-              { label: 'MAX', value: max, color: '#f59e0b' }
-            ];
-
-            return stats.map((stat, idx) => (
-              <div key={idx} style={{
-                padding: '16px',
-                background: 'white',
-                border: `2px solid ${stat.color}`,
-                borderRadius: '8px',
-                textAlign: 'center'
-              }}>
-                <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>
-                  {stat.label}
-                </div>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: stat.color }}>
-                  ${Math.round(stat.value).toLocaleString('en-US')}
-                </div>
-              </div>
-            ));
-          })()}
-        </div>
-
         <div style={{ marginTop: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginLeft: '12px', marginRight: '12px' }}>
           <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Key Insights</h4>
           <ul style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', margin: 0, paddingLeft: '20px' }}>
