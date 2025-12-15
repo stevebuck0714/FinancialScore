@@ -1,8 +1,25 @@
 'use client';
 
-import React, { useState } from 'react';
-import { CheckCircle, AlertTriangle, XCircle, TrendingUp, Settings, Target } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle, AlertTriangle, XCircle, TrendingUp, Settings, Target, Building2 } from 'lucide-react';
 import type { MonthlyDataRow, User } from '../../types';
+import LoansManagement from './LoansManagement';
+
+interface Loan {
+  id: string;
+  companyId: string;
+  loanName: string;
+  loanIdNumber?: string;
+  lenderName: string;
+  loanAmount: number;
+  interestRate?: number;
+  termMonths?: number;
+  startDate: Date | string;
+  endDate?: Date | string;
+  loanType: string;
+  status: string;
+  notes?: string;
+}
 
 // Feature flag for covenants module
 const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true;
@@ -404,63 +421,6 @@ const getStatusIcon = (status: string) => {
 };
 
 // Calculate real financial ratios from monthly data
-const calculateFinancialRatios = (monthlyData: MonthlyDataRow[]) => {
-  if (!monthlyData || monthlyData.length === 0) {
-    return null;
-  }
-
-  // Get the most recent month's data
-  const latestData = monthlyData[monthlyData.length - 1];
-
-  // Calculate EBITDA using same formula as main reports
-  // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add back interest)
-  // EBITDA = EBIT + Depreciation & Amortization
-  const revenue = latestData.revenue || 0;
-  const cogsTotal = latestData.cogsTotal || 0;
-  const expense = latestData.expense || 0;
-  const interestExpense = latestData.interestExpense || 0;
-  const depreciationAmortization = latestData.depreciationAmortization || 0;
-
-  const ebit = revenue - cogsTotal - expense + interestExpense;
-  const ebitda = ebit + depreciationAmortization;
-
-  // Calculate financial ratios
-  return {
-    // Leverage Ratios
-    totalLeverageRatio: latestData.totalLAndE > 0 ? latestData.totalLAndE / ebitda : 0,
-    netLeverageRatio: latestData.totalLAndE > 0 && latestData.cash ?
-                      (latestData.totalLAndE - latestData.cash) / ebitda : 0,
-    debtToEquityRatio: latestData.totalEquity > 0 ? latestData.totalLAndE / latestData.totalEquity : 0,
-
-    // Coverage Ratios
-    interestCoverageRatio: latestData.interestExpense > 0 ? ebitda / latestData.interestExpense : 0,
-    debtServiceCoverageRatio: latestData.interestExpense > 0 ?
-                             latestData.netProfit / latestData.interestExpense : 0,
-
-    // Liquidity Ratios
-    currentRatio: latestData.tcl > 0 ? latestData.tca / latestData.tcl : 0,
-    quickRatio: latestData.tcl > 0 ?
-                (latestData.cash + latestData.ar) / latestData.tcl : 0,
-    cashRatio: latestData.tcl > 0 ? latestData.cash / latestData.tcl : 0,
-
-    // Working Capital
-    workingCapital: latestData.tca - latestData.tcl,
-
-    // Absolute values for thresholds
-    totalDebt: latestData.totalLAndE,
-    cash: latestData.cash,
-    ar: latestData.ar,
-    inventory: latestData.inventory,
-    otherCA: latestData.otherCA,
-    ebitda: ebitda,
-    netIncome: latestData.netProfit,
-    totalAssets: latestData.totalAssets,
-    totalEquity: latestData.totalEquity,
-    currentAssets: latestData.tca,
-    currentLiabilities: latestData.tcl
-  };
-};
-
 // Generate historical data for a covenant (36 months) - uses real data when available
 const generateHistoricalData = (covenant: any, covenantThresholds: Record<string, number>) => {
   const data = [];
@@ -547,8 +507,40 @@ export default function CovenantsTab({
     );
   }
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'alerts' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'manage-loans' | 'overview' | 'details' | 'alerts' | 'settings'>('manage-loans');
+  const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
+  const [loans, setLoans] = useState<Loan[]>([]);
   const [selectedCovenant, setSelectedCovenant] = useState<any>(null);
+
+  // Fetch loans for this company
+  useEffect(() => {
+    const fetchLoans = async () => {
+      try {
+        const response = await fetch(`/api/loans?companyId=${selectedCompanyId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setLoans(data.loans || []);
+          // Auto-select first active loan if available
+          if (data.loans && data.loans.length > 0 && !selectedLoan) {
+            const firstActive = data.loans.find((l: Loan) => l.status === 'ACTIVE') || data.loans[0];
+            setSelectedLoan(firstActive);
+            setActiveTab('overview');
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching loans:', err);
+      }
+    };
+    if (selectedCompanyId) {
+      fetchLoans();
+    }
+  }, [selectedCompanyId]);
+
+  // Handler for when a loan is selected from LoansManagement
+  const handleLoanSelected = (loan: Loan) => {
+    setSelectedLoan(loan);
+    setActiveTab('overview');
+  };
   const [alertFilter, setAlertFilter] = useState<'all' | 'critical' | 'warning'>('all');
   const [alerts, setAlerts] = useState(mockAlerts);
   const [configCategory, setConfigCategory] = useState<'all' | 'financial' | 'maintenance' | 'negative' | 'affirmative' | 'incurrence'>('all');
@@ -662,59 +654,112 @@ export default function CovenantsTab({
     return monthly[monthly.length - 1];
   }, [monthly]);
 
-  // Calculate financial ratios using same logic as main application
+  // Calculate financial ratios using EXACT same logic as RatiosTab
   const financialRatios = React.useMemo(() => {
     if (!latestData) return null;
 
     console.log('📊 Using latest month data:', latestData);
 
-    // Calculate using same logic as main application
-    const currentAssets = latestData.tca || ((latestData.cash || 0) + (latestData.ar || 0) + (latestData.inventory || 0) + (latestData.otherCA || 0));
-    const currentLiab = Math.abs(latestData.tcl || ((latestData.ap || 0) + (latestData.otherCL || 0)));
-    const quickAssets = (latestData.cash || 0) + (latestData.ar || 0);
+    // Extract values using SAME field names as RatiosTab
+    const m = latestData;
+    const revenue = m.revenue || 0;
+    const cogs = m.cogsTotal || m.totalCogs || 0;
+    const expense = m.expense || 0;
+    const ebit = m.ebit || (revenue - cogs - expense);
+    const ebitda = m.ebitda || (ebit + (m.depreciationAmortization || 0) + (m.interestExpense || 0));
+    const netProfit = m.netProfit || m.netIncome || (revenue - cogs - expense);
 
-    const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
-    const quickRatio = currentLiab > 0 ? quickAssets / currentLiab : 0;
+    // Balance sheet items - use SAME extraction as RatiosTab
+    const cash = m.cash || 0;
+    const ar = m.ar || 0;
+    const inventory = m.inventory || 0;
+    const otherCA = m.otherCA || 0;
+    const tca = m.tca || (cash + ar + inventory + otherCA);
+    
+    const ap = m.ap || 0;
+    const otherCL = m.otherCL || 0;
+    const tcl = m.tcl || (ap + otherCL);
+    
+    const fixedAssets = m.fixedAssets || 0;
+    const otherAssets = m.otherAssets || 0;
+    const totalAssets = m.totalAssets || (tca + fixedAssets + otherAssets);
+    
+    const ltDebt = m.ltd || m.ltDebt || 0;
+    const otherLTL = m.otherLTL || 0;
+    const totalLiabilities = m.totalLiabilities || m.totalLiab || (tcl + ltDebt + otherLTL);
+    
+    const equity = m.equity || m.totalEquity || (totalAssets - totalLiabilities);
 
-    // Calculate EBITDA using same formula as main app (match monthly processing)
-    const revenue = latestData.revenue || 0;
-    const cogsTotal = latestData.cogsTotal || 0;
-    const interestExpense = latestData.interestExpense || 0;
-    const depreciationAmortization = latestData.depreciationAmortization || 0;
-    const netProfit = latestData.netProfit || 0;
+    // Calculate ratios EXACTLY as RatiosTab does
+    // Liquidity ratios
+    const currentRatio = tcl > 0 ? tca / tcl : 0;
+    const quickRatio = tcl > 0 ? (tca - inventory) / tcl : 0;
+    const workingCapital = tca - tcl;
 
-    // Calculate total operating expense same as monthly processing
-    // Use the SAME calculation as Data Review for Total Operating Expenses
-    const opexCategories = [
-      'payroll', 'ownerBasePay', 'ownersRetirement', 'professionalFees',
-      'rent', 'utilities', 'infrastructure', 'autoTravel', 'insurance',
-      'salesExpense', 'subcontractors', 'depreciationAmortization', 'interestExpense',
-      'marketing', 'benefits', 'taxLicense', 'phoneComm', 'trainingCert',
-      'mealsEntertainment', 'otherExpense'
-    ];
-    const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((latestData as any)[key] || 0), 0);
+    // Activity ratios
+    const invTurnover = inventory > 0 ? cogs / inventory : 0;
+    const arTurnover = ar > 0 ? revenue / ar : 0;
+    const apTurnover = ap > 0 ? cogs / ap : 0;
+    const daysInv = invTurnover > 0 ? 365 / invTurnover : 0;
+    const daysAR = arTurnover > 0 ? 365 / arTurnover : 0;
+    const daysAP = apTurnover > 0 ? 365 / apTurnover : 0;
+    const salesWC = workingCapital > 0 ? revenue / workingCapital : 0;
 
-    // Always use calculated total operating expenses (matches Data Review)
-    const expense = totalOperatingExpense;
+    // Coverage ratios
+    const interestCov = m.interestExpense > 0 ? ebit / m.interestExpense : 0;
+    const debtSvcCov = (ltDebt + tcl) > 0 ? (netProfit + (m.depreciationAmortization || 0)) / (ltDebt + tcl) : 0;
+    const cfToDebt = (ltDebt + tcl) > 0 ? netProfit / (ltDebt + tcl) : 0;
 
-    const ebit = revenue - cogsTotal - expense;
-    // EBITDA = EBIT + Interest Expense + Depreciation + Amortization
-    const ebitda = ebit + interestExpense + depreciationAmortization;
+    // Leverage ratios - MATCH RatiosTab EXACTLY
+    const debtToNW = equity > 0 ? totalLiabilities / equity : 0;
+    const fixedToNW = equity > 0 ? fixedAssets / equity : 0;
+    const leverage = equity > 0 ? totalAssets / equity : 0;
+
+    // Operating ratios
+    const totalAssetTO = totalAssets > 0 ? revenue / totalAssets : 0;
+    const roe = equity > 0 ? netProfit / equity : 0;
+    const roa = totalAssets > 0 ? netProfit / totalAssets : 0;
+    const ebitdaMargin = revenue > 0 ? ebitda / revenue : 0;
+    const ebitMargin = revenue > 0 ? ebit / revenue : 0;
 
     const ratios = {
+      // Liquidity
       currentRatio,
       quickRatio,
-      cash: latestData.cash || 0,
+      workingCapital,
+      cash,
+      // Activity
+      invTurnover,
+      arTurnover,
+      apTurnover,
+      daysInv,
+      daysAR,
+      daysAP,
+      salesWC,
+      // Coverage
+      interestCov,
+      debtSvcCov,
+      cfToDebt,
+      // Leverage
+      debtToNW,
+      fixedToNW,
+      leverage,
+      // Operating
+      totalAssetTO,
+      roe,
+      roa,
+      ebitdaMargin,
+      ebitMargin,
       ebitda,
-      // Use same leverage calculations as main app
-      totalLeverageRatio: latestData.totalEquity > 0 ? latestData.totalAssets / latestData.totalEquity : 0, // Leverage Ratio from main app
-      netLeverageRatio: latestData.totalLAndE > 0 && latestData.cash ? (latestData.totalLAndE - latestData.cash) / ebitda : 0,
-      debtToEquityRatio: latestData.totalEquity > 0 ? latestData.totalLiab / latestData.totalEquity : 0, // Debt/Net Worth from main app
-      interestCoverageRatio: latestData.interestExpense > 0 ? ebitda / latestData.interestExpense : 0,
-      debtServiceCoverageRatio: latestData.interestExpense > 0 ? latestData.netProfit / latestData.interestExpense : 0,
+      ebit,
+      netProfit,
+      revenue,
+      totalAssets,
+      totalLiabilities,
+      equity,
     };
 
-    console.log('📊 Calculated ratios:', ratios);
+    console.log('📊 Calculated ratios (matching RatiosTab):', ratios);
     return ratios;
   }, [latestData]);
 
@@ -731,28 +776,29 @@ export default function CovenantsTab({
       let currentValue = null;
       let status: 'compliant' | 'warning' | 'breached' = 'compliant';
 
-      // Map covenant IDs to calculated financial ratios
+      // Map covenant IDs to calculated financial ratios - using EXACT same field names as RatiosTab
       console.log('🔄 Mapping covenant:', covenant.name, 'ID:', covenant.id, 'original value:', covenant.currentValue);
       switch (covenant.id) {
-        case '1': // Total Leverage Ratio (Leverage Ratio from main app)
-          currentValue = financialRatios.totalLeverageRatio;
-          console.log('📊 Total Leverage Ratio calculation:', {
-            totalAssets: latestData.totalAssets,
-            totalEquity: latestData.totalEquity,
-            ratio: financialRatios.totalLeverageRatio
+        case '1': // Total Leverage Ratio = Assets / Equity (called "leverage" in RatiosTab)
+          currentValue = financialRatios.leverage;
+          console.log('📊 Total Leverage Ratio (leverage):', {
+            totalAssets: financialRatios.totalAssets,
+            equity: financialRatios.equity,
+            ratio: financialRatios.leverage
           });
           break;
-        case '2': // Net Leverage Ratio
-          currentValue = financialRatios.netLeverageRatio;
+        case '2': // Net Leverage Ratio = (Total Debt - Cash) / EBITDA
+          const netDebt = financialRatios.totalLiabilities - financialRatios.cash;
+          currentValue = financialRatios.ebitda > 0 ? netDebt / financialRatios.ebitda : 0;
           break;
-        case '3': // Debt-to-Equity Ratio
-          currentValue = financialRatios.debtToEquityRatio;
+        case '3': // Debt-to-Equity Ratio = Total Liabilities / Equity (called "debtToNW" in RatiosTab)
+          currentValue = financialRatios.debtToNW;
           break;
-        case '4': // Interest Coverage Ratio
-          currentValue = financialRatios.interestCoverageRatio;
+        case '4': // Interest Coverage Ratio (called "interestCov" in RatiosTab)
+          currentValue = financialRatios.interestCov;
           break;
-        case '5': // Debt Service Coverage Ratio
-          currentValue = financialRatios.debtServiceCoverageRatio;
+        case '5': // Debt Service Coverage Ratio (called "debtSvcCov" in RatiosTab)
+          currentValue = financialRatios.debtSvcCov;
           break;
         case '6': // Current Ratio
           currentValue = financialRatios.currentRatio;
@@ -916,36 +962,68 @@ export default function CovenantsTab({
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px 16px 16px 8px' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <div>
+        <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 4px 0' }}>
-            {loanName || 'Loan Covenants'}
-            {loanAccountNumber && ` - Account #${loanAccountNumber}`}
+            {selectedLoan ? selectedLoan.loanName : 'Loan Covenants'}
+            {selectedLoan?.loanIdNumber && ` - ${selectedLoan.loanIdNumber}`}
           </h1>
+          {selectedLoan && (
+            <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+              {selectedLoan.lenderName} • {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(selectedLoan.loanAmount)}
+            </p>
+          )}
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <div style={{
-            padding: '8px 16px',
-            background: complianceScore >= 80 ? '#dcfce7' : complianceScore >= 60 ? '#fef3c7' : '#fee2e2',
-            border: `1px solid ${complianceScore >= 80 ? '#16a34a' : complianceScore >= 60 ? '#d97706' : '#dc2626'}`,
-            borderRadius: '6px',
-            textAlign: 'center'
-          }}>
+        {selectedLoan && activeTab !== 'manage-loans' && (
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {/* Loan Selector Dropdown */}
+            <select
+              value={selectedLoan.id}
+              onChange={(e) => {
+                const loan = loans.find(l => l.id === e.target.value);
+                if (loan) setSelectedLoan(loan);
+              }}
+              style={{
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px',
+                background: 'white',
+                cursor: 'pointer',
+                minWidth: '200px'
+              }}
+            >
+              {loans.map(loan => (
+                <option key={loan.id} value={loan.id}>
+                  {loan.loanName} {loan.loanIdNumber ? `(${loan.loanIdNumber})` : ''}
+                </option>
+              ))}
+            </select>
+
             <div style={{
-              fontSize: '18px',
-              fontWeight: 'bold',
-              color: complianceScore >= 80 ? '#16a34a' : complianceScore >= 60 ? '#d97706' : '#dc2626'
+              padding: '8px 16px',
+              background: complianceScore >= 80 ? '#dcfce7' : complianceScore >= 60 ? '#fef3c7' : '#fee2e2',
+              border: `1px solid ${complianceScore >= 80 ? '#16a34a' : complianceScore >= 60 ? '#d97706' : '#dc2626'}`,
+              borderRadius: '6px',
+              textAlign: 'center'
             }}>
-              {complianceScore}%
+              <div style={{
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: complianceScore >= 80 ? '#16a34a' : complianceScore >= 60 ? '#d97706' : '#dc2626'
+              }}>
+                {complianceScore}%
+              </div>
+              <div style={{ fontSize: '10px', color: '#64748b' }}>Compliance</div>
             </div>
-            <div style={{ fontSize: '10px', color: '#64748b' }}>Compliance</div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Navigation Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: '16px' }}>
         {[
+          { id: 'manage-loans', label: 'Manage Loans', icon: <Building2 size={16} /> },
           { id: 'overview', label: 'Overview' },
           { id: 'details', label: 'Details' },
           { id: 'alerts', label: 'Alerts' },
@@ -954,26 +1032,39 @@ export default function CovenantsTab({
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
+            disabled={tab.id !== 'manage-loans' && !selectedLoan}
             style={{
               padding: '8px 16px',
               background: activeTab === tab.id ? '#667eea' : 'transparent',
-              color: activeTab === tab.id ? 'white' : '#64748b',
+              color: activeTab === tab.id ? 'white' : (tab.id !== 'manage-loans' && !selectedLoan) ? '#cbd5e1' : '#64748b',
               border: 'none',
               borderBottom: activeTab === tab.id ? '2px solid #667eea' : '2px solid transparent',
               fontSize: '14px',
               fontWeight: '500',
-              cursor: 'pointer',
+              cursor: (tab.id !== 'manage-loans' && !selectedLoan) ? 'not-allowed' : 'pointer',
               borderRadius: '6px 6px 0 0',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              opacity: (tab.id !== 'manage-loans' && !selectedLoan) ? 0.5 : 1
             }}
           >
+            {'icon' in tab && tab.icon}
             {tab.label}
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && (
+      {activeTab === 'manage-loans' && (
+        <LoansManagement 
+          companyId={selectedCompanyId} 
+          onLoanSelected={handleLoanSelected}
+        />
+      )}
+
+      {activeTab === 'overview' && selectedLoan && (
         <div>
           {/* Compact Compliance Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', marginBottom: '16px' }}>
@@ -1119,7 +1210,7 @@ export default function CovenantsTab({
         </div>
       )}
 
-      {activeTab === 'details' && (
+      {activeTab === 'details' && selectedLoan && (
         <div>
           <div style={{ marginBottom: '16px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
@@ -1286,7 +1377,7 @@ export default function CovenantsTab({
         </div>
       )}
 
-      {activeTab === 'alerts' && (
+      {activeTab === 'alerts' && selectedLoan && (
         <div>
           {/* Alert Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '16px' }}>
@@ -1465,7 +1556,7 @@ export default function CovenantsTab({
         </div>
       )}
 
-      {activeTab === 'settings' && (
+      {activeTab === 'settings' && selectedLoan && (
         <div>
           {/* Debug log for settings tab */}
           {console.log('🎛️ Settings tab is active and rendering')}

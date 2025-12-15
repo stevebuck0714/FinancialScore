@@ -72,6 +72,7 @@ model Company {
   financialRecords           FinancialRecord[]
   subscription               Subscription?
   users                      User[]
+  loans                      Loan[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
@@ -580,4 +581,76 @@ enum PaymentType {
   RECURRING
   MANUAL
   REFUND
+}
+
+model Loan {
+  id            String      @id @default(cuid())
+  companyId     String
+  loanName      String
+  loanIdNumber  String?
+  lenderName    String
+  loanAmount    Float
+  interestRate  Float?
+  termMonths    Int?
+  startDate     DateTime
+  endDate       DateTime?
+  loanType      LoanType    @default(TERM)
+  status        LoanStatus  @default(ACTIVE)
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  covenants     Covenant[]
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model Covenant {
+  id               String         @id @default(cuid())
+  loanId           String
+  covenantName     String
+  covenantType     CovenantType   @default(MINIMUM)
+  threshold        Float?
+  currentValue     Float?
+  status           CovenantStatus @default(COMPLIANT)
+  description      String?
+  isApplicable     Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  loan             Loan           @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId])
+  @@index([status])
+}
+
+enum LoanType {
+  TERM
+  REVOLVER
+  BRIDGE
+  LINE_OF_CREDIT
+  MORTGAGE
+  OTHER
+}
+
+enum LoanStatus {
+  ACTIVE
+  MATURING
+  PAID_OFF
+  DEFAULTED
+  INACTIVE
+}
+
+enum CovenantType {
+  MINIMUM
+  MAXIMUM
+  RANGE
+  QUALITATIVE
+}
+
+enum CovenantStatus {
+  COMPLIANT
+  WARNING
+  BREACHED
+  NOT_APPLICABLE
 }

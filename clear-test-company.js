@@ -42,3 +42,4 @@ keysToCheck.forEach(key => {
 console.log('\nTo completely clear all localStorage data, run: localStorage.clear()');
 
 
+

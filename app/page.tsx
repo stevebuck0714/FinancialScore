@@ -33,7 +33,7 @@ const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySetti
 // Feature flag for covenants module
 const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true; // Default to enabled for development
 
-const CovenantsTab = COVENANTS_ENABLED ? dynamic(() => import('./covenants/components/CovenantsTab'), { ssr: false }) : null;
+const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab'), { ssr: false });
 
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
 const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
@@ -6203,7 +6203,7 @@ function FinancialScorePage() {
 
           {/* Covenants Tab */}
           {(adminDashboardTab === 'covenants' && currentView === 'admin') &&
-           selectedCompanyId && CovenantsTab && (
+           selectedCompanyId && (
             <CovenantsTab
               selectedCompanyId={selectedCompanyId}
               currentUser={currentUser}

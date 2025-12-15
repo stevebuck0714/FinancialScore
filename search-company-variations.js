@@ -34,3 +34,4 @@ db.all("SELECT id, name FROM Company WHERE name LIKE ? OR name LIKE ? OR name LI
 });
 
 
+
