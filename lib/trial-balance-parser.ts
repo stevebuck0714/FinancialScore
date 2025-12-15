@@ -353,29 +353,10 @@ export function processTrialBalanceToMonthly(
       const mapping = mappingLookup[account.description];
       const value = account.values[dateStr] || 0;
 
-      // DEBUG: Log COGS account processing
-      if (account.acctType === 'CostOfGoodsSold' && value !== 0) {
-        console.log(`[COGS DEBUG] Processing account: "${account.description}" (${account.acctId})`);
-        console.log(`[COGS DEBUG] Account type: ${account.acctType}, Value: ${value}`);
-        console.log(`[COGS DEBUG] Mapping found: ${mapping ? 'YES' : 'NO'}`);
-        if (mapping) {
-          console.log(`[COGS DEBUG] Target field: ${mapping.targetField}`);
-        } else {
-          console.log(`[COGS DEBUG] No mapping found, checking default...`);
-          const defaultField = ACCOUNT_TYPE_TO_TARGET_FIELD[account.acctType];
-          console.log(`[COGS DEBUG] Default field for ${account.acctType}: ${defaultField}`);
-        }
-      }
-
       if (mapping && mapping.targetField && value !== 0) {
         // Add to the target field
         if (monthlyRecord[mapping.targetField] !== undefined) {
           monthlyRecord[mapping.targetField] += value;
-
-          // DEBUG: Log successful COGS mapping
-          if (account.acctType === 'CostOfGoodsSold') {
-            console.log(`[COGS DEBUG] ✅ Mapped "${account.description}" to ${mapping.targetField}: +${value}`);
-          }
         }
 
         // Collect account value for LOB allocation
@@ -389,13 +370,6 @@ export function processTrialBalanceToMonthly(
         const defaultField = ACCOUNT_TYPE_TO_TARGET_FIELD[account.acctType];
         if (defaultField && monthlyRecord[defaultField] !== undefined) {
           monthlyRecord[defaultField] += value;
-
-          // DEBUG: Log default COGS mapping
-          if (account.acctType === 'CostOfGoodsSold') {
-            console.log(`[COGS DEBUG] ⚠️ Used default mapping "${account.description}" to ${defaultField}: +${value}`);
-          }
-        } else if (account.acctType === 'CostOfGoodsSold' && value !== 0) {
-          console.log(`[COGS DEBUG] ❌ No mapping found for "${account.description}" - value ${value} ignored!`);
         }
       }
     }
@@ -405,21 +379,8 @@ export function processTrialBalanceToMonthly(
     const cogsFromComponents = monthlyRecord.cogsPayroll + monthlyRecord.cogsOwnerPay +
       monthlyRecord.cogsContractors + monthlyRecord.cogsMaterials +
       monthlyRecord.cogsCommissions + monthlyRecord.cogsOther;
-
-    // DEBUG: Log COGS calculation
     if (cogsFromComponents > 0) {
-      console.log(`[COGS DEBUG] Final COGS breakdown for ${dateStr}:`);
-      console.log(`[COGS DEBUG]   cogsPayroll: $${monthlyRecord.cogsPayroll.toLocaleString()}`);
-      console.log(`[COGS DEBUG]   cogsOwnerPay: $${monthlyRecord.cogsOwnerPay.toLocaleString()}`);
-      console.log(`[COGS DEBUG]   cogsContractors: $${monthlyRecord.cogsContractors.toLocaleString()}`);
-      console.log(`[COGS DEBUG]   cogsMaterials: $${monthlyRecord.cogsMaterials.toLocaleString()}`);
-      console.log(`[COGS DEBUG]   cogsCommissions: $${monthlyRecord.cogsCommissions.toLocaleString()}`);
-      console.log(`[COGS DEBUG]   cogsOther: $${monthlyRecord.cogsOther.toLocaleString()}`);
-      console.log(`[COGS DEBUG]   Total from components: $${cogsFromComponents.toLocaleString()}`);
-      console.log(`[COGS DEBUG]   Previous cogsTotal: $${(monthlyRecord.cogsTotal || 0).toLocaleString()}`);
-
       monthlyRecord.cogsTotal = cogsFromComponents;
-      console.log(`[COGS DEBUG]   Final cogsTotal: $${monthlyRecord.cogsTotal.toLocaleString()}`);
     }
     
     // Current Assets total
