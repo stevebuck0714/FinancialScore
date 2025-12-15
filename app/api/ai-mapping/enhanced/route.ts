@@ -11,7 +11,7 @@ const mappingRules = [
   { keywords: ['non-operating income', 'other income', 'interest income', 'dividend income'], targetField: 'nonOperatingIncome', confidence: 'high' },
 
   // Cost of Goods Sold
-  { keywords: ['cogs payroll', 'cost of sales payroll', 'production payroll', 'direct labor'], targetField: 'cogsPayroll', confidence: 'high' },
+  { keywords: ['cogs payroll', 'cost of sales payroll', 'production payroll', 'direct labor', 'employees wages', 'employee wages', 'wages'], targetField: 'cogsPayroll', confidence: 'high' },
   { keywords: ['cogs owner', 'owner draw cogs'], targetField: 'cogsOwnerPay', confidence: 'medium' },
   { keywords: ['cogs contractor', 'subcontractor cogs', 'job cost contractor'], targetField: 'cogsContractors', confidence: 'high' },
   { keywords: ['materials', 'supplies', 'cogs materials', 'job materials', 'raw materials'], targetField: 'cogsMaterials', confidence: 'high' },
