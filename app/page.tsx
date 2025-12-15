@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
@@ -237,7 +237,7 @@ function FinancialScorePage() {
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
     if (isPaymentRequired()) {
-      alert('⚠️ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
+      alert('âš ï¸ Payment Required\n\nPlease complete your subscription payment before accessing other features.');
       setAdminDashboardTab('payments');
       setCurrentView('admin');
       return;
@@ -255,7 +255,7 @@ function FinancialScorePage() {
 
     // Block other tabs if payment is required
     if (isPaymentRequired()) {
-      alert('⚠️ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
+      alert('âš ï¸ Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
       setAdminDashboardTab('payments');
       return;
     }
@@ -369,19 +369,19 @@ function FinancialScorePage() {
 
   useEffect(() => {
     if (currentUser?.userType === 'assessment' && isLoggedIn && currentView !== 'login' && !isAssessmentUserViewAllowed(currentView)) {
-      console.log('🚫 useEffect redirecting from', currentView, 'to ma-welcome');
+      console.log('ðŸš« useEffect redirecting from', currentView, 'to ma-welcome');
       setCurrentView('ma-welcome');
     }
   }, [currentView, currentUser, isLoggedIn]);
 
   // Helper function to handle view changes for assessment users
   const handleViewChange = (newView: string) => {
-    console.log('🔄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
+    console.log('ðŸ”„ handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
     if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
-      console.log('🚫 View not allowed, redirecting to ma-welcome');
+      console.log('ðŸš« View not allowed, redirecting to ma-welcome');
       setCurrentView('ma-welcome');
     } else {
-      console.log('🔄 Setting view to:', newView);
+      console.log('ðŸ”„ Setting view to:', newView);
       setCurrentView(newView as any);
     }
   };
@@ -518,7 +518,7 @@ function FinancialScorePage() {
     // Check if company is free (multiple ways to detect)
     // 1. Explicit free status
     if (selectedCompany.subscriptionStatus === "free") {
-      console.log('🔒 Company marked as free - no payment required');
+      console.log('ðŸ”’ Company marked as free - no payment required');
       return false;
     }
 
@@ -537,22 +537,22 @@ function FinancialScorePage() {
 
     // 4. Check if pricing is $0
     if (monthly === 0 && quarterly === 0 && annual === 0) {
-      console.log('🔒 Company has $0 pricing - no payment required');
+      console.log('ðŸ”’ Company has $0 pricing - no payment required');
       return false;
     }
 
     // 5. If no pricing data or non-zero pricing, payment required
-    console.log('🔒 Payment required - no free pricing detected');
+    console.log('ðŸ”’ Payment required - no free pricing detected');
     return true;
 
     // If pricing hasn't loaded yet, don't block (avoid false positives)
     if (subscriptionMonthlyPrice === undefined || subscriptionQuarterlyPrice === undefined || subscriptionAnnualPrice === undefined) {
-      console.log('🔒 Pricing still loading - allowing access temporarily');
+      console.log('ðŸ”’ Pricing still loading - allowing access temporarily');
       return false; // Don't block while pricing is loading
     }
 
     // Payment required for non-free pricing
-    console.log('🔒 Payment required for pricing:', { subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice });
+    console.log('ðŸ”’ Payment required for pricing:', { subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice });
     return true;
   }, [selectedCompanyId, currentUser, companies, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice]);
 
@@ -863,7 +863,7 @@ function FinancialScorePage() {
       const result = await response.json();
       
       if (result.success) {
-        alert('✅ Payment method updated successfully!');
+        alert('âœ… Payment method updated successfully!');
         setShowUpdatePaymentModal(false);
         // Reset form
         setUpdatePaymentData({
@@ -884,11 +884,11 @@ function FinancialScorePage() {
           setActiveSubscription(subData.subscription);
         }
       } else {
-        alert(`❌ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
+        alert(`âŒ Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
       }
     } catch (error) {
       console.error('Update payment method error:', error);
-      alert('❌ An error occurred while updating your payment method. Please try again.');
+      alert('âŒ An error occurred while updating your payment method. Please try again.');
     } finally {
       setUpdatingPayment(false);
     }
@@ -912,12 +912,12 @@ function FinancialScorePage() {
       // Handle both success and 404 (company already deleted/hidden)
       if (result.success || response.status === 404) {
         const message = result.hidden
-          ? `✅ Company "${companyToDelete.companyName}" has been removed from your dashboard.`
+          ? `âœ… Company "${companyToDelete.companyName}" has been removed from your dashboard.`
           : result.softDelete
-          ? `⚠️ Company "${companyToDelete.companyName}" has been marked as deleted (temporary workaround). It will be fully removed after the next deployment.`
+          ? `âš ï¸ Company "${companyToDelete.companyName}" has been marked as deleted (temporary workaround). It will be fully removed after the next deployment.`
           : result.success
-          ? `✅ Company "${companyToDelete.companyName}" has been deleted successfully.`
-          : `✅ Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
+          ? `âœ… Company "${companyToDelete.companyName}" has been deleted successfully.`
+          : `âœ… Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
 
         alert(message);
 
@@ -930,19 +930,19 @@ function FinancialScorePage() {
         // Clear localStorage companies data to prevent reappearance on navigation
         if (typeof window !== 'undefined') {
           localStorage.removeItem('fs_companies');
-          console.log('🗑️ Cleared localStorage companies data after deletion');
+          console.log('ðŸ—‘ï¸ Cleared localStorage companies data after deletion');
         }
 
         // Force reload companies from API to ensure deletion took effect
         if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
-          console.log('🔄 Reloading companies from API after deletion');
+          console.log('ðŸ”„ Reloading companies from API after deletion');
           setTimeout(async () => {
             try {
               const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
               safeSetCompanies(freshCompanies || []);
-              console.log('✅ Reloaded companies after deletion:', freshCompanies?.length || 0, 'companies');
+              console.log('âœ… Reloaded companies after deletion:', freshCompanies?.length || 0, 'companies');
             } catch (error) {
-              console.error('❌ Failed to reload companies after deletion:', error);
+              console.error('âŒ Failed to reload companies after deletion:', error);
             }
           }, 1000); // Small delay to ensure deletion is processed
         }
@@ -965,33 +965,33 @@ function FinancialScorePage() {
         // Clear localStorage companies data to prevent reappearance on navigation
         if (typeof window !== 'undefined') {
           localStorage.removeItem('fs_companies');
-          console.log('🗑️ Cleared localStorage companies data after deletion (server error)');
+          console.log('ðŸ—‘ï¸ Cleared localStorage companies data after deletion (server error)');
         }
 
         // Force reload companies from API to ensure deletion took effect
         if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
-          console.log('🔄 Reloading companies from API after deletion (server error)');
+          console.log('ðŸ”„ Reloading companies from API after deletion (server error)');
           setTimeout(async () => {
             try {
               const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
               safeSetCompanies(freshCompanies || []);
-              console.log('✅ Reloaded companies after deletion (server error):', freshCompanies?.length || 0, 'companies');
+              console.log('âœ… Reloaded companies after deletion (server error):', freshCompanies?.length || 0, 'companies');
             } catch (error) {
-              console.error('❌ Failed to reload companies after deletion (server error):', error);
+              console.error('âŒ Failed to reload companies after deletion (server error):', error);
             }
           }, 1000); // Small delay to ensure deletion is processed
         }
 
         setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
 
-        alert(`✅ Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
+        alert(`âœ… Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
 
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       }
     } catch (error) {
       console.error('Error deleting company:', error);
-      alert('❌ An error occurred while deleting the company');
+      alert('âŒ An error occurred while deleting the company');
     }
   };
 
@@ -1109,14 +1109,14 @@ function FinancialScorePage() {
   // Load expense goals when Goals, Trend Analysis, or MD&A view is accessed
   useEffect(() => {
     if (selectedCompanyId && (currentView === 'goals' || currentView === 'trend-analysis' || currentView === 'mda')) {
-      console.log('📊 Loading expense goals for company:', selectedCompanyId);
+      console.log('ðŸ“Š Loading expense goals for company:', selectedCompanyId);
       // Reset to empty first, so fields are blank while loading
       setExpenseGoals({});
       
       fetch(`/api/expense-goals?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
-          console.log('📊 Expense goals loaded:', data);
+          console.log('ðŸ“Š Expense goals loaded:', data);
           if (data.success && data.goals) {
             // Filter out any zero or invalid values so fields stay blank
             const filteredGoals: {[key: string]: number} = {};
@@ -1145,7 +1145,7 @@ function FinancialScorePage() {
       fetch(`/api/valuation-settings?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
-          console.log('📊 Valuation settings loaded:', data);
+          console.log('ðŸ“Š Valuation settings loaded:', data);
           setSdeMultiplier(data.sdeMultiplier || 2.5);
           setEbitdaMultiplier(data.ebitdaMultiplier || 5.0);
           setDcfDiscountRate(data.dcfDiscountRate || 10.0);
@@ -1193,7 +1193,7 @@ function FinancialScorePage() {
   // Load saved account mappings and CSV data when company changes or data-mapping tab is visited
   useEffect(() => {
     if (selectedCompanyId && adminDashboardTab === 'data-mapping') {
-      console.log('📊 Loading saved data for company:', selectedCompanyId);
+      console.log('ðŸ“Š Loading saved data for company:', selectedCompanyId);
       
       // Load CSV Trial Balance data from localStorage
       const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
@@ -1360,7 +1360,7 @@ function FinancialScorePage() {
       
       try {
         // ALWAYS clear state at the start to prevent stale data
-        console.log('🧹 Clearing all state before loading new company data');
+        console.log('ðŸ§¹ Clearing all state before loading new company data');
         setQbRawData(null);
         setRawRows([]);
         setMapping({ date: '' });
@@ -1390,28 +1390,28 @@ function FinancialScorePage() {
         // Load financial records
         const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const companyName = selectedCompany?.name || 'Unknown';
-        console.log(`📂 LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
+        console.log(`ðŸ“‚ LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
         
         const { records } = await financialsApi.getByCompany(selectedCompanyId);
-        console.log(`📂 Found ${records.length} financial records for company "${companyName}"`);
+        console.log(`ðŸ“‚ Found ${records.length} financial records for company "${companyName}"`);
         
         // If no records found, clear aiMappings as well
         if (!records || records.length === 0) {
-          console.log(`🧹 No records found - clearing aiMappings too`);
+          console.log(`ðŸ§¹ No records found - clearing aiMappings too`);
           setAiMappings([]);
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
-          console.log(`📂 Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
+          console.log(`ðŸ“‚ Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
           
           // Check if this is QuickBooks data and extract raw QB financial statements
           if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
               !Array.isArray(latestRecord.rawData) &&
               (latestRecord.rawData.profitAndLoss || latestRecord.rawData.balanceSheet)) {
             // QuickBooks data - use monthlyData directly
-            console.log(`🔄 Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
-            console.log(`📄 Record belongs to company ID: ${latestRecord.companyId}`);
-            console.log(`📅 QB Data sync date:`, latestRecord.rawData.syncDate);
-            console.log(`🔑 QB rawData object keys:`, Object.keys(latestRecord.rawData));
+            console.log(`ðŸ”„ Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
+            console.log(`ðŸ“„ Record belongs to company ID: ${latestRecord.companyId}`);
+            console.log(`ðŸ“… QB Data sync date:`, latestRecord.rawData.syncDate);
+            console.log(`ðŸ”‘ QB rawData object keys:`, Object.keys(latestRecord.rawData));
             console.log(`? SETTING qbRawData with sync date:`, latestRecord.rawData.syncDate);
             // Add companyId to the raw data so we can verify it matches
             setQbRawData({
@@ -1419,7 +1419,7 @@ function FinancialScorePage() {
               _companyId: selectedCompanyId,
               _recordId: latestRecord.id
             });
-            console.log(`💾 Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
+            console.log(`ðŸ’¾ Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
             // Force re-render of Financial Statements view
             setDataRefreshKey(prev => prev + 1);
             setRawRows([]); // Set empty array since rawRows is not used for QB data
@@ -1498,7 +1498,7 @@ function FinancialScorePage() {
             
             // If this record has monthlyData, it's a processed Trial Balance - load it like QB data
             if (latestRecord.monthlyData && latestRecord.monthlyData.length > 0) {
-              console.log(`📊 Loading processed Trial Balance data: ${latestRecord.monthlyData.length} months`);
+              console.log(`ðŸ“Š Loading processed Trial Balance data: ${latestRecord.monthlyData.length} months`);
               const convertedMonthly = latestRecord.monthlyData.map((m: any) => ({
                 date: new Date(m.monthDate),
                 month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
@@ -1578,9 +1578,9 @@ function FinancialScorePage() {
         }
         
         // Load assessment records
-        console.log(`📊 Loading assessment records for company: ${selectedCompanyId}`);
+        console.log(`ðŸ“Š Loading assessment records for company: ${selectedCompanyId}`);
         const { records: assessments } = await assessmentsApi.getByCompany(selectedCompanyId);
-        console.log(`📊 Loaded ${assessments?.length || 0} assessment records:`, assessments);
+        console.log(`ðŸ“Š Loaded ${assessments?.length || 0} assessment records:`, assessments);
         setAssessmentRecords(assessments || []);
         console.log(`? Assessment records set in state`);
         
@@ -1645,12 +1645,12 @@ function FinancialScorePage() {
             console.log('Sample benchmarks:', benchmarkData.slice(0, 3).map((b: any) => b.metricName).join(', '));
           }
         } else {
-          console.log('⚠️ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
+          console.log('âš ï¸ Cannot load benchmarks:', !company ? 'Company not found' : 'Industry sector not set');
         }
 
           // Load subscription pricing for this company (now stored permanently in DB)
           if (company) {
-            console.log('🔍 Loading pricing from company data:', {
+            console.log('ðŸ” Loading pricing from company data:', {
               name: company.name,
               id: company.id,
               monthly: company.subscriptionMonthlyPrice,
@@ -1666,7 +1666,7 @@ function FinancialScorePage() {
             // If dedicated pricing fields are null/undefined, try userDefinedAllocations backup
             if ((monthly === null || monthly === undefined) &&
                 company.userDefinedAllocations?.subscriptionPricing) {
-              console.log('🔄 Using backup pricing from userDefinedAllocations');
+              console.log('ðŸ”„ Using backup pricing from userDefinedAllocations');
               monthly = company.userDefinedAllocations.subscriptionPricing.monthly;
               quarterly = company.userDefinedAllocations.subscriptionPricing.quarterly;
               annual = company.userDefinedAllocations.subscriptionPricing.annual;
@@ -1681,16 +1681,16 @@ function FinancialScorePage() {
               setSubscriptionMonthlyPrice(monthly);
               setSubscriptionQuarterlyPrice(quarterly);
               setSubscriptionAnnualPrice(annual);
-              console.log('✅ Loaded pricing from database:', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
+              console.log('âœ… Loaded pricing from database:', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
             } else {
               // No pricing data available, fall back to defaults
-              console.log('⚠️ No pricing data available, using defaults');
+              console.log('âš ï¸ No pricing data available, using defaults');
               setSubscriptionMonthlyPrice(195);
               setSubscriptionQuarterlyPrice(500);
               setSubscriptionAnnualPrice(1750);
             }
 
-            console.log('✅ Pricing loaded from database:', {
+            console.log('âœ… Pricing loaded from database:', {
               monthly: company.subscriptionMonthlyPrice ?? 195,
               quarterly: company.subscriptionQuarterlyPrice ?? 500,
               annual: company.subscriptionAnnualPrice ?? 1750,
@@ -1749,7 +1749,7 @@ function FinancialScorePage() {
             // Load assessment records for this company
             const { records } = await assessmentsApi.getByCompany(company.id);
             if (records) {
-              console.log(`📊 Loaded ${records.length} assessment records for company ${company.id} (${company.name}):`, 
+              console.log(`ðŸ“Š Loaded ${records.length} assessment records for company ${company.id} (${company.name}):`, 
                 records.map((r: any) => ({ userEmail: r.user?.email, companyId: r.companyId, answersCount: Object.keys(r.responses || {}).length }))
               );
               allAssessments.push(...records);
@@ -1890,7 +1890,7 @@ function FinancialScorePage() {
           }));
           
           console.log('? Loaded', formattedData.length, 'months of financial data from database');
-          console.log('📊 RAW from database (sample):', monthlyData[0] ? {
+          console.log('ðŸ“Š RAW from database (sample):', monthlyData[0] ? {
             revenue: monthlyData[0].revenue,
             payroll: monthlyData[0].payroll,
             professionalFees: monthlyData[0].professionalFees,
@@ -1900,7 +1900,7 @@ function FinancialScorePage() {
             retainedEarnings: monthlyData[0].retainedEarnings,
             ownersDraw: monthlyData[0].ownersDraw
           } : 'no data');
-          console.log('📈 FORMATTED for display (sample):', formattedData[0] ? {
+          console.log('ðŸ“ˆ FORMATTED for display (sample):', formattedData[0] ? {
             revenue: formattedData[0].revenue,
             payroll: formattedData[0].payroll,
             professionalFees: formattedData[0].professionalFees,
@@ -2004,13 +2004,13 @@ function FinancialScorePage() {
           };
         });
         
-        console.log('📤 Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
-        console.log('📊 Sample Excel values from row 0:', { 
+        console.log('ðŸ“¤ Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
+        console.log('ðŸ“Š Sample Excel values from row 0:', { 
           revenue: rawRows[0]?.[mapping.revenue!], 
           expense: rawRows[0]?.[mapping.expense!],
           professionalFees: rawRows[0]?.[mapping.professionalFees!]
         });
-        console.log('📊 First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
+        console.log('ðŸ“Š First 3 months PARSED:', fullMonthlyData.slice(0, 3).map(m => ({ 
           month: m.month, 
           revenue: m.revenue, 
           expense: m.expense,
@@ -2346,7 +2346,7 @@ function FinancialScorePage() {
     }
 
     try {
-      console.log('🎯 Loading master data for goals:', selectedCompanyId);
+      console.log('ðŸŽ¯ Loading master data for goals:', selectedCompanyId);
       const response = await fetch(`/api/master-data?companyId=${selectedCompanyId}`);
       const data = await response.json();
 
@@ -2359,7 +2359,7 @@ function FinancialScorePage() {
       const categories = extractCategoriesFromMasterData(data.monthlyData);
       setMasterDataCategories(categories);
 
-      console.log('✅ Loaded categories from master data:', categories.length);
+      console.log('âœ… Loaded categories from master data:', categories.length);
       alert(`Loaded ${categories.length} expense categories from master data`);
 
     } catch (error) {
@@ -2759,7 +2759,7 @@ function FinancialScorePage() {
     try {
       const { company } = await companiesApi.updatePricing(selectedCompanyId, subscriptionMonthlyPrice || 0, subscriptionQuarterlyPrice || 0, subscriptionAnnualPrice || 0);
       
-      console.log('💰 Subscription pricing saved:', company);
+      console.log('ðŸ’° Subscription pricing saved:', company);
       
       // Update the companies list with the new pricing
       safeSetCompanies(Array.isArray(companies) ? companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c) : [company]);
@@ -2840,9 +2840,9 @@ function FinancialScorePage() {
       console.error('Error creating user:', error);
       if (error instanceof ApiError) {
         if (error.message.includes('already registered')) {
-          alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+          alert(`âš ï¸ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
         } else if (error.message.includes('Password does not meet requirements')) {
-          alert('⚠️ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+          alert('âš ï¸ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -2926,7 +2926,7 @@ function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('⚠️ Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('âš ï¸ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -4039,8 +4039,8 @@ function FinancialScorePage() {
     }
 
     // Show confirmation
-    const reportNames = printQueue.map(p => p.title).join('\n• ');
-    if (!confirm(`You are about to print the following reports in sequence:\n\n• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
+    const reportNames = printQueue.map(p => p.title).join('\nâ€¢ ');
+    if (!confirm(`You are about to print the following reports in sequence:\n\nâ€¢ ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
       return;
     }
 
@@ -4258,7 +4258,7 @@ function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-intro' && '✓ '}Introduction
+                    {currentView === 'fs-intro' && 'âœ“ '}Introduction
                   </div>
                   <div
                     onClick={() => setCurrentView('fs-score')}
@@ -4286,7 +4286,7 @@ function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-score' && '✓ '}Financial Score
+                    {currentView === 'fs-score' && 'âœ“ '}Financial Score
                   </div>
                 </div>
               )}
@@ -4348,7 +4348,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-welcome' && '✓ '}Welcome
+                  {currentView === 'ma-welcome' && 'âœ“ '}Welcome
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-questionnaire')}
@@ -4376,7 +4376,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-questionnaire' && '✓ '}Questionnaire
+                  {currentView === 'ma-questionnaire' && 'âœ“ '}Questionnaire
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-your-results')}
@@ -4404,7 +4404,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-your-results' && '✓ '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
+                  {currentView === 'ma-your-results' && 'âœ“ '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scores-summary')}
@@ -4432,7 +4432,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scores-summary' && '✓ '}Scores Summary
+                  {currentView === 'ma-scores-summary' && 'âœ“ '}Scores Summary
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scoring-guide')}
@@ -4460,7 +4460,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scoring-guide' && '✓ '}Scoring Guide
+                  {currentView === 'ma-scoring-guide' && 'âœ“ '}Scoring Guide
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-charts')}
@@ -4488,7 +4488,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-charts' && '✓ '}Charts
+                  {currentView === 'ma-charts' && 'âœ“ '}Charts
                 </div>
               </div>
               )}
@@ -4660,7 +4660,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ℹ️ Getting Started
+                â„¹ï¸ Getting Started
               </a>
               <a
                 href="/privacy-policy"
@@ -4686,7 +4686,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                🛡️ Privacy Policy
+                ðŸ›¡ï¸ Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4712,7 +4712,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📄 License Agreement
+                ðŸ“„ License Agreement
               </a>
             </div>
 
@@ -4740,7 +4740,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                💬 Contact Support
+                ðŸ’¬ Contact Support
               </a>
             </div>
           </nav>
@@ -4935,7 +4935,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ℹ️ Getting Started
+                â„¹ï¸ Getting Started
               </a>
               <a
                 href="/privacy-policy"
@@ -4961,7 +4961,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                🛡️ Privacy Policy
+                ðŸ›¡ï¸ Privacy Policy
               </a>
               <a
                 href="/license-agreement"
@@ -4987,7 +4987,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                📄 License Agreement
+                ðŸ“„ License Agreement
               </a>
             </div>
 
@@ -5015,7 +5015,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                💬 Contact Support
+                ðŸ’¬ Contact Support
               </a>
             </div>
           </nav>
@@ -5414,7 +5414,7 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h2>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    ✅ Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
+                    âœ… Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
                   </p>
 
                   {/* Summary Stats */}
@@ -5507,10 +5507,10 @@ function FinancialScorePage() {
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      • All {loadedMonthlyData.length} months have complete data<br/>
-                      • Income Statement fields populated: Revenue, Expenses, COGS<br/>
-                      • Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
-                      • Ready for AI-assisted mapping
+                      â€¢ All {loadedMonthlyData.length} months have complete data<br/>
+                      â€¢ Income Statement fields populated: Revenue, Expenses, COGS<br/>
+                      â€¢ Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
+                      â€¢ Ready for AI-assisted mapping
                     </div>
                   </div>
                 </div>
@@ -5617,7 +5617,7 @@ function FinancialScorePage() {
 
               {/* Trial Balance Import Section */}
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📊 Trial Balance Import</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>ðŸ“Š Trial Balance Import</h2>
                 
                 <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
                   <p style={{ fontSize: '14px', color: '#065f46', lineHeight: '1.6', margin: 0 }}>
@@ -5777,7 +5777,7 @@ function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? '✅ Connected' : qbStatus === 'ERROR' ? '❌ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? 'âœ… Connected' : qbStatus === 'ERROR' ? 'âŒ Error' : qbStatus === 'EXPIRED' ? 'âš ï¸ Token Expired' : 'âš ï¸ Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -5857,7 +5857,7 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                   <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h3>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    ✅ Synced successfully - {loadedMonthlyData.length} months of data imported
+                    âœ… Synced successfully - {loadedMonthlyData.length} months of data imported
                   </p>
 
                   {/* Summary Stats */}
@@ -5965,7 +5965,7 @@ function FinancialScorePage() {
                                 <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                   <td style={{ padding: '8px', color: '#1e293b' }}>
                                     <span style={{ fontSize: '10px', color: '#94a3b8', marginRight: '8px' }}>
-                                      {isIncome ? '📈' : '📉'}
+                                      {isIncome ? 'ðŸ“ˆ' : 'ðŸ“‰'}
                                     </span>
                                     {account.name}
                                   </td>
@@ -6021,10 +6021,10 @@ function FinancialScorePage() {
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac', marginBottom: '16px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      • All {loadedMonthlyData.length} months have complete data<br/>
-                      • Income Statement: Revenue, Expenses, COGS populated<br/>
-                      • Balance Sheet: Assets, Liabilities, Equity populated<br/>
-                      • Ready for AI-assisted account mapping
+                      â€¢ All {loadedMonthlyData.length} months have complete data<br/>
+                      â€¢ Income Statement: Revenue, Expenses, COGS populated<br/>
+                      â€¢ Balance Sheet: Assets, Liabilities, Equity populated<br/>
+                      â€¢ Ready for AI-assisted account mapping
                     </div>
                   </div>
 
@@ -6051,7 +6051,7 @@ function FinancialScorePage() {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                       onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
                     >
-                      <span>🤖</span>
+                      <span>ðŸ¤–</span>
                       <span>Proceed to AI Account Mapping ?</span>
                     </button>
                   </div>
@@ -6194,7 +6194,7 @@ function FinancialScorePage() {
                       onClick={() => setShowCheckoutModal(false)}
                       style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                     >
-                      ×
+                      Ã—
                     </button>
                   </div>
 
@@ -6215,7 +6215,7 @@ function FinancialScorePage() {
 
                   {/* USAePay Payment Form */}
                   <div style={{ marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>💳 Payment Information</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>ðŸ’³ Payment Information</h3>
                     
                     {/* Payment Form */}
                     <form onSubmit={async (e) => {
@@ -6264,7 +6264,7 @@ function FinancialScorePage() {
                       {/* Card Information Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                         <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          💳 Card Details
+                          ðŸ’³ Card Details
                         </h4>
                         
                         <div style={{ marginBottom: '12px' }}>
@@ -6328,7 +6328,7 @@ function FinancialScorePage() {
                       
                       {/* Billing Address Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📍 Billing Address</h4>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>ðŸ“ Billing Address</h4>
                         
                         <div style={{ marginBottom: '12px' }}>
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
@@ -6440,14 +6440,14 @@ function FinancialScorePage() {
                             gap: '8px'
                           }}
                         >
-                          💳 Complete Payment - ${planPrice.toFixed(2)}
+                          ðŸ’³ Complete Payment - ${planPrice.toFixed(2)}
                         </button>
                       </div>
                     </form>
                     
                     {/* Security Notice */}
                     <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>🔒</span>
+                      <span style={{ fontSize: '16px' }}>ðŸ”’</span>
                       <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
                         Secured by USAePay - Your payment information is encrypted
                       </span>
@@ -6457,7 +6457,7 @@ function FinancialScorePage() {
                   {/* Security Notice */}
                   <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>🔒</span>
+                      <span style={{ fontSize: '16px' }}>ðŸ”’</span>
                       <span style={{ fontSize: '13px', fontWeight: '500', color: '#059669' }}>
                         Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                       </span>
@@ -6479,7 +6479,7 @@ function FinancialScorePage() {
                     onClick={() => setShowUpdatePaymentModal(false)}
                     style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                   >
-                    ×
+                    Ã—
                   </button>
                 </div>
 
@@ -6487,7 +6487,7 @@ function FinancialScorePage() {
                   {/* Card Information Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      💳 Card Details
+                      ðŸ’³ Card Details
                     </h4>
                     
                     <div style={{ marginBottom: '12px' }}>
@@ -6561,7 +6561,7 @@ function FinancialScorePage() {
                   {/* Billing Address Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                      📍 Billing Address
+                      ðŸ“ Billing Address
                     </h4>
 
                     <div style={{ marginBottom: '12px' }}>
@@ -6618,7 +6618,7 @@ function FinancialScorePage() {
 
                   {/* Security Notice */}
                   <div style={{ background: '#d1fae5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '12px', marginBottom: '20px', display: 'flex', alignItems: 'start', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>🔒</span>
+                    <span style={{ fontSize: '18px' }}>ðŸ”’</span>
                     <span style={{ fontSize: '13px', color: '#065f46', lineHeight: '1.5' }}>
                       Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                     </span>
@@ -6670,7 +6670,7 @@ function FinancialScorePage() {
                           Updating...
                         </>
                       ) : (
-                        '💳 Update Payment Method'
+                        'ðŸ’³ Update Payment Method'
                       )}
                     </button>
                   </div>
@@ -6698,7 +6698,7 @@ function FinancialScorePage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', maxWidth: '800px', margin: '0 auto' }}>
                 {/* QuickBooks Option */}
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>💻</div>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>ðŸ’»</div>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks API</div>
                   <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
                   <button
@@ -6720,7 +6720,7 @@ function FinancialScorePage() {
                 
                 {/* Trial Balance Upload Option */}
                 <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '24px', border: '2px solid #86efac' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px', textAlign: 'center' }}>📊</div>
+                  <div style={{ fontSize: '32px', marginBottom: '12px', textAlign: 'center' }}>ðŸ“Š</div>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '8px', textAlign: 'center' }}>Trial Balance CSV</div>
                   <p style={{ fontSize: '13px', color: '#047857', marginBottom: '16px', textAlign: 'center' }}>Upload a CSV with Acct Type, Acct ID, Description, and date columns.</p>
                   <input 
@@ -6836,7 +6836,7 @@ function FinancialScorePage() {
                 
                 <div style={{ display: 'grid', gap: '20px' }}>
                   <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 – 100: Strong Financial Performance</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 â€“ 100: Strong Financial Performance</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#064e3b', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Good growth and good balance</li>
                       <li>In a good position for considering an M&A transaction</li>
@@ -6845,7 +6845,7 @@ function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 – 80: Good Fundamentals</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 â€“ 80: Good Fundamentals</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>In a good position for revenue growth</li>
                       <li>Needs to focus on bringing costs down as volume grows</li>
@@ -6853,7 +6853,7 @@ function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 – 50: Basic Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 â€“ 50: Basic Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Cost structure issues; not in a position to grow</li>
                       <li>Improvements needed in operations and process controls</li>
@@ -6862,7 +6862,7 @@ function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 – 30: Serious Performance Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 â€“ 30: Serious Performance Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Problems exist which may not be correctable</li>
                       <li>Some form of major restructuring or liquidation may be best</li>
@@ -7015,7 +7015,7 @@ function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                🖨️ Print
+                ðŸ–¨ï¸ Print
               </button>
             </div>
           </div>
@@ -7140,7 +7140,7 @@ function FinancialScorePage() {
                   lineHeight: 1
                 }}
               >
-                ×
+                Ã—
               </button>
             </div>
             
@@ -7338,7 +7338,7 @@ function FinancialScorePage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                🖨️ Print Dashboard
+                ðŸ–¨ï¸ Print Dashboard
               </button>
               <button
                 className="no-print"
@@ -7358,7 +7358,7 @@ function FinancialScorePage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
+                {showDashboardCustomizer ? 'Done Customizing' : 'âš™ï¸ Customize Dashboard'}
               </button>
             </div>
           </div>
@@ -7374,7 +7374,7 @@ function FinancialScorePage() {
               border: '2px solid #667eea'
             }}>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                🔨 Build Your Custom Dashboard
+                ðŸ”¨ Build Your Custom Dashboard
               </h2>
               <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
                 Select the metrics and charts you want to see. Click on any item to add or remove it from your dashboard. Items will appear in the order selected.
@@ -7386,7 +7386,7 @@ function FinancialScorePage() {
               {/* Ratios Section */}
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  📊 Financial Ratios
+                  ðŸ“Š Financial Ratios
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                   {/* Liquidity Ratios */}
@@ -7592,7 +7592,7 @@ function FinancialScorePage() {
                               padding: 0
                             }}
                           >
-                            ×
+                            Ã—
                           </button>
                         </div>
                       ))}
@@ -7604,7 +7604,7 @@ function FinancialScorePage() {
                 {/* Trend Analysis Section */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    📈 Trend Analysis
+                    ðŸ“ˆ Trend Analysis
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                     {/* Item Trends Dropdown */}
@@ -7780,7 +7780,7 @@ function FinancialScorePage() {
                                 lineHeight: '1'
                               }}
                             >
-                              ×
+                              Ã—
                             </button>
                       </div>
                     ))}
@@ -7792,7 +7792,7 @@ function FinancialScorePage() {
                 {/* Working Capital Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💼 Working Capital Metrics
+                    ðŸ’¼ Working Capital Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle', 'Working Capital Trend'].map(widget => (
@@ -7830,7 +7830,7 @@ function FinancialScorePage() {
                 {/* Cash Flow Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💰 Cash Flow
+                    ðŸ’° Cash Flow
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['Operating Cash Flow', 'Free Cash Flow', 'Cash Position'].map(widget => (
@@ -7868,7 +7868,7 @@ function FinancialScorePage() {
                 {/* Valuation Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💎 Valuation Metrics
+                    ðŸ’Ž Valuation Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'].map(widget => (
@@ -7939,7 +7939,7 @@ function FinancialScorePage() {
               textAlign: 'center',
               border: '2px dashed #cbd5e1'
             }}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>📊</div>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>ðŸ“Š</div>
               <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
                 Your Dashboard is Empty
               </h3>
@@ -8134,7 +8134,7 @@ function FinancialScorePage() {
                                 ${(sdeValuation / 1000000).toFixed(2)}M
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier.toFixed(1)}x
+                                SDE: ${(ttmSDE / 1000).toFixed(0)}K Ã— {sdeMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -8146,7 +8146,7 @@ function FinancialScorePage() {
                                 ${(ebitdaValuation / 1000000).toFixed(2)}M
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier.toFixed(1)}x
+                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K Ã— {ebitdaMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -8503,7 +8503,7 @@ function FinancialScorePage() {
             </div>
           ) : (
             <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
-              ⚠️ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
+              âš ï¸ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
             </div>
           )}
 
@@ -8717,7 +8717,7 @@ function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      🖨️ Print Priority Ratios
+                      ðŸ–¨ï¸ Print Priority Ratios
                     </button>
                   </div>
                   <div className="priority-ratios-print-content">
@@ -8760,7 +8760,7 @@ function FinancialScorePage() {
                             justifyContent: 'center'
                           }}
                         >
-                          ×
+                          Ã—
                         </button>
                       </div>
                     ))}
@@ -8771,7 +8771,7 @@ function FinancialScorePage() {
 
               {priorityRatios.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '60px', color: '#64748b' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>ðŸ“Š</div>
                   <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>No Priority Ratios Selected</h3>
                   <p>Select ratios from the dropdowns above to create your custom KPI dashboard.</p>
                 </div>
@@ -8805,7 +8805,7 @@ function FinancialScorePage() {
                   onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
                   onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
                 >
-                  📊 Export to Excel
+                  ðŸ“Š Export to Excel
                 </button>
               </div>
               
@@ -9103,7 +9103,7 @@ function FinancialScorePage() {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
                 onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
               >
-                🔄 Refresh Analysis
+                ðŸ”„ Refresh Analysis
               </button>
               <button
                 className="no-print"
@@ -9136,7 +9136,7 @@ function FinancialScorePage() {
                   cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                 }}>
-                🖨️ Print
+                ðŸ–¨ï¸ Print
               </button>
               <TextToSpeech 
                 targetElementId={
@@ -10273,7 +10273,7 @@ function FinancialScorePage() {
 
             <div style={{ marginBottom: '12px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ef4444', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>⚠️</span> Areas Requiring Management Attention
+                <span style={{ fontSize: '20px' }}>âš ï¸</span> Areas Requiring Management Attention
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.weaknesses.length > 0 ? (
@@ -10290,7 +10290,7 @@ function FinancialScorePage() {
 
             <div>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#667eea', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>💡</span> Strategic Recommendations & Action Items
+                <span style={{ fontSize: '20px' }}>ðŸ’¡</span> Strategic Recommendations & Action Items
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.insights.length > 0 ? (
@@ -10339,7 +10339,7 @@ function FinancialScorePage() {
             {mdaAnalysis.insights.length > 0 && (
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                 <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>🔍</span> Strategic Insights
+                  <span style={{ fontSize: '24px' }}>ðŸ”</span> Strategic Insights
                 </h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {mdaAnalysis.insights.map((ins, idx) => (
@@ -10355,7 +10355,7 @@ function FinancialScorePage() {
           {mdaTab === 'key-metrics' && monthly.length >= 12 && (
           <div id="mda-key-metrics-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
-              ⚠️ Critical Review Items
+              âš ï¸ Critical Review Items
             </h2>
             
             <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' }}>
@@ -10958,7 +10958,7 @@ function FinancialScorePage() {
                         const bgColor = issue.severity === 'high' ? '#fee2e2' : issue.severity === 'medium' ? '#fef3c7' : '#dbeafe';
                         const borderColor = issue.severity === 'high' ? '#ef4444' : issue.severity === 'medium' ? '#f59e0b' : '#3b82f6';
                         const textColor = issue.severity === 'high' ? '#991b1b' : issue.severity === 'medium' ? '#92400e' : '#1e40af';
-                        const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🟢';
+                        const icon = issue.severity === 'high' ? 'ðŸ”´' : issue.severity === 'medium' ? 'ðŸŸ¡' : 'ðŸŸ¢';
                         
                         return (
                           <div key={idx} style={{ background: bgColor, borderRadius: '12px', padding: '20px', border: `2px solid ${borderColor}` }}>
@@ -10992,7 +10992,7 @@ function FinancialScorePage() {
                   {/* Action Items */}
                   {issues.filter(i => i.severity === 'high').length > 0 && (
                     <div style={{ marginTop: '32px', background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #667eea' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>✅ Recommended Actions</h3>
+                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>âœ… Recommended Actions</h3>
                       <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
                         {issues.filter(i => i.severity === 'high').length > 0 && (
                           <li><strong>Immediate attention required:</strong> Address all high-priority issues within the next 30 days</li>
@@ -11093,7 +11093,7 @@ function FinancialScorePage() {
                   gap: '8px'
                 }}
               >
-                🖨️ Print Report
+                ðŸ–¨ï¸ Print Report
               </button>
             </div>
           </div>
@@ -11116,12 +11116,12 @@ function FinancialScorePage() {
               return (
                 <>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>💼 Current Working Capital</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>ðŸ’¼ Current Working Capital</h3>
                     <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                       ${(workingCapital / 1000).toFixed(0)}K
                     </div>
                     <div style={{ fontSize: '14px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', marginBottom: '16px' }}>
-                      {wcChange >= 0 ? '↗️ +' : '↘️ '}${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
+                      {wcChange >= 0 ? 'â†—ï¸ +' : 'â†˜ï¸ '}${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
                       <div>
@@ -11136,12 +11136,12 @@ function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>📊 Working Capital Ratio</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>ðŸ“Š Working Capital Ratio</h3>
                     <div style={{ fontSize: '36px', fontWeight: '700', color: wcRatio >= 1.5 ? '#10b981' : wcRatio >= 1.0 ? '#f59e0b' : '#ef4444', marginBottom: '8px' }}>
                       {wcRatio.toFixed(2)}
                     </div>
                     <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-                      {wcRatio >= 1.5 ? '💪 Strong liquidity position' : wcRatio >= 1.0 ? '⚠️ Adequate liquidity' : '🚨 Needs attention'}
+                      {wcRatio >= 1.5 ? 'ðŸ’ª Strong liquidity position' : wcRatio >= 1.0 ? 'âš ï¸ Adequate liquidity' : 'ðŸš¨ Needs attention'}
                     </div>
                     <div style={{ fontSize: '12px', color: '#64748b' }}>
                       Industry standard: 1.2 - 2.0
@@ -11149,7 +11149,7 @@ function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>⏱️ Days Working Capital</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>â±ï¸ Days Working Capital</h3>
                     <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                       {(() => {
                         const avgRevenue = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0) / Math.max(monthly.slice(-12).length, 1);
@@ -11399,7 +11399,7 @@ function FinancialScorePage() {
                       ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
+                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K Ã— {sdeMultiplier}x
                     </div>
                   </div>
                   
@@ -11409,7 +11409,7 @@ function FinancialScorePage() {
                       ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
+                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K Ã— {ebitdaMultiplier}x
                     </div>
                   </div>
                   
@@ -11761,7 +11761,7 @@ function FinancialScorePage() {
                     cursor: 'pointer',
                     boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
                   }}>
-                  🖨️ Print
+                  ðŸ–¨ï¸ Print
                 </button>
               )}
             </div>
@@ -11828,7 +11828,7 @@ function FinancialScorePage() {
             <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
               <details>
                 <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                  💰 Cash Flow Metrics - Definitions & Examples
+                  ðŸ’° Cash Flow Metrics - Definitions & Examples
                 </summary>
               
               <div style={{ display: 'grid', gap: '20px', marginTop: '16px' }}>
@@ -11895,10 +11895,10 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Percentage of revenue converted to operating cash flow. Higher percentages indicate better cash generation efficiency.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> (Operating Cash Flow ÷ Revenue) × 100
+                    <strong>Formula:</strong> (Operating Cash Flow Ã· Revenue) Ã— 100
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 ÷ $250,000) × 100 = <strong>23.2%</strong>
+                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 Ã· $250,000) Ã— 100 = <strong>23.2%</strong>
                   </p>
                 </div>
 
@@ -11909,10 +11909,10 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Number of days the company can operate with its current cash balance at the current cash flow rate. Indicates financial runway.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Ending Cash ÷ (Operating Cash Flow × 30)
+                    <strong>Formula:</strong> Ending Cash Ã· (Operating Cash Flow Ã— 30)
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 ÷ ($58,000 × 30) = <strong>38.8 days</strong>
+                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 Ã· ($58,000 Ã— 30) = <strong>38.8 days</strong>
                   </p>
                 </div>
 
@@ -11923,11 +11923,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days inventory is held before being sold. Lower values indicate faster inventory turnover and better working capital management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Inventory Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS ÷ Avg Inventory</span>
+                    <strong>Formula:</strong> 365 Ã· Inventory Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS Ã· Avg Inventory</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 ÷ 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 Ã· 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -11938,11 +11938,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days to collect payment from customers after a sale. Lower values indicate faster cash collection and better receivables management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Receivables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue ÷ Avg A/R</span>
+                    <strong>Formula:</strong> 365 Ã· Receivables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue Ã· Avg A/R</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 ÷ 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 Ã· 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -11953,11 +11953,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days the company takes to pay its suppliers. Higher values can indicate better use of supplier credit, but be careful not to damage supplier relationships.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Payables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS ÷ Avg A/P</span>
+                    <strong>Formula:</strong> 365 Ã· Payables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS Ã· Avg A/P</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 ÷ 8 = <strong>45.6 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 Ã· 8 = <strong>45.6 days</strong>
                   </p>
                 </div>
 
@@ -12555,7 +12555,7 @@ function FinancialScorePage() {
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Negative Operating Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>âš ï¸ Negative Operating Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           The company consumed ${Math.abs(totalOperatingCF / 1000).toFixed(0)}K in cash from operations, which may indicate operational challenges.
                         </div>
@@ -12571,7 +12571,7 @@ function FinancialScorePage() {
                       </div>
                     ) : (
                       <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️ Negative Free Cash Flow</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>âš ï¸ Negative Free Cash Flow</div>
                         <div style={{ fontSize: '13px', color: '#b45309' }}>
                           Capital expenditures exceed operating cash flow by ${Math.abs(totalFreeCF / 1000).toFixed(0)}K, requiring external financing.
                         </div>
@@ -12587,7 +12587,7 @@ function FinancialScorePage() {
                       </div>
                     ) : avgCashFlowMargin < 5 ? (
                       <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Low Cash Flow Margin</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>âš ï¸ Low Cash Flow Margin</div>
                         <div style={{ fontSize: '13px', color: '#dc2626' }}>
                           Cash flow margin of {avgCashFlowMargin.toFixed(1)}% suggests challenges in converting revenue to cash. Review receivables collection and expense timing.
                         </div>
@@ -12612,7 +12612,7 @@ function FinancialScorePage() {
         return (
           <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>ðŸ”— Account Mapping</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
@@ -12698,7 +12698,7 @@ function FinancialScorePage() {
                       </>
                     ) : (
                       <>
-                        <span>🤖</span>
+                        <span>ðŸ¤–</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -12803,7 +12803,7 @@ function FinancialScorePage() {
 
                             // Automatically create master data from the processed data
                             try {
-                              console.log('🔄 Auto-creating master data...');
+                              console.log('ðŸ”„ Auto-creating master data...');
                               const masterDataResponse = await fetch('/api/save-master-file', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -12815,12 +12815,12 @@ function FinancialScorePage() {
 
                               const masterDataResult = await masterDataResponse.json();
                               if (masterDataResult.success) {
-                                console.log(`✅ Master data auto-created: ${masterDataResult.months} months`);
+                                console.log(`âœ… Master data auto-created: ${masterDataResult.months} months`);
                               } else {
-                                console.error('❌ Failed to auto-create master data:', masterDataResult.error);
+                                console.error('âŒ Failed to auto-create master data:', masterDataResult.error);
                               }
                             } catch (masterDataError) {
-                              console.error('❌ Error auto-creating master data:', masterDataError);
+                              console.error('âŒ Error auto-creating master data:', masterDataError);
                             }
 
                             // Update local state
@@ -12847,12 +12847,12 @@ function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                         }}
                       >
-                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                        {isProcessingMonthlyData ? 'Processing...' : 'âš™ï¸ Process & Save Monthly Data'}
                       </button>
                       <button
                         onClick={async () => {
                           try {
-                            console.log('🔍 Save Mappings Debug:', {
+                            console.log('ðŸ” Save Mappings Debug:', {
                               currentCompany,
                               currentCompanyId: currentCompany?.id,
                               selectedCompanyId,
@@ -12907,7 +12907,7 @@ function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                         }}
                       >
-                        {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                        {isSavingMappings ? 'Saving...' : 'ðŸ’¾ Save Mappings'}
                       </button>
                     </div>
                   </div>
@@ -12975,7 +12975,7 @@ function FinancialScorePage() {
               </div>
               <div style={{ marginTop: '12px', padding: '8px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px' }}>
                 <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
-                  📊 Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
+                  ðŸ“Š Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
                 </p>
                 <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>
                   Total accounts: {csvTrialBalanceData.accounts?.length || 0} |
@@ -12992,22 +12992,22 @@ function FinancialScorePage() {
       {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && qbRawData) && (() => {
         // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
+          console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⏳ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>â³ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
         
         const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
-        console.log(`🔄 ========================================`);
-        console.log(`🔄 DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
-        console.log(`🔄 Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
-        console.log(`🔄 QB Data sync date:`, qbRawData.syncDate);
-        console.log(`🔄 Data belongs to company:`, qbRawData._companyId);
-        console.log(`🔄 Record ID:`, qbRawData._recordId);
-        console.log(`🔄 ========================================`);
+        console.log(`ðŸ”„ ========================================`);
+        console.log(`ðŸ”„ DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
+        console.log(`ðŸ”„ Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
+        console.log(`ðŸ”„ QB Data sync date:`, qbRawData.syncDate);
+        console.log(`ðŸ”„ Data belongs to company:`, qbRawData._companyId);
+        console.log(`ðŸ”„ Record ID:`, qbRawData._recordId);
+        console.log(`ðŸ”„ ========================================`);
         
         // Helper function to recursively extract all rows from QB report
         // Extract from the last month column, not the total column
@@ -13108,7 +13108,7 @@ function FinancialScorePage() {
         return (
           <div key={`data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
+              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>ðŸ”— Account Mapping</h1>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
@@ -13136,8 +13136,8 @@ function FinancialScorePage() {
                         const accountClassifications: Record<string, string> = {};
                         const chartOfAccounts = qbRawData?.chartOfAccounts?.QueryResponse?.Account || [];
                         
-                        console.log('🔍 Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
-                        console.log('🔍 Total accounts in chart:', chartOfAccounts.length);
+                        console.log('ðŸ” Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
+                        console.log('ðŸ” Total accounts in chart:', chartOfAccounts.length);
                         
                         chartOfAccounts.forEach((account: any) => {
                           const accountName = account.Name;
@@ -13208,13 +13208,13 @@ function FinancialScorePage() {
                         // For Balance Sheet: Get individual items (all detail accounts)
                         const bsDataRows = bsRows.filter(r => r.type === 'data' && !r.isHeader && !r.isTotal);
                         
-                        console.log('🔍 Revenue individual items:', revenueDataRows.length);
-                        console.log('🔍 Expense individual items:', expenseDataRows.length);
-                        console.log('🔍 BS individual items:', bsDataRows.length);
+                        console.log('ðŸ” Revenue individual items:', revenueDataRows.length);
+                        console.log('ðŸ” Expense individual items:', expenseDataRows.length);
+                        console.log('ðŸ” BS individual items:', bsDataRows.length);
                         
                         // DEBUG: Pick first revenue account to track through entire process
                         const testAccount = revenueDataRows[0]?.name || expenseDataRows[0]?.name || bsDataRows[0]?.name;
-                        console.log(`\n🔬 TRACKING TEST ACCOUNT: "${testAccount}"`);
+                        console.log(`\nðŸ”¬ TRACKING TEST ACCOUNT: "${testAccount}"`);
                         if (testAccount) {
                           const testRow = plRows.find(r => r.name === testAccount) || bsRows.find(r => r.name === testAccount);
                           console.log('Test account raw data:', testRow);
@@ -13273,10 +13273,10 @@ function FinancialScorePage() {
                           qbAccountsWithClass.push({ name: row.name, classification });
                         });
                         
-                        console.log(`📊 BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
+                        console.log(`ðŸ“Š BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
                         
-                        console.log('🔍 TOTAL accounts to map:', qbAccountsWithClass.length);
-                        console.log('🔍 First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
+                        console.log('ðŸ” TOTAL accounts to map:', qbAccountsWithClass.length);
+                        console.log('ðŸ” First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
 
                         const response = await fetch('/api/ai-mapping/enhanced', {
                           method: 'POST',
@@ -13298,7 +13298,7 @@ function FinancialScorePage() {
                         // DEBUG: Track test account through mapping
                         if (testAccount) {
                           const testMapping = data.mappings.find((m: any) => m.qbAccount === testAccount);
-                          console.log(`\n🔬 TEST ACCOUNT MAPPING:`, testMapping);
+                          console.log(`\nðŸ”¬ TEST ACCOUNT MAPPING:`, testMapping);
                         }
                         
                         setShowMappingSection(true);
@@ -13327,12 +13327,12 @@ function FinancialScorePage() {
                   >
                     {isGeneratingMappings ? (
                       <>
-                        <span>🤖</span>
+                        <span>ðŸ¤–</span>
                         <span>Generating Mappings...</span>
                       </>
                     ) : (
                       <>
-                        <span>🤖</span>
+                        <span>ðŸ¤–</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -13647,7 +13647,7 @@ function FinancialScorePage() {
                               cursor: aiMappings.length === 0 ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            🧹 Clear All
+                            ðŸ§¹ Clear All
                           </button>
                           <button
                             onClick={() => {
@@ -13718,7 +13718,7 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                            {isSavingMappings ? 'Saving...' : 'ðŸ’¾ Save Mappings'}
                           </button>
                         </div>
                       </div>
@@ -13744,8 +13744,8 @@ function FinancialScorePage() {
                           
                           setIsProcessingMonthlyData(true);
                           try {
-                            console.log('🔄 Processing 36 months of data using mappings...');
-                            console.log('📋 Total mappings:', aiMappings.length);
+                            console.log('ðŸ”„ Processing 36 months of data using mappings...');
+                            console.log('ðŸ“‹ Total mappings:', aiMappings.length);
                             
                             // DEBUG: Track Professional Services expense account
                             const testMapping = aiMappings.find(m => 
@@ -13754,7 +13754,7 @@ function FinancialScorePage() {
                               m.qbAccount?.toLowerCase().includes('legal')
                             );
                             const testAccountName = testMapping?.qbAccount;
-                            console.log(`🔬 TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
+                            console.log(`ðŸ”¬ TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
                             
                             // Get column information from QB report
                             const plColumns = qbRawData.profitAndLoss.Columns?.Column || [];
@@ -13795,7 +13795,7 @@ function FinancialScorePage() {
                                         accountValues[accountName] = isNaN(numValue) ? 0 : numValue;
                                         
                                         if (isFirstCall && accountName.toLowerCase().includes('legal')) {
-                                          console.log(`\n💰 Found Section Summary "${accountName}":`, {
+                                          console.log(`\nðŸ’° Found Section Summary "${accountName}":`, {
                                       columnIndex,
                                       value,
                                             numValue
@@ -13822,7 +13822,7 @@ function FinancialScorePage() {
                               processRows(rows, 0);
                               
                               if (isFirstCall) {
-                                console.log(`\n📊 Extraction results: Found ${Object.keys(accountValues).length} accounts`);
+                                console.log(`\nðŸ“Š Extraction results: Found ${Object.keys(accountValues).length} accounts`);
                               }
                               
                               return accountValues;
@@ -13838,7 +13838,7 @@ function FinancialScorePage() {
                               
                               // Debug logging for first few months
                               if (i <= 3) {
-                                console.log(`\n🔍 Month ${i} extraction debug:`);
+                                console.log(`\nðŸ” Month ${i} extraction debug:`);
                                 console.log(`P&L data keys:`, Object.keys(plData).slice(0, 10));
                                 console.log(`P&L sample values:`, Object.entries(plData).slice(0, 5));
                                 console.log(`BS data keys:`, Object.keys(bsData).slice(0, 10));
@@ -13846,7 +13846,7 @@ function FinancialScorePage() {
                               
                               // Debug mappings for first month
                               if (i === 1) {
-                                console.log(`\n🗺️ Total mappings: ${aiMappings.length}`);
+                                console.log(`\nðŸ—ºï¸ Total mappings: ${aiMappings.length}`);
                                 const targetFieldCounts: Record<string, number> = {};
                                 aiMappings.forEach(m => {
                                   targetFieldCounts[m.targetField] = (targetFieldCounts[m.targetField] || 0) + 1;
@@ -13925,7 +13925,7 @@ function FinancialScorePage() {
                                 
                                 // DEBUG: Track test account through every month
                                 if (qbAccount === testAccountName) {
-                                  console.log(`\n🔬 MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
+                                  console.log(`\nðŸ”¬ MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
                                     targetField,
                                     classification,
                                     isBalanceSheet,
@@ -14079,7 +14079,7 @@ function FinancialScorePage() {
                             if (testAccountName) {
                               const testMapping = aiMappings.find(m => m.qbAccount === testAccountName);
                               const targetField = testMapping?.targetField;
-                              console.log(`\n🔬 FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
+                              console.log(`\nðŸ”¬ FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
                               console.log(`Mapped to field: ${targetField}`);
                               console.log('Values across all months:');
                               monthlyData.forEach((month, idx) => {
@@ -14214,7 +14214,7 @@ function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                         }}
                       >
-                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                        {isProcessingMonthlyData ? 'Processing...' : 'âš™ï¸ Process & Save Monthly Data'}
                       </button>
                           <button
                             onClick={async () => {
@@ -14307,22 +14307,22 @@ function FinancialScorePage() {
       {false && currentView === 'financial-statements' && selectedCompanyId && qbRawData && (() => {
         // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
+          console.error(`ðŸš¨ SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⏳ Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>â³ Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
         
         const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const currentCompanyName = currentCompany?.name || 'Unknown';
-        console.log(`📊 ========================================`);
-        console.log(`📊 FINANCIAL STATEMENTS RENDERING (Refresh Key: ${dataRefreshKey})`);
-        console.log(`📊 Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
-        console.log(`📊 QB Data sync date:`, qbRawData.syncDate);
-        console.log(`📊 Data belongs to company:`, qbRawData._companyId);
-        console.log(`📊 Record ID:`, qbRawData._recordId);
-        console.log(`📊 ========================================`);
+        console.log(`ðŸ“Š ========================================`);
+        console.log(`ðŸ“Š FINANCIAL STATEMENTS RENDERING (Refresh Key: ${dataRefreshKey})`);
+        console.log(`ðŸ“Š Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
+        console.log(`ðŸ“Š QB Data sync date:`, qbRawData.syncDate);
+        console.log(`ðŸ“Š Data belongs to company:`, qbRawData._companyId);
+        console.log(`ðŸ“Š Record ID:`, qbRawData._recordId);
+        console.log(`ðŸ“Š ========================================`);
 
         // Helper function to recursively extract all rows from QB report
         const extractRows = (data: any, level: number = 0, parentSection: string = ''): any[] => {
@@ -14549,2798 +14549,6 @@ function FinancialScorePage() {
               onDisplayChange={setStatementDisplay}
             />
           )}
-
-          {/* Consultant Dashboard */}
-          {currentView === 'consultant-dashboard' && currentUser?.role === 'consultant' && (
-                const cogsOther = currentMonth.cogsOther || 0;
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-
-                const grossProfit = revenue - cogs;
-                const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
-
-                // Operating Expenses - All fields that have data from DataReviewTab
-                const payroll = currentMonth.payroll || 0;
-                const benefits = currentMonth.benefits || 0;
-                const insurance = currentMonth.insurance || 0;
-                const professionalFees = currentMonth.professionalFees || 0;
-                const subcontractors = currentMonth.subcontractors || 0;
-                const rent = currentMonth.rent || 0;
-                const taxLicense = currentMonth.taxLicense || 0;
-                const phoneComm = currentMonth.phoneComm || 0;
-                const infrastructure = currentMonth.infrastructure || 0;
-                const autoTravel = currentMonth.autoTravel || 0;
-                const salesExpense = currentMonth.salesExpense || 0;
-                const marketing = currentMonth.marketing || 0;
-                const mealsEntertainment = currentMonth.mealsEntertainment || 0;
-                const otherExpense = currentMonth.otherExpense || 0;
-
-                // Calculate total operating expenses including all expense fields from DataReviewTab
-                const totalOpex = payroll + benefits + insurance + professionalFees + subcontractors +
-                                 rent + taxLicense + phoneComm + infrastructure + autoTravel +
-                                 salesExpense + marketing + mealsEntertainment + otherExpense;
-
-                const operatingIncome = grossProfit - totalOpex;
-                const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
-                
-                // Other Income/Expense
-                const interestExpense = currentMonth.interestExpense || 0;
-                const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
-                const extraordinaryItems = currentMonth.extraordinaryItems || 0;
-                
-                const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
-                
-                return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                      <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName}</div>
-                      </div>
-
-                      {/* Revenue Section */}
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* COGS Section */}
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
-                        {cogsPayroll > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                            <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsOwnerPay > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                            <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsContractors > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                            <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsMaterials > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Materials</span>
-                            <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsCommissions > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                            <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsOther > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Other</span>
-                            <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Gross Profit */}
-                      <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                          <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
-                          {grossMargin.toFixed(1)}% margin
-                        </div>
-                      </div>
-
-                      {/* Operating Expenses */}
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                        {payroll > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Payroll</span>
-                            <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {benefits > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Benefits</span>
-                            <span style={{ color: '#475569' }}>${benefits.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {insurance > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Insurance</span>
-                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {professionalFees > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Professional Services</span>
-                            <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {subcontractors > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Subcontractors</span>
-                            <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {rent > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Rent/Lease</span>
-                            <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {taxLicense > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Tax & License</span>
-                            <span style={{ color: '#475569' }}>${taxLicense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {phoneComm > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Phone & Communication</span>
-                            <span style={{ color: '#475569' }}>${phoneComm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {infrastructure > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Infrastructure/Utilities</span>
-                            <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {autoTravel > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Auto & Travel</span>
-                            <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {salesExpense > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                            <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {marketing > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Marketing</span>
-                            <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {mealsEntertainment > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Meals & Entertainment</span>
-                            <span style={{ color: '#475569' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {otherExpense > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Other Expenses</span>
-                            <span style={{ color: '#475569' }}>${otherExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Operating Income */}
-                      <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
-                          <span style={{ fontWeight: '700', color: '#166534' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#166534', textAlign: 'right' }}>
-                          {operatingMargin.toFixed(1)}% margin
-                        </div>
-                      </div>
-
-                      {/* Other Income/Expense */}
-                      {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
-                          {nonOperatingIncome > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Non-Operating Income</span>
-                              <span style={{ color: '#10b981' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {interestExpense > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Interest Expense</span>
-                              <span style={{ color: '#ef4444' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
-                            </div>
-                          )}
-                          {extraordinaryItems !== 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Extraordinary Items</span>
-                              <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444' }}>
-                                {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Net Income */}
-                      <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
-                          <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                            ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
-                          {netMargin.toFixed(1)}% net margin
-                        </div>
-                      </div>
-                  </div>
-                );
-              } else if (statementType === 'income-statement-percent' && statementPeriod === 'current-month') {
-                const currentMonth = monthly[monthly.length - 1];
-                const monthDate = new Date(currentMonth.date || currentMonth.month);
-                const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-                // Revenue
-                const revenue = currentMonth.revenue || 0;
-
-                // Cost of Goods Sold
-                const cogsPayroll = currentMonth.cogsPayroll || 0;
-                const cogsOwnerPay = currentMonth.cogsOwnerPay || 0;
-                const cogsContractors = currentMonth.cogsContractors || 0;
-                const cogsMaterials = currentMonth.cogsMaterials || 0;
-                const cogsCommissions = currentMonth.cogsCommissions || 0;
-                const cogsOther = currentMonth.cogsOther || 0;
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-
-                const grossProfit = revenue - cogs;
-                const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
-
-                // Operating Expenses - All fields that have data from DataReviewTab
-                const payroll = currentMonth.payroll || 0;
-                const benefits = currentMonth.benefits || 0;
-                const insurance = currentMonth.insurance || 0;
-                const professionalFees = currentMonth.professionalFees || 0;
-                const subcontractors = currentMonth.subcontractors || 0;
-                const rent = currentMonth.rent || 0;
-                const taxLicense = currentMonth.taxLicense || 0;
-                const phoneComm = currentMonth.phoneComm || 0;
-                const infrastructure = currentMonth.infrastructure || 0;
-                const autoTravel = currentMonth.autoTravel || 0;
-                const salesExpense = currentMonth.salesExpense || 0;
-                const marketing = currentMonth.marketing || 0;
-                const mealsEntertainment = currentMonth.mealsEntertainment || 0;
-                const otherExpense = currentMonth.otherExpense || 0;
-
-                // Calculate total operating expenses including all expense fields from DataReviewTab
-                const totalOpex = payroll + benefits + insurance + professionalFees + subcontractors +
-                                 rent + taxLicense + phoneComm + infrastructure + autoTravel +
-                                 salesExpense + marketing + mealsEntertainment + otherExpense;
-
-                const operatingIncome = grossProfit - totalOpex;
-                const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
-                
-                // Other Income/Expense
-                const interestExpense = currentMonth.interestExpense || 0;
-                const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
-                const extraordinaryItems = currentMonth.extraordinaryItems || 0;
-                
-                const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
-                
-                // Helper function to calculate percentage
-                const pct = (amount: number) => revenue > 0 ? (amount / revenue) * 100 : 0;
-                
-                return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
-                      <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} - All items shown as % of Revenue</div>
-                    </div>
-
-                    {/* Column Headers */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderBottom: '2px solid #cbd5e1', marginBottom: '12px', fontWeight: '600', fontSize: '13px', color: '#475569' }}>
-                      <div>Line Item</div>
-                      <div style={{ textAlign: 'right' }}>Amount</div>
-                      <div style={{ textAlign: 'right' }}>% of Revenue</div>
-                    </div>
-
-                    {/* Revenue Section */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                        <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>100.0%</span>
-                      </div>
-                    </div>
-
-                    {/* COGS Section */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Cost of Goods Sold</div>
-                      {cogsPayroll > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Payroll</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsPayroll).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsOwnerPay > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Owner Pay</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsOwnerPay).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsContractors > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Contractors</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsContractors).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsMaterials > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Materials</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsMaterials).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsCommissions > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Commissions</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsCommissions).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsOther > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Other</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsOther).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                        <span style={{ fontWeight: '600', color: '#1e293b', paddingLeft: '20px' }}>Total COGS</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>{pct(cogs).toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    {/* Gross Profit */}
-                    <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
-                        <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                        <span style={{ fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>{grossMargin.toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    {/* Operating Expenses */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Operating Expenses</div>
-                      {payroll > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Payroll</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(payroll).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {benefits > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Benefits</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${benefits.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(benefits).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {insurance > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Insurance</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(insurance).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {professionalFees > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Professional Services</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {subcontractors > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Subcontractors</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {rent > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Rent/Lease</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rent).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {taxLicense > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Tax & License</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${taxLicense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(taxLicense).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {phoneComm > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Phone & Communication</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${phoneComm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(phoneComm).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {infrastructure > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure/Utilities</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(infrastructure).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {autoTravel > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Auto & Travel</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(autoTravel).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {salesExpense > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Sales & Marketing</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(salesExpense).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {marketing > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Marketing</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(marketing).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {mealsEntertainment > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Meals & Entertainment</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(mealsEntertainment).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {otherExpense > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Expenses</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${otherExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(otherExpense).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                        <span style={{ fontWeight: '600', color: '#1e293b', paddingLeft: '20px' }}>Total Operating Expenses</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>{pct(totalOpex).toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    {/* Operating Income */}
-                    <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
-                        <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
-                        <span style={{ fontWeight: '700', color: '#166534', textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '700', color: '#166534', textAlign: 'right' }}>{operatingMargin.toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    {/* Other Income/Expense */}
-                    {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Other Income/(Expense)</div>
-                        {nonOperatingIncome > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                            <span style={{ color: '#475569', paddingLeft: '20px' }}>Non-Operating Income</span>
-                            <span style={{ color: '#10b981', textAlign: 'right' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            <span style={{ color: '#10b981', textAlign: 'right' }}>{pct(nonOperatingIncome).toFixed(1)}%</span>
-                          </div>
-                        )}
-                        {interestExpense > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                            <span style={{ color: '#475569', paddingLeft: '20px' }}>Interest Expense</span>
-                            <span style={{ color: '#ef4444', textAlign: 'right' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
-                            <span style={{ color: '#ef4444', textAlign: 'right' }}>({pct(interestExpense).toFixed(1)}%)</span>
-                          </div>
-                        )}
-                        {extraordinaryItems !== 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                            <span style={{ color: '#475569', paddingLeft: '20px' }}>Extraordinary Items</span>
-                            <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
-                            </span>
-                            <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              {extraordinaryItems >= 0 ? '' : '('}{pct(Math.abs(extraordinaryItems)).toFixed(1)}%{extraordinaryItems < 0 ? ')' : ''}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Net Income */}
-                    <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
-                          ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </span>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
-                          {netMargin.toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              } else if (statementType === 'balance-sheet' && statementPeriod === 'current-month') {
-                const currentMonth = monthly[monthly.length - 1];
-                const monthDate = new Date(currentMonth.date || currentMonth.month);
-                const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                
-                // Assets - Use imported values directly (do not calculate)
-                const cash = currentMonth.cash || 0;
-                const ar = currentMonth.ar || 0;
-                const inventory = currentMonth.inventory || 0;
-                const otherCA = currentMonth.otherCA || 0;
-                const tca = currentMonth.tca || 0;
-                
-                const fixedAssets = currentMonth.fixedAssets || 0;
-                const otherAssets = currentMonth.otherAssets || 0;
-                const totalAssets = currentMonth.totalAssets || 0;
-                
-                // Liabilities - Use imported values directly (do not calculate)
-                const ap = currentMonth.ap || 0;
-                const otherCL = currentMonth.otherCL || 0;
-                const tcl = currentMonth.tcl || 0;
-                
-                const ltd = currentMonth.ltd || 0;
-                const totalLiabilities = currentMonth.totalLiab || 0;
-                
-                // Equity - Get detail fields
-                const ownersCapital = currentMonth.ownersCapital || 0;
-                const ownersDraw = currentMonth.ownersDraw || 0;
-                const commonStock = currentMonth.commonStock || 0;
-                const preferredStock = currentMonth.preferredStock || 0;
-                const retainedEarnings = currentMonth.retainedEarnings || 0;
-                const additionalPaidInCapital = currentMonth.additionalPaidInCapital || 0;
-                const treasuryStock = currentMonth.treasuryStock || 0;
-                
-                // Calculate total equity from components or use imported value
-                const totalEquity = currentMonth.totalEquity || (ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock);
-                
-                // Total L&E - Use imported value if available, otherwise calculate
-                const totalLAndE = currentMonth.totalLAndE || (totalLiabilities + totalEquity);
-                
-                return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Balance Sheet</h2>
-                      <div style={{ fontSize: '14px', color: '#64748b' }}>As of {monthName}</div>
-                    </div>
-
-                    {/* ASSETS */}
-                    <div style={{ marginBottom: '32px' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #667eea' }}>ASSETS</div>
-                      
-                      {/* Current Assets */}
-                      <div style={{ marginBottom: '20px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Assets</div>
-                        {cash !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Cash</span>
-                            <span style={{ color: '#475569' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {ar !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Accounts Receivable</span>
-                            <span style={{ color: '#475569' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {inventory !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Inventory</span>
-                            <span style={{ color: '#475569' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {otherCA !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Other Current Assets</span>
-                            <span style={{ color: '#475569' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 20px', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Current Assets</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Non-Current Assets */}
-                      {fixedAssets !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Fixed Assets</span>
-                          <span style={{ color: '#475569' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {otherAssets !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Other Assets</span>
-                          <span style={{ color: '#475569' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #667eea', marginTop: '8px', background: '#f8fafc' }}>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL ASSETS</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    </div>
-
-                    {/* LIABILITIES */}
-                    <div style={{ marginBottom: '32px' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #f59e0b' }}>LIABILITIES</div>
-                      
-                      {/* Current Liabilities */}
-                      <div style={{ marginBottom: '20px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Liabilities</div>
-                        {ap !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Accounts Payable</span>
-                            <span style={{ color: '#475569' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {otherCL !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Other Current Liabilities</span>
-                            <span style={{ color: '#475569' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 20px', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Current Liabilities</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Long-term Debt */}
-                      {ltd !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Long-term Debt</span>
-                          <span style={{ color: '#475569' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #f59e0b', marginTop: '8px', background: '#fef3c7' }}>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL LIABILITIES</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    </div>
-
-                    {/* EQUITY */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #10b981' }}>EQUITY</div>
-                      
-                      {/* Equity Detail Fields */}
-                      {ownersCapital !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Owner's Capital</span>
-                          <span style={{ color: '#475569' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {ownersDraw !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Owner's Draw</span>
-                          <span style={{ color: '#475569' }}>${ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {commonStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Common Stock</span>
-                          <span style={{ color: '#475569' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {preferredStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Preferred Stock</span>
-                          <span style={{ color: '#475569' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {retainedEarnings !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Retained Earnings</span>
-                          <span style={{ color: '#475569' }}>${retainedEarnings.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {additionalPaidInCapital !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Additional Paid-In Capital</span>
-                          <span style={{ color: '#475569' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {treasuryStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Treasury Stock</span>
-                          <span style={{ color: '#475569' }}>${treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', marginTop: '4px', background: '#d1fae5' }}>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL EQUITY</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    </div>
-
-                    {/* TOTAL LIABILITIES & EQUITY */}
-                    <div style={{ background: '#f1f5f9', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</span>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>
-                          ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </span>
-                      </div>
-                      {Math.abs(totalAssets - totalLAndE) > 0.01 && (
-                        <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ?? Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-              
-              // Multi-period logic (Current Quarter, Last 12 Months, YTD, Last Year, Last 3 Years)
-              else if (monthly.length > 0 && statementPeriod !== 'current-month') {
-                // Helper function to get months for the selected period
-                const getMonthsForPeriod = () => {
-                  const now = new Date();
-                  const currentYear = now.getFullYear();
-                  const currentMonth = now.getMonth(); // 0-11
-                  
-                  switch (statementPeriod) {
-                    case 'current-quarter':
-                      // Last 3 months
-                      return monthly.slice(-3);
-                    
-                    case 'last-12-months':
-                      // Last 12 months
-                      return monthly.slice(-12);
-                    
-                    case 'ytd':
-                      // Year to date - from January of current year to now
-                      return monthly.filter(m => {
-                        const mDate = new Date(m.date || m.month);
-                        return mDate.getFullYear() === currentYear;
-                      });
-                    
-                    case 'last-year':
-                      // Full previous year
-                      return monthly.filter(m => {
-                        const mDate = new Date(m.date || m.month);
-                        return mDate.getFullYear() === currentYear - 1;
-                      });
-                    
-                    case 'last-3-years':
-                      // Last 36 months
-                      return monthly.slice(-36);
-                    
-                    default:
-                      return [];
-                  }
-                };
-                
-                const periodMonths = getMonthsForPeriod();
-                
-                if (periodMonths.length === 0) {
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                        📊 No Data Available
-                      </div>
-                      <p style={{ fontSize: '14px', color: '#94a3b8' }}>
-                        No financial data available for the selected period.
-                      </p>
-                    </div>
-                  );
-                }
-                
-                // Get period label
-                const getPeriodLabel = () => {
-                  const firstMonth = periodMonths[0];
-                  const lastMonth = periodMonths[periodMonths.length - 1];
-                  const firstDate = new Date(firstMonth.date || firstMonth.month);
-                  const lastDate = new Date(lastMonth.date || lastMonth.month);
-                  
-                  switch (statementPeriod) {
-                    case 'current-quarter':
-                      return `Current Quarter (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
-                    case 'last-12-months':
-                      return `Last 12 Months (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
-                    case 'ytd':
-                      return `Year to Date ${lastDate.getFullYear()} (Jan - ${lastDate.toLocaleDateString('en-US', { month: 'short' })})`;
-                    case 'last-year':
-                      return `Fiscal Year ${firstDate.getFullYear()}`;
-                    case 'last-3-years':
-                      return `Last 3 Years (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
-                    default:
-                      return '';
-                  }
-                };
-                
-              const periodLabel = getPeriodLabel();
-              const latestMonth = periodMonths[periodMonths.length - 1];
-              
-              // Helper function to group months by display period
-              const groupMonthsByDisplay = () => {
-                if (statementDisplay === 'monthly') {
-                  return periodMonths.map(m => {
-                    const dateValue = m.date || m.month;
-                    const dateObj = dateValue ? new Date(dateValue) : new Date();
-                    const label = !isNaN(dateObj.getTime()) 
-                      ? dateObj.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-                      : 'Unknown';
-                    return { label, months: [m] };
-                  });
-                } else if (statementDisplay === 'quarterly') {
-                  const quarters: { [key: string]: any[] } = {};
-                  periodMonths.forEach(m => {
-                    const dateValue = m.date || m.month;
-                    const date = dateValue ? new Date(dateValue) : new Date();
-                    if (!isNaN(date.getTime())) {
-                      const year = date.getFullYear();
-                      const quarter = Math.floor(date.getMonth() / 3) + 1;
-                      const key = `Q${quarter} ${year}`;
-                      if (!quarters[key]) quarters[key] = [];
-                      quarters[key].push(m);
-                    }
-                  });
-                  return Object.entries(quarters).map(([key, months]) => ({
-                    label: key,
-                    months
-                  }));
-                } else {
-                  const years: { [key: string]: any[] } = {};
-                  periodMonths.forEach(m => {
-                    const dateValue = m.date || m.month;
-                    const date = dateValue ? new Date(dateValue) : new Date();
-                    if (!isNaN(date.getTime())) {
-                      const year = date.getFullYear().toString();
-                      if (!years[year]) years[year] = [];
-                      years[year].push(m);
-                    }
-                  });
-                  return Object.entries(years).map(([year, months]) => ({
-                    label: year,
-                    months
-                  }));
-                }
-              };
-              
-              const displayPeriods = groupMonthsByDisplay();
-
-              // INCOME STATEMENT - Aggregate across period
-              if (statementType === 'income-statement' || statementType === 'income-statement-percent') {
-                // Check if showing multiple periods side-by-side
-                if (displayPeriods.length > 1) {
-                  const calc = (months: any[], field: string) => months.reduce((sum, m) => sum + (m[field] || 0), 0);
-                  const periodsData = displayPeriods.map(p => {
-                    const m = p.months;
-
-                    // Calculate revenue and COGS
-                    const revenue = calc(m, 'revenue');
-                    const cogsPayroll = calc(m, 'cogsPayroll');
-                    const cogsOwnerPay = calc(m, 'cogsOwnerPay');
-                    const cogsContractors = calc(m, 'cogsContractors');
-                    const cogsMaterials = calc(m, 'cogsMaterials');
-                    const cogsCommissions = calc(m, 'cogsCommissions');
-                    const cogsOther = calc(m, 'cogsOther');
-                    const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                    const grossProfit = revenue - cogs;
-
-                    // Dynamically calculate operating expense fields only
-                    const expenseFields = [
-                      'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
-                      'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
-                      'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
-                    ];
-
-                    const expenses: { [key: string]: number } = {};
-                    expenseFields.forEach(field => {
-                      expenses[field] = calc(m, field);
-                    });
-
-                    // Calculate total operating expenses dynamically
-                    const totalOpex = Object.values(expenses).reduce((sum, value) => sum + value, 0);
-
-                    const operatingIncome = grossProfit - totalOpex;
-                    const interestExpense = calc(m, 'interestExpense');
-                    const nonOperatingIncome = calc(m, 'nonOperatingIncome');
-                    const extraordinaryItems = calc(m, 'extraordinaryItems');
-                    const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-
-                    return {
-                      label: p.label,
-                      revenue, cogs, grossProfit,
-                      ...expenses, // Include all expense fields dynamically
-                      totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome
-                    };
-                  });
-
-                  // Helper function for percentage calculations
-                  const isPercentMode = statementType === 'income-statement-percent';
-                  const formatValue = (value: number, revenue: number) => {
-                    if (isPercentMode) {
-                      const pct = revenue > 0 ? (value / revenue) * 100 : 0;
-                      return `${pct.toFixed(1)}%`;
-                    }
-                    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-                  };
-
-                  const Row = ({ label, values, indent = 0, bold = false }: any) => (
-                    <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
-                      <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
-                      {values.map((v: number, i: number) => {
-                        const revenue = periodsData[i].revenue;
-                        return (
-                          <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>
-                            {formatValue(v, revenue)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                      <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                          {isPercentMode ? 'Comparative Income Statement - Common Size Analysis' : 'Comparative Income Statement'}
-                        </h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>
-                          {periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}
-                          {isPercentMode ? ' - All items shown as % of Revenue' : ''}
-                        </div>
-                      </div>
-                      <div style={{ minWidth: `${200 + (periodsData.length * 110)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', fontSize: '13px' }}>
-                          <div>Line Item</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>{p.label || 'N/A'}</div>)}
-                        </div>
-                        <Row label="Revenue" values={periodsData.map(p => p.revenue)} bold />
-                        <Row label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
-                          <div>Gross Profit</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{formatValue(p.grossProfit, p.revenue)}</div>)}
-                        </div>
-                        <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                        {(() => {
-                          // Define all possible expense fields with their display names
-                          const expenseFieldDefinitions = [
-                            // Operating Expenses - Complete list in correct order
-                            { key: 'payroll', label: 'Payroll' },
-                            { key: 'benefits', label: 'Benefits' },
-                            { key: 'insurance', label: 'Insurance' },
-                            { key: 'professionalFees', label: 'Professional Services' },
-                            { key: 'subcontractors', label: 'Subcontractors' },
-                            { key: 'rent', label: 'Rent/Lease' },
-                            { key: 'taxLicense', label: 'Tax & License' },
-                            { key: 'phoneComm', label: 'Phone & Communication' },
-                            { key: 'infrastructure', label: 'Infrastructure/Utilities' },
-                            { key: 'autoTravel', label: 'Auto & Travel' },
-                            { key: 'salesExpense', label: 'Sales & Marketing' },
-                            { key: 'marketing', label: 'Marketing' },
-                            { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
-                            { key: 'otherExpense', label: 'Other Expenses' }
-                          ];
-
-                          // Render only fields that have values in at least one period
-                          return expenseFieldDefinitions.map(fieldDef => {
-                            const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) > 0);
-                            if (hasValue) {
-                              return (
-                                <Row
-                                  key={fieldDef.key}
-                                  label={fieldDef.label}
-                                  values={periodsData.map(p => p[fieldDef.key as keyof typeof p] as number)}
-                                  indent={20}
-                                />
-                              );
-                            }
-                            return null;
-                          });
-                        })()}
-                        <Row label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
-                          <div>Operating Income</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{formatValue(p.operatingIncome, p.revenue)}</div>)}
-                        </div>
-                        {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
-                          <>
-                            <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Other Income/(Expense)</div>
-                            {periodsData.some(p => p.interestExpense > 0) && <Row label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
-                            {periodsData.some(p => p.nonOperatingIncome > 0) && <Row label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
-                            {periodsData.some(p => p.extraordinaryItems !== 0) && <Row label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
-                          </>
-                        )}
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
-                          <div style={{ color: '#166534' }}>Net Income</div>
-                          {periodsData.map((p, i) => {
-                            const formattedValue = formatValue(Math.abs(p.netIncome), p.revenue);
-                            return (
-                              <div key={i} style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                                {p.netIncome >= 0 ? (isPercentMode ? formattedValue : '$' + formattedValue.slice(1)) : `(${formattedValue})`}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-                
-                // Sum all income statement items
-                const revenue = periodMonths.reduce((sum, m) => sum + (m.revenue || 0), 0);
-
-                const cogsPayroll = periodMonths.reduce((sum, m) => sum + (m.cogsPayroll || 0), 0);
-                const cogsOwnerPay = periodMonths.reduce((sum, m) => sum + (m.cogsOwnerPay || 0), 0);
-                const cogsContractors = periodMonths.reduce((sum, m) => sum + (m.cogsContractors || 0), 0);
-                const cogsMaterials = periodMonths.reduce((sum, m) => sum + (m.cogsMaterials || 0), 0);
-                const cogsCommissions = periodMonths.reduce((sum, m) => sum + (m.cogsCommissions || 0), 0);
-                const cogsOther = periodMonths.reduce((sum, m) => sum + (m.cogsOther || 0), 0);
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-
-                const grossProfit = revenue - cogs;
-                const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
-
-                // Dynamically calculate all expense fields
-                const expenseFields = [
-                  'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                  'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors',
-                  'salesExpense', 'rent', 'infrastructure', 'autoTravel',
-                  'professionalFees', 'insurance', 'marketing', 'interestExpense',
-                  'depreciationAmortization', 'otherExpense'
-                ];
-
-                const expenses: { [key: string]: number } = {};
-                expenseFields.forEach(field => {
-                  expenses[field] = periodMonths.reduce((sum, m) => sum + (m[field] || 0), 0);
-                });
-
-                // Calculate total operating expenses dynamically
-                const totalOpex = Object.values(expenses).reduce((sum, value) => sum + value, 0);
-                  
-                  const operatingIncome = grossProfit - totalOpex;
-                  const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
-                  
-                  const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                  const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
-                  const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                  
-                  const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                  const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
-                  
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                        <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {periodLabel}</div>
-                        </div>
-
-                        {/* Revenue Section */}
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* COGS Section */}
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
-                          {cogsPayroll > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                              <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsOwnerPay > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                              <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsContractors > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                              <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsMaterials > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Materials</span>
-                              <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsCommissions > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                              <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsOther > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Other</span>
-                              <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* Gross Profit */}
-                        <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                          <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
-                            {grossMargin.toFixed(1)}% margin
-                          </div>
-                        </div>
-
-                        {/* Operating Expenses */}
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                          {payroll > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Payroll</span>
-                              <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {ownerBasePay > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                              <span style={{ color: '#475569' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {ownersRetirement > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Owner's Retirement</span>
-                              <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {professionalFees > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Professional Services</span>
-                              <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {rent > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Rent/Lease</span>
-                              <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {infrastructure > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Infrastructure</span>
-                              <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {autoTravel > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Auto & Travel</span>
-                              <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {insurance > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Insurance</span>
-                              <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {salesExpense > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                              <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {subcontractors > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Contractors - Distribution</span>
-                              <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {depreciationAmortization > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                              <span style={{ color: '#475569' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {marketing > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                              <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* Operating Income */}
-                        <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>Operating Income</span>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                          <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
-                            {operatingMargin.toFixed(1)}% operating margin
-                          </div>
-                        </div>
-
-                        {/* Other Income/Expense */}
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
-                          {interestExpense > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Interest Expense</span>
-                              <span style={{ color: '#475569' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
-                            </div>
-                          )}
-                          {nonOperatingIncome > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Non-Operating Income</span>
-                              <span style={{ color: '#475569' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {extraordinaryItems !== 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Extraordinary Items</span>
-                              <span style={{ color: '#475569' }}>{extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Net Income */}
-                        <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '24px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
-                            <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                              {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
-                            {netMargin.toFixed(1)}% net margin
-                          </div>
-                        </div>
-                    </div>
-                  );
-                }
-                
-                // COMMON SIZE INCOME STATEMENT - Aggregate with percentages
-                else if (statementType === 'income-statement-percent') {
-                  // Check if showing multiple periods side-by-side
-                  if (displayPeriods.length > 1) {
-                    const calc = (months: any[], field: string) => months.reduce((sum, m) => sum + (m[field] || 0), 0);
-                    const periodsData = displayPeriods.map(p => {
-                      const m = p.months;
-
-                      // Calculate revenue and COGS
-                      const revenue = calc(m, 'revenue');
-                      const cogsPayroll = calc(m, 'cogsPayroll');
-                      const cogsOwnerPay = calc(m, 'cogsOwnerPay');
-                      const cogsContractors = calc(m, 'cogsContractors');
-                      const cogsMaterials = calc(m, 'cogsMaterials');
-                      const cogsCommissions = calc(m, 'cogsCommissions');
-                      const cogsOther = calc(m, 'cogsOther');
-                      const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                      const grossProfit = revenue - cogs;
-
-                      // Dynamically calculate operating expense fields only
-                      const expenseFields = [
-                        'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
-                        'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
-                        'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
-                      ];
-
-                      const expenses: { [key: string]: number } = {};
-                      expenseFields.forEach(field => {
-                        expenses[field] = calc(m, field);
-                      });
-
-                      // Calculate total operating expenses dynamically
-                      const totalOpex = Object.values(expenses).reduce((sum, value) => sum + value, 0);
-
-                      const operatingIncome = grossProfit - totalOpex;
-                      const interestExpense = calc(m, 'interestExpense');
-                      const nonOperatingIncome = calc(m, 'nonOperatingIncome');
-                      const extraordinaryItems = calc(m, 'extraordinaryItems');
-                      const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-
-                      return {
-                        label: p.label,
-                        revenue, cogs, grossProfit,
-                        ...expenses, // Include all expense fields dynamically
-                        totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome
-                      };
-                    });
-                    const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
-                      <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
-                        <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
-                        {values.map((v: number, i: number) => {
-                          const pct = periodsData[i].revenue > 0 ? (v / periodsData[i].revenue) * 100 : 0;
-                          return (
-                            <div key={i} style={{ display: 'contents' }}>
-                              <div style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                    return (
-                      <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                        <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Common Size Income Statement</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
-                        </div>
-                        <div style={{ minWidth: `${200 + (periodsData.length * 150)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
-                          <div>Line Item</div>
-                          {periodsData.map((p, i) => (
-                            <div key={i} style={{ display: 'contents' }}>
-                              <div style={{ textAlign: 'right' }}>{p.label}</div>
-                              <div style={{ textAlign: 'right', fontSize: '12px' }}>% of Rev</div>
-                            </div>
-                          ))}
-                          </div>
-                          <RowWithPercent label="Revenue" values={periodsData.map(p => p.revenue)} bold />
-                          <RowWithPercent label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
-                            <div>Gross Profit</div>
-                            {periodsData.map((p, i) => {
-                              const pct = p.revenue > 0 ? (p.grossProfit / p.revenue) * 100 : 0;
-                              return (
-                                <div key={i} style={{ display: 'contents' }}>
-                                  <div style={{ textAlign: 'right' }}>${p.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                                  <div style={{ textAlign: 'right', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                          {(() => {
-                            // Define all possible expense fields with their display names
-                            const expenseFieldDefinitions = [
-                              // Operating Expenses - Complete list in correct order
-                              { key: 'payroll', label: 'Payroll' },
-                              { key: 'benefits', label: 'Benefits' },
-                              { key: 'insurance', label: 'Insurance' },
-                              { key: 'professionalFees', label: 'Professional Services' },
-                              { key: 'subcontractors', label: 'Subcontractors' },
-                              { key: 'rent', label: 'Rent/Lease' },
-                              { key: 'taxLicense', label: 'Tax & License' },
-                              { key: 'phoneComm', label: 'Phone & Communication' },
-                              { key: 'infrastructure', label: 'Infrastructure/Utilities' },
-                              { key: 'autoTravel', label: 'Auto & Travel' },
-                              { key: 'salesExpense', label: 'Sales & Marketing' },
-                              { key: 'marketing', label: 'Marketing' },
-                              { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
-                              { key: 'otherExpense', label: 'Other Expenses' }
-                            ];
-
-                            // Render only fields that have values in at least one period
-                            return expenseFieldDefinitions.map(fieldDef => {
-                              const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) > 0);
-                              if (hasValue) {
-                                return (
-                                  <RowWithPercent
-                                    key={fieldDef.key}
-                                    label={fieldDef.label}
-                                    values={periodsData.map(p => p[fieldDef.key as keyof typeof p] as number)}
-                                    indent={20}
-                                  />
-                                );
-                              }
-                              return null;
-                            });
-                          })()}
-                          <RowWithPercent label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
-                            <div>Operating Income</div>
-                            {periodsData.map((p, i) => {
-                              const pct = p.revenue > 0 ? (p.operatingIncome / p.revenue) * 100 : 0;
-                              return (
-                                <div key={i} style={{ display: 'contents' }}>
-                                  <div style={{ textAlign: 'right' }}>${p.operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                                  <div style={{ textAlign: 'right', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
-                            <>
-                              <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Other Income/(Expense)</div>
-                              {periodsData.some(p => p.interestExpense > 0) && <RowWithPercent label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
-                              {periodsData.some(p => p.nonOperatingIncome > 0) && <RowWithPercent label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
-                              {periodsData.some(p => p.extraordinaryItems !== 0) && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
-                            </>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
-                            <div style={{ color: '#166534' }}>Net Income</div>
-                            {periodsData.map((p, i) => {
-                              const pct = p.revenue > 0 ? (p.netIncome / p.revenue) * 100 : 0;
-                              return (
-                                <div key={i} style={{ display: 'contents' }}>
-                                  <div style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                                    {p.netIncome >= 0 ? '$' : '($'}{Math.abs(p.netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.netIncome < 0 ? ')' : ''}
-                                  </div>
-                                  <div style={{ textAlign: 'right', fontSize: '12px', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>{pct.toFixed(1)}%</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  const revenue = periodMonths.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                  
-                  const cogsPayroll = periodMonths.reduce((sum, m) => sum + (m.cogsPayroll || 0), 0);
-                  const cogsOwnerPay = periodMonths.reduce((sum, m) => sum + (m.cogsOwnerPay || 0), 0);
-                  const cogsContractors = periodMonths.reduce((sum, m) => sum + (m.cogsContractors || 0), 0);
-                  const cogsMaterials = periodMonths.reduce((sum, m) => sum + (m.cogsMaterials || 0), 0);
-                  const cogsCommissions = periodMonths.reduce((sum, m) => sum + (m.cogsCommissions || 0), 0);
-                  const cogsOther = periodMonths.reduce((sum, m) => sum + (m.cogsOther || 0), 0);
-                  const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                  
-                  const grossProfit = revenue - cogs;
-                  
-                  const payroll = periodMonths.reduce((sum, m) => sum + (m.payroll || 0), 0);
-                  const ownerBasePay = periodMonths.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
-                  const ownersRetirement = periodMonths.reduce((sum, m) => sum + (m.ownersRetirement || 0), 0);
-                  const professionalFees = periodMonths.reduce((sum, m) => sum + (m.professionalFees || 0), 0);
-                  const rent = periodMonths.reduce((sum, m) => sum + (m.rent || 0), 0);
-                  const infrastructure = periodMonths.reduce((sum, m) => sum + (m.infrastructure || 0), 0);
-                  const autoTravel = periodMonths.reduce((sum, m) => sum + (m.autoTravel || 0), 0);
-                  const insurance = periodMonths.reduce((sum, m) => sum + (m.insurance || 0), 0);
-                  const salesExpense = periodMonths.reduce((sum, m) => sum + (m.salesExpense || 0), 0);
-                  const subcontractors = periodMonths.reduce((sum, m) => sum + (m.subcontractors || 0), 0);
-                  const depreciationAmortization = periodMonths.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
-                  const marketing = periodMonths.reduce((sum, m) => sum + (m.marketing || 0), 0);
-                  
-                  const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
-                                   rent + infrastructure + autoTravel + insurance + 
-                                   salesExpense + subcontractors + depreciationAmortization + marketing;
-                  
-                  const operatingIncome = grossProfit - totalOpex;
-                  
-                  const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                  const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
-                  const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                  
-                  const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                  
-                  const calcPercent = (value: number) => revenue > 0 ? ((value / revenue) * 100).toFixed(1) + '%' : '0.0%';
-                  
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                        <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Common Size Income Statement</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {periodLabel}</div>
-                        </div>
-
-                        {/* Header Row */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 0', borderBottom: '2px solid #1e293b', marginBottom: '16px', fontWeight: '600', color: '#1e293b' }}>
-                          <div>Line Item</div>
-                          <div style={{ textAlign: 'right' }}>Amount</div>
-                          <div style={{ textAlign: 'right' }}>% of Revenue</div>
-                        </div>
-
-                        {/* Revenue */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
-                          <div style={{ color: '#1e293b' }}>Revenue</div>
-                          <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                          <div style={{ textAlign: 'right', color: '#1e293b' }}>100.0%</div>
-                        </div>
-
-                        {/* COGS */}
-                        <div style={{ marginTop: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Cost of Goods Sold</div>
-                          {cogsPayroll > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Payroll</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsPayroll)}</div>
-                            </div>
-                          )}
-                          {cogsOwnerPay > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Owner Pay</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOwnerPay)}</div>
-                            </div>
-                          )}
-                          {cogsContractors > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Contractors</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsContractors)}</div>
-                            </div>
-                          )}
-                          {cogsMaterials > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Materials</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsMaterials)}</div>
-                            </div>
-                          )}
-                          {cogsCommissions > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Commissions</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsCommissions)}</div>
-                            </div>
-                          )}
-                          {cogsOther > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Other</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOther)}</div>
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <div style={{ color: '#475569' }}>Total COGS</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(cogs)}</div>
-                          </div>
-                        </div>
-
-                        {/* Gross Profit */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
-                          <div>Gross Profit</div>
-                          <div style={{ textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                          <div style={{ textAlign: 'right' }}>{calcPercent(grossProfit)}</div>
-                        </div>
-
-                        {/* Operating Expenses */}
-                        <div style={{ marginTop: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Operating Expenses</div>
-                          {payroll > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Payroll</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(payroll)}</div>
-                            </div>
-                          )}
-                          {ownerBasePay > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Owner's Base Pay</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownerBasePay)}</div>
-                            </div>
-                          )}
-                          {ownersRetirement > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Owner's Retirement</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersRetirement)}</div>
-                            </div>
-                          )}
-                          {professionalFees > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Professional Services</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalFees)}</div>
-                            </div>
-                          )}
-                          {rent > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Rent/Lease</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rent)}</div>
-                            </div>
-                          )}
-                          {infrastructure > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Infrastructure</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(utilities)}</div>
-                            </div>
-                          )}
-                          {infrastructure > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Infrastructure</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(equipment)}</div>
-                            </div>
-                          )}
-                          {autoTravel > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Auto & Travel</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(travel)}</div>
-                            </div>
-                          )}
-                          {insurance > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Insurance</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(insurance)}</div>
-                            </div>
-                          )}
-                          {salesExpense > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Sales & Marketing</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(salesExpense)}</div>
-                            </div>
-                          )}
-                          {subcontractors > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Contractors - Distribution</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(subcontractors)}</div>
-                            </div>
-                          )}
-                          {depreciationAmortization > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Depreciation & Amortization</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationAmortization)}</div>
-                            </div>
-                          )}
-                          {marketing > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Other Operating Expenses</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(marketing)}</div>
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <div style={{ color: '#475569' }}>Total Operating Expenses</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(totalOpex)}</div>
-                          </div>
-                        </div>
-
-                        {/* Operating Income */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
-                          <div>Operating Income</div>
-                          <div style={{ textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                          <div style={{ textAlign: 'right' }}>{calcPercent(operatingIncome)}</div>
-                        </div>
-
-                        {/* Other Income/Expense */}
-                        {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                          <div style={{ marginTop: '16px' }}>
-                            <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Other Income/(Expense)</div>
-                            {interestExpense > 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                                <div style={{ color: '#64748b' }}>Interest Expense</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(interestExpense)})</div>
-                              </div>
-                            )}
-                            {nonOperatingIncome > 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                                <div style={{ color: '#64748b' }}>Non-Operating Income</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(nonOperatingIncome)}</div>
-                              </div>
-                            )}
-                            {extraordinaryItems !== 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                                <div style={{ color: '#64748b' }}>Extraordinary Items</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>
-                                  {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
-                                </div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>
-                                  {extraordinaryItems >= 0 ? calcPercent(extraordinaryItems) : `(${calcPercent(Math.abs(extraordinaryItems))})`}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Net Income */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                          <div>Net Income</div>
-                          <div style={{ textAlign: 'right' }}>
-                            {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
-                          </div>
-                          <div style={{ textAlign: 'right' }}>{calcPercent(netIncome)}</div>
-                        </div>
-                    </div>
-                  );
-                }
-                
-                // BALANCE SHEET - Latest point in time
-                else if (statementType === 'balance-sheet') {
-                  // Check if we're showing multiple periods side-by-side
-                  if (displayPeriods.length > 1) {
-                    // Multi-column comparative balance sheet
-                    const calculateBalanceData = (months: any[]) => {
-                      // For balance sheet, use the latest month's values (point-in-time)
-                      const latest = months[months.length - 1];
-                      // Assets - Use Data Review fields and imported totals
-                      const cash = latest.cash || 0;
-                      const ar = latest.ar || 0;
-                      const inventory = latest.inventory || 0;
-                      const otherCA = latest.otherCA || 0;
-                      const tca = latest.tca || 0;  // Use imported total
-                      
-                      const fixedAssets = latest.fixedAssets || 0;
-                      const otherAssets = latest.otherAssets || 0;
-                      const totalAssets = latest.totalAssets || 0;  // Use imported total
-                      
-                      // Liabilities - Use Data Review fields and imported totals
-                      const ap = latest.ap || 0;
-                      const otherCL = latest.otherCL || 0;
-                      const tcl = latest.tcl || 0;  // Use imported total
-                      
-                      const ltd = latest.ltd || 0;
-                      const totalLiabilities = latest.totalLiab || 0;  // Use imported total
-                      
-                      // All equity detail fields
-                      const ownersCapital = latest.ownersCapital || 0;
-                      const ownersDraw = latest.ownersDraw || 0;
-                      const commonStock = latest.commonStock || 0;
-                      const preferredStock = latest.preferredStock || 0;
-                      const retainedEarnings = latest.retainedEarnings || 0;
-                      const additionalPaidInCapital = latest.additionalPaidInCapital || 0;
-                      const treasuryStock = latest.treasuryStock || 0;
-                      const paidInCapital = latest.paidInCapital || 0;
-                      const totalEquity = latest.totalEquity || (ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock + paidInCapital);
-                      
-                      const totalLAndE = latest.totalLAndE || (totalLiabilities + totalEquity);
-                      
-                      return {
-                        cash, ar, inventory, otherCA, tca,
-                        fixedAssets, otherAssets, totalAssets,
-                        ap, otherCL, tcl,
-                        ltd, totalLiabilities,
-                        ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity,
-                        totalLAndE
-                      };
-                    };
-                    
-                    const balanceData = displayPeriods.map(p => ({
-                      label: p.label,
-                      ...calculateBalanceData(p.months)
-                    }));
-                    
-                    return (
-                      <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                        <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Balance Sheet</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
-                        </div>
-                        
-                        {/* Table with multiple columns */}
-                        <div style={{ minWidth: `${200 + (balanceData.length * 110)}px` }}>
-                          {/* Header Row */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', position: 'sticky', top: 0, background: 'white' }}>
-                            <div>Line Item</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right' }}>{p.label}</div>
-                            ))}
-                          </div>
-                          
-                          {/* ASSETS Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '8px' }}>
-                            <div style={{ color: '#1e293b' }}>ASSETS</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {/* Current Assets Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
-                            <div style={{ color: '#475569' }}>Current Assets</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {/* Current Assets Details */}
-                          {balanceData.some(p => p.cash > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Cash & Cash Equivalents</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.ar > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Receivable</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.inventory > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Inventory</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.otherCA > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Assets</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
-                            <div style={{ color: '#475569' }}>Total Current Assets</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                          
-                          {/* Non-Current Assets */}
-                          {balanceData.some(p => p.fixedAssets !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Fixed Assets</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.otherAssets !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Other Assets</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* TOTAL ASSETS */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
-                            <div style={{ color: '#1e40af' }}>TOTAL ASSETS</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#1e40af' }}>${p.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                          
-                          {/* LIABILITIES Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '16px' }}>
-                            <div style={{ color: '#1e293b' }}>LIABILITIES</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {/* Current Liabilities Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
-                            <div style={{ color: '#475569' }}>Current Liabilities</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {balanceData.some(p => p.ap !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Payable</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.otherCL !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Liabilities</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
-                            <div style={{ color: '#475569' }}>Total Current Liabilities</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                          
-                          {/* Long-Term Debt */}
-                          {balanceData.some(p => p.ltd !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Long-Term Debt</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* TOTAL LIABILITIES */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
-                            <div style={{ color: '#92400e' }}>TOTAL LIABILITIES</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#92400e' }}>${p.totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                          
-                          {/* EQUITY Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '16px' }}>
-                            <div style={{ color: '#1e293b' }}>EQUITY</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {balanceData.some(p => p.ownersCapital !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Capital</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.ownersDraw !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Draw</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.commonStock !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Common Stock</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.preferredStock !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Preferred Stock</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.retainedEarnings !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Retained Earnings</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
-                                  {p.retainedEarnings >= 0 ? '$' : '($'}{Math.abs(p.retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.retainedEarnings < 0 ? ')' : ''}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.additionalPaidInCapital !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Additional Paid-In Capital</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.treasuryStock !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Treasury Stock</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.paidInCapital !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Paid-in Capital</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.paidInCapital || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* TOTAL EQUITY */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
-                            <div style={{ color: '#166534' }}>TOTAL EQUITY</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: p.totalEquity >= 0 ? '#166534' : '#991b1b' }}>
-                                {p.totalEquity >= 0 ? '$' : '($'}{Math.abs(p.totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.totalEquity < 0 ? ')' : ''}
-                              </div>
-                            ))}
-                          </div>
-                          
-                          {/* TOTAL LIABILITIES & EQUITY */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#f1f5f9', borderRadius: '4px', marginTop: '16px', fontWeight: '700' }}>
-                            <div style={{ color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>
-                                ${p.totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  // Single period balance sheet (original logic)
-                  const cash = latestMonth.cash || 0;
-                  const ar = latestMonth.ar || 0;
-                  const inventory = latestMonth.inventory || 0;
-                  const otherCA = latestMonth.otherCA || 0;
-                  const tca = cash + ar + inventory + otherCA;
-                  
-                  const fixedAssets = latestMonth.fixedAssets || 0;
-                  const intangibleAssets = latestMonth.intangibleAssets || 0;
-                  const otherNonCurrentAssets = latestMonth.otherNonCurrentAssets || 0;
-                  const nonCurrentAssets = fixedAssets + intangibleAssets + otherNonCurrentAssets;
-                  
-                  const totalAssets = tca + nonCurrentAssets;
-                  
-                  const ap = latestMonth.ap || 0;
-                  const shortTermDebt = latestMonth.shortTermDebt || 0;
-                  const currentPortionLTD = latestMonth.currentPortionLTD || 0;
-                  const otherCurrentLiabilities = latestMonth.otherCurrentLiabilities || 0;
-                  const totalCurrentLiabilities = ap + shortTermDebt + currentPortionLTD + otherCurrentLiabilities;
-                  
-                  const ltd = latestMonth.ltd || 0;
-                  const otherLongTermLiabilities = latestMonth.otherLongTermLiabilities || 0;
-                  const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
-                  
-                  const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
-                  
-                  const paidInCapital = latestMonth.paidInCapital || 0;
-                  const retainedEarnings = latestMonth.retainedEarnings || 0;
-                  const totalEquity = paidInCapital + retainedEarnings;
-                  
-                  const totalLAndE = totalLiabilities + totalEquity;
-                  
-                  const latestDate = new Date(latestMonth.date || latestMonth.month);
-                  const asOfDate = latestDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                  
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                      <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Balance Sheet</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>As of {asOfDate} (Period: {periodLabel})</div>
-                      </div>
-
-                      {/* ASSETS */}
-                      <div style={{ marginBottom: '32px' }}>
-                        <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>ASSETS</div>
-                        
-                        {/* Current Assets */}
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Assets</div>
-                          {cash > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Cash & Cash Equivalents</span>
-                              <span style={{ color: '#64748b' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {ar > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Accounts Receivable</span>
-                              <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {inventory > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Inventory</span>
-                              <span style={{ color: '#64748b' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {otherCA > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Other Current Assets</span>
-                              <span style={{ color: '#64748b' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <span style={{ color: '#475569' }}>Total Current Assets</span>
-                            <span style={{ color: '#475569' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* Non-Current Assets */}
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Non-Current Assets</div>
-                          {fixedAssets > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Property, Plant & Equipment</span>
-                              <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {intangibleAssets > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Intangible Assets</span>
-                              <span style={{ color: '#64748b' }}>${intangibleAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {otherNonCurrentAssets > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Other Non-Current Assets</span>
-                              <span style={{ color: '#64748b' }}>${otherNonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <span style={{ color: '#475569' }}>Total Non-Current Assets</span>
-                            <span style={{ color: '#475569' }}>${nonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* TOTAL ASSETS */}
-                        <div style={{ background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e40af' }}>TOTAL ASSETS</span>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e40af' }}>
-                              ${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* LIABILITIES */}
-                      <div style={{ marginBottom: '32px' }}>
-                        <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>LIABILITIES</div>
-                        
-                        {/* Current Liabilities */}
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Liabilities</div>
-                          {ap > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Accounts Payable</span>
-                              <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {shortTermDebt > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Short-Term Debt</span>
-                              <span style={{ color: '#64748b' }}>${shortTermDebt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {currentPortionLTD > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Current Portion of LT Debt</span>
-                              <span style={{ color: '#64748b' }}>${currentPortionLTD.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {otherCurrentLiabilities > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Other Current Liabilities</span>
-                              <span style={{ color: '#64748b' }}>${otherCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <span style={{ color: '#475569' }}>Total Current Liabilities</span>
-                            <span style={{ color: '#475569' }}>${totalCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* Long-Term Liabilities */}
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Long-Term Liabilities</div>
-                          {ltd > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Long-Term Debt</span>
-                              <span style={{ color: '#64748b' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {otherLongTermLiabilities > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Other Long-Term Liabilities</span>
-                              <span style={{ color: '#64748b' }}>${otherLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <span style={{ color: '#475569' }}>Total Long-Term Liabilities</span>
-                            <span style={{ color: '#475569' }}>${totalLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* TOTAL LIABILITIES */}
-                        <div style={{ background: '#fef3c7', padding: '12px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#92400e' }}>TOTAL LIABILITIES</span>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#92400e' }}>
-                              ${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* EQUITY */}
-                      <div style={{ marginBottom: '32px' }}>
-                        <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>EQUITY</div>
-                        {paidInCapital > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Paid-in Capital</span>
-                            <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {retainedEarnings !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Retained Earnings</span>
-                            <span style={{ color: '#64748b' }}>
-                              {retainedEarnings >= 0 ? '$' : '($'}{Math.abs(retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{retainedEarnings < 0 ? ')' : ''}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* TOTAL EQUITY */}
-                        <div style={{ background: '#dcfce7', padding: '12px', borderRadius: '8px', marginTop: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>TOTAL EQUITY</span>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>
-                              {totalEquity >= 0 ? '$' : '($'}{Math.abs(totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{totalEquity < 0 ? ')' : ''}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* TOTAL LIABILITIES & EQUITY */}
-                      <div style={{ background: '#f1f5f9', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</span>
-                          <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>
-                            ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </span>
-                        </div>
-                        {Math.abs(totalAssets - totalLAndE) > 0.01 && (
-                          <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                            ?? Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
-              }
-              
-              else {
-                return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                      📊 Financial Statement Viewer
-                    </div>
-                    <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
-                      {monthly.length === 0 
-                        ? 'No financial data available. Please import financial data or sync from QuickBooks.'
-                        : 'Select options above to view financial statements.'}
-                    </p>
-                  </div>
-                );
-              }
-            })()}
-
-            {/* Hidden: Old P&L and Balance Sheet containers - will be removed in future update */}
-            <div style={{ display: 'none' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-              {/* Left: QuickBooks Raw Data */}
-              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              {/* Profit & Loss Report */}
-              <div style={{ marginBottom: '48px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px', paddingBottom: '12px', borderBottom: '3px solid #667eea' }}>Profit & Loss</h2>
-                {plRows.length > 0 ? (
-                  <div>
-                    {plRows.map((row, idx) => (
-                      <div 
-                        key={idx} 
-                        style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          padding: row.isHeader ? '12px 8px 8px' : (row.isTotal ? '10px 8px' : '6px 8px'),
-                          paddingLeft: `${8 + (row.level * 20)}px`,
-                          borderBottom: row.isTotal ? '2px solid #e2e8f0' : (row.isHeader ? '1px solid #e2e8f0' : 'none'),
-                          background: row.isHeader ? '#f8fafc' : (row.isTotal ? '#f1f5f9' : 'transparent'),
-                          fontWeight: row.isHeader || row.isTotal ? '600' : '400',
-                          fontSize: row.isHeader ? '15px' : (row.isTotal ? '14px' : '13px'),
-                          color: row.isHeader ? '#1e293b' : (row.isTotal ? '#0f172a' : '#475569')
-                        }}
-                      >
-                        <span>{row.name}</span>
-                        {!row.isHeader && <span style={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.value}</span>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>No Profit & Loss data available</div>
-                )}
-              </div>
-
-              {/* Balance Sheet Report */}
-              <div>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px', paddingBottom: '12px', borderBottom: '3px solid #667eea' }}>Balance Sheet</h2>
-                {bsRows.length > 0 ? (
-                  <div>
-                    {bsRows.map((row, idx) => (
-                      <div 
-                        key={idx} 
-                        style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          padding: row.isHeader ? '12px 8px 8px' : (row.isTotal ? '10px 8px' : '6px 8px'),
-                          paddingLeft: `${8 + (row.level * 20)}px`,
-                          borderBottom: row.isTotal ? '2px solid #e2e8f0' : (row.isHeader ? '1px solid #e2e8f0' : 'none'),
-                          background: row.isHeader ? '#f8fafc' : (row.isTotal ? '#f1f5f9' : 'transparent'),
-                          fontWeight: row.isHeader || row.isTotal ? '600' : '400',
-                          fontSize: row.isHeader ? '15px' : (row.isTotal ? '14px' : '13px'),
-                          color: row.isHeader ? '#1e293b' : (row.isTotal ? '#0f172a' : '#475569')
-                        }}
-                      >
-                        <span>{row.name}</span>
-                        {!row.isHeader && <span style={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.value}</span>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>No Balance Sheet data available</div>
-                )}
-              </div>
-              </div>
-
-              {/* Right: Your Minimal Viable Financial Statement Structure */}
-              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                {/* Income Statement Structure */}
-                <div style={{ marginBottom: '48px' }}>
-                  <div style={{ marginBottom: '20px' }}>
-                    <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px', paddingBottom: '12px', borderBottom: '3px solid #10b981' }}>Income Statement Fields</h2>
-                    {qbRawData?.profitAndLoss?.Header && (() => {
-                      const columns = qbRawData.profitAndLoss.Columns?.Column || [];
-                      const hasMultipleMonths = columns.length > 2;
-                      const lastMonthColumn = hasMultipleMonths && columns.length >= 2 ? columns[columns.length - 2] : null;
-                      const monthLabel = lastMonthColumn?.ColTitle || qbRawData.profitAndLoss.Header.EndPeriod;
-                      
-                      return (
-                        <div style={{ fontSize: '13px', marginTop: '8px' }}>
-                          <div style={{ color: '#64748b' }}>
-                            <strong>Report Period:</strong> {qbRawData.profitAndLoss.Header.StartPeriod || 'N/A'} to {qbRawData.profitAndLoss.Header.EndPeriod || 'N/A'}
-                          </div>
-                          <div style={{ color: '#10b981', fontWeight: '600', marginTop: '4px', padding: '8px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
-                            📅 Displaying: {hasMultipleMonths ? `Monthly data for ${monthLabel}` : `Period total for ${monthLabel}`}
-                          </div>
-                          {!hasMultipleMonths && (
-                            <div style={{ color: '#f59e0b', fontWeight: '500', fontSize: '12px', marginTop: '4px', padding: '6px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #fcd34d' }}>
-                              ?? Note: This appears to be cumulative for the entire period, not monthly breakdowns
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  
-                  {aiMappings.length > 0 ? (
-                    <div style={{ fontSize: '13px' }}>
-                      {/* Group mappings by category */}
-                      {(() => {
-                        // Deduplicate mappings by QB account name (keep first occurrence)
-                        const uniqueMappings = aiMappings.filter((m, index, self) =>
-                          index === self.findIndex((t) => t.qbAccount === m.qbAccount)
-                        );
-                        
-                        const revenueMappings = uniqueMappings.filter(m => ['Revenue', 'Income'].some(c => m.qbAccountClassification?.includes(c)));
-                        const cogsMappings = uniqueMappings.filter(m => ['Cost of Goods Sold', 'COGS'].some(c => m.qbAccountClassification?.includes(c)));
-                        const expenseMappings = uniqueMappings.filter(m => m.qbAccountClassification?.includes('Expense'));
-                        
-                        // Helper to get amount - extract from the appropriate column
-                        const getAmount = (qbAccountName: string) => {
-                          if (!qbRawData) return 0;
-                          const extractRows = (reportData: any) => {
-                            const result: any[] = [];
-                            if (!reportData || !reportData.Rows || !reportData.Rows.Row) return result;
-                            
-                            const processRow = (row: any) => {
-                              if (row.type === 'Data' && row.ColData) {
-                                const name = row.ColData[0]?.value || '';
-                                if (name) {
-                                  // Try to find a numeric value from the columns
-                                  // Start from the end and work backwards to find the first valid number
-                                  let value = 0;
-                                  for (let i = row.ColData.length - 1; i >= 1; i--) {
-                                    const colValue = row.ColData[i]?.value;
-                                    if (colValue !== undefined && colValue !== '' && !isNaN(parseFloat(colValue))) {
-                                      value = parseFloat(colValue);
-                                      break;
-                                    }
-                                  }
-                                  result.push({ name, value });
-                                }
-                              }
-                              if (row.Rows && row.Rows.Row) {
-                                const subRows = Array.isArray(row.Rows.Row) ? row.Rows.Row : [row.Rows.Row];
-                                subRows.forEach((r: any) => processRow(r));
-                              }
-                            };
-                            const rows = Array.isArray(reportData.Rows.Row) ? reportData.Rows.Row : [reportData.Rows.Row];
-                            rows.forEach((r: any) => processRow(r));
-                            return result;
-                          };
-                          const plRows = extractRows(qbRawData.profitAndLoss);
-                          const accountRow = plRows.find((row: any) => row.name === qbAccountName);
-                          return accountRow ? accountRow.value : 0;
-                        };
-                        
-                        // Calculate totals
-                        const totalRevenue = revenueMappings.reduce((sum, m) => sum + getAmount(m.qbAccount), 0);
-                        const totalCOGS = cogsMappings.reduce((sum, m) => sum + getAmount(m.qbAccount), 0);
-                        const totalExpenses = expenseMappings.reduce((sum, m) => sum + getAmount(m.qbAccount), 0);
-                        const grossProfit = totalRevenue - totalCOGS;
-                        const netIncome = grossProfit - totalExpenses;
-                        
-                        return (
-                          <>
-                            {/* REVENUE SECTION */}
-                            {revenueMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '8px', background: '#f8fafc', fontWeight: '600', borderBottom: '1px solid #e2e8f0' }}>REVENUE</div>
-                                {revenueMappings.map((m, i) => {
-                                  const amount = getAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {/* COGS SECTION */}
-                            {cogsMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '8px', background: '#f8fafc', fontWeight: '600', borderBottom: '1px solid #e2e8f0', marginTop: '12px' }}>COST OF GOODS SOLD</div>
-                                {cogsMappings.map((m, i) => {
-                                  const amount = getAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                                <div style={{ padding: '10px 16px', background: '#fee2e2', borderBottom: '2px solid #ef4444', display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
-                                  <span style={{ color: '#991b1b' }}>Total COGS</span>
-                                  <span style={{ color: '#991b1b', fontFamily: 'monospace' }}>
-                                    ${totalCOGS.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                                <div style={{ padding: '10px 16px', background: '#dbeafe', borderBottom: '3px solid #3b82f6', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '4px' }}>
-                                  <span style={{ color: '#1e40af' }}>GROSS PROFIT</span>
-                                  <span style={{ color: '#1e40af', fontFamily: 'monospace' }}>
-                                    ${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                            
-                            {/* EXPENSES SECTION */}
-                            {expenseMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '8px', background: '#f8fafc', fontWeight: '600', borderBottom: '1px solid #e2e8f0', marginTop: '12px' }}>OPERATING EXPENSES</div>
-                                {expenseMappings.map((m, i) => {
-                                  const amount = getAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                                <div style={{ padding: '10px 16px', background: '#fef3c7', borderBottom: '2px solid #f59e0b', display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
-                                  <span style={{ color: '#92400e' }}>Total Operating Expenses</span>
-                                  <span style={{ color: '#92400e', fontFamily: 'monospace' }}>
-                                    ${totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                                <div style={{ padding: '12px 16px', background: '#dcfce7', borderBottom: '4px solid #10b981', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '4px' }}>
-                                  <span style={{ color: '#166534', fontSize: '16px' }}>NET INCOME</span>
-                                  <span style={{ color: '#166534', fontFamily: 'monospace', fontSize: '16px' }}>
-                                    ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-                      No mappings saved yet. Generate and save mappings above to see them here.
-                    </div>
-                  )}
-                </div>
-
-                {/* Balance Sheet Structure */}
-                <div>
-                  <div style={{ marginBottom: '20px' }}>
-                    <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px', paddingBottom: '12px', borderBottom: '3px solid #10b981' }}>Balance Sheet Fields</h2>
-                    {qbRawData?.balanceSheet?.Header && (
-                      <div style={{ fontSize: '13px', marginTop: '8px' }}>
-                        <div style={{ color: '#64748b' }}>
-                          As of: {qbRawData.balanceSheet.Header.Time || qbRawData.balanceSheet.Header.EndPeriod || 'N/A'}
-                        </div>
-                        <div style={{ color: '#3b82f6', fontWeight: '500', fontSize: '12px', marginTop: '4px' }}>
-                          📊 Balance Sheet shows point-in-time snapshot as of the date above
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {aiMappings.length > 0 ? (
-                    <div style={{ fontSize: '13px' }}>
-                      {/* Group mappings by category */}
-                      {(() => {
-                        // Deduplicate mappings by QB account name (keep first occurrence)
-                        const uniqueMappings = aiMappings.filter((m, index, self) =>
-                          index === self.findIndex((t) => t.qbAccount === m.qbAccount)
-                        );
-                        
-                        const assetMappings = uniqueMappings.filter(m => m.qbAccountClassification?.includes('Asset'));
-                        const currentAssetMappings = assetMappings.filter(m => m.qbAccountClassification?.includes('Current'));
-                        const fixedAssetMappings = assetMappings.filter(m => m.qbAccountClassification?.includes('Fixed') || m.qbAccountClassification?.includes('Property'));
-                        const otherAssetMappings = assetMappings.filter(m => !m.qbAccountClassification?.includes('Current') && !m.qbAccountClassification?.includes('Fixed') && !m.qbAccountClassification?.includes('Property'));
-                        
-                        const liabilityMappings = uniqueMappings.filter(m => m.qbAccountClassification?.includes('Liability'));
-                        const currentLiabMappings = liabilityMappings.filter(m => m.qbAccountClassification?.includes('Current'));
-                        const longTermLiabMappings = liabilityMappings.filter(m => m.qbAccountClassification?.includes('Long') || !m.qbAccountClassification?.includes('Current'));
-                        
-                        const equityMappings = uniqueMappings.filter(m => m.qbAccountClassification?.includes('Equity'));
-                        
-                        // Helper to get amount from balance sheet - extract from the appropriate column
-                        const getBSAmount = (qbAccountName: string) => {
-                          if (!qbRawData) return 0;
-                          const extractRows = (reportData: any) => {
-                            const result: any[] = [];
-                            if (!reportData || !reportData.Rows || !reportData.Rows.Row) return result;
-                            
-                            const processRow = (row: any) => {
-                              if (row.type === 'Data' && row.ColData) {
-                                const name = row.ColData[0]?.value || '';
-                                if (name) {
-                                  // Try to find a numeric value from the columns
-                                  // Start from the end and work backwards to find the first valid number
-                                  let value = 0;
-                                  for (let i = row.ColData.length - 1; i >= 1; i--) {
-                                    const colValue = row.ColData[i]?.value;
-                                    if (colValue !== undefined && colValue !== '' && !isNaN(parseFloat(colValue))) {
-                                      value = parseFloat(colValue);
-                                      break;
-                                    }
-                                  }
-                                  result.push({ name, value });
-                                }
-                              }
-                              if (row.Rows && row.Rows.Row) {
-                                const subRows = Array.isArray(row.Rows.Row) ? row.Rows.Row : [row.Rows.Row];
-                                subRows.forEach((r: any) => processRow(r));
-                              }
-                            };
-                            const rows = Array.isArray(reportData.Rows.Row) ? reportData.Rows.Row : [reportData.Rows.Row];
-                            rows.forEach((r: any) => processRow(r));
-                            return result;
-                          };
-                          const bsRows = extractRows(qbRawData.balanceSheet);
-                          const accountRow = bsRows.find((row: any) => row.name === qbAccountName);
-                          return accountRow ? accountRow.value : 0;
-                        };
-                        
-                        // Calculate totals
-                        const totalCurrentAssets = currentAssetMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalFixedAssets = fixedAssetMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalOtherAssets = otherAssetMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalAssets = totalCurrentAssets + totalFixedAssets + totalOtherAssets;
-                        
-                        const totalCurrentLiab = currentLiabMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalLongTermLiab = longTermLiabMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalLiabilities = totalCurrentLiab + totalLongTermLiab;
-                        
-                        const totalEquity = equityMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalLiabAndEquity = totalLiabilities + totalEquity;
-                        
-                        return (
-                          <>
-                            {/* ASSETS SECTION */}
-                            <div style={{ padding: '8px', background: '#1e40af', fontWeight: '700', borderBottom: '2px solid #1e3a8a', color: 'white' }}>ASSETS</div>
-                            
-                            {currentAssetMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#eff6ff', fontWeight: '600', borderBottom: '1px solid #dbeafe', color: '#1e40af' }}>Current Assets</div>
-                                {currentAssetMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {fixedAssetMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#eff6ff', fontWeight: '600', borderBottom: '1px solid #dbeafe', color: '#1e40af', marginTop: '8px' }}>Fixed Assets</div>
-                                {fixedAssetMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {otherAssetMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#eff6ff', fontWeight: '600', borderBottom: '1px solid #dbeafe', color: '#1e40af', marginTop: '8px' }}>Other Assets</div>
-                                {otherAssetMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {/* LIABILITIES SECTION */}
-                            <div style={{ padding: '8px', background: '#991b1b', fontWeight: '700', borderBottom: '2px solid #7f1d1d', color: 'white', marginTop: '16px' }}>LIABILITIES</div>
-                            
-                            {currentLiabMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#fef2f2', fontWeight: '600', borderBottom: '1px solid #fee2e2', color: '#991b1b' }}>Current Liabilities</div>
-                                {currentLiabMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {longTermLiabMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#fef2f2', fontWeight: '600', borderBottom: '1px solid #fee2e2', color: '#991b1b', marginTop: '8px' }}>Long-Term Liabilities</div>
-                                {longTermLiabMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {/* EQUITY SECTION */}
-                            {equityMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '8px', background: '#166534', fontWeight: '700', borderBottom: '2px solid #14532d', color: 'white', marginTop: '16px' }}>EQUITY</div>
-                                {equityMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {/* TOTAL LIABILITIES & EQUITY */}
-                            <div style={{ padding: '12px 16px', background: '#8b5cf6', borderBottom: '4px solid #6b21a8', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '8px' }}>
-                              <span style={{ color: 'white', fontSize: '16px' }}>TOTAL LIABILITIES & EQUITY</span>
-                              <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '16px' }}>
-                                ${totalLiabAndEquity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </span>
-                            </div>
-                            
-                            {/* Balance Check */}
-                            {Math.abs(totalAssets - totalLiabAndEquity) > 0.01 && (
-                              <div style={{ padding: '10px 16px', background: '#fef2f2', border: '2px solid #ef4444', marginTop: '8px', borderRadius: '6px' }}>
-                                <span style={{ color: '#991b1b', fontWeight: '600' }}>?? Balance Check: Assets and Liabilities+Equity do not match!</span>
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-                      No mappings saved yet. Generate and save mappings above to see them here.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            </div>
-            {/* End hidden section */}
-            </>
-            )}
 
             {/* Line of Business Reporting Tab */}
             {financialStatementsTab === 'line-of-business' && (
@@ -17613,7 +14821,7 @@ function FinancialScorePage() {
                     gap: '8px'
                   }}
                 >
-                  🖨️ Print
+                  ðŸ–¨ï¸ Print
                 </button>
               </div>
             </div>
@@ -17621,7 +14829,7 @@ function FinancialScorePage() {
 
           {/* Statement Content Area */}
           {(() => {
-            console.log('📊 Financial Statement Render Check (CSV/Monthly Data):', {
+            console.log('ðŸ“Š Financial Statement Render Check (CSV/Monthly Data):', {
               statementType,
               statementPeriod,
               monthlyLength: monthly?.length || 0,
@@ -18416,7 +15624,7 @@ function FinancialScorePage() {
                 return (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                     <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                      📊 No Data Available
+                      ðŸ“Š No Data Available
                     </div>
                     <p style={{ fontSize: '14px', color: '#94a3b8' }}>
                       No financial data available for the selected period.
@@ -19756,7 +16964,7 @@ function FinancialScorePage() {
               return (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
                   <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                    📊 Financial Statement Viewer
+                    ðŸ“Š Financial Statement Viewer
                   </div>
                   <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
                     Select options above to view financial statements.
@@ -19796,7 +17004,7 @@ function FinancialScorePage() {
           </div>
           <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center', marginTop: '32px' }}>
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-              📊 No Financial Data Available
+              ðŸ“Š No Financial Data Available
             </div>
             <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
               Please import financial data via CSV or sync from QuickBooks to view financial statements.
@@ -19811,7 +17019,7 @@ function FinancialScorePage() {
         const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
         const canView = currentView === 'ma-questionnaire' && hasCompanyId && hasCorrectRole;
         
-        console.log('📋 Questionnaire render check:', {
+        console.log('ðŸ“‹ Questionnaire render check:', {
           currentView,
           isQuestionnaireView: currentView === 'ma-questionnaire',
           selectedCompanyId,
@@ -19881,7 +17089,7 @@ function FinancialScorePage() {
                     </div>
                     {unansweredQuestions.includes(question.id) && (
                       <div style={{ marginTop: '8px', fontSize: '12px', color: '#ef4444', fontWeight: '600' }}>
-                        ⚠️ Please select a rating
+                        âš ï¸ Please select a rating
                       </div>
                     )}
                   </div>
@@ -20405,7 +17613,7 @@ function FinancialScorePage() {
                 onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                 onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
               >
-                🖨️ Generate Print Package
+                ðŸ–¨ï¸ Generate Print Package
               </button>
               <button
                 onClick={() => {
@@ -20468,7 +17676,7 @@ function FinancialScorePage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>🗑️</div>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>ðŸ—‘ï¸</div>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Delete Company</h2>
               <p style={{ fontSize: '16px', color: '#64748b', lineHeight: '1.6' }}>
                 Are you sure you want to delete <strong style={{ color: '#ef4444' }}>"{companyToDelete.companyName}"</strong>?
