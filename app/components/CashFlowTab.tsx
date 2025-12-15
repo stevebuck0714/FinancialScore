@@ -36,14 +36,18 @@ export default function CashFlowTab({
 
   // Calculate cash flow data from monthly data
   const calculateCashFlowData = (data: MonthlyDataRow[]) => {
-    return data.map((m) => {
-      const netIncome = m.netProfit || 0;
+    return data.map((m, idx) => {
+      const prev = idx > 0 ? data[idx - 1] : m;
+      
+      // Operating Activities
+      const netIncome = (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0);
       const depreciation = m.depreciationAmortization || 0;
+      const changeInAR = (m.ar || 0) - (prev.ar || 0);
+      const changeInInventory = (m.inventory || 0) - (prev.inventory || 0);
+      const changeInAP = (m.ap || 0) - (prev.ap || 0);
+      const changeInWorkingCapital = -(changeInAR + changeInInventory - changeInAP);
       
-      // Working capital change (simplified)
-      const workingCapitalChange = 0; // This would need proper calculation with previous period
-      
-      const operatingCashFlow = netIncome + depreciation + workingCapitalChange;
+      const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
       const investingCashFlow = -(m.capex || 0);
       const financingCashFlow = -(m.dividends || 0);
       const netCashFlow = operatingCashFlow + investingCashFlow + financingCashFlow;
@@ -92,6 +96,27 @@ export default function CashFlowTab({
   };
 
   const cashFlowData = calculateCashFlowData(monthly);
+  
+  // Debug logging
+  console.log('[CashFlowTab] Monthly data length:', monthly.length);
+  if (monthly.length > 0) {
+    console.log('[CashFlowTab] First month sample:', {
+      monthDate: monthly[0].monthDate,
+      revenue: monthly[0].revenue,
+      cogsTotal: monthly[0].cogsTotal,
+      expense: monthly[0].expense,
+      depreciationAmortization: monthly[0].depreciationAmortization,
+      cash: monthly[0].cash,
+      capex: monthly[0].capex,
+      ar: monthly[0].ar,
+      inventory: monthly[0].inventory,
+      ap: monthly[0].ap,
+    });
+  }
+  if (cashFlowData.length > 0) {
+    console.log('[CashFlowTab] First calculated cash flow:', cashFlowData[0]);
+    console.log('[CashFlowTab] Latest calculated cash flow:', cashFlowData[cashFlowData.length - 1]);
+  }
   
   // Get data based on display type
   const getDisplayData = () => {
