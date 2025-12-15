@@ -129,12 +129,22 @@ export default function TrendAnalysisView({
                   case 'EBIT':
                     const revenue = m.revenue || 0;
                     const cogs = m.cogsTotal || 0;
-                    const operatingExpenses = (m.expense || 0) - (m.interestExpense || 0);
+                    // Calculate total operating expenses (excluding interest expense)
+                    const operatingExpenses = (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) +
+                      (m.insurance || 0) + (m.professionalFees || 0) + (m.subcontractors || 0) +
+                      (m.rent || 0) + (m.taxLicense || 0) + (m.phoneComm || 0) + (m.infrastructure || 0) +
+                      (m.autoTravel || 0) + (m.salesExpense || 0) + (m.marketing || 0) +
+                      (m.trainingCert || 0) + (m.mealsEntertainment || 0) + (m.otherExpense || 0);
                     return revenue - cogs - operatingExpenses;
                   case 'EBITDA':
                     const rev = m.revenue || 0;
                     const cog = m.cogsTotal || 0;
-                    const operatingExpensesEbitda = (m.expense || 0) - (m.interestExpense || 0);
+                    // Calculate total operating expenses (excluding interest expense)
+                    const operatingExpensesEbitda = (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) +
+                      (m.insurance || 0) + (m.professionalFees || 0) + (m.subcontractors || 0) +
+                      (m.rent || 0) + (m.taxLicense || 0) + (m.phoneComm || 0) + (m.infrastructure || 0) +
+                      (m.autoTravel || 0) + (m.salesExpense || 0) + (m.marketing || 0) +
+                      (m.trainingCert || 0) + (m.mealsEntertainment || 0) + (m.otherExpense || 0);
                     const depreciation = m.depreciationAmortization || 0;
                     const ebit = rev - cog - operatingExpensesEbitda;
                     return ebit + depreciation;

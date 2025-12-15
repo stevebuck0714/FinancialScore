@@ -7,9 +7,9 @@
     "cogsPayroll": 9801.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 13384.9,
+    "cogsMaterials": 17175.73,
     "cogsCommissions": 0,
-    "cogsOther": 3790.83,
+    "cogsOther": 0,
     "cogsTotal": 26977.059999999998,
     "payroll": 26854.399999999998,
     "ownerBasePay": 0,
@@ -122,14 +122,9 @@
         "Consulting": 17040.5995
       },
       "cogsMaterials": {
-        "Products": 3674.62386,
-        "Services": 4854.76386,
-        "Consulting": 4855.512280000001
-      },
-      "cogsOther": {
-        "Products": 1263.483639,
-        "Services": 1263.483639,
-        "Consulting": 1263.862722
+        "Products": 4938.107499,
+        "Services": 6118.247499,
+        "Consulting": 6119.375002000001
       },
       "cogsPayroll": {
         "Products": 3089.1834,
@@ -226,9 +221,9 @@
     "cogsPayroll": 10060.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 33220.31,
+    "cogsMaterials": 37011.14,
     "cogsCommissions": 0,
-    "cogsOther": 3790.83,
+    "cogsOther": 0,
     "cogsTotal": 47071.47,
     "payroll": 26854.85,
     "ownerBasePay": 0,
@@ -341,14 +336,9 @@
         "Consulting": 28060.379
       },
       "cogsMaterials": {
-        "Products": 7684.949713,
-        "Services": 12767.289713000002,
-        "Consulting": 12768.070574000001
-      },
-      "cogsOther": {
-        "Products": 1263.483639,
-        "Services": 1263.483639,
-        "Consulting": 1263.862722
+        "Products": 8948.433352,
+        "Services": 14030.773352,
+        "Consulting": 14031.933296000001
       },
       "cogsPayroll": {
         "Products": 3175.5080999999996,
@@ -450,9 +440,9 @@
     "cogsPayroll": 9588.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 22351.77,
+    "cogsMaterials": 26142.6,
     "cogsCommissions": 0,
-    "cogsOther": 3790.83,
+    "cogsOther": 0,
     "cogsTotal": 35730.93,
     "payroll": 26854.6,
     "ownerBasePay": 0,
@@ -565,14 +555,9 @@
         "Consulting": 25959.17525
       },
       "cogsMaterials": {
-        "Products": 5511.241713,
-        "Services": 8419.873713,
-        "Consulting": 8420.654574
-      },
-      "cogsOther": {
-        "Products": 1263.483639,
-        "Services": 1263.483639,
-        "Consulting": 1263.862722
+        "Products": 6774.725352,
+        "Services": 9683.357351999999,
+        "Consulting": 9684.517296000002
       },
       "cogsPayroll": {
         "Products": 3018.1904999999997,
@@ -662,7 +647,7 @@
     },
     "cogsBreakdown": {
       "Products": 9792.915852,
-      "Services": 13768.213852,
+      "Services": 13768.213851999999,
       "Consulting": 12169.800296000001
     }
   },
@@ -674,10 +659,10 @@
     "cogsPayroll": 9579.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 38478.06,
+    "cogsMaterials": 44121.04,
     "cogsCommissions": 0,
-    "cogsOther": 5642.98,
-    "cogsTotal": 53700.369999999995,
+    "cogsOther": 0,
+    "cogsTotal": 53700.37,
     "payroll": 26854.969999999998,
     "ownerBasePay": 0,
     "benefits": 1094.08,
@@ -789,14 +774,9 @@
         "Consulting": 32800.731
       },
       "cogsMaterials": {
-        "Products": 8736.9516,
-        "Services": 14870.1636,
-        "Consulting": 14870.944800000001
-      },
-      "cogsOther": {
-        "Products": 1880.8052340000002,
-        "Services": 1880.8052340000002,
-        "Consulting": 1881.3695320000002
+        "Products": 10617.756834,
+        "Services": 16750.968834,
+        "Consulting": 16752.314332
       },
       "cogsPayroll": {
         "Products": 3015.1908,
@@ -898,9 +878,9 @@
     "cogsPayroll": 9449.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 31795.23,
+    "cogsMaterials": 36068.2,
     "cogsCommissions": 0,
-    "cogsOther": 4272.97,
+    "cogsOther": 0,
     "cogsTotal": 45517.53,
     "payroll": 26854.229999999996,
     "ownerBasePay": 0,
@@ -1013,14 +993,9 @@
         "Consulting": 25508.208
       },
       "cogsMaterials": {
-        "Products": 7428.945125,
-        "Services": 12182.741125,
-        "Consulting": 12183.54375
-      },
-      "cogsOther": {
-        "Products": 1424.180901,
-        "Services": 1424.180901,
-        "Consulting": 1424.6081980000001
+        "Products": 8853.126026000002,
+        "Services": 13606.922026,
+        "Consulting": 13608.151948000002
       },
       "cogsPayroll": {
         "Products": 2971.8617999999997,
@@ -1122,10 +1097,10 @@
     "cogsPayroll": 9567.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 36182.869999999995,
+    "cogsMaterials": 40217.66,
     "cogsCommissions": 0,
-    "cogsOther": 4034.79,
-    "cogsTotal": 49784.99,
+    "cogsOther": 0,
+    "cogsTotal": 49784.990000000005,
     "payroll": 26854.43,
     "ownerBasePay": 0,
     "benefits": 965.08,
@@ -1237,14 +1212,9 @@
         "Consulting": 25936.274
       },
       "cogsMaterials": {
-        "Products": 8358.182861,
-        "Services": 13911.922861,
-        "Consulting": 13912.764277999999
-      },
-      "cogsOther": {
-        "Products": 1344.795507,
-        "Services": 1344.795507,
-        "Consulting": 1345.198986
+        "Products": 9702.978368,
+        "Services": 15256.718368,
+        "Consulting": 15257.963264
       },
       "cogsPayroll": {
         "Products": 3011.1911999999998,
@@ -1346,9 +1316,9 @@
     "cogsPayroll": -14137.67,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 36501.57000000001,
+    "cogsMaterials": 40514.36000000001,
     "cogsCommissions": 0,
-    "cogsOther": 4012.79,
+    "cogsOther": 0,
     "cogsTotal": 26376.69000000001,
     "payroll": 27176.43,
     "ownerBasePay": 0,
@@ -1461,14 +1431,9 @@
         "Consulting": 23395.050000000003
       },
       "cogsMaterials": {
-        "Products": 9977.107301,
-        "Services": 13261.227300999999,
-        "Consulting": 13263.235398
-      },
-      "cogsOther": {
-        "Products": 1337.462907,
-        "Services": 1337.462907,
-        "Consulting": 1337.8641860000002
+        "Products": 11314.570208000001,
+        "Services": 14598.690208,
+        "Consulting": 14601.099584
       },
       "cogsPayroll": {
         "Products": -4090.4853000000003,
@@ -1570,10 +1535,10 @@
     "cogsPayroll": 11493.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 22496.36,
+    "cogsMaterials": 26958.66,
     "cogsCommissions": 0,
-    "cogsOther": 4462.3,
-    "cogsTotal": 38451.990000000005,
+    "cogsOther": 0,
+    "cogsTotal": 38451.99,
     "payroll": 27176.21,
     "ownerBasePay": 0,
     "benefits": 965.08,
@@ -1685,14 +1650,9 @@
         "Consulting": 19211.324000000004
       },
       "cogsMaterials": {
-        "Products": 5445.158136,
-        "Services": 8525.246136,
-        "Consulting": 8525.955728
-      },
-      "cogsOther": {
-        "Products": 1487.2845899999998,
-        "Services": 1487.2845899999998,
-        "Consulting": 1487.7308200000002
+        "Products": 6932.442725999999,
+        "Services": 10012.530725999999,
+        "Consulting": 10013.686548
       },
       "cogsPayroll": {
         "Products": 3653.1269999999995,
@@ -1794,9 +1754,9 @@
     "cogsPayroll": 10430.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 20332.12,
+    "cogsMaterials": 24354.42,
     "cogsCommissions": 0,
-    "cogsOther": 4022.3,
+    "cogsOther": 0,
     "cogsTotal": 34784.75,
     "payroll": 27176.94,
     "ownerBasePay": 0,
@@ -1909,14 +1869,9 @@
         "Consulting": 17712.5955
       },
       "cogsMaterials": {
-        "Products": 5012.310136,
-        "Services": 7659.550136,
-        "Consulting": 7660.259727999999
-      },
-      "cogsOther": {
-        "Products": 1340.63259,
-        "Services": 1340.63259,
-        "Consulting": 1341.03482
+        "Products": 6352.942726,
+        "Services": 9000.182726,
+        "Consulting": 9001.294548
       },
       "cogsPayroll": {
         "Products": 3298.8291,
@@ -2018,9 +1973,9 @@
     "cogsPayroll": 9727.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 31263.38,
+    "cogsMaterials": 35276.17,
     "cogsCommissions": 0,
-    "cogsOther": 4012.79,
+    "cogsOther": 0,
     "cogsTotal": 45003.5,
     "payroll": 27176.519999999997,
     "ownerBasePay": 0,
@@ -2133,14 +2088,9 @@
         "Consulting": 23922.0357
       },
       "cogsMaterials": {
-        "Products": 7204.827235999999,
-        "Services": 12028.919236,
-        "Consulting": 12029.633528
-      },
-      "cogsOther": {
-        "Products": 1337.462907,
-        "Services": 1337.462907,
-        "Consulting": 1337.8641860000002
+        "Products": 8542.290142999998,
+        "Services": 13366.382142999999,
+        "Consulting": 13367.497714000001
       },
       "cogsPayroll": {
         "Products": 3064.5191999999997,
@@ -2242,9 +2192,9 @@
     "cogsPayroll": 10145.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 42792.14,
+    "cogsMaterials": 48559.07,
     "cogsCommissions": 0,
-    "cogsOther": 5766.93,
+    "cogsOther": 0,
     "cogsTotal": 58704.4,
     "payroll": 27176.269999999997,
     "ownerBasePay": 0,
@@ -2357,14 +2307,9 @@
         "Consulting": 31395.6365
       },
       "cogsMaterials": {
-        "Products": 9510.579236000001,
-        "Services": 16640.423236000002,
-        "Consulting": 16641.137528
-      },
-      "cogsOther": {
-        "Products": 1922.117769,
-        "Services": 1922.117769,
-        "Consulting": 1922.6944620000002
+        "Products": 11432.697005,
+        "Services": 18562.541005,
+        "Consulting": 18563.831990000002
       },
       "cogsPayroll": {
         "Products": 3203.8385999999996,
@@ -2453,9 +2398,9 @@
       "Consulting": 17226.760942
     },
     "cogsBreakdown": {
-      "Products": 14636.535605000001,
-      "Services": 22833.045605000003,
-      "Consulting": 21234.818789999998
+      "Products": 14636.535605,
+      "Services": 22833.045605,
+      "Consulting": 21234.81879
     }
   },
   {
@@ -2466,10 +2411,10 @@
     "cogsPayroll": 10073.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 36127.66,
+    "cogsMaterials": 40662.45,
     "cogsCommissions": 0,
-    "cogsOther": 4534.79,
-    "cogsTotal": 50735.780000000006,
+    "cogsOther": 0,
+    "cogsTotal": 50735.78,
     "payroll": 27176.769999999997,
     "ownerBasePay": 0,
     "benefits": 2528.56,
@@ -2581,14 +2526,9 @@
         "Consulting": 28625.088399999993
       },
       "cogsMaterials": {
-        "Products": 8177.683235999999,
-        "Services": 13974.631235999997,
-        "Consulting": 13975.345527999998
-      },
-      "cogsOther": {
-        "Products": 1511.445507,
-        "Services": 1511.445507,
-        "Consulting": 1511.8989860000001
+        "Products": 9689.128743,
+        "Services": 15486.076742999998,
+        "Consulting": 15487.244513999998
       },
       "cogsPayroll": {
         "Products": 3179.841,
@@ -2690,9 +2630,9 @@
     "cogsPayroll": 10037.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 110489.53,
+    "cogsMaterials": 115330.7,
     "cogsCommissions": 0,
-    "cogsOther": 4841.17,
+    "cogsOther": 0,
     "cogsTotal": 125368.03,
     "payroll": 27176.93,
     "ownerBasePay": 0,
@@ -2805,14 +2745,9 @@
         "Consulting": 45758.25400000001
       },
       "cogsMaterials": {
-        "Products": 23050.057236,
-        "Services": 43719.379236,
-        "Consulting": 43720.093528
-      },
-      "cogsOther": {
-        "Products": 1613.5619609999999,
-        "Services": 1613.5619609999999,
-        "Consulting": 1614.046078
+        "Products": 24663.619197,
+        "Services": 45332.941197,
+        "Consulting": 45334.139606
       },
       "cogsPayroll": {
         "Products": 3167.8422,
@@ -2914,9 +2849,9 @@
     "cogsPayroll": 9435.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 28983.57,
+    "cogsMaterials": 33621.5,
     "cogsCommissions": 0,
-    "cogsOther": 4637.93,
+    "cogsOther": 0,
     "cogsTotal": 43056.83,
     "payroll": 27176.469999999998,
     "ownerBasePay": 0,
@@ -3029,14 +2964,9 @@
         "Consulting": 26025.64
       },
       "cogsMaterials": {
-        "Products": 6788.667283,
-        "Services": 11097.079283,
-        "Consulting": 11097.823434
-      },
-      "cogsOther": {
-        "Products": 1545.822069,
-        "Services": 1545.822069,
-        "Consulting": 1546.2858620000002
+        "Products": 8334.489352,
+        "Services": 12642.901352,
+        "Consulting": 12644.109295999999
       },
       "cogsPayroll": {
         "Products": 2967.1956,
@@ -3126,8 +3056,8 @@
     },
     "cogsBreakdown": {
       "Products": 11301.684952,
-      "Services": 16676.762951999997,
-      "Consulting": 15078.382096000001
+      "Services": 16676.762952,
+      "Consulting": 15078.382096
     }
   },
   {
@@ -3138,9 +3068,9 @@
     "cogsPayroll": 9509.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 30231.620000000003,
+    "cogsMaterials": 35149.55,
     "cogsCommissions": 0,
-    "cogsOther": 4917.93,
+    "cogsOther": 0,
     "cogsTotal": 44658.880000000005,
     "payroll": 27176.93,
     "ownerBasePay": 0,
@@ -3253,14 +3183,9 @@
         "Consulting": 24968.040000000005
       },
       "cogsMaterials": {
-        "Products": 7038.277283,
-        "Services": 11596.299283,
-        "Consulting": 11597.043434000001
-      },
-      "cogsOther": {
-        "Products": 1639.146069,
-        "Services": 1639.146069,
-        "Consulting": 1639.637862
+        "Products": 8677.423352,
+        "Services": 13235.445352,
+        "Consulting": 13236.681296000002
       },
       "cogsPayroll": {
         "Products": 2991.8598,
@@ -3351,7 +3276,7 @@
     "cogsBreakdown": {
       "Products": 11669.283152,
       "Services": 17293.971152000002,
-      "Consulting": 15695.625696000001
+      "Consulting": 15695.625696000003
     }
   },
   {
@@ -3362,10 +3287,10 @@
     "cogsPayroll": 9598.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 29033.059999999998,
+    "cogsMaterials": 34265.990000000005,
     "cogsCommissions": 0,
-    "cogsOther": 5232.93,
-    "cogsTotal": 43864.32,
+    "cogsOther": 0,
+    "cogsTotal": 43864.32000000001,
     "payroll": 27176.05,
     "ownerBasePay": 0,
     "benefits": 2496.46,
@@ -3477,14 +3402,9 @@
         "Consulting": 24384.609400000005
       },
       "cogsMaterials": {
-        "Products": 6798.565283,
-        "Services": 11116.875283000001,
-        "Consulting": 11117.619434
-      },
-      "cogsOther": {
-        "Products": 1744.135569,
-        "Services": 1744.135569,
-        "Consulting": 1744.658862
+        "Products": 8542.700852,
+        "Services": 12861.010852,
+        "Consulting": 12862.278296
       },
       "cogsPayroll": {
         "Products": 3021.5235,
@@ -3586,9 +3506,9 @@
     "cogsPayroll": 9021.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 20685.16,
+    "cogsMaterials": 25928.09,
     "cogsCommissions": 0,
-    "cogsOther": 5242.93,
+    "cogsOther": 0,
     "cogsTotal": 34949.42,
     "payroll": 27176.69,
     "ownerBasePay": 0,
@@ -3701,14 +3621,9 @@
         "Consulting": 20879.567999999996
       },
       "cogsMaterials": {
-        "Products": 5128.985283,
-        "Services": 7777.7152829999995,
-        "Consulting": 7778.459434
-      },
-      "cogsOther": {
-        "Products": 1747.468569,
-        "Services": 1747.468569,
-        "Consulting": 1747.992862
+        "Products": 6876.453852,
+        "Services": 9525.183852,
+        "Consulting": 9526.452296
       },
       "cogsPayroll": {
         "Products": 2829.2093999999997,
@@ -3810,9 +3725,9 @@
     "cogsPayroll": 8580.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 26359.25,
+    "cogsMaterials": 31257.18,
     "cogsCommissions": 0,
-    "cogsOther": 4897.93,
+    "cogsOther": 0,
     "cogsTotal": 39837.51,
     "payroll": 27176.89,
     "ownerBasePay": 0,
@@ -3925,14 +3840,9 @@
         "Consulting": 26319.728099999997
       },
       "cogsMaterials": {
-        "Products": 6308.436122,
-        "Services": 10025.018122,
-        "Consulting": 10025.795756
-      },
-      "cogsOther": {
-        "Products": 1632.480069,
-        "Services": 1632.480069,
-        "Consulting": 1632.969862
+        "Products": 7940.916190999999,
+        "Services": 11657.498190999999,
+        "Consulting": 11658.765618000001
       },
       "cogsPayroll": {
         "Products": 2682.2241,
@@ -4023,7 +3933,7 @@
     "cogsBreakdown": {
       "Products": 10623.140291,
       "Services": 15406.388291,
-      "Consulting": 13807.981418
+      "Consulting": 13807.981418000001
     }
   },
   {
@@ -4034,9 +3944,9 @@
     "cogsPayroll": -15043.67,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 25612.690000000002,
+    "cogsMaterials": 30510.620000000003,
     "cogsCommissions": 0,
-    "cogsOther": 4897.93,
+    "cogsOther": 0,
     "cogsTotal": 15466.950000000003,
     "payroll": 43245.13,
     "ownerBasePay": 0,
@@ -4149,14 +4059,9 @@
         "Consulting": 28235.036000000004
       },
       "cogsMaterials": {
-        "Products": 6039.12213,
-        "Services": 9786.440129999999,
-        "Consulting": 9787.12774
-      },
-      "cogsOther": {
-        "Products": 1632.480069,
-        "Services": 1632.480069,
-        "Consulting": 1632.969862
+        "Products": 7671.602199000001,
+        "Services": 11418.920199,
+        "Consulting": 11420.097602
       },
       "cogsPayroll": {
         "Products": -4392.4551,
@@ -4245,8 +4150,8 @@
       "Consulting": 5426.789536000002
     },
     "cogsBreakdown": {
-      "Products": 3279.147099,
-      "Services": 3293.1310989999993,
+      "Products": 3279.1470990000007,
+      "Services": 3293.131099000001,
       "Consulting": 8894.671802
     }
   },
@@ -4258,10 +4163,10 @@
     "cogsPayroll": 10716.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 40941.41,
+    "cogsMaterials": 45839.34,
     "cogsCommissions": 0,
-    "cogsOther": 4897.93,
-    "cogsTotal": 56555.670000000006,
+    "cogsOther": 0,
+    "cogsTotal": 56555.67,
     "payroll": 29247.879999999997,
     "ownerBasePay": 0,
     "benefits": 3001.8100000000004,
@@ -4373,14 +4278,9 @@
         "Consulting": 30343.261692000004
       },
       "cogsMaterials": {
-        "Products": 9224.868122,
-        "Services": 15857.882122,
-        "Consulting": 15858.659756000001
-      },
-      "cogsOther": {
-        "Products": 1632.480069,
-        "Services": 1632.480069,
-        "Consulting": 1632.969862
+        "Products": 10857.348191000001,
+        "Services": 17490.362191,
+        "Consulting": 17491.629618
       },
       "cogsPayroll": {
         "Products": 3377.5028999999995,
@@ -4469,7 +4369,7 @@
       "Consulting": 20400.28546
     },
     "cogsBreakdown": {
-      "Products": 14234.851090999999,
+      "Products": 14234.851091,
       "Services": 22034.531091,
       "Consulting": 20286.287817999997
     }
@@ -4482,9 +4382,9 @@
     "cogsPayroll": 10258.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 34116.19,
+    "cogsMaterials": 39117.36,
     "cogsCommissions": 0,
-    "cogsOther": 5001.17,
+    "cogsOther": 0,
     "cogsTotal": 49375.69,
     "payroll": 29247.39,
     "ownerBasePay": 0,
@@ -4597,14 +4497,9 @@
         "Consulting": 35963.330384
       },
       "cogsMaterials": {
-        "Products": 8133.089122000001,
-        "Services": 12991.059122000002,
-        "Consulting": 12992.041756000002
-      },
-      "cogsOther": {
-        "Products": 1666.889961,
-        "Services": 1666.889961,
-        "Consulting": 1667.3900780000001
+        "Products": 9799.979083000002,
+        "Services": 14657.949083000003,
+        "Consulting": 14659.431834000003
       },
       "cogsPayroll": {
         "Products": 3224.8514999999998,
@@ -4706,10 +4601,10 @@
     "cogsPayroll": 11424,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 46277.729999999996,
+    "cogsMaterials": 51278.9,
     "cogsCommissions": 0,
-    "cogsOther": 5001.17,
-    "cogsTotal": 62702.899999999994,
+    "cogsOther": 0,
+    "cogsTotal": 62702.9,
     "payroll": 30848.82,
     "ownerBasePay": 0,
     "benefits": 2012.15,
@@ -4821,14 +4716,9 @@
         "Consulting": 40873.948092000006
       },
       "cogsMaterials": {
-        "Products": 10565.397122,
-        "Services": 17855.675122,
-        "Consulting": 17856.657756
-      },
-      "cogsOther": {
-        "Products": 1666.889961,
-        "Services": 1666.889961,
-        "Consulting": 1667.3900780000001
+        "Products": 12232.287083000001,
+        "Services": 19522.565083,
+        "Consulting": 19524.047834
       },
       "cogsPayroll": {
         "Products": 3608.9514,
@@ -4930,9 +4820,9 @@
     "cogsPayroll": 11786,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 35954.69,
+    "cogsMaterials": 41836.44,
     "cogsCommissions": 0,
-    "cogsOther": 5881.75,
+    "cogsOther": 0,
     "cogsTotal": 53622.44,
     "payroll": 26493.07,
     "ownerBasePay": 0,
@@ -5045,14 +4935,9 @@
         "Consulting": 29587.95038400001
       },
       "cogsMaterials": {
-        "Products": 8500.789122,
-        "Services": 13726.459122,
-        "Consulting": 13727.441756
-      },
-      "cogsOther": {
-        "Products": 1960.387275,
-        "Services": 1960.387275,
-        "Consulting": 1960.9754500000001
+        "Products": 10461.176397,
+        "Services": 15686.846397000001,
+        "Consulting": 15688.417206000002
       },
       "cogsPayroll": {
         "Products": 3729.6059999999998,
@@ -5154,10 +5039,10 @@
     "cogsPayroll": 12212,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 45763.51,
+    "cogsMaterials": 50049.43000000001,
     "cogsCommissions": 0,
-    "cogsOther": 4285.92,
-    "cogsTotal": 62261.43,
+    "cogsOther": 0,
+    "cogsTotal": 62261.43000000001,
     "payroll": 23078.61,
     "ownerBasePay": 0,
     "benefits": 2233.3599999999997,
@@ -5269,14 +5154,9 @@
         "Consulting": 35875.960076
       },
       "cogsMaterials": {
-        "Products": 10349.548047,
-        "Services": 17706.532047,
-        "Consulting": 17707.429906
-      },
-      "cogsOther": {
-        "Products": 1428.4971360000002,
-        "Services": 1428.4971360000002,
-        "Consulting": 1428.9257280000002
+        "Products": 11778.045183,
+        "Services": 19135.029183000002,
+        "Consulting": 19136.355634
       },
       "cogsPayroll": {
         "Products": 3864.9318000000003,
@@ -5378,9 +5258,9 @@
     "cogsPayroll": 9386,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 43538.62,
+    "cogsMaterials": 47819.54,
     "cogsCommissions": 0,
-    "cogsOther": 4280.92,
+    "cogsOther": 0,
     "cogsTotal": 57205.54,
     "payroll": 20084.06,
     "ownerBasePay": 0,
@@ -5493,14 +5373,9 @@
         "Consulting": 35619.15398
       },
       "cogsMaterials": {
-        "Products": 9904.570047,
-        "Services": 16816.576047,
-        "Consulting": 16817.473906
-      },
-      "cogsOther": {
-        "Products": 1426.8306360000001,
-        "Services": 1426.8306360000001,
-        "Consulting": 1427.258728
+        "Products": 11331.400683,
+        "Services": 18243.406683,
+        "Consulting": 18244.732634
       },
       "cogsPayroll": {
         "Products": 3006.276,
@@ -5590,7 +5465,7 @@
     },
     "cogsBreakdown": {
       "Products": 14337.676683,
-      "Services": 21982.882682999996,
+      "Services": 21982.882683,
       "Consulting": 20884.980634
     }
   },
@@ -5602,10 +5477,10 @@
     "cogsPayroll": 9287,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 24027.27,
+    "cogsMaterials": 28128.79,
     "cogsCommissions": 0,
-    "cogsOther": 4101.52,
-    "cogsTotal": 37415.79000000001,
+    "cogsOther": 0,
+    "cogsTotal": 37415.79,
     "payroll": 20082.28,
     "ownerBasePay": 0,
     "benefits": 2479.65,
@@ -5717,14 +5592,9 @@
         "Consulting": 26992.412
       },
       "cogsMaterials": {
-        "Products": 6002.300047,
-        "Services": 9012.036047,
-        "Consulting": 9012.933906
-      },
-      "cogsOther": {
-        "Products": 1367.036616,
-        "Services": 1367.036616,
-        "Consulting": 1367.446768
+        "Products": 7369.336663,
+        "Services": 10379.072662999999,
+        "Consulting": 10380.380674
       },
       "cogsPayroll": {
         "Products": 2973.2793,
@@ -5826,9 +5696,9 @@
     "cogsPayroll": 9614.58,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 34490.99,
+    "cogsMaterials": 38971.93,
     "cogsCommissions": 0,
-    "cogsOther": 4480.9400000000005,
+    "cogsOther": 0,
     "cogsTotal": 48586.51,
     "payroll": 20084.1,
     "ownerBasePay": 0,
@@ -5941,14 +5811,9 @@
         "Consulting": 31005.33724
       },
       "cogsMaterials": {
-        "Products": 7989.035889000001,
-        "Services": 13250.567889000002,
-        "Consulting": 13251.386222000001
-      },
-      "cogsOther": {
-        "Products": 1493.497302,
-        "Services": 1493.497302,
-        "Consulting": 1493.9453960000003
+        "Products": 9482.533191,
+        "Services": 14744.065191000002,
+        "Consulting": 14745.331618
       },
       "cogsPayroll": {
         "Products": 3082.461714,
@@ -6039,7 +5904,7 @@
     "cogsBreakdown": {
       "Products": 12564.994905,
       "Services": 18559.726905000003,
-      "Consulting": 17461.788190000003
+      "Consulting": 17461.78819
     }
   },
   {
@@ -6050,9 +5915,9 @@
     "cogsPayroll": 9983.39,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 29222.760000000002,
+    "cogsMaterials": 33553.700000000004,
     "cogsCommissions": 0,
-    "cogsOther": 4330.9400000000005,
+    "cogsOther": 0,
     "cogsTotal": 43537.090000000004,
     "payroll": 20084,
     "ownerBasePay": 0,
@@ -6165,14 +6030,9 @@
         "Consulting": 27991.595200000003
       },
       "cogsMaterials": {
-        "Products": 6935.389889,
-        "Services": 11143.275889,
-        "Consulting": 11144.094222
-      },
-      "cogsOther": {
-        "Products": 1443.502302,
-        "Services": 1443.502302,
-        "Consulting": 1443.935396
+        "Products": 8378.892191,
+        "Services": 12586.778191000001,
+        "Consulting": 12588.029618
       },
       "cogsPayroll": {
         "Products": 3205.386087,
@@ -6274,9 +6134,9 @@
     "cogsPayroll": 10018.18,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 30354.22,
+    "cogsMaterials": 35135.16,
     "cogsCommissions": 0,
-    "cogsOther": 4780.9400000000005,
+    "cogsOther": 0,
     "cogsTotal": 45153.340000000004,
     "payroll": 20084,
     "ownerBasePay": 0,
@@ -6389,14 +6249,9 @@
         "Consulting": 30069.396
       },
       "cogsMaterials": {
-        "Products": 7161.681889000001,
-        "Services": 11595.859889,
-        "Consulting": 11596.678222
-      },
-      "cogsOther": {
-        "Products": 1593.487302,
-        "Services": 1593.487302,
-        "Consulting": 1593.9653960000003
+        "Products": 8755.169191,
+        "Services": 13189.347191,
+        "Consulting": 13190.643618000002
       },
       "cogsPayroll": {
         "Products": 3216.981594,
@@ -6486,8 +6341,8 @@
     },
     "cogsBreakdown": {
       "Products": 11972.150785000002,
-      "Services": 17139.528785,
-      "Consulting": 16041.66043
+      "Services": 17139.528785000002,
+      "Consulting": 16041.660430000002
     }
   },
   {
@@ -6498,9 +6353,9 @@
     "cogsPayroll": 9866.83,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 42363.229999999996,
+    "cogsMaterials": 46994.17,
     "cogsCommissions": 0,
-    "cogsOther": 4630.9400000000005,
+    "cogsOther": 0,
     "cogsTotal": 56861,
     "payroll": 20084,
     "ownerBasePay": 0,
@@ -6613,14 +6468,9 @@
         "Consulting": 37256.511742
       },
       "cogsMaterials": {
-        "Products": 9563.483889,
-        "Services": 16399.463889,
-        "Consulting": 16400.282222
-      },
-      "cogsOther": {
-        "Products": 1543.492302,
-        "Services": 1543.492302,
-        "Consulting": 1543.955396
+        "Products": 11106.976191000002,
+        "Services": 17942.956191000005,
+        "Consulting": 17944.237618
       },
       "cogsPayroll": {
         "Products": 3166.536639,
@@ -6709,9 +6559,9 @@
       "Consulting": 16094.815145999997
     },
     "cogsBreakdown": {
-      "Products": 14273.51283,
-      "Services": 21842.692829999996,
-      "Consulting": 20744.794340000004
+      "Products": 14273.512830000001,
+      "Services": 21842.692830000004,
+      "Consulting": 20744.79434
     }
   },
   {
@@ -6722,9 +6572,9 @@
     "cogsPayroll": -2355.2800000000007,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 28032.440000000002,
+    "cogsMaterials": 33113.380000000005,
     "cogsCommissions": 0,
-    "cogsOther": 5080.9400000000005,
+    "cogsOther": 0,
     "cogsTotal": 30758.100000000006,
     "payroll": 33022.69,
     "ownerBasePay": 0,
@@ -6837,14 +6687,9 @@
         "Consulting": 39052.753692
       },
       "cogsMaterials": {
-        "Products": 4377.764591000001,
-        "Services": 11827.798591,
-        "Consulting": 11826.876818
-      },
-      "cogsOther": {
-        "Products": 1693.477302,
-        "Services": 1693.477302,
-        "Consulting": 1693.9853960000003
+        "Products": 6071.241893000001,
+        "Services": 13521.275893000002,
+        "Consulting": 13520.862214
       },
       "cogsPayroll": {
         "Products": -490.84262400000034,
@@ -6934,7 +6779,7 @@
     },
     "cogsBreakdown": {
       "Products": 5580.399269000001,
-      "Services": 11263.633269,
+      "Services": 11263.633269000002,
       "Consulting": 13914.067462
     }
   },
@@ -6946,9 +6791,9 @@
     "cogsPayroll": 15034.46,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 35217.729999999996,
+    "cogsMaterials": 40118.78999999999,
     "cogsCommissions": 0,
-    "cogsOther": 4901.0599999999995,
+    "cogsOther": 0,
     "cogsTotal": 55153.24999999999,
     "payroll": 23858.04,
     "ownerBasePay": 0,
@@ -7061,14 +6906,9 @@
         "Consulting": 30823.094
       },
       "cogsMaterials": {
-        "Products": 8010.449547,
-        "Services": 13603.277547000002,
-        "Consulting": 13604.002906000002
-      },
-      "cogsOther": {
-        "Products": 1633.5232979999998,
-        "Services": 1633.5232979999998,
-        "Consulting": 1634.0134040000003
+        "Products": 9643.972845,
+        "Services": 15236.800844999998,
+        "Consulting": 15238.016310000003
       },
       "cogsPayroll": {
         "Products": 4888.907718,
@@ -7158,7 +6998,7 @@
     },
     "cogsBreakdown": {
       "Products": 14532.880563,
-      "Services": 20858.908563,
+      "Services": 20858.908562999997,
       "Consulting": 19761.460874000004
     }
   },
@@ -7170,9 +7010,9 @@
     "cogsPayroll": 10835.3,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 26822.57,
+    "cogsMaterials": 31328.55,
     "cogsCommissions": 0,
-    "cogsOther": 4505.9800000000005,
+    "cogsOther": 0,
     "cogsTotal": 42163.85,
     "payroll": 24146.5,
     "ownerBasePay": 0,
@@ -7285,14 +7125,9 @@
         "Consulting": 28287.208999999995
       },
       "cogsMaterials": {
-        "Products": 6309.220431,
-        "Services": 10256.320431,
-        "Consulting": 10257.029138000002
-      },
-      "cogsOther": {
-        "Products": 1501.843134,
-        "Services": 1501.843134,
-        "Consulting": 1502.293732
+        "Products": 7811.063565,
+        "Services": 11758.163564999999,
+        "Consulting": 11759.32287
       },
       "cogsPayroll": {
         "Products": 3489.32769,
@@ -7381,9 +7216,9 @@
       "Consulting": 16813.814068
     },
     "cogsBreakdown": {
-      "Products": 11300.391254999999,
-      "Services": 15980.691255000002,
-      "Consulting": 14882.767490000002
+      "Products": 11300.391255,
+      "Services": 15980.691254999998,
+      "Consulting": 14882.76749
     }
   },
   {
@@ -7394,10 +7229,10 @@
     "cogsPayroll": 3686.52,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 21220.82,
+    "cogsMaterials": 25726.799999999996,
     "cogsCommissions": 0,
-    "cogsOther": 4505.9800000000005,
-    "cogsTotal": 29413.32,
+    "cogsOther": 0,
+    "cogsTotal": 29413.319999999996,
     "payroll": 30000,
     "ownerBasePay": 0,
     "benefits": 4834.07,
@@ -7509,14 +7344,9 @@
         "Consulting": 30387.346
       },
       "cogsMaterials": {
-        "Products": 4599.34185,
-        "Services": 8310.60585,
-        "Consulting": 8310.872299999999
-      },
-      "cogsOther": {
-        "Products": 1501.843134,
-        "Services": 1501.843134,
-        "Consulting": 1502.293732
+        "Products": 6101.1849839999995,
+        "Services": 9812.448984,
+        "Consulting": 9813.166032000001
       },
       "cogsPayroll": {
         "Products": 1228.717116,
@@ -7607,7 +7437,7 @@
     "cogsBreakdown": {
       "Products": 7329.902099999999,
       "Services": 11041.1661,
-      "Consulting": 11042.2518
+      "Consulting": 11042.251800000002
     }
   },
   {
@@ -7618,9 +7448,9 @@
     "cogsPayroll": 10314.59,
     "cogsOwnerPay": 0,
     "cogsContractors": 0,
-    "cogsMaterials": 22948.22,
+    "cogsMaterials": 27454.2,
     "cogsCommissions": 0,
-    "cogsOther": 4505.9800000000005,
+    "cogsOther": 0,
     "cogsTotal": 37768.79,
     "payroll": 24262.690000000002,
     "ownerBasePay": 0,
@@ -7733,14 +7563,9 @@
         "Consulting": 23073.210492000006
       },
       "cogsMaterials": {
-        "Products": 5597.326683,
-        "Services": 8675.068683000001,
-        "Consulting": 8675.824634
-      },
-      "cogsOther": {
-        "Products": 1501.843134,
-        "Services": 1501.843134,
-        "Consulting": 1502.293732
+        "Products": 7099.169817000001,
+        "Services": 10176.911817,
+        "Consulting": 10178.118366
       },
       "cogsPayroll": {
         "Products": 3315.775047,
@@ -7830,7 +7655,7 @@
     },
     "cogsBreakdown": {
       "Products": 10414.944864000001,
-      "Services": 14225.886864000002,
+      "Services": 14225.886864,
       "Consulting": 13127.958272
     }
   }
