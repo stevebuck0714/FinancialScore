@@ -12921,6 +12921,16 @@ function FinancialScorePage() {
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
                 Account Preview (All {csvTrialBalanceData.accounts?.length || 0} accounts - Most Recent Period)
               </h2>
+              {/* Debug info */}
+              <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '8px', marginBottom: '16px', fontSize: '12px' }}>
+                <strong>Debug Info:</strong><br/>
+                Accounts: {csvTrialBalanceData.accounts?.length || 0}<br/>
+                Dates: {csvTrialBalanceData.dates?.join(', ') || 'none'}<br/>
+                Latest Date: "{csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1]}"<br/>
+                {csvTrialBalanceData.accounts?.[0] && (
+                  <>First account keys: {Object.keys(csvTrialBalanceData.accounts[0]).join(', ')}</>
+                )}
+              </div>
               <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                   <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
@@ -12937,8 +12947,15 @@ function FinancialScorePage() {
                       const latestValue = latestDate && account.values ? (account.values[latestDate] || 0) : 0;
 
                       // Debug logging for first few accounts
-                      if (idx < 3) {
-                        console.log(`Account ${idx}: ${account.description}, Date: ${latestDate}, Value: ${latestValue}`);
+                      if (idx < 5) {
+                        console.log(`[Account Preview Debug] Account ${idx}:`);
+                        console.log(`  Description: "${account.description}"`);
+                        console.log(`  Latest Date: "${latestDate}"`);
+                        console.log(`  Available dates in account.values:`, Object.keys(account.values || {}));
+                        console.log(`  Raw latest value from account.values[${latestDate}]:`, account.values?.[latestDate]);
+                        console.log(`  Final latestValue: ${latestValue}`);
+                        console.log(`  Account values object:`, account.values);
+                        console.log(`---`);
                       }
 
                       return (
