@@ -14535,8 +14535,8 @@ function FinancialScorePage() {
             </>
           )}
 
-          {!selectedCompanyId && adminDashboardTab === 'import-financials' && (
-                const cogsPayroll = currentMonth.cogsPayroll || 0;
+          {/* Line of Business Reporting Tab */}
+          {financialStatementsTab === 'line-of-business' && (
                 const cogsOwnerPay = currentMonth.cogsOwnerPay || 0;
                 const cogsContractors = currentMonth.cogsContractors || 0;
                 const cogsMaterials = currentMonth.cogsMaterials || 0;
