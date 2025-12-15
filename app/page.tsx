@@ -2759,7 +2759,7 @@ function FinancialScorePage() {
     try {
       const { company } = await companiesApi.updatePricing(selectedCompanyId, subscriptionMonthlyPrice || 0, subscriptionQuarterlyPrice || 0, subscriptionAnnualPrice || 0);
       
-      console.log('ðŸ’° Subscription pricing saved:', company);
+      console.log('💰 Subscription pricing saved:', company);
       
       // Update the companies list with the new pricing
       safeSetCompanies(Array.isArray(companies) ? companies.map(c => c.id === selectedCompanyId ? { ...c, ...company } : c) : [company]);
@@ -7830,7 +7830,7 @@ function FinancialScorePage() {
                 {/* Cash Flow Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    ðŸ’° Cash Flow
+                    💰 Cash Flow
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['Operating Cash Flow', 'Free Cash Flow', 'Cash Position'].map(widget => (
@@ -11828,7 +11828,7 @@ function FinancialScorePage() {
             <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
               <details>
                 <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                  ðŸ’° Cash Flow Metrics - Definitions & Examples
+                  💰 Cash Flow Metrics - Definitions & Examples
                 </summary>
               
               <div style={{ display: 'grid', gap: '20px', marginTop: '16px' }}>
@@ -13795,7 +13795,7 @@ function FinancialScorePage() {
                                         accountValues[accountName] = isNaN(numValue) ? 0 : numValue;
                                         
                                         if (isFirstCall && accountName.toLowerCase().includes('legal')) {
-                                          console.log(`\nðŸ’° Found Section Summary "${accountName}":`, {
+                                          console.log(`\n💰 Found Section Summary "${accountName}":`, {
                                       columnIndex,
                                       value,
                                             numValue
