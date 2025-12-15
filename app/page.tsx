@@ -4660,7 +4660,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                â„¹ï¸ Getting Started
+                ℹ️ Getting Started
               </a>
               <a
                 href="/privacy-policy"
@@ -4740,7 +4740,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ðŸ’¬ Contact Support
+                💬 Contact Support
               </a>
             </div>
           </nav>
@@ -4935,7 +4935,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                â„¹ï¸ Getting Started
+                ℹ️ Getting Started
               </a>
               <a
                 href="/privacy-policy"
@@ -5015,7 +5015,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ðŸ’¬ Contact Support
+                💬 Contact Support
               </a>
             </div>
           </nav>
@@ -6215,7 +6215,7 @@ function FinancialScorePage() {
 
                   {/* USAePay Payment Form */}
                   <div style={{ marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>ðŸ’³ Payment Information</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>💳 Payment Information</h3>
                     
                     {/* Payment Form */}
                     <form onSubmit={async (e) => {
@@ -6264,7 +6264,7 @@ function FinancialScorePage() {
                       {/* Card Information Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                         <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          ðŸ’³ Card Details
+                          💳 Card Details
                         </h4>
                         
                         <div style={{ marginBottom: '12px' }}>
@@ -6440,7 +6440,7 @@ function FinancialScorePage() {
                             gap: '8px'
                           }}
                         >
-                          ðŸ’³ Complete Payment - ${planPrice.toFixed(2)}
+                          💳 Complete Payment - ${planPrice.toFixed(2)}
                         </button>
                       </div>
                     </form>
@@ -6487,7 +6487,7 @@ function FinancialScorePage() {
                   {/* Card Information Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      ðŸ’³ Card Details
+                      💳 Card Details
                     </h4>
                     
                     <div style={{ marginBottom: '12px' }}>
@@ -6670,7 +6670,7 @@ function FinancialScorePage() {
                           Updating...
                         </>
                       ) : (
-                        'ðŸ’³ Update Payment Method'
+                        '💳 Update Payment Method'
                       )}
                     </button>
                   </div>
@@ -6698,7 +6698,7 @@ function FinancialScorePage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', maxWidth: '800px', margin: '0 auto' }}>
                 {/* QuickBooks Option */}
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>ðŸ’»</div>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>💻</div>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks API</div>
                   <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
                   <button
@@ -7358,7 +7358,7 @@ function FinancialScorePage() {
                 onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                {showDashboardCustomizer ? 'Done Customizing' : 'âš™ï¸ Customize Dashboard'}
+                {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
               </button>
             </div>
           </div>
@@ -7374,7 +7374,7 @@ function FinancialScorePage() {
               border: '2px solid #667eea'
             }}>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                ðŸ”¨ Build Your Custom Dashboard
+                🔨 Build Your Custom Dashboard
               </h2>
               <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
                 Select the metrics and charts you want to see. Click on any item to add or remove it from your dashboard. Items will appear in the order selected.
@@ -7792,7 +7792,7 @@ function FinancialScorePage() {
                 {/* Working Capital Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    ðŸ’¼ Working Capital Metrics
+                    💼 Working Capital Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle', 'Working Capital Trend'].map(widget => (
@@ -7868,7 +7868,7 @@ function FinancialScorePage() {
                 {/* Valuation Metrics */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    ðŸ’Ž Valuation Metrics
+                    💎 Valuation Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'].map(widget => (
@@ -10290,7 +10290,7 @@ function FinancialScorePage() {
 
             <div>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#667eea', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>ðŸ’¡</span> Strategic Recommendations & Action Items
+                <span style={{ fontSize: '20px' }}>💡</span> Strategic Recommendations & Action Items
               </h3>
               <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
                 {mdaAnalysis.insights.length > 0 ? (
@@ -10958,7 +10958,7 @@ function FinancialScorePage() {
                         const bgColor = issue.severity === 'high' ? '#fee2e2' : issue.severity === 'medium' ? '#fef3c7' : '#dbeafe';
                         const borderColor = issue.severity === 'high' ? '#ef4444' : issue.severity === 'medium' ? '#f59e0b' : '#3b82f6';
                         const textColor = issue.severity === 'high' ? '#991b1b' : issue.severity === 'medium' ? '#92400e' : '#1e40af';
-                        const icon = issue.severity === 'high' ? 'ðŸ”´' : issue.severity === 'medium' ? 'ðŸŸ¡' : 'ðŸŸ¢';
+                        const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🟢';
                         
                         return (
                           <div key={idx} style={{ background: bgColor, borderRadius: '12px', padding: '20px', border: `2px solid ${borderColor}` }}>
@@ -11116,7 +11116,7 @@ function FinancialScorePage() {
               return (
                 <>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>ðŸ’¼ Current Working Capital</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>💼 Current Working Capital</h3>
                     <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                       ${(workingCapital / 1000).toFixed(0)}K
                     </div>
@@ -11141,7 +11141,7 @@ function FinancialScorePage() {
                       {wcRatio.toFixed(2)}
                     </div>
                     <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-                      {wcRatio >= 1.5 ? 'ðŸ’ª Strong liquidity position' : wcRatio >= 1.0 ? '⚠️ Adequate liquidity' : '🚨 Needs attention'}
+                      {wcRatio >= 1.5 ? '💪 Strong liquidity position' : wcRatio >= 1.0 ? '⚠️ Adequate liquidity' : '🚨 Needs attention'}
                     </div>
                     <div style={{ fontSize: '12px', color: '#64748b' }}>
                       Industry standard: 1.2 - 2.0
@@ -11149,7 +11149,7 @@ function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>â±ï¸ Days Working Capital</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px' }}>⏱️ Days Working Capital</h3>
                     <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                       {(() => {
                         const avgRevenue = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0) / Math.max(monthly.slice(-12).length, 1);
@@ -12847,7 +12847,7 @@ function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                         }}
                       >
-                        {isProcessingMonthlyData ? 'Processing...' : 'âš™ï¸ Process & Save Monthly Data'}
+                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
                       </button>
                       <button
                         onClick={async () => {
@@ -14214,7 +14214,7 @@ function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                         }}
                       >
-                        {isProcessingMonthlyData ? 'Processing...' : 'âš™ï¸ Process & Save Monthly Data'}
+                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
                       </button>
                           <button
                             onClick={async () => {
