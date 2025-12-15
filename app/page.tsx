@@ -6772,22 +6772,41 @@ function FinancialScorePage() {
                     type="file" 
                     accept=".csv" 
                     onChange={async (e) => {
+                      console.log('📁 CSV File selected');
                       const file = e.target.files?.[0];
-                      if (!file) return;
+                      if (!file) {
+                        console.log('❌ No file selected');
+                        return;
+                      }
+                      
+                      console.log('✅ File:', file.name, 'Size:', file.size, 'Company:', selectedCompanyId);
+                      console.log('👤 Current User:', currentUser?.email || 'NOT SET');
                       
                       try {
+                        console.log('📖 Reading file text...');
                         const text = await file.text();
+                        console.log('✅ File read, length:', text.length);
+                        
+                        console.log('🔄 Parsing Trial Balance CSV...');
                         const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
+                        console.log('✅ Parsed successfully:', parsed);
+                        
                         const csvData = {
                           ...parsed,
                           _companyId: selectedCompanyId,
                           fileName: file.name,
                         };
+                        
+                        console.log('💾 Setting csvTrialBalanceData state...');
                         setCsvTrialBalanceData(csvData);
-                        // Save to localStorage for persistence across sessions
+                        
+                        console.log('💾 Saving to localStorage...');
                         localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
+                        
                         setError(null);
+                        console.log('✅ CSV upload complete!');
                       } catch (err: any) {
+                        console.error('❌ Error parsing CSV:', err);
                         setError(`Failed to parse Trial Balance CSV: ${err.message}`);
                         setCsvTrialBalanceData(null);
                       }
