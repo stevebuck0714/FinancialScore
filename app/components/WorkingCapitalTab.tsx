@@ -33,7 +33,7 @@ export default function WorkingCapitalTab({
   }
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+    <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '32px' }}>
       <style>{`
         @media print {
           @page {
@@ -219,7 +219,7 @@ export default function WorkingCapitalTab({
       <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend (Last 36 Months)</h3>
 
-        <div style={{ height: '300px', position: 'relative' }}>
+        <div style={{ height: '450px', position: 'relative' }}>
           <SimpleChart
             data={monthly.slice(-36).map((month, index) => {
               const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
