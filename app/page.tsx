@@ -12922,15 +12922,22 @@ function FinancialScorePage() {
                 Account Preview (All {csvTrialBalanceData.accounts?.length || 0} accounts - Most Recent Period)
               </h2>
               {/* Debug info */}
-              <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '8px', marginBottom: '16px', fontSize: '12px' }}>
-                <strong>Debug Info:</strong><br/>
-                Accounts: {csvTrialBalanceData.accounts?.length || 0}<br/>
-                Dates: {csvTrialBalanceData.dates?.join(', ') || 'none'}<br/>
-                Latest Date: "{csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1]}"<br/>
-                {csvTrialBalanceData.accounts?.[0] && (
-                  <>First account keys: {Object.keys(csvTrialBalanceData.accounts[0]).join(', ')}</>
-                )}
-              </div>
+              {(() => {
+                const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
+                const latestValidDate = validDates[validDates.length - 1];
+                return (
+                  <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '8px', marginBottom: '16px', fontSize: '12px' }}>
+                    <strong>Debug Info:</strong><br/>
+                    Accounts: {csvTrialBalanceData.accounts?.length || 0}<br/>
+                    Total Dates (including empty): {csvTrialBalanceData.dates?.length || 0}<br/>
+                    Valid Dates: {validDates.length}<br/>
+                    Latest Valid Date: "{latestValidDate}"<br/>
+                    {csvTrialBalanceData.accounts?.[0] && (
+                      <>First account keys: {Object.keys(csvTrialBalanceData.accounts[0]).join(', ')}</>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                   <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
@@ -12943,19 +12950,21 @@ function FinancialScorePage() {
                   </thead>
                   <tbody>
                     {csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
-                      const latestDate = csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1];
+                      // Filter out empty dates and get the last valid one
+                      const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
+                      const latestDate = validDates[validDates.length - 1];
                       
                       // Get latest value - try multiple approaches
                       let latestValue = 0;
                       
                       if (account.values) {
-                        // Method 1: Direct lookup with the latest date
+                        // Method 1: Direct lookup with the latest valid date
                         if (latestDate && account.values[latestDate] !== undefined) {
                           latestValue = account.values[latestDate];
                         } 
                         // Method 2: Get the last key from the values object (most recent date)
                         else {
-                          const valueKeys = Object.keys(account.values);
+                          const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
                           if (valueKeys.length > 0) {
                             const lastKey = valueKeys[valueKeys.length - 1];
                             latestValue = account.values[lastKey] || 0;
@@ -12967,8 +12976,9 @@ function FinancialScorePage() {
                       if (idx < 3) {
                         console.log(`[Account Preview Debug] Account ${idx}:`);
                         console.log(`  Description: "${account.description}"`);
-                        console.log(`  Expected Latest Date: "${latestDate}"`);
+                        console.log(`  Latest Valid Date: "${latestDate}"`);
                         console.log(`  Available dates in account.values:`, Object.keys(account.values || {}));
+                        console.log(`  Value at latest date [${latestDate}]:`, account.values?.[latestDate]);
                         console.log(`  Final latestValue: ${latestValue}`);
                         if (idx === 0) {
                           console.log(`  Full account.values object:`, account.values);
