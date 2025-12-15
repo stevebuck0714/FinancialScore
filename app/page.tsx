@@ -12919,28 +12919,34 @@ function FinancialScorePage() {
             {hasCsvData && csvTrialBalanceData && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                Account Preview (First 20 accounts)
+                Account Preview (All {csvTrialBalanceData.accounts?.length || 0} accounts - Most Recent Period)
               </h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#f8fafc' }}>
-                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>Type</th>
-                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>ID</th>
-                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>Description</th>
-                      <th style={{ textAlign: 'right', padding: '10px', fontWeight: '600', color: '#475569' }}>Latest Value</th>
+              <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                  <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px' }}>Type</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px' }}>ID</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px' }}>Description</th>
+                      <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '100px' }}>Latest Value</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {csvTrialBalanceData.accounts?.slice(0, 20).map((account: any, idx: number) => {
+                    {csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
                       const latestDate = csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1];
-                      const latestValue = latestDate ? account.values[latestDate] : 0;
+                      const latestValue = latestDate && account.values ? (account.values[latestDate] || 0) : 0;
+
+                      // Debug logging for first few accounts
+                      if (idx < 3) {
+                        console.log(`Account ${idx}: ${account.description}, Date: ${latestDate}, Value: ${latestValue}`);
+                      }
+
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '12px' }}>{account.acctType}</td>
-                          <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '12px' }}>{account.acctId}</td>
-                          <td style={{ padding: '8px 10px', color: '#1e293b' }}>{account.description}</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
+                          <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{account.acctType}</td>
+                          <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{account.acctId}</td>
+                          <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
                             ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             {latestValue < 0 && ' (CR)'}
                           </td>
@@ -12950,11 +12956,15 @@ function FinancialScorePage() {
                   </tbody>
                 </table>
               </div>
-              {csvTrialBalanceData.accounts?.length > 20 && (
-                <p style={{ fontSize: '13px', color: '#64748b', marginTop: '12px', textAlign: 'center' }}>
-                  ... and {csvTrialBalanceData.accounts.length - 20} more accounts
+              <div style={{ marginTop: '12px', padding: '8px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px' }}>
+                <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
+                  📊 Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
                 </p>
-              )}
+                <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>
+                  Total accounts: {csvTrialBalanceData.accounts?.length || 0} |
+                  Scroll to see all accounts | Use this to verify account mappings and amounts
+                </p>
+              </div>
             </div>
             )}
           </div>
