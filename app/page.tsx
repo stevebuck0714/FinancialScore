@@ -48,6 +48,7 @@ import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonth
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
+const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false });
 import GoalsView from './components/GoalsView';
 import TrendAnalysisView from './components/TrendAnalysisView';
 import SimpleChart from './components/SimpleChart';
@@ -8428,7 +8429,17 @@ function FinancialScorePage() {
       )}
 
       {/* KPI Dashboard View */}
-      {currentView === 'kpis' && selectedCompanyId && trendData.length > 0 && (
+      {currentView === 'kpis' && selectedCompanyId && (
+        <RatiosTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+          benchmarks={benchmarks}
+          onFormulaClick={(formula) => setShowFormulaPopup(formula)}
+        />
+      )}
+
+      {/* OLD RATIO CODE - TO BE REMOVED */}
+      {false && currentView === 'kpis' && selectedCompanyId && trendData.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <style>{`
             @media print {
