@@ -5,7 +5,7 @@ import { useMasterData } from '@/lib/master-data-store';
 import type { MonthlyDataRow } from '../types';
 import dynamic from 'next/dynamic';
 
-const LineChart = dynamic(() => import('./LineChart'), { ssr: false });
+const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
 
 interface RatiosTabProps {
   selectedCompanyId: string;
