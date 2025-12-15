@@ -2842,7 +2842,7 @@ function FinancialScorePage() {
         if (error.message.includes('already registered')) {
           alert(`⚠️ Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
         } else if (error.message.includes('Password does not meet requirements')) {
-          alert('⚠️ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+          alert('⚠️ Password does not meet requirements:\n\nâ• At least 8 characters\nâ• One uppercase letter (A-Z)\nâ• One lowercase letter (a-z)\nâ• One number (0-9)\nâ• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -2926,7 +2926,7 @@ function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('⚠️ Password does not meet requirements:\n\nâ€¢ At least 8 characters\nâ€¢ One uppercase letter (A-Z)\nâ€¢ One lowercase letter (a-z)\nâ€¢ One number (0-9)\nâ€¢ One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('⚠️ Password does not meet requirements:\n\nâ• At least 8 characters\nâ• One uppercase letter (A-Z)\nâ• One lowercase letter (a-z)\nâ• One number (0-9)\nâ• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -4039,8 +4039,8 @@ function FinancialScorePage() {
     }
 
     // Show confirmation
-    const reportNames = printQueue.map(p => p.title).join('\nâ€¢ ');
-    if (!confirm(`You are about to print the following reports in sequence:\n\nâ€¢ ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
+    const reportNames = printQueue.map(p => p.title).join('\nâ• ');
+    if (!confirm(`You are about to print the following reports in sequence:\n\nâ• ${reportNames}\n\nThis will open ${printQueue.length} print dialog(s). Continue?`)) {
       return;
     }
 
@@ -5507,10 +5507,10 @@ function FinancialScorePage() {
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      â€¢ All {loadedMonthlyData.length} months have complete data<br/>
-                      â€¢ Income Statement fields populated: Revenue, Expenses, COGS<br/>
-                      â€¢ Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
-                      â€¢ Ready for AI-assisted mapping
+                      â• All {loadedMonthlyData.length} months have complete data<br/>
+                      â• Income Statement fields populated: Revenue, Expenses, COGS<br/>
+                      â• Balance Sheet fields populated: Assets, Liabilities, Equity<br/>
+                      â• Ready for AI-assisted mapping
                     </div>
                   </div>
                 </div>
@@ -6021,10 +6021,10 @@ function FinancialScorePage() {
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac', marginBottom: '16px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
-                      â€¢ All {loadedMonthlyData.length} months have complete data<br/>
-                      â€¢ Income Statement: Revenue, Expenses, COGS populated<br/>
-                      â€¢ Balance Sheet: Assets, Liabilities, Equity populated<br/>
-                      â€¢ Ready for AI-assisted account mapping
+                      â• All {loadedMonthlyData.length} months have complete data<br/>
+                      â• Income Statement: Revenue, Expenses, COGS populated<br/>
+                      â• Balance Sheet: Assets, Liabilities, Equity populated<br/>
+                      â• Ready for AI-assisted account mapping
                     </div>
                   </div>
 
