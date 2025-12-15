@@ -47,6 +47,7 @@ const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), {
 import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
+const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
 import GoalsView from './components/GoalsView';
 import TrendAnalysisView from './components/TrendAnalysisView';
 import SimpleChart from './components/SimpleChart';
@@ -14524,21 +14525,12 @@ function FinancialScorePage() {
             </div>
 
             {/* Statement Content Area */}
-            {(() => {
-              console.log('📊 Financial Statement Render Check:', {
-                statementType,
-                statementPeriod,
-                monthlyLength: monthly?.length || 0,
-                loadedMonthlyDataLength: loadedMonthlyData?.length || 0,
-                hasMonthly: !!monthly,
-                monthlyFirst: monthly?.[0],
-                condition: statementType === 'income-statement' && statementPeriod === 'current-month' && monthly.length > 0
-              });
-              
-              if (statementType === 'income-statement' && statementPeriod === 'current-month' && monthly.length > 0) {
-                const currentMonth = monthly[monthly.length - 1];
-                const monthDate = new Date(currentMonth.date || currentMonth.month);
-                const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            <AggregatedFinancialsTab
+              selectedCompanyId={selectedCompanyId}
+              statementType={statementType}
+              statementPeriod={statementPeriod}
+              statementDisplay={statementDisplay}
+            />
 
                 // Revenue
                 const revenue = currentMonth.revenue || 0;
