@@ -217,11 +217,11 @@ export default function WorkingCapitalTab({
 
       {/* Working Capital Trend Analysis */}
       <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend (Last 12 Months)</h3>
+        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend (Last 36 Months)</h3>
 
         <div style={{ height: '300px', position: 'relative' }}>
           <SimpleChart
-            data={monthly.slice(-12).map((month, index) => {
+            data={monthly.slice(-36).map((month, index) => {
               const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
               const currentLiab = Math.abs(month.tcl || ((month.ap || 0) + (month.otherCL || 0)));
               const wc = currentAssets - currentLiab;
