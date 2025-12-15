@@ -5965,7 +5965,7 @@ function FinancialScorePage() {
                                 <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                   <td style={{ padding: '8px', color: '#1e293b' }}>
                                     <span style={{ fontSize: '10px', color: '#94a3b8', marginRight: '8px' }}>
-                                      {isIncome ? '📈' : 'ðŸ“‰'}
+                                      {isIncome ? '📈' : '📉'}
                                     </span>
                                     {account.name}
                                   </td>
@@ -11895,10 +11895,10 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Percentage of revenue converted to operating cash flow. Higher percentages indicate better cash generation efficiency.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> (Operating Cash Flow Ã· Revenue) × 100
+                    <strong>Formula:</strong> (Operating Cash Flow ÷ Revenue) × 100
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 Ã· $250,000) × 100 = <strong>23.2%</strong>
+                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 ÷ $250,000) × 100 = <strong>23.2%</strong>
                   </p>
                 </div>
 
@@ -11909,10 +11909,10 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Number of days the company can operate with its current cash balance at the current cash flow rate. Indicates financial runway.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Ending Cash Ã· (Operating Cash Flow × 30)
+                    <strong>Formula:</strong> Ending Cash ÷ (Operating Cash Flow × 30)
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 Ã· ($58,000 × 30) = <strong>38.8 days</strong>
+                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 ÷ ($58,000 × 30) = <strong>38.8 days</strong>
                   </p>
                 </div>
 
@@ -11923,11 +11923,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days inventory is held before being sold. Lower values indicate faster inventory turnover and better working capital management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 Ã· Inventory Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS Ã· Avg Inventory</span>
+                    <strong>Formula:</strong> 365 ÷ Inventory Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS ÷ Avg Inventory</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 Ã· 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 ÷ 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -11938,11 +11938,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days to collect payment from customers after a sale. Lower values indicate faster cash collection and better receivables management.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 Ã· Receivables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue Ã· Avg A/R</span>
+                    <strong>Formula:</strong> 365 ÷ Receivables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue ÷ Avg A/R</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 Ã· 12 = <strong>30.4 days</strong>
+                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 ÷ 12 = <strong>30.4 days</strong>
                   </p>
                 </div>
 
@@ -11953,11 +11953,11 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Average number of days the company takes to pay its suppliers. Higher values can indicate better use of supplier credit, but be careful not to damage supplier relationships.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 Ã· Payables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS Ã· Avg A/P</span>
+                    <strong>Formula:</strong> 365 ÷ Payables Turnover<br/>
+                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS ÷ Avg A/P</span>
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 Ã· 8 = <strong>45.6 days</strong>
+                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 ÷ 8 = <strong>45.6 days</strong>
                   </p>
                 </div>
 
