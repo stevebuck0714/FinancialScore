@@ -294,6 +294,7 @@ export function useMasterData(companyId: string | null) {
     last6Months: { month: string; date: Date }[];
   } | null>(null);
 
+  const [monthlyData, setMonthlyData] = React.useState<MasterDataMonthly[] | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -314,6 +315,7 @@ export function useMasterData(companyId: string | null) {
         if (result.success && result.data) {
           const transformed = masterDataStore.transformForGoals(result.data);
           setData(transformed);
+          setMonthlyData(result.data.monthlyData);
         } else {
           setError(result.error || 'Failed to load master data');
         }
@@ -327,12 +329,18 @@ export function useMasterData(companyId: string | null) {
     loadData();
   }, [companyId]);
 
-  return { data, loading, error, refetch: () => {
-    if (companyId) {
-      masterDataStore.clearCompanyCache(companyId);
-      // Trigger re-fetch by updating a dependency
+  return {
+    data,
+    monthlyData,
+    loading,
+    error,
+    refetch: () => {
+      if (companyId) {
+        masterDataStore.clearCompanyCache(companyId);
+        // Trigger re-fetch by updating a dependency
+      }
     }
-  }};
+  };
 }
 
 // Import React for the hook

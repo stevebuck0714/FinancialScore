@@ -2,13 +2,13 @@
 
 import React from 'react';
 import { applyLOBAllocations, AccountValue, AccountMapping, CompanyLOB } from '@/lib/lob-allocator';
-import type { MonthlyDataRow, Mappings } from '../../types';
+import type { MonthlyDataRow } from '../../types';
 import { useMasterData } from '@/lib/master-data-store';
 
 interface LOBReportingTabProps {
   company: any;
   selectedCompanyId: string;
-  accountMappings: Mappings[];
+  accountMappings: any[];
   statementType: 'income-statement' | 'balance-sheet' | 'income-statement-percent';
   selectedLineOfBusiness: string;
   statementPeriod: string;
@@ -33,7 +33,7 @@ export default function LOBReportingTab({
   onDisplayChange,
 }: LOBReportingTabProps) {
   // Use master data store instead of receiving monthly data as prop
-  const { data: masterData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
+  const { data: masterData, monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
   
   
   // Get Lines of Business from company
@@ -93,7 +93,7 @@ export default function LOBReportingTab({
     );
   }
 
-  if (masterDataError || !masterData || !masterData.monthlyData || masterData.monthlyData.length === 0) {
+  if (masterDataError || !monthlyData || monthlyData.length === 0) {
     return (
       <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
@@ -113,7 +113,7 @@ export default function LOBReportingTab({
   }
 
   // Use master data monthly data
-  const monthly = masterData.monthlyData;
+  const monthly = monthlyData;
   
   // Auto-select first LOB if none selected or invalid (but allow "all")
   React.useEffect(() => {
@@ -177,7 +177,7 @@ export default function LOBReportingTab({
   };
   
   // Convert account mappings to the format expected by applyLOBAllocations
-  const convertMappings = (mappings: Mappings[]): AccountMapping[] => {
+  const convertMappings = (mappings: any[]): AccountMapping[] => {
     return mappings.map(m => ({
       qbAccount: m.qbAccount || '',
       qbAccountId: m.qbAccountId,
@@ -707,7 +707,7 @@ export default function LOBReportingTab({
   // Check if we have any data to display (income statement OR balance sheet items)
   const hasData = lobRevenue > 0 || lobExpense > 0 || lobCOGS > 0 || 
                    lobCash > 0 || lobAR > 0 || lobAP > 0 || lobEquity !== 0 ||
-                   allMonthlyData.length > 0;
+                   monthlyData.length > 0;
   
   // Format currency
   const fmt = (value: number) => {
