@@ -1,37 +1,41 @@
 const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 async function checkCompanies() {
-  const prisma = new PrismaClient();
-
   try {
     const companies = await prisma.company.findMany({
       select: {
         id: true,
         name: true,
-        affiliateCode: true,
-        subscriptionMonthlyPrice: true,
-        subscriptionQuarterlyPrice: true,
-        subscriptionAnnualPrice: true,
-        selectedSubscriptionPlan: true
+        createdAt: true
       }
     });
 
-    console.log('=== COMPANIES AND AFFILIATE CODES ===');
-    console.log(`Found ${companies.length} companies:\n`);
-
-    companies.forEach((company, index) => {
-      console.log(`${index + 1}. ${company.name}`);
-      console.log(`   ID: ${company.id}`);
-      console.log(`   Affiliate Code: ${company.affiliateCode || 'NONE'}`);
-      console.log(`   Prices (M/Q/A): ${company.subscriptionMonthlyPrice}/${company.subscriptionQuarterlyPrice}/${company.subscriptionAnnualPrice}`);
-      console.log(`   Selected Plan: ${company.selectedSubscriptionPlan || 'NONE'}`);
-      console.log('');
+    console.log('Companies in database:');
+    companies.forEach(company => {
+      console.log(`- ${company.name} (ID: ${company.id}) - Created: ${company.createdAt}`);
     });
 
-    await prisma.$disconnect();
+    // Check if any company name contains 'test' or 'free' or 'code'
+    const matchingCompanies = companies.filter(c =>
+      c.name.toLowerCase().includes('test') ||
+      c.name.toLowerCase().includes('free') ||
+      c.name.toLowerCase().includes('code')
+    );
+
+    if (matchingCompanies.length > 0) {
+      console.log('\nMatching companies:');
+      matchingCompanies.forEach(company => {
+        console.log(`- ${company.name} (ID: ${company.id})`);
+      });
+    } else {
+      console.log('\nNo companies found with "test", "free", or "code" in the name.');
+    }
+
   } catch (error) {
-    console.error('Error checking companies:', error);
-    process.exit(1);
+    console.error('Error:', error);
+  } finally {
+    await prisma.$disconnect();
   }
 }
 

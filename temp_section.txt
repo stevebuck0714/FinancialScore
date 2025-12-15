@@ -1,0 +1,863 @@
+          {/* Item Trends Tab */}
+          {trendAnalysisTab === 'item-trends' && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
+                  Add Items to Analyze (max 10):
+                </label>
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                <select 
+                  value={selectedTrendItem} 
+                    onChange={(e) => {
+                      setSelectedTrendItem(e.target.value);
+                      if (e.target.value && !selectedTrendItems.includes(e.target.value) && selectedTrendItems.length < 10) {
+                        setSelectedTrendItems([...selectedTrendItems, e.target.value]);
+                      }
+                    }}
+                    style={{ flex: 1, maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
+                >
+                  <optgroup label="Income Statement">
+                    <option value="revenue">Total Revenue</option>
+                    <option value="expense">Total Expenses</option>
+                    {mapping.cogsTotal && <option value="cogsTotal">COGS Total</option>}
+                    {mapping.cogsPayroll && <option value="cogsPayroll">COGS Payroll</option>}
+                    {mapping.cogsOwnerPay && <option value="cogsOwnerPay">COGS Owner Pay</option>}
+                    {mapping.cogsContractors && <option value="cogsContractors">COGS Contractors</option>}
+                    {mapping.cogsMaterials && <option value="cogsMaterials">COGS Materials</option>}
+                    {mapping.cogsCommissions && <option value="cogsCommissions">COGS Commissions</option>}
+                    {mapping.cogsOther && <option value="cogsOther">COGS Other</option>}
+                    <option value="grossProfit">Gross Profit</option>
+                    {mapping.salesExpense && <option value="salesExpense">Sales & Marketing</option>}
+                    {mapping.rent && <option value="rent">Rent/Lease</option>}
+                    {mapping.infrastructure && <option value="infrastructure">Infrastructure/Utilities</option>}
+                    {mapping.autoTravel && <option value="autoTravel">Auto & Travel</option>}
+                    {mapping.professionalFees && <option value="professionalFees">Professional Fees</option>}
+                    {mapping.insurance && <option value="insurance">Insurance</option>}
+                    {mapping.marketing && <option value="marketing">OPEX Other</option>}
+                    {mapping.payroll && <option value="payroll">OPEX Payroll</option>}
+                    {mapping.ownerBasePay && <option value="ownerBasePay">Owners Base Pay</option>}
+                    {mapping.ownersRetirement && <option value="ownersRetirement">Owners Retirement</option>}
+                    {mapping.subcontractors && <option value="subcontractors">Contractors/Distribution</option>}
+                    {mapping.interestExpense && <option value="interestExpense">Interest Expense</option>}
+                    {mapping.depreciationAmortization && <option value="depreciationAmortization">Depreciation Expense</option>}
+                    {mapping.operatingExpenseTotal && <option value="operatingExpenseTotal">Operating Expense Total</option>}
+                    {mapping.nonOperatingIncome && <option value="nonOperatingIncome">Non-Operating Income</option>}
+                    {mapping.extraordinaryItems && <option value="extraordinaryItems">Extraordinary Items</option>}
+                    {mapping.netProfit && <option value="netProfit">Net Profit</option>}
+                    <option value="ebitda">EBITDA</option>
+                    <option value="ebit">EBIT</option>
+                  </optgroup>
+                  <optgroup label="Balance Sheet - Assets">
+                    <option value="totalAssets">Total Assets</option>
+                    <option value="cash">Cash</option>
+                    <option value="ar">Accounts Receivable</option>
+                    <option value="inventory">Inventory</option>
+                    {mapping.otherCA && <option value="otherCA">Other Current Assets</option>}
+                    {mapping.tca && <option value="tca">Total Current Assets</option>}
+                    {mapping.fixedAssets && <option value="fixedAssets">Fixed Assets</option>}
+                    {mapping.otherAssets && <option value="otherAssets">Other Assets</option>}
+                  </optgroup>
+                  <optgroup label="Balance Sheet - Liabilities">
+                    <option value="totalLiab">Total Liabilities</option>
+                    <option value="ap">Accounts Payable</option>
+                    {mapping.otherCL && <option value="otherCL">Other Current Liabilities</option>}
+                    {mapping.tcl && <option value="tcl">Total Current Liabilities</option>}
+                    {mapping.ltd && <option value="ltd">Long Term Debt</option>}
+                  </optgroup>
+                  <optgroup label="Balance Sheet - Equity">
+                    <option value="ownersCapital">Owner's Capital</option>
+                    <option value="ownersDraw">Owner's Draw</option>
+                    <option value="commonStock">Common Stock</option>
+                    <option value="preferredStock">Preferred Stock</option>
+                    <option value="retainedEarnings">Retained Earnings</option>
+                    <option value="additionalPaidInCapital">Additional Paid-In Capital</option>
+                    <option value="treasuryStock">Treasury Stock</option>
+                    <option value="totalEquity">Total Equity</option>
+                  </optgroup>
+                </select>
+                  <button
+                    onClick={() => {
+                      if (selectedTrendItem && !selectedTrendItems.includes(selectedTrendItem) && selectedTrendItems.length < 10) {
+                        setSelectedTrendItems([...selectedTrendItems, selectedTrendItem]);
+                      } else if (selectedTrendItems.length >= 10) {
+                        alert('Maximum of 10 items can be selected');
+                      }
+                    }}
+                    style={{
+                      padding: '12px 24px',
+                      background: selectedTrendItems.length >= 10 ? '#cbd5e1' : '#667eea',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: selectedTrendItems.length >= 10 ? 'not-allowed' : 'pointer'
+                    }}
+                    disabled={selectedTrendItems.length >= 10}
+                  >
+                    Add Item
+                  </button>
+              </div>
+
+                {/* Selected Items Display */}
+                {selectedTrendItems.length > 0 && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                      Selected Items ({selectedTrendItems.length}/10):
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {selectedTrendItems.map((item, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: '#f0f9ff',
+                            border: '1px solid #667eea',
+                            borderRadius: '6px',
+                            padding: '6px 12px',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            color: '#1e293b'
+                          }}
+                        >
+                          <span>{getTrendItemDisplayName(item)}</span>
+                          <button
+                            onClick={() => {
+                              setSelectedTrendItems(selectedTrendItems.filter((_, i) => i !== index));
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              fontSize: '16px',
+                              padding: '0',
+                              lineHeight: '1'
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Render graphs for all selected items */}
+              <div style={{ display: 'grid', gap: '24px' }}>
+                {selectedTrendItems.map((item, index) => (
+                  <div key={index} style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <LineChart 
+                        title={`${getTrendItemDisplayName(item)} Trend`}
+                        data={monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
+                    color="#667eea"
+                    showTable={true}
+                    labelFormat="quarterly"
+                    goalLineData={(() => {
+                      // Check if selected item is "expense" (Total Expenses)
+                          if (item === 'expense') {
+                        // Sum all operating expense goals (not COGS)
+                        const opexCategories = [
+                          'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
+                          'insurance', 'rent', 'infrastructure', 'autoTravel', 
+                          'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
+                        ];
+                        const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                        
+                        if (totalGoalPct > 0) {
+                          return monthly.map(m => {
+                            const revenue = m.revenue || 0;
+                            return revenue * (totalGoalPct / 100);
+                          });
+                        }
+                      }
+                      
+                      // Check if selected item is an expense category with a goal
+                      const expenseCategories = [
+                        'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
+                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 'insurance', 
+                        'rent', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
+                        'depreciationAmortization', 'interestExpense'
+                      ];
+                      
+                      if (expenseCategories.includes(item) && expenseGoals[item]) {
+                        // Calculate goal as: Goal % × Revenue for each month
+                        return monthly.map(m => {
+                          const revenue = m.revenue || 0;
+                              const goalPct = expenseGoals[item] / 100;
+                          return revenue * goalPct;
+                        });
+                      }
+                      return undefined;
+                    })()}
+                  />
+                </div>
+                
+                <div style={{ width: '280px', flexShrink: 0 }}>
+                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0', position: 'sticky', top: '100px' }}>
+                    <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', textAlign: 'center' }}>Growth Analysis</h3>
+                    
+                    <div style={{ marginBottom: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Current Year</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 24 ? 
+                        (() => {
+                          if (monthly.length < 24) return '#64748b';
+                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
+                          return growthRate >= 0 ? '#10b981' : '#ef4444';
+                        })()
+                        : '#64748b'
+                      }}>
+                        {monthly.length >= 24 ? (() => {
+                          if (monthly.length < 24) return 'N/A';
+                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
+                          return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
+                        })() : 'N/A'}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Previous Year</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 36 ? 
+                        (() => {
+                          if (monthly.length < 36) return '#64748b';
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
+                          return growthRate >= 0 ? '#10b981' : '#ef4444';
+                        })()
+                        : '#64748b'
+                      }}>
+                        {monthly.length >= 36 ? (() => {
+                          if (monthly.length < 36) return 'N/A';
+                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
+                          const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
+                          return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
+                        })() : 'N/A'}
+                      </div>
+                    </div>
+
+                    {/* Goal % for Expense Items */}
+                    {(() => {
+                      // Check if "expense" (Total Expenses) is selected
+                          if (item === 'expense') {
+                        const opexCategories = [
+                          'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
+                          'insurance', 'rent', 'infrastructure', 'autoTravel', 
+                          'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
+                        ];
+                        const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                        
+                        if (totalGoalPct > 0) {
+                          return (
+                            <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
+                              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
+                              <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
+                              <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
+                                {totalGoalPct.toFixed(1)}%
+                              </div>
+                              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', textAlign: 'center' }}>
+                                (Sum of Operating Expenses)
+                              </div>
+                            </div>
+                          );
+                        }
+                      }
+                      
+                      const expenseCategories = [
+                        'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
+                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 'insurance', 
+                        'rent', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
+                        'depreciationAmortization', 'interestExpense'
+                      ];
+                      
+                          if (expenseCategories.includes(item) && expenseGoals[item]) {
+                        return (
+                          <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
+                            <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
+                            <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
+                                  {expenseGoals[item].toFixed(1)}%
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Expense Analysis Tab */}
+          {trendAnalysisTab === 'expense-analysis' && (
+            <div>
+              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Expense Items as % of Total Revenue</h2>
+              
+              <div style={{ marginBottom: '12px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>💡 How to Use This Analysis</h3>
+                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#15803d', lineHeight: '1.6' }}>
+                  <li>Each chart shows an expense category as a <strong>percentage of total revenue</strong> over time</li>
+                  <li>Look for categories with <strong>increasing trends</strong> that may need cost control</li>
+                  <li>Compare percentages to industry benchmarks to identify inefficiencies</li>
+                  <li>Watch for sudden spikes that may indicate one-time events or problems</li>
+                </ul>
+              </div>
+
+              {/* Expense Field Selection */}
+              <div style={{ marginBottom: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#374151', marginBottom: '16px' }}>
+                  Select Expense Categories to Analyze (max 10):
+                </label>
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                  <select
+                    value={selectedExpenseItem}
+                    onChange={(e) => {
+                      setSelectedExpenseItem(e.target.value);
+                      if (e.target.value && !selectedExpenseItems.includes(e.target.value) && selectedExpenseItems.length < 10) {
+                        setSelectedExpenseItems([...selectedExpenseItems, e.target.value]);
+                      }
+                    }}
+                    style={{ flex: 1, maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
+                  >
+                    <optgroup label="COGS Categories">
+                      {cogsCategories.map(category => (
+                        <option key={category.key} value={category.masterDataKey}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Operating Expenses">
+                      {expenseCategories.map(category => (
+                        <option key={category.key} value={category.masterDataKey}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+
+                  <button
+                    onClick={() => {
+                      if (selectedExpenseItem && !selectedExpenseItems.includes(selectedExpenseItem) && selectedExpenseItems.length < 10) {
+                        setSelectedExpenseItems([...selectedExpenseItems, selectedExpenseItem]);
+                      }
+                    }}
+                    disabled={selectedExpenseItems.length >= 10}
+                    style={{
+                      padding: '12px 20px',
+                      background: selectedExpenseItems.length >= 10 ? '#cbd5e1' : '#667eea',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: selectedExpenseItems.length >= 10 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Add Category
+                  </button>
+                </div>
+
+                {selectedExpenseItems.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '12px' }}>
+                      Selected Categories ({selectedExpenseItems.length}/10):
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {selectedExpenseItems.map((item, index) => (
+                        <div
+                          key={item}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 12px',
+                            background: '#e0f2fe',
+                            border: '1px solid #0ea5e9',
+                            borderRadius: '20px',
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            color: '#0c4a6e'
+                          }}
+                        >
+                          <span>{getExpenseFieldDisplayName(item)}</span>
+                          <button
+                            onClick={() => {
+                              setSelectedExpenseItems(selectedExpenseItems.filter((_, i) => i !== index));
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#0c4a6e',
+                              cursor: 'pointer',
+                              fontSize: '16px',
+                              lineHeight: '1',
+                              padding: '0',
+                              marginLeft: '4px'
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+                {/* Total Expenses */}
+                {selectedExpenseItems.includes('total-expenses') && (
+                  <LineChart
+                    title="Total Expenses (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? (m.expense / m.revenue) * 100 : 0
+                    }))}
+                    color="#ef4444"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={(() => {
+                      // Sum all operating expense goals (not COGS)
+                      const opexCategories = [
+                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
+                        'insurance', 'rent', 'infrastructure', 'autoTravel',
+                        'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
+                      ];
+                      const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                      return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
+                    })()}
+                  />
+                )}
+
+                {/* COGS Total */}
+                {selectedExpenseItems.includes('cogsTotal') && (
+                  <LineChart
+                    title="COGS Total (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.cogsTotal || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#f59e0b"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.cogsTotal ? monthly.map(() => expenseGoals.cogsTotal) : undefined}
+                  />
+                )}
+
+                {/* COGS Breakdown */}
+                {selectedExpenseItems.includes('cogsPayroll') && (
+                  <LineChart
+                    title="COGS Payroll (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.cogsPayroll || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fb923c"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.cogsPayroll ? monthly.map(() => expenseGoals.cogsPayroll) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('cogsOwnerPay') && (
+                  <LineChart
+                    title="COGS Owner Pay (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.cogsOwnerPay || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fdba74"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.cogsOwnerPay ? monthly.map(() => expenseGoals.cogsOwnerPay) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('cogsContractors') && (
+                  <LineChart
+                    title="COGS Contractors (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.cogsContractors || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fed7aa"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.cogsContractors ? monthly.map(() => expenseGoals.cogsContractors) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('cogsMaterials') && (
+                  <LineChart
+                    title="COGS Materials (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.cogsMaterials || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fde047"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.cogsMaterials ? monthly.map(() => expenseGoals.cogsMaterials) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('cogsCommissions') && (
+                  <LineChart
+                    title="COGS Commissions (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.cogsCommissions || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#bef264"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.cogsCommissions ? monthly.map(() => expenseGoals.cogsCommissions) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('cogsOther') && (
+                  <LineChart
+                    title="COGS Other (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.cogsOther || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#86efac"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.cogsOther ? monthly.map(() => expenseGoals.cogsOther) : undefined}
+                  />
+                )}
+                
+                {mapping.operatingExpenseTotal && (
+                  <LineChart 
+                    title="Operating Expense Total (% of Revenue)"
+                    data={monthly.map(m => ({ 
+                      month: m.month, 
+                      value: m.revenue > 0 ? ((m.operatingExpenseTotal || 0) / m.revenue) * 100 : 0 
+                    }))}
+                    color="#3b82f6"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={(() => {
+                      // Sum all operating expense goals (not COGS)
+                      const opexCategories = [
+                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
+                        'insurance', 'rent', 'infrastructure', 'autoTravel', 
+                        'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
+                      ];
+                      const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
+                      return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
+                    })()}
+                  />
+                )}
+                
+                {selectedExpenseItems.includes('payroll') && (
+                  <LineChart
+                    title="OPEX Payroll (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.payroll || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#60a5fa"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.payroll ? monthly.map(() => expenseGoals.payroll) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('salesExpense') && (
+                  <LineChart
+                    title="Sales & Marketing (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.salesExpense || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#93c5fd"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.salesExpense ? monthly.map(() => expenseGoals.salesExpense) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('rent') && (
+                  <LineChart
+                    title="Rent/Lease (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.rent || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#8b5cf6"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.rent ? monthly.map(() => expenseGoals.rent) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('infrastructure') && (
+                  <LineChart
+                    title="Infrastructure/Utilities (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.infrastructure || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#a78bfa"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.infrastructure ? monthly.map(() => expenseGoals.infrastructure) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('phoneComm') && (
+                  <LineChart
+                    title="Phone & Communications (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.phoneComm || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#dbeafe"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.phoneComm ? monthly.map(() => expenseGoals.phoneComm) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('autoTravel') && (
+                  <LineChart
+                    title="Auto & Travel (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.autoTravel || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#ec4899"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.autoTravel ? monthly.map(() => expenseGoals.autoTravel) : undefined}
+                  />
+                )}
+                
+                {selectedExpenseItems.includes('professionalFees') && (
+                  <LineChart
+                    title="Professional Services (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.professionalFees || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#f472b6"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.professionalFees ? monthly.map(() => expenseGoals.professionalFees) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('insurance') && (
+                  <LineChart
+                    title="Insurance (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.insurance || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#f9a8d4"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.insurance ? monthly.map(() => expenseGoals.insurance) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('ownerBasePay') && (
+                  <LineChart
+                    title="Owners Base Pay (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.ownerBasePay || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#14b8a6"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.ownerBasePay ? monthly.map(() => expenseGoals.ownerBasePay) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('ownersRetirement') && (
+                  <LineChart
+                    title="Owners Retirement (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.ownersRetirement || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#2dd4bf"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('subcontractors') && (
+                  <LineChart
+                    title="Contractors/Distribution (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.subcontractors || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#5eead4"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.subcontractors ? monthly.map(() => expenseGoals.subcontractors) : undefined}
+                  />
+                )}
+                
+                {selectedExpenseItems.includes('interestExpense') && (
+                  <LineChart
+                    title="Interest Expense (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.interestExpense || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fb7185"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.interestExpense ? monthly.map(() => expenseGoals.interestExpense) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('depreciationAmortization') && (
+                  <LineChart
+                    title="Depreciation Expense (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.depreciationAmortization || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fca5a5"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.depreciationAmortization ? monthly.map(() => expenseGoals.depreciationAmortization) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('marketing') && (
+                  <LineChart
+                    title="Marketing (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.marketing || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fecaca"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.marketing ? monthly.map(() => expenseGoals.marketing) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('trainingCert') && (
+                  <LineChart
+                    title="Training & Certification (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.trainingCert || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fef3c7"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.trainingCert ? monthly.map(() => expenseGoals.trainingCert) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('mealsEntertainment') && (
+                  <LineChart
+                    title="Meals & Entertainment (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.mealsEntertainment || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#fce7f3"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.mealsEntertainment ? monthly.map(() => expenseGoals.mealsEntertainment) : undefined}
+                  />
+                )}
+
+                {selectedExpenseItems.includes('otherExpense') && (
+                  <LineChart
+                    title="Other Expenses (% of Revenue)"
+                    data={monthly.map(m => ({
+                      month: m.month,
+                      value: m.revenue > 0 ? ((m.otherExpense || 0) / m.revenue) * 100 : 0
+                    }))}
+                    color="#e0f2fe"
+                    compact
+                    showTable={true}
+                    labelFormat="quarterly"
+                    formatter={(val: number) => `${val.toFixed(1)}%`}
+                    goalLineData={expenseGoals.otherExpense ? monthly.map(() => expenseGoals.otherExpense) : undefined}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      */
+

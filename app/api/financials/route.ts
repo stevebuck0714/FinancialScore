@@ -139,6 +139,86 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // Automatically create master data from the processed monthly data
+    try {
+      console.log(`🔄 Auto-creating master data for company ${companyId}...`);
+
+      // Extract the monthly data from the created record
+      const monthlyData = financialRecord.monthlyData.map((monthRecord: any) => {
+        // Convert back to the flat structure expected by master data
+        const monthData: any = {
+          date: monthRecord.monthDate,
+          revenue: monthRecord.revenue,
+          revenueBreakdown: monthRecord.revenueBreakdown,
+          expense: monthRecord.expense,
+          expenseBreakdown: monthRecord.expenseBreakdown,
+          cogsPayroll: monthRecord.cogsPayroll,
+          cogsOwnerPay: monthRecord.cogsOwnerPay,
+          cogsContractors: monthRecord.cogsContractors,
+          cogsMaterials: monthRecord.cogsMaterials,
+          cogsCommissions: monthRecord.cogsCommissions,
+          cogsOther: monthRecord.cogsOther,
+          cogsTotal: monthRecord.cogsTotal,
+          cogsBreakdown: monthRecord.cogsBreakdown,
+          payroll: monthRecord.payroll,
+          ownerBasePay: monthRecord.ownerBasePay,
+          benefits: monthRecord.benefits,
+          insurance: monthRecord.insurance,
+          professionalFees: monthRecord.professionalFees,
+          subcontractors: monthRecord.subcontractors,
+          rent: monthRecord.rent,
+          taxLicense: monthRecord.taxLicense,
+          phoneComm: monthRecord.phoneComm,
+          infrastructure: monthRecord.infrastructure,
+          autoTravel: monthRecord.autoTravel,
+          salesExpense: monthRecord.salesExpense,
+          marketing: monthRecord.marketing,
+          trainingCert: monthRecord.trainingCert,
+          mealsEntertainment: monthRecord.mealsEntertainment,
+          interestExpense: monthRecord.interestExpense,
+          depreciationAmortization: monthRecord.depreciationAmortization,
+          otherExpense: monthRecord.otherExpense,
+          nonOperatingIncome: monthRecord.nonOperatingIncome,
+          extraordinaryItems: monthRecord.extraordinaryItems,
+          cash: monthRecord.cash,
+          ar: monthRecord.ar,
+          inventory: monthRecord.inventory,
+          otherCA: monthRecord.otherCA,
+          tca: monthRecord.tca,
+          fixedAssets: monthRecord.fixedAssets,
+          otherAssets: monthRecord.otherAssets,
+          totalAssets: monthRecord.totalAssets,
+          ap: monthRecord.ap,
+          otherCL: monthRecord.otherCL,
+          tcl: monthRecord.tcl,
+          ltl: monthRecord.ltl,
+          totalLiab: monthRecord.totalLiab,
+          equity: monthRecord.equity,
+          totalLiabEquity: monthRecord.totalLiabEquity,
+          lobBreakdowns: monthRecord.lobBreakdowns
+        };
+        return monthData;
+      });
+
+      // Create master data file
+      const fs = require('fs');
+      const path = require('path');
+
+      const dataDir = path.join(process.cwd(), 'public', 'data');
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+
+      const filePath = path.join(dataDir, `company-${companyId}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(monthlyData, null, 2));
+
+      console.log(`✅ Master data auto-created: ${filePath} (${monthlyData.length} months)`);
+
+    } catch (masterDataError) {
+      console.error('❌ Error auto-creating master data:', masterDataError);
+      // Don't fail the entire request if master data creation fails
+    }
+
     return NextResponse.json({ record: financialRecord }, { status: 201 });
   } catch (error) {
     console.error('Error creating financial record:', error);
