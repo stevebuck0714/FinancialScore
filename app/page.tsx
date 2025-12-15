@@ -863,7 +863,7 @@ function FinancialScorePage() {
       const result = await response.json();
       
       if (result.success) {
-        alert('âœ… Payment method updated successfully!');
+        alert('✅ Payment method updated successfully!');
         setShowUpdatePaymentModal(false);
         // Reset form
         setUpdatePaymentData({
@@ -912,12 +912,12 @@ function FinancialScorePage() {
       // Handle both success and 404 (company already deleted/hidden)
       if (result.success || response.status === 404) {
         const message = result.hidden
-          ? `âœ… Company "${companyToDelete.companyName}" has been removed from your dashboard.`
+          ? `✅ Company "${companyToDelete.companyName}" has been removed from your dashboard.`
           : result.softDelete
           ? `⚠️ Company "${companyToDelete.companyName}" has been marked as deleted (temporary workaround). It will be fully removed after the next deployment.`
           : result.success
-          ? `âœ… Company "${companyToDelete.companyName}" has been deleted successfully.`
-          : `âœ… Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
+          ? `✅ Company "${companyToDelete.companyName}" has been deleted successfully.`
+          : `✅ Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
 
         alert(message);
 
@@ -940,7 +940,7 @@ function FinancialScorePage() {
             try {
               const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
               safeSetCompanies(freshCompanies || []);
-              console.log('âœ… Reloaded companies after deletion:', freshCompanies?.length || 0, 'companies');
+              console.log('✅ Reloaded companies after deletion:', freshCompanies?.length || 0, 'companies');
             } catch (error) {
               console.error('âŒ Failed to reload companies after deletion:', error);
             }
@@ -975,7 +975,7 @@ function FinancialScorePage() {
             try {
               const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
               safeSetCompanies(freshCompanies || []);
-              console.log('âœ… Reloaded companies after deletion (server error):', freshCompanies?.length || 0, 'companies');
+              console.log('✅ Reloaded companies after deletion (server error):', freshCompanies?.length || 0, 'companies');
             } catch (error) {
               console.error('âŒ Failed to reload companies after deletion (server error):', error);
             }
@@ -984,7 +984,7 @@ function FinancialScorePage() {
 
         setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
 
-        alert(`âœ… Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
+        alert(`✅ Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
 
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
@@ -1360,7 +1360,7 @@ function FinancialScorePage() {
       
       try {
         // ALWAYS clear state at the start to prevent stale data
-        console.log('ðŸ§¹ Clearing all state before loading new company data');
+        console.log('🧹 Clearing all state before loading new company data');
         setQbRawData(null);
         setRawRows([]);
         setMapping({ date: '' });
@@ -1397,7 +1397,7 @@ function FinancialScorePage() {
         
         // If no records found, clear aiMappings as well
         if (!records || records.length === 0) {
-          console.log(`ðŸ§¹ No records found - clearing aiMappings too`);
+          console.log(`🧹 No records found - clearing aiMappings too`);
           setAiMappings([]);
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
@@ -1681,7 +1681,7 @@ function FinancialScorePage() {
               setSubscriptionMonthlyPrice(monthly);
               setSubscriptionQuarterlyPrice(quarterly);
               setSubscriptionAnnualPrice(annual);
-              console.log('âœ… Loaded pricing from database:', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
+              console.log('✅ Loaded pricing from database:', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
             } else {
               // No pricing data available, fall back to defaults
               console.log('⚠️ No pricing data available, using defaults');
@@ -1690,7 +1690,7 @@ function FinancialScorePage() {
               setSubscriptionAnnualPrice(1750);
             }
 
-            console.log('âœ… Pricing loaded from database:', {
+            console.log('✅ Pricing loaded from database:', {
               monthly: company.subscriptionMonthlyPrice ?? 195,
               quarterly: company.subscriptionQuarterlyPrice ?? 500,
               annual: company.subscriptionAnnualPrice ?? 1750,
@@ -1900,7 +1900,7 @@ function FinancialScorePage() {
             retainedEarnings: monthlyData[0].retainedEarnings,
             ownersDraw: monthlyData[0].ownersDraw
           } : 'no data');
-          console.log('ðŸ“ˆ FORMATTED for display (sample):', formattedData[0] ? {
+          console.log('📈 FORMATTED for display (sample):', formattedData[0] ? {
             revenue: formattedData[0].revenue,
             payroll: formattedData[0].payroll,
             professionalFees: formattedData[0].professionalFees,
@@ -2004,7 +2004,7 @@ function FinancialScorePage() {
           };
         });
         
-        console.log('ðŸ“¤ Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
+        console.log('📤 Uploading', fullMonthlyData.length, 'months of data for company', selectedCompanyId);
         console.log('📊 Sample Excel values from row 0:', { 
           revenue: rawRows[0]?.[mapping.revenue!], 
           expense: rawRows[0]?.[mapping.expense!],
@@ -2346,7 +2346,7 @@ function FinancialScorePage() {
     }
 
     try {
-      console.log('ðŸŽ¯ Loading master data for goals:', selectedCompanyId);
+      console.log('🎯 Loading master data for goals:', selectedCompanyId);
       const response = await fetch(`/api/master-data?companyId=${selectedCompanyId}`);
       const data = await response.json();
 
@@ -2359,7 +2359,7 @@ function FinancialScorePage() {
       const categories = extractCategoriesFromMasterData(data.monthlyData);
       setMasterDataCategories(categories);
 
-      console.log('âœ… Loaded categories from master data:', categories.length);
+      console.log('✅ Loaded categories from master data:', categories.length);
       alert(`Loaded ${categories.length} expense categories from master data`);
 
     } catch (error) {
@@ -5414,7 +5414,7 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h2>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    âœ… Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
+                    ✅ Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
                   </p>
 
                   {/* Summary Stats */}
@@ -5777,7 +5777,7 @@ function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? 'âœ… Connected' : qbStatus === 'ERROR' ? 'âŒ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? '✅ Connected' : qbStatus === 'ERROR' ? 'âŒ Error' : qbStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -5857,7 +5857,7 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
                   <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h3>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    âœ… Synced successfully - {loadedMonthlyData.length} months of data imported
+                    ✅ Synced successfully - {loadedMonthlyData.length} months of data imported
                   </p>
 
                   {/* Summary Stats */}
@@ -5965,7 +5965,7 @@ function FinancialScorePage() {
                                 <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                   <td style={{ padding: '8px', color: '#1e293b' }}>
                                     <span style={{ fontSize: '10px', color: '#94a3b8', marginRight: '8px' }}>
-                                      {isIncome ? 'ðŸ“ˆ' : 'ðŸ“‰'}
+                                      {isIncome ? '📈' : 'ðŸ“‰'}
                                     </span>
                                     {account.name}
                                   </td>
@@ -7604,7 +7604,7 @@ function FinancialScorePage() {
                 {/* Trend Analysis Section */}
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    ðŸ“ˆ Trend Analysis
+                    📈 Trend Analysis
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                     {/* Item Trends Dropdown */}
@@ -10992,7 +10992,7 @@ function FinancialScorePage() {
                   {/* Action Items */}
                   {issues.filter(i => i.severity === 'high').length > 0 && (
                     <div style={{ marginTop: '32px', background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #667eea' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>âœ… Recommended Actions</h3>
+                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>✅ Recommended Actions</h3>
                       <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
                         {issues.filter(i => i.severity === 'high').length > 0 && (
                           <li><strong>Immediate attention required:</strong> Address all high-priority issues within the next 30 days</li>
@@ -12815,7 +12815,7 @@ function FinancialScorePage() {
 
                               const masterDataResult = await masterDataResponse.json();
                               if (masterDataResult.success) {
-                                console.log(`âœ… Master data auto-created: ${masterDataResult.months} months`);
+                                console.log(`✅ Master data auto-created: ${masterDataResult.months} months`);
                               } else {
                                 console.error('âŒ Failed to auto-create master data:', masterDataResult.error);
                               }
@@ -13647,7 +13647,7 @@ function FinancialScorePage() {
                               cursor: aiMappings.length === 0 ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            ðŸ§¹ Clear All
+                            🧹 Clear All
                           </button>
                           <button
                             onClick={() => {
