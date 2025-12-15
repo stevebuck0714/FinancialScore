@@ -49,6 +49,7 @@ import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
 const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false });
+const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: false });
 import GoalsView from './components/GoalsView';
 import TrendAnalysisView from './components/TrendAnalysisView';
 import SimpleChart from './components/SimpleChart';
@@ -11672,7 +11673,15 @@ function FinancialScorePage() {
       )}
 
       {/* Cash Flow View */}
-      {currentView === 'cash-flow' && selectedCompanyId && monthly.length > 0 && (
+      {currentView === 'cash-flow' && selectedCompanyId && (
+        <CashFlowTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+        />
+      )}
+
+      {/* OLD CASH FLOW CODE - TO BE REMOVED */}
+      {false && currentView === 'cash-flow' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <style>{`
             @media print {
