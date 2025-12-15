@@ -524,53 +524,296 @@ export default function RatiosTab({
         </div>
       )}
 
-      {/* Monthly Ratios Tab */}
+      {/* Monthly Ratios by Category Tab */}
       {kpiDashboardTab === 'monthly-ratios' && (
         <div>
-          <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
-            View detailed monthly values for all financial ratios organized by category
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+              Financial Ratios Overview
+            </h2>
+            <button
+              onClick={() => {
+                // Export to Excel functionality
+                if (typeof window !== 'undefined') {
+                  const { exportMonthlyRatiosToExcel } = require('../../utils/excel-export');
+                  exportMonthlyRatiosToExcel(trendData, companyName);
+                }
+              }}
+              style={{
+                background: '#10b981',
+                color: 'white',
+                border: 'none',
+                padding: '10px 20px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
+            >
+              📊 Export to Excel
+            </button>
+          </div>
           
-          {['Liquidity', 'Activity', 'Coverage', 'Leverage', 'Operating'].map(category => (
-            <div key={category} style={{ marginBottom: '32px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                {category} Ratios
-              </h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#475569' }}>Month</th>
-                      {ratioCategories[category as keyof typeof ratioCategories].map((ratio) => (
-                        <th key={ratio} style={{ padding: '12px', textAlign: 'right', fontWeight: '600', color: '#475569' }}>
-                          {ratio}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trendData.slice(-12).map((row, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px', color: '#1e293b', fontWeight: '500' }}>
-                          {new Date(row.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                        </td>
-                        {ratioCategories[category as keyof typeof ratioCategories].map((ratio) => {
-                          const valueKey = ratioKeyMap[ratio];
-                          const value = row[valueKey as keyof typeof row];
-                          const formatter = getFormatterForRatio(ratio);
-                          return (
-                            <td key={ratio} style={{ padding: '10px', textAlign: 'right', color: '#64748b' }}>
-                              {typeof value === 'number' ? formatter(value) : '-'}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
+          {/* Liquidity Ratios */}
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Liquidity Ratios</h3>
+          <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+            <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                  {trendData.slice(-12).map((data, i) => (
+                    <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Current Ratio</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.currentRatio !== undefined ? data.currentRatio.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Quick Ratio</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.quickRatio !== undefined ? data.quickRatio.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Activity Ratios */}
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Activity Ratios</h3>
+          <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+            <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                  {trendData.slice(-12).map((data, i) => (
+                    <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Inventory Turnover</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.invTurnover !== undefined ? data.invTurnover.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Receivables Turnover</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.arTurnover !== undefined ? data.arTurnover.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Payables Turnover</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.apTurnover !== undefined ? data.apTurnover.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Inventory</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.daysInv !== undefined ? data.daysInv.toFixed(0) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Receivables</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.daysAR !== undefined ? data.daysAR.toFixed(0) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Payables</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.daysAP !== undefined ? data.daysAP.toFixed(0) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Sales/Working Capital</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.salesWC !== undefined ? data.salesWC.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Coverage Ratios */}
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Coverage Ratios</h3>
+          <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+            <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                  {trendData.slice(-12).map((data, i) => (
+                    <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Interest Coverage</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.interestCov !== undefined ? data.interestCov.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt Service Coverage</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.debtSvcCov !== undefined ? data.debtSvcCov.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Cash Flow to Debt</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.cfToDebt !== undefined ? data.cfToDebt.toFixed(2) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Leverage Ratios */}
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Leverage Ratios</h3>
+          <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+            <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                  {trendData.slice(-12).map((data, i) => (
+                    <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt/Net Worth</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.debtToNW !== undefined ? data.debtToNW.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Fixed Assets/Net Worth</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.fixedToNW !== undefined ? data.fixedToNW.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Leverage Ratio</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.leverage !== undefined ? data.leverage.toFixed(1) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Operating Ratios */}
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Operating Ratios</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
+                  {trendData.slice(-12).map((data, i) => (
+                    <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
+                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Total Asset Turnover</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.totalAssetTO !== undefined ? data.totalAssetTO.toFixed(2) : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROE</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.roe !== undefined ? `${(data.roe * 100).toFixed(1)}%` : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROA</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.roa !== undefined ? `${(data.roa * 100).toFixed(1)}%` : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBITDA Margin</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.ebitdaMargin !== undefined ? `${(data.ebitdaMargin * 100).toFixed(1)}%` : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBIT Margin</td>
+                  {trendData.slice(-12).map((data, i) => (
+                    <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                      {data?.ebitMargin !== undefined ? `${(data.ebitMargin * 100).toFixed(1)}%` : 'N/A'}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
