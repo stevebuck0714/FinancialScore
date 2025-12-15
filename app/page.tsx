@@ -6816,7 +6816,6 @@ function FinancialScorePage() {
           setSelectedItemTrends={setSelectedTrendItems}
         />
       )}
-      */}
 
       {/* Financial Score - Introduction View */}
       {currentView === 'fs-intro' && (
