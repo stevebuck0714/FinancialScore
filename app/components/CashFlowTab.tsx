@@ -313,7 +313,7 @@ export default function CashFlowTab({
         </div>
 
         <div style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', borderRadius: '12px', padding: '24px', color: 'white', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.2)' }}>
-          <div style={{ fontSize: '14px', opacity: 0.9', marginBottom: '8px' }}>Cash Flow Margin</div>
+          <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '8px' }}>Cash Flow Margin</div>
           <div style={{ fontSize: '32px', fontWeight: '700', marginBottom: '8px' }}>
             {(latestPeriod?.cashFlowMargin || 0).toFixed(1)}%
           </div>
@@ -323,7 +323,7 @@ export default function CashFlowTab({
         </div>
 
         <div style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', borderRadius: '12px', padding: '24px', color: 'white', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)' }}>
-          <div style={{ fontSize: '14px', opacity: 0.9', marginBottom: '8px' }}>Net Cash Flow</div>
+          <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '8px' }}>Net Cash Flow</div>
           <div style={{ fontSize: '32px', fontWeight: '700', marginBottom: '8px' }}>
             ${(latestPeriod?.netCashFlow || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </div>
