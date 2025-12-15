@@ -6830,18 +6830,388 @@ function FinancialScorePage() {
           )}
 
           {/* Account Mapping Interface - Shows after CSV is uploaded */}
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && csvTrialBalanceData && (
-            <AccountMappingTable
-              mappings={aiMappings}
-              linesOfBusiness={linesOfBusiness}
-              userDefinedAllocations={userDefinedAllocations}
-              onMappingChange={(index, updates) => {
-                const newMappings = [...aiMappings];
-                newMappings[index] = { ...newMappings[index], ...updates };
-                setAiMappings(newMappings);
-              }}
-            />
-          )}
+          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && (csvTrialBalanceData?._companyId === selectedCompanyId || (aiMappings.length > 0 && showMappingSection))) && (() => {
+            const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+
+            // Get accounts for mapping from CSV data (if available)
+            const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
+            const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
+
+            return (
+              <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
+                  {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+                </div>
+                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                  {hasCsvData
+                    ? `Map Trial Balance accounts to your standardized financial fields - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} - ${csvTrialBalanceData.dates?.length || 0} periods`
+                    : `${aiMappings.length} saved account mappings loaded from database`
+                  }
+                </p>
+
+
+                {/* AI-Assisted Mapping Section for CSV */}
+                {hasCsvData && (
+                <div style={{ marginBottom: '32px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div>
+                        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                          AI-Assisted Account Mapping
+                        </h2>
+                        <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+                          Use AI to automatically suggest mappings from Trial Balance accounts ({csvAccountsForMapping.length} accounts) to your standardized financial fields
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setIsGeneratingMappings(true);
+                          try {
+                            // Convert CSV accounts to format expected by AI mapping
+                            const qbAccountsWithClass = csvAccountsForMapping.map(acc => ({
+                              name: acc.name,
+                              classification: acc.classification,
+                              accountCode: acc.acctId,  // Include account code for better AI mapping
+                              accountType: acc.acctType,
+                            }));
+
+                            console.log('🤖 CSV accounts to map:', qbAccountsWithClass.length);
+                            console.log('🤖 First 10 accounts:', qbAccountsWithClass.slice(0, 10));
+
+                            const response = await fetch('/api/ai-mapping/enhanced', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                qbAccountsWithClass,
+                                companyId: selectedCompanyId,
+                                targetFields: []
+                              })
+                            });
+
+                            if (!response.ok) {
+                              throw new Error('Failed to generate mappings');
+                            }
+
+                            const data = await response.json();
+                            setAiMappings(data.mappings || []);
+                            setShowMappingSection(true);
+                          } catch (error: any) {
+                            console.error('Error generating mappings:', error);
+                            alert('Failed to generate AI mappings: ' + error.message);
+                          } finally {
+                            setIsGeneratingMappings(false);
+                          }
+                        }}
+                        disabled={isGeneratingMappings || csvAccountsForMapping.length === 0}
+                        style={{
+                          padding: '12px 24px',
+                          background: isGeneratingMappings ? '#94a3b8' : '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: isGeneratingMappings ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        {isGeneratingMappings ? (
+                          <>
+                            <span>🔄</span>
+                            <span>Generating Mappings...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🤖</span>
+                            <span>Generate AI Mappings</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Account Summary by Type */}
+                    <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Type:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {Object.entries(csvTrialBalanceData.accountsByType || {}).map(([type, accounts]: [string, any]) => (
+                          <span key={type} style={{
+                            padding: '4px 12px',
+                            background: 'white',
+                            borderRadius: '16px',
+                            fontSize: '12px',
+                            color: '#065f46',
+                            border: '1px solid #86efac'
+                          }}>
+                            {type}: {accounts.length}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {/* Mapping Results Section */}
+                {showMappingSection && aiMappings.length > 0 && (
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '32px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                        Account Mappings ({aiMappings.length} accounts)
+                      </h2>
+                    </div>
+
+                    <AccountMappingTable
+                      mappings={aiMappings}
+                      linesOfBusiness={linesOfBusiness}
+                      userDefinedAllocations={userDefinedAllocations}
+                      onMappingChange={(index, updates) => {
+                        const updated = [...aiMappings];
+                        updated[index] = { ...updated[index], ...updates };
+                        setAiMappings(updated);
+                      }}
+                    />
+
+                    {/* Save Mappings Section */}
+                    <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
+                          <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>Save your mappings to use them for future data processing.</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          <button
+                            onClick={async () => {
+                              if (!aiMappings || aiMappings.length === 0) {
+                                alert('Please save account mappings first!');
+                                return;
+                              }
+
+                              if (!csvTrialBalanceData || csvTrialBalanceData._companyId !== selectedCompanyId) {
+                                alert('No CSV/Trial Balance data available!');
+                                return;
+                              }
+
+                              if (!currentUser) {
+                                alert('User not logged in!');
+                                return;
+                              }
+
+                              setIsProcessingMonthlyData(true);
+                              try {
+                                console.log('⚙️ Processing CSV/Trial Balance data using mappings...');
+                                console.log('⚙️ Total mappings:', aiMappings.length);
+
+                                // Process the CSV data using mappings
+                                const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
+
+                                // Save to database
+                                const response = await fetch('/api/financials', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    companyId: selectedCompanyId,
+                                    uploadedByUserId: currentUser.id,
+                                    fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
+                                    rawData: csvTrialBalanceData,
+                                    columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
+                                    monthlyData: processedData
+                                  })
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error('Failed to save processed data');
+                                }
+
+                                const result = await response.json();
+                                console.log(`✅ Processed and saved ${processedData.length} months of CSV data`);
+
+                                // Automatically create master data from the processed data
+                                try {
+                                  console.log('📄 Auto-creating master data...');
+                                  const masterDataResponse = await fetch('/api/save-master-file', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      companyId: selectedCompanyId,
+                                      monthlyData: processedData
+                                    })
+                                  });
+
+                                  const masterDataResult = await masterDataResponse.json();
+                                  if (masterDataResult.success) {
+                                    console.log(`✅ Master data auto-created: ${masterDataResult.months} months`);
+                                  } else {
+                                    console.error('❌ Failed to auto-create master data:', masterDataResult.error);
+                                  }
+                                } catch (masterDataError) {
+                                  console.error('❌ Error auto-creating master data:', masterDataError);
+                                }
+
+                                // Update local state
+                                setLoadedMonthlyData(processedData);
+
+                                alert(`✅ Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                              } catch (error: any) {
+                                console.error('Error processing CSV data:', error);
+                                alert('Failed to process CSV data: ' + error.message);
+                              } finally {
+                                setIsProcessingMonthlyData(false);
+                              }
+                            }}
+                            disabled={isProcessingMonthlyData || aiMappings.length === 0}
+                            style={{
+                              padding: '8px 16px',
+                              background: isProcessingMonthlyData || aiMappings.length === 0 ? '#9ca3af' : '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
+                              boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
+                            }}
+                          >
+                            {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                          </button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                console.log('🔍 Save Mappings Debug:', {
+                                  currentCompany,
+                                  currentCompanyId: currentCompany?.id,
+                                  selectedCompanyId,
+                                  aiMappingsCount: aiMappings?.length,
+                                  aiMappingsSample: aiMappings?.slice(0, 2),
+                                  linesOfBusinessCount: linesOfBusiness?.length
+                                });
+
+                                if (!currentCompany?.id) {
+                                  alert(`Cannot save mappings: Company not found. Selected: ${selectedCompanyId}, Available companies: ${companies?.length || 0}`);
+                                  return;
+                                }
+
+                                if (!aiMappings || aiMappings.length === 0) {
+                                  alert('No mappings to save. Please generate AI mappings first.');
+                                  return;
+                                }
+
+                                setIsSavingMappings(true);
+                                const response = await fetch('/api/account-mappings', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    companyId: currentCompany.id,
+                                    mappings: aiMappings,
+                                    linesOfBusiness: linesOfBusiness
+                                  })
+                                });
+
+                                if (response.ok) {
+                                  alert('Account mappings saved successfully!');
+                                } else {
+                                  alert('Failed to save account mappings');
+                                }
+                              } catch (error) {
+                                console.error('Error saving mappings:', error);
+                                alert('Failed to save account mappings');
+                              } finally {
+                                setIsSavingMappings(false);
+                              }
+                            }}
+                            disabled={isSavingMappings}
+                            style={{
+                              padding: '8px 16px',
+                              background: isSavingMappings ? '#9ca3af' : '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              fontWeight: '500',
+                              cursor: isSavingMappings ? 'not-allowed' : 'pointer',
+                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                            }}
+                          >
+                            {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Account Preview Section */}
+                {hasCsvData && csvTrialBalanceData && (
+                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+                    Account Review - All {csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)
+                  </h2>
+                  <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                      <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px' }}>Type</th>
+                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px' }}>ID</th>
+                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px' }}>Description</th>
+                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '100px' }}>Latest Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
+                          // Filter out empty dates and get the last valid one
+                          const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
+                          const latestDate = validDates[validDates.length - 1];
+                          
+                          // Get latest value
+                          let latestValue = 0;
+                          
+                          if (account.values) {
+                            // Method 1: Direct lookup with the latest valid date
+                            if (latestDate && account.values[latestDate] !== undefined) {
+                              latestValue = account.values[latestDate];
+                            } 
+                            // Method 2: Get the last key from the values object
+                            else {
+                              const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
+                              if (valueKeys.length > 0) {
+                                const lastKey = valueKeys[valueKeys.length - 1];
+                                latestValue = account.values[lastKey] || 0;
+                              }
+                            }
+                          }
+
+                          return (
+                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{account.acctType}</td>
+                              <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{account.acctId}</td>
+                              <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {latestValue < 0 && ' (CR)'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: '12px', padding: '8px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px' }}>
+                    <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
+                      📊 Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
+                    </p>
+                    <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>
+                      Total accounts: {csvTrialBalanceData.accounts?.length || 0} |
+                      Scroll to see all accounts | Use this to verify account mappings and amounts
+                    </p>
+                  </div>
+                </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
