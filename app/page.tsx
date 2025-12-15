@@ -14537,7 +14537,25 @@ function FinancialScorePage() {
 
           {/* Line of Business Reporting Tab */}
           {financialStatementsTab === 'line-of-business' && (
-                const cogsOwnerPay = currentMonth.cogsOwnerPay || 0;
+            <LOBReportingTab
+              company={company}
+              selectedCompanyId={selectedCompanyId}
+              accountMappings={aiMappings}
+              statementType={statementType}
+              selectedLineOfBusiness={selectedLineOfBusiness}
+              statementPeriod={statementPeriod}
+              statementDisplay={statementDisplay}
+              onStatementTypeChange={setStatementType}
+              onLineOfBusinessChange={setSelectedLineOfBusiness}
+              onPeriodChange={setStatementPeriod}
+              onDisplayChange={setStatementDisplay}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Consultant Dashboard */}
+      {currentView === 'consultant-dashboard' && currentUser?.role === 'consultant' && (
                 const cogsContractors = currentMonth.cogsContractors || 0;
                 const cogsMaterials = currentMonth.cogsMaterials || 0;
                 const cogsCommissions = currentMonth.cogsCommissions || 0;
