@@ -153,14 +153,25 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
 
   const getStatusBadge = (status: string) => {
     const colors = {
-      ACTIVE: 'bg-green-100 text-green-800',
-      MATURING: 'bg-yellow-100 text-yellow-800',
-      PAID_OFF: 'bg-blue-100 text-blue-800',
-      DEFAULTED: 'bg-red-100 text-red-800',
-      INACTIVE: 'bg-gray-100 text-gray-800',
+      ACTIVE: { bg: '#dcfce7', text: '#16a34a', border: '#86efac' },
+      MATURING: { bg: '#fef3c7', text: '#d97706', border: '#fde047' },
+      PAID_OFF: { bg: '#dbeafe', text: '#2563eb', border: '#93c5fd' },
+      DEFAULTED: { bg: '#fee2e2', text: '#dc2626', border: '#fca5a5' },
+      INACTIVE: { bg: '#f1f5f9', text: '#64748b', border: '#cbd5e1' },
     };
+    const colorSet = colors[status as keyof typeof colors] || colors.INACTIVE;
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[status as keyof typeof colors] || colors.INACTIVE}`}>
+      <span style={{ 
+        padding: '4px 12px', 
+        borderRadius: '12px', 
+        fontSize: '11px', 
+        fontWeight: '600', 
+        background: colorSet.bg,
+        color: colorSet.text,
+        border: `1px solid ${colorSet.border}`,
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px'
+      }}>
         {status.replace('_', ' ')}
       </span>
     );
@@ -171,319 +182,284 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
   }
 
   return (
-    <div className="p-6">
+    <div>
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Loan Management</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>Loan Management</h2>
         <button
           onClick={() => setIsAddingLoan(!isAddingLoan)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}
         >
           {isAddingLoan ? '✕ Cancel' : '+ Add Loan'}
         </button>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded">
+        <div style={{ marginBottom: '16px', padding: '12px', background: '#fee2e2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '4px', fontSize: '14px' }}>
           {error}
         </div>
       )}
 
       {/* Add/Edit Form */}
       {isAddingLoan && (
-        <form onSubmit={handleSubmit} className="mb-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-lg border border-blue-200 overflow-hidden">
-          {/* Form Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              {editingLoanId ? 'Edit Loan Details' : 'Add New Loan'}
+        <form onSubmit={handleSubmit} style={{ marginBottom: '24px' }}>
+          <div style={{ background: 'white', borderRadius: '6px', padding: '20px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+              {editingLoanId ? 'Edit Loan' : 'Add New Loan'}
             </h3>
-            <p className="text-blue-100 text-sm mt-1">Fill in the loan information below. Only the loan name is required.</p>
-          </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Loan Name <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.loanName}
+                  onChange={(e) => setFormData({ ...formData, loanName: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  placeholder="e.g., Equipment Finance Loan"
+                />
+              </div>
 
-          {/* Form Body */}
-          <div className="p-6 space-y-6">
-            {/* Essential Information */}
-            <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                <span className="w-1 h-4 bg-blue-600 rounded"></span>
-                Essential Information
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Loan Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.loanName}
-                    onChange={(e) => setFormData({ ...formData, loanName: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                    placeholder="e.g., Equipment Finance Loan, Working Capital Line"
-                  />
-                </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Loan ID Number
+                </label>
+                <input
+                  type="text"
+                  value={formData.loanIdNumber}
+                  onChange={(e) => setFormData({ ...formData, loanIdNumber: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  placeholder="e.g., 12345-ABC"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan ID / Account Number</label>
-                  <input
-                    type="text"
-                    value={formData.loanIdNumber}
-                    onChange={(e) => setFormData({ ...formData, loanIdNumber: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                    placeholder="e.g., 12345-ABC"
-                  />
-                </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Lender Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.lenderName}
+                  onChange={(e) => setFormData({ ...formData, lenderName: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  placeholder="e.g., Wells Fargo"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Lender Name</label>
-                  <input
-                    type="text"
-                    value={formData.lenderName}
-                    onChange={(e) => setFormData({ ...formData, lenderName: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                    placeholder="e.g., Wells Fargo, Chase Bank"
-                  />
-                </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Loan Amount
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.loanAmount}
+                  onChange={(e) => setFormData({ ...formData, loanAmount: parseFloat(e.target.value) || 0 })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Interest Rate (%)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.interestRate}
+                  onChange={(e) => setFormData({ ...formData, interestRate: parseFloat(e.target.value) || 0 })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Term (Months)
+                </label>
+                <input
+                  type="number"
+                  value={formData.termMonths}
+                  onChange={(e) => setFormData({ ...formData, termMonths: parseInt(e.target.value) || 0 })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={formData.startDate as string}
+                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  End Date (Maturity)
+                </label>
+                <input
+                  type="date"
+                  value={formData.endDate as string}
+                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Loan Type
+                </label>
+                <select
+                  value={formData.loanType}
+                  onChange={(e) => setFormData({ ...formData, loanType: e.target.value as any })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px', background: 'white' }}
+                >
+                  <option value="TERM">Term Loan</option>
+                  <option value="REVOLVER">Revolver</option>
+                  <option value="BRIDGE">Bridge Loan</option>
+                  <option value="LINE_OF_CREDIT">Line of Credit</option>
+                  <option value="MORTGAGE">Mortgage</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Status
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px', background: 'white' }}
+                >
+                  <option value="ACTIVE">Active</option>
+                  <option value="MATURING">Maturing</option>
+                  <option value="PAID_OFF">Paid Off</option>
+                  <option value="DEFAULTED">Defaulted</option>
+                  <option value="INACTIVE">Inactive</option>
+                </select>
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
+                  Notes
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={3}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px', resize: 'vertical' }}
+                  placeholder="Any additional notes about this loan..."
+                />
               </div>
             </div>
 
-            {/* Financial Details */}
-            <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                <span className="w-1 h-4 bg-green-600 rounded"></span>
-                Financial Details
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-3.5 text-gray-500 font-medium">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.loanAmount}
-                      onChange={(e) => setFormData({ ...formData, loanAmount: parseFloat(e.target.value) || 0 })}
-                      className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Interest Rate</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.interestRate}
-                      onChange={(e) => setFormData({ ...formData, interestRate: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                      placeholder="0.00"
-                    />
-                    <span className="absolute right-4 top-3.5 text-gray-500 font-medium">%</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Term Length</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={formData.termMonths}
-                      onChange={(e) => setFormData({ ...formData, termMonths: parseInt(e.target.value) || 0 })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                      placeholder="0"
-                    />
-                    <span className="absolute right-4 top-3.5 text-gray-500 text-sm">months</span>
-                  </div>
-                </div>
-              </div>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={resetForm}
+                style={{ padding: '8px 16px', background: 'white', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px', fontWeight: '500', color: '#64748b', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                style={{ padding: '8px 16px', background: '#667eea', border: 'none', borderRadius: '4px', fontSize: '14px', fontWeight: '500', color: 'white', cursor: 'pointer' }}
+              >
+                {editingLoanId ? 'Update Loan' : 'Create Loan'}
+              </button>
             </div>
-
-            {/* Loan Classification */}
-            <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                <span className="w-1 h-4 bg-purple-600 rounded"></span>
-                Loan Classification
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type</label>
-                  <select
-                    value={formData.loanType}
-                    onChange={(e) => setFormData({ ...formData, loanType: e.target.value as any })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                  >
-                    <option value="TERM">Term Loan</option>
-                    <option value="REVOLVER">Revolver</option>
-                    <option value="BRIDGE">Bridge Loan</option>
-                    <option value="LINE_OF_CREDIT">Line of Credit</option>
-                    <option value="MORTGAGE">Mortgage</option>
-                    <option value="OTHER">Other</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
-                  <input
-                    type="date"
-                    value={formData.startDate as string}
-                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Maturity Date</label>
-                  <input
-                    type="date"
-                    value={formData.endDate as string}
-                    onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Status & Notes */}
-            <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                <span className="w-1 h-4 bg-orange-600 rounded"></span>
-                Status & Notes
-              </h4>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Current Status</label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm"
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="MATURING">Maturing</option>
-                    <option value="PAID_OFF">Paid Off</option>
-                    <option value="DEFAULTED">Defaulted</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Additional Notes</label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    rows={3}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition bg-white shadow-sm resize-none"
-                    placeholder="Add any special terms, conditions, or other relevant information..."
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Form Footer */}
-          <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
-            <button
-              type="button"
-              onClick={resetForm}
-              className="px-6 py-2.5 bg-white border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 hover:border-gray-400 transition shadow-sm"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 transition shadow-md flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              {editingLoanId ? 'Update Loan' : 'Create Loan'}
-            </button>
           </div>
         </form>
       )}
 
       {/* Loans List */}
       {loans.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          <p className="text-lg mb-2">No loans found</p>
-          <p className="text-sm">Click "Add Loan" to create your first loan</p>
+        <div style={{ textAlign: 'center', padding: '48px 0', color: '#64748b' }}>
+          <p style={{ fontSize: '16px', marginBottom: '8px' }}>No loans found</p>
+          <p style={{ fontSize: '14px' }}>Click "Add Loan" to create your first loan</p>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div style={{ display: 'grid', gap: '12px' }}>
           {loans.map((loan) => (
             <div
               key={loan.id}
-              className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition cursor-pointer"
+              style={{ background: 'white', borderRadius: '6px', padding: '16px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', cursor: 'pointer' }}
               onClick={() => onLoanSelected && onLoanSelected(loan)}
             >
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-gray-800">{loan.loanName}</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{loan.loanName}</h3>
                   {loan.loanIdNumber && (
-                    <p className="text-sm text-gray-500">ID: {loan.loanIdNumber}</p>
+                    <p style={{ fontSize: '12px', color: '#64748b' }}>ID: {loan.loanIdNumber}</p>
                   )}
                 </div>
                 {getStatusBadge(loan.status)}
               </div>
 
-              <div className="grid grid-cols-3 gap-4 mb-4">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase mb-1">Lender</p>
-                  <p className="text-sm font-medium text-gray-800">{loan.lenderName}</p>
+                  <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Lender</p>
+                  <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.lenderName}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase mb-1">Amount</p>
-                  <p className="text-sm font-medium text-gray-800">{formatCurrency(loan.loanAmount)}</p>
+                  <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Amount</p>
+                  <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{formatCurrency(loan.loanAmount)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase mb-1">Type</p>
-                  <p className="text-sm font-medium text-gray-800">{loan.loanType.replace('_', ' ')}</p>
+                  <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Type</p>
+                  <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.loanType.replace('_', ' ')}</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4 mb-4">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: loan.notes ? '12px' : '0' }}>
                 {loan.interestRate && (
                   <div>
-                    <p className="text-xs text-gray-500 uppercase mb-1">Rate</p>
-                    <p className="text-sm font-medium text-gray-800">{loan.interestRate}%</p>
+                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Rate</p>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.interestRate}%</p>
                   </div>
                 )}
                 <div>
-                  <p className="text-xs text-gray-500 uppercase mb-1">Start Date</p>
-                  <p className="text-sm font-medium text-gray-800">{formatDate(loan.startDate)}</p>
+                  <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Start Date</p>
+                  <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{formatDate(loan.startDate)}</p>
                 </div>
                 {loan.endDate && (
                   <div>
-                    <p className="text-xs text-gray-500 uppercase mb-1">Maturity</p>
-                    <p className="text-sm font-medium text-gray-800">{formatDate(loan.endDate)}</p>
+                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Maturity</p>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{formatDate(loan.endDate)}</p>
                   </div>
                 )}
               </div>
 
               {loan.notes && (
-                <p className="text-sm text-gray-600 mb-4">{loan.notes}</p>
+                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px', borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>{loan.notes}</p>
               )}
 
-              <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }} onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => handleEdit(loan)}
-                  className="px-4 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
+                  style={{ padding: '6px 12px', fontSize: '13px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500' }}
                 >
                   Edit
                 </button>
                 <button
                   onClick={() => handleDelete(loan.id)}
-                  className="px-4 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
+                  style={{ padding: '6px 12px', fontSize: '13px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500' }}
                 >
                   Delete
                 </button>
                 <button
                   onClick={() => onLoanSelected && onLoanSelected(loan)}
-                  className="px-4 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 transition"
+                  style={{ padding: '6px 12px', fontSize: '13px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500', marginLeft: 'auto' }}
                 >
                   View Covenants
                 </button>
