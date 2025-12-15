@@ -139,6 +139,8 @@ const hexFixes = [
   [[0xC3, 0xA2, 0xE2, 0x82, 0xAC, 0xE2, 0x80, 0x9C], '—'],
   // Multiplication sign (already have one, trying alternative): C397 -> ×
   [[0xC3, 0x97], '×'],
+  // Multiplication sign 2: C3 83 E2 80 94 -> ×
+  [[0xC3, 0x83, 0xE2, 0x80, 0x94], '×'],
 ];
 
 let fixed = content;

@@ -6194,7 +6194,7 @@ function FinancialScorePage() {
                       onClick={() => setShowCheckoutModal(false)}
                       style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                     >
-                      Ã—
+                      ×
                     </button>
                   </div>
 
@@ -6479,7 +6479,7 @@ function FinancialScorePage() {
                     onClick={() => setShowUpdatePaymentModal(false)}
                     style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
                   >
-                    Ã—
+                    ×
                   </button>
                 </div>
 
@@ -7140,7 +7140,7 @@ function FinancialScorePage() {
                   lineHeight: 1
                 }}
               >
-                Ã—
+                ×
               </button>
             </div>
             
@@ -7592,7 +7592,7 @@ function FinancialScorePage() {
                               padding: 0
                             }}
                           >
-                            Ã—
+                            ×
                           </button>
                         </div>
                       ))}
@@ -7780,7 +7780,7 @@ function FinancialScorePage() {
                                 lineHeight: '1'
                               }}
                             >
-                              Ã—
+                              ×
                             </button>
                       </div>
                     ))}
@@ -8134,7 +8134,7 @@ function FinancialScorePage() {
                                 ${(sdeValuation / 1000000).toFixed(2)}M
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                SDE: ${(ttmSDE / 1000).toFixed(0)}K Ã— {sdeMultiplier.toFixed(1)}x
+                                SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -8146,7 +8146,7 @@ function FinancialScorePage() {
                                 ${(ebitdaValuation / 1000000).toFixed(2)}M
                               </div>
                               <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K Ã— {ebitdaMultiplier.toFixed(1)}x
+                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier.toFixed(1)}x
                               </div>
                             </div>
                           )}
@@ -8760,7 +8760,7 @@ function FinancialScorePage() {
                             justifyContent: 'center'
                           }}
                         >
-                          Ã—
+                          ×
                         </button>
                       </div>
                     ))}
@@ -11399,7 +11399,7 @@ function FinancialScorePage() {
                       ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K Ã— {sdeMultiplier}x
+                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
                     </div>
                   </div>
                   
@@ -11409,7 +11409,7 @@ function FinancialScorePage() {
                       ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K Ã— {ebitdaMultiplier}x
+                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
                     </div>
                   </div>
                   
@@ -11895,10 +11895,10 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Percentage of revenue converted to operating cash flow. Higher percentages indicate better cash generation efficiency.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> (Operating Cash Flow Ã· Revenue) Ã— 100
+                    <strong>Formula:</strong> (Operating Cash Flow Ã· Revenue) × 100
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 Ã· $250,000) Ã— 100 = <strong>23.2%</strong>
+                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 Ã· $250,000) × 100 = <strong>23.2%</strong>
                   </p>
                 </div>
 
@@ -11909,10 +11909,10 @@ function FinancialScorePage() {
                     <strong>Definition:</strong> Number of days the company can operate with its current cash balance at the current cash flow rate. Indicates financial runway.
                   </p>
                   <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Ending Cash Ã· (Operating Cash Flow Ã— 30)
+                    <strong>Formula:</strong> Ending Cash Ã· (Operating Cash Flow × 30)
                   </p>
                   <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 Ã· ($58,000 Ã— 30) = <strong>38.8 days</strong>
+                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 Ã· ($58,000 × 30) = <strong>38.8 days</strong>
                   </p>
                 </div>
 
