@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
+import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lucide-react';
@@ -73,6 +74,9 @@ const formatDollar = (value: number): string => {
 };
 
 function FinancialScorePage() {
+  // Check for existing session
+  const { data: session, status } = useSession();
+  
   // State - Authentication
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -159,6 +163,25 @@ function FinancialScorePage() {
       masterDataStore.clearCompanyCache(selectedCompanyId);
     }
   }, [selectedCompanyId]);
+  
+  // Load user from session on mount
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user && !currentUser) {
+      console.log('🔐 Loading user from session:', session.user);
+      
+      // Fetch full user details from API using session email
+      authApi.verify()
+        .then(user => {
+          console.log('✅ User loaded from session:', user);
+          setCurrentUser(user as User);
+          setIsLoggedIn(true);
+        })
+        .catch(error => {
+          console.error('❌ Failed to load user from session:', error);
+        });
+    }
+  }, [status, session, currentUser]);
+  
   const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [showUpdatePaymentModal, setShowUpdatePaymentModal] = useState(false);
   const [updatingPayment, setUpdatingPayment] = useState(false);
