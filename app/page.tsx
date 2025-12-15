@@ -50,6 +50,7 @@ const AccountMappingTable = dynamic(() => import('./components/dashboard/Account
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
 const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false });
 const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: false });
+const WorkingCapitalTab = dynamic(() => import('./components/WorkingCapitalTab'), { ssr: false });
 import GoalsView from './components/GoalsView';
 import TrendAnalysisView from './components/TrendAnalysisView';
 import SimpleChart from './components/SimpleChart';
@@ -11066,7 +11067,16 @@ function FinancialScorePage() {
       )}
 
       {/* Working Capital View */}
-      {currentView === 'working-capital' && selectedCompanyId && monthly.length > 0 && (
+      {/* Working Capital View */}
+      {currentView === 'working-capital' && selectedCompanyId && (
+        <WorkingCapitalTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+        />
+      )}
+
+      {/* OLD WORKING CAPITAL CODE - TO BE REMOVED */}
+      {false && currentView === 'working-capital' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           <style>{`
             @media print {
