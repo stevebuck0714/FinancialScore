@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useMasterData } from '@/lib/master-data-store';
 import type { MonthlyDataRow } from '../types';
 import dynamic from 'next/dynamic';
+import { exportMonthlyRatiosToExcel } from '../utils/excel-export';
 
 const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
 
@@ -532,13 +533,7 @@ export default function RatiosTab({
               Financial Ratios Overview
             </h2>
             <button
-              onClick={() => {
-                // Export to Excel functionality
-                if (typeof window !== 'undefined') {
-                  const { exportMonthlyRatiosToExcel } = require('../../utils/excel-export');
-                  exportMonthlyRatiosToExcel(trendData, companyName);
-                }
-              }}
+              onClick={() => exportMonthlyRatiosToExcel(trendData, companyName)}
               style={{
                 background: '#10b981',
                 color: 'white',
