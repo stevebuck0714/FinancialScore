@@ -166,6 +166,8 @@ function FinancialScorePage() {
   
   // Load user from session on mount
   useEffect(() => {
+    console.log('🔍 Session check:', { status, hasSession: !!session, hasUser: !!session?.user, hasCurrentUser: !!currentUser });
+    
     if (status === 'authenticated' && session?.user && !currentUser) {
       console.log('🔐 Loading user from session:', session.user);
       
@@ -179,6 +181,10 @@ function FinancialScorePage() {
         .catch(error => {
           console.error('❌ Failed to load user from session:', error);
         });
+    } else if (status === 'unauthenticated') {
+      console.log('⚠️ Session status: unauthenticated');
+    } else if (status === 'loading') {
+      console.log('⏳ Session status: loading');
     }
   }, [status, session, currentUser]);
   
@@ -1948,7 +1954,20 @@ function FinancialScorePage() {
 
   useEffect(() => {
     const saveFinancialData = async () => {
-      if (!file || rawRows.length === 0 || !mapping.date || !selectedCompanyId || !currentUser || !isFreshUpload) return;
+      console.log('💾 saveFinancialData effect triggered:', {
+        hasFile: !!file,
+        rawRowsLength: rawRows.length,
+        hasMappingDate: !!mapping.date,
+        hasCompanyId: !!selectedCompanyId,
+        hasCurrentUser: !!currentUser,
+        currentUserEmail: currentUser?.email,
+        isFreshUpload
+      });
+      
+      if (!file || rawRows.length === 0 || !mapping.date || !selectedCompanyId || !currentUser || !isFreshUpload) {
+        console.log('⏭️ Skipping save - conditions not met');
+        return;
+      }
       
       try {
         console.log('Saving financial data to database...');
@@ -3067,13 +3086,23 @@ function FinancialScorePage() {
   };
 
   const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    console.log('📁 handleFile called');
     const f = e.target.files?.[0];
-    if (!f) return;
-    if (!selectedCompanyId) { alert('Please select a company first'); return; }
+    if (!f) {
+      console.log('❌ No file selected');
+      return;
+    }
+    if (!selectedCompanyId) {
+      console.log('❌ No company selected');
+      alert('Please select a company first');
+      return;
+    }
+    console.log('✅ File selected:', f.name, 'Company:', selectedCompanyId);
 
     setFile(f);
     setError(null);
     setIsFreshUpload(true);
+    console.log('📤 Set isFreshUpload=true, processing file...');
     const ab = await f.arrayBuffer();
     const wb = XLSX.read(ab, { cellDates: false });
     
