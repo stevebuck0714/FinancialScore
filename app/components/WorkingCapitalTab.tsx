@@ -216,10 +216,10 @@ export default function WorkingCapitalTab({
       </div>
 
       {/* Working Capital Trend Analysis */}
-      <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend (Last 36 Months)</h3>
+      <div style={{ background: 'white', borderRadius: '12px', padding: '24px 12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '20px', paddingLeft: '12px' }}>Working Capital Trend (Last 36 Months)</h3>
 
-        <div style={{ height: '450px', position: 'relative' }}>
+        <div style={{ height: '450px', position: 'relative', width: '100%' }}>
           <SimpleChart
             data={monthly.slice(-36).map((month, index) => {
               const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
@@ -243,7 +243,7 @@ export default function WorkingCapitalTab({
         </div>
 
         {/* Working Capital Statistics */}
-        <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+        <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', paddingLeft: '12px', paddingRight: '12px' }}>
           {(() => {
             const wcValues = monthly.slice(-36).map(month => {
               const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
@@ -282,7 +282,7 @@ export default function WorkingCapitalTab({
           })()}
         </div>
 
-        <div style={{ marginTop: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+        <div style={{ marginTop: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginLeft: '12px', marginRight: '12px' }}>
           <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Key Insights</h4>
           <ul style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', margin: 0, paddingLeft: '20px' }}>
             <li>Working capital represents the funds available for day-to-day operations</li>
