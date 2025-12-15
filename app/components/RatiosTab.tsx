@@ -20,8 +20,8 @@ export default function RatiosTab({
   benchmarks,
   onFormulaClick,
 }: RatiosTabProps) {
-  const { data: masterData, loading, error } = useMasterData(selectedCompanyId);
-  const monthly = masterData?.monthlyData || [];
+  const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
+  const monthly = monthlyData || [];
 
   const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios' | 'monthly-ratios'>('all-ratios');
   const [priorityRatios, setPriorityRatios] = useState<string[]>([]);
