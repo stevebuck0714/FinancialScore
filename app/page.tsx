@@ -12944,17 +12944,35 @@ function FinancialScorePage() {
                   <tbody>
                     {csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
                       const latestDate = csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1];
-                      const latestValue = latestDate && account.values ? (account.values[latestDate] || 0) : 0;
+                      
+                      // Get latest value - try multiple approaches
+                      let latestValue = 0;
+                      
+                      if (account.values) {
+                        // Method 1: Direct lookup with the latest date
+                        if (latestDate && account.values[latestDate] !== undefined) {
+                          latestValue = account.values[latestDate];
+                        } 
+                        // Method 2: Get the last key from the values object (most recent date)
+                        else {
+                          const valueKeys = Object.keys(account.values);
+                          if (valueKeys.length > 0) {
+                            const lastKey = valueKeys[valueKeys.length - 1];
+                            latestValue = account.values[lastKey] || 0;
+                          }
+                        }
+                      }
 
                       // Debug logging for first few accounts
-                      if (idx < 5) {
+                      if (idx < 3) {
                         console.log(`[Account Preview Debug] Account ${idx}:`);
                         console.log(`  Description: "${account.description}"`);
-                        console.log(`  Latest Date: "${latestDate}"`);
+                        console.log(`  Expected Latest Date: "${latestDate}"`);
                         console.log(`  Available dates in account.values:`, Object.keys(account.values || {}));
-                        console.log(`  Raw latest value from account.values[${latestDate}]:`, account.values?.[latestDate]);
                         console.log(`  Final latestValue: ${latestValue}`);
-                        console.log(`  Account values object:`, account.values);
+                        if (idx === 0) {
+                          console.log(`  Full account.values object:`, account.values);
+                        }
                         console.log(`---`);
                       }
 
