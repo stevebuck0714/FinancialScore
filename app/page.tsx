@@ -1,7 +1,6 @@
 ﻿'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
-import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lucide-react';
@@ -74,9 +73,6 @@ const formatDollar = (value: number): string => {
 };
 
 function FinancialScorePage() {
-  // Check for existing session
-  const { data: session, status } = useSession();
-  
   // State - Authentication
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -164,29 +160,27 @@ function FinancialScorePage() {
     }
   }, [selectedCompanyId]);
   
-  // Load user from session on mount
+  // Load user from localStorage on mount (app uses custom auth, not NextAuth)
   useEffect(() => {
-    console.log('🔍 Session check:', { status, hasSession: !!session, hasUser: !!session?.user, hasCurrentUser: !!currentUser });
+    if (typeof window === 'undefined' || currentUser) return;
     
-    if (status === 'authenticated' && session?.user && !currentUser) {
-      console.log('🔐 Loading user from session:', session.user);
-      
-      // Fetch full user details from API using session email
-      authApi.verify()
-        .then(user => {
-          console.log('✅ User loaded from session:', user);
-          setCurrentUser(user as User);
-          setIsLoggedIn(true);
-        })
-        .catch(error => {
-          console.error('❌ Failed to load user from session:', error);
-        });
-    } else if (status === 'unauthenticated') {
-      console.log('⚠️ Session status: unauthenticated');
-    } else if (status === 'loading') {
-      console.log('⏳ Session status: loading');
+    const storedUser = localStorage.getItem('fs_currentUser');
+    console.log('🔍 Checking localStorage for currentUser:', !!storedUser);
+    
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        console.log('✅ User loaded from localStorage:', user.email);
+        setCurrentUser(user);
+        setIsLoggedIn(true);
+      } catch (error) {
+        console.error('❌ Failed to parse stored user:', error);
+        localStorage.removeItem('fs_currentUser');
+      }
+    } else {
+      console.log('⚠️ No user found in localStorage');
     }
-  }, [status, session, currentUser]);
+  }, [currentUser]);
   
   const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [showUpdatePaymentModal, setShowUpdatePaymentModal] = useState(false);
