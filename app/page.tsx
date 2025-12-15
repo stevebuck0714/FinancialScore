@@ -1390,10 +1390,10 @@ function FinancialScorePage() {
         // Load financial records
         const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const companyName = selectedCompany?.name || 'Unknown';
-        console.log(`ðŸ“‚ LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
+        console.log(`📂 LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
         
         const { records } = await financialsApi.getByCompany(selectedCompanyId);
-        console.log(`ðŸ“‚ Found ${records.length} financial records for company "${companyName}"`);
+        console.log(`📂 Found ${records.length} financial records for company "${companyName}"`);
         
         // If no records found, clear aiMappings as well
         if (!records || records.length === 0) {
@@ -1401,7 +1401,7 @@ function FinancialScorePage() {
           setAiMappings([]);
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
-          console.log(`ðŸ“‚ Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
+          console.log(`📂 Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
           
           // Check if this is QuickBooks data and extract raw QB financial statements
           if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
@@ -1410,8 +1410,8 @@ function FinancialScorePage() {
             // QuickBooks data - use monthlyData directly
             console.log(`📄 Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
             console.log(`📄 Record belongs to company ID: ${latestRecord.companyId}`);
-            console.log(`ðŸ“… QB Data sync date:`, latestRecord.rawData.syncDate);
-            console.log(`ðŸ”‘ QB rawData object keys:`, Object.keys(latestRecord.rawData));
+            console.log(`📅 QB Data sync date:`, latestRecord.rawData.syncDate);
+            console.log(`🔑 QB rawData object keys:`, Object.keys(latestRecord.rawData));
             console.log(`? SETTING qbRawData with sync date:`, latestRecord.rawData.syncDate);
             // Add companyId to the raw data so we can verify it matches
             setQbRawData({
@@ -1419,7 +1419,7 @@ function FinancialScorePage() {
               _companyId: selectedCompanyId,
               _recordId: latestRecord.id
             });
-            console.log(`ðŸ’¾ Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
+            console.log(`💾 Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
             // Force re-render of Financial Statements view
             setDataRefreshKey(prev => prev + 1);
             setRawRows([]); // Set empty array since rawRows is not used for QB data
@@ -6051,7 +6051,7 @@ function FinancialScorePage() {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                       onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
                     >
-                      <span>ðŸ¤–</span>
+                      <span>🤖</span>
                       <span>Proceed to AI Account Mapping ?</span>
                     </button>
                   </div>
@@ -12698,7 +12698,7 @@ function FinancialScorePage() {
                       </>
                     ) : (
                       <>
-                        <span>ðŸ¤–</span>
+                        <span>🤖</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -12907,7 +12907,7 @@ function FinancialScorePage() {
                           boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                         }}
                       >
-                        {isSavingMappings ? 'Saving...' : 'ðŸ’¾ Save Mappings'}
+                        {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
                       </button>
                     </div>
                   </div>
@@ -13327,12 +13327,12 @@ function FinancialScorePage() {
                   >
                     {isGeneratingMappings ? (
                       <>
-                        <span>ðŸ¤–</span>
+                        <span>🤖</span>
                         <span>Generating Mappings...</span>
                       </>
                     ) : (
                       <>
-                        <span>ðŸ¤–</span>
+                        <span>🤖</span>
                         <span>Generate AI Mappings</span>
                       </>
                     )}
@@ -13718,7 +13718,7 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isSavingMappings ? 'Saving...' : 'ðŸ’¾ Save Mappings'}
+                            {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
                           </button>
                         </div>
                       </div>
