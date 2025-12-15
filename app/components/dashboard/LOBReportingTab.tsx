@@ -3,10 +3,11 @@
 import React from 'react';
 import { applyLOBAllocations, AccountValue, AccountMapping, CompanyLOB } from '@/lib/lob-allocator';
 import type { MonthlyDataRow, Mappings } from '../../types';
+import { useMasterData } from '@/lib/master-data-store';
 
 interface LOBReportingTabProps {
   company: any;
-  monthly: MonthlyDataRow[];
+  selectedCompanyId: string;
   accountMappings: Mappings[];
   statementType: 'income-statement' | 'balance-sheet' | 'income-statement-percent';
   selectedLineOfBusiness: string;
@@ -20,7 +21,7 @@ interface LOBReportingTabProps {
 
 export default function LOBReportingTab({
   company,
-  monthly,
+  selectedCompanyId,
   accountMappings,
   statementType,
   selectedLineOfBusiness,
@@ -31,6 +32,8 @@ export default function LOBReportingTab({
   onPeriodChange,
   onDisplayChange,
 }: LOBReportingTabProps) {
+  // Use master data store instead of receiving monthly data as prop
+  const { data: masterData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
   
   
   // Get Lines of Business from company
@@ -70,8 +73,27 @@ export default function LOBReportingTab({
     );
   }
   
-  // Check if financial data exists
-  if (!monthly || monthly.length === 0) {
+  // Check if master data exists
+  if (masterDataLoading) {
+    return (
+      <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+          Line of Business Reporting
+        </h2>
+        <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⏳</div>
+          <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+            Loading Master Data
+          </div>
+          <p style={{ fontSize: '14px', color: '#64748b' }}>
+            Loading financial data from master data store...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (masterDataError || !masterData || !masterData.monthlyData || masterData.monthlyData.length === 0) {
     return (
       <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
@@ -80,15 +102,18 @@ export default function LOBReportingTab({
         <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
           <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-            No Financial Data
+            No Master Data Available
           </div>
           <p style={{ fontSize: '14px', color: '#64748b' }}>
-            Sync your QuickBooks data to view line of business reports.
+            {masterDataError ? `Error: ${masterDataError}` : 'No master data available for LOB reporting. Please process financial data first.'}
           </p>
         </div>
       </div>
     );
   }
+
+  // Use master data monthly data
+  const monthly = masterData.monthlyData;
   
   // Auto-select first LOB if none selected or invalid (but allow "all")
   React.useEffect(() => {

@@ -17316,8 +17316,7 @@ function FinancialScorePage() {
             {financialStatementsTab === 'line-of-business' && (
               <LOBReportingTab
                 company={company}
-                monthly={monthly}
-                qbRawData={qbRawData}
+                selectedCompanyId={selectedCompanyId}
                 accountMappings={aiMappings}
                 statementType={statementType}
                 selectedLineOfBusiness={selectedLineOfBusiness}
@@ -19743,8 +19742,7 @@ function FinancialScorePage() {
           {financialStatementsTab === 'line-of-business' && (
             <LOBReportingTab
               company={company}
-              monthly={monthly}
-              qbRawData={qbRawData}
+              selectedCompanyId={selectedCompanyId}
               accountMappings={aiMappings}
               statementType={statementType}
               selectedLineOfBusiness={selectedLineOfBusiness}
