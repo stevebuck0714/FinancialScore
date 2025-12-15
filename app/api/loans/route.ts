@@ -69,6 +69,8 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      console.log('🔧 Creating loan with data:', { companyId, loanName, lenderName });
+      
       const loan = await prisma.loan.create({
         data: {
           companyId,
@@ -86,8 +88,16 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      console.log('✅ Loan created successfully:', loan.id);
       return NextResponse.json({ loan }, { status: 201 });
     } catch (dbError: any) {
+      console.error('❌ Database error creating loan:', {
+        code: dbError.code,
+        message: dbError.message,
+        meta: dbError.meta,
+        name: dbError.name
+      });
+      
       // If table doesn't exist or database not available
       if (dbError.code === 'P2021' || dbError.message?.includes('does not exist') || dbError.message?.includes('DATABASE_URL')) {
         console.log("⚠️ Loan table not found or database not configured");
