@@ -14549,14 +14549,9 @@ function FinancialScorePage() {
               onDisplayChange={setStatementDisplay}
             />
           )}
-        </div>
-      )}
 
-      {/* Consultant Dashboard */}
-      {currentView === 'consultant-dashboard' && currentUser?.role === 'consultant' && (
-                const cogsContractors = currentMonth.cogsContractors || 0;
-                const cogsMaterials = currentMonth.cogsMaterials || 0;
-                const cogsCommissions = currentMonth.cogsCommissions || 0;
+          {/* Consultant Dashboard */}
+          {currentView === 'consultant-dashboard' && currentUser?.role === 'consultant' && (
                 const cogsOther = currentMonth.cogsOther || 0;
                 const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
 
