@@ -6828,6 +6828,20 @@ function FinancialScorePage() {
               </div>
             </div>
           )}
+
+          {/* Account Mapping Interface - Shows after CSV is uploaded */}
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && csvTrialBalanceData && (
+            <AccountMappingTable
+              mappings={aiMappings}
+              linesOfBusiness={linesOfBusiness}
+              userDefinedAllocations={userDefinedAllocations}
+              onMappingChange={(index, updates) => {
+                const newMappings = [...aiMappings];
+                newMappings[index] = { ...newMappings[index], ...updates };
+                setAiMappings(newMappings);
+              }}
+            />
+          )}
         </div>
       )}
 
