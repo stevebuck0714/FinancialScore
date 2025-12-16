@@ -117,9 +117,17 @@ export async function POST(request: NextRequest) {
                           (pricingToUse?.businessAnnualPrice ?? 1750) > 0
         };
 
+        // STORE FINAL PRICING PERMANENTLY - This is the pricing the company was registered with
+        // New companies get CURRENT default pricing from SystemSettings (or affiliate code pricing)
+        // This pricing is permanent and can only be changed by admin
         const companyData: any = {
           name: name, // Use the business name as company name
           consultantId: null, // Standalone business - no consultant
+          // Store pricing permanently - this is the pricing at registration time
+          subscriptionMonthlyPrice: finalPricing.monthly,
+          subscriptionQuarterlyPrice: finalPricing.quarterly,
+          subscriptionAnnualPrice: finalPricing.annual,
+          subscriptionStatus: finalPricing.requiresPayment ? "active" : "free",
           // DO NOT set selectedSubscriptionPlan - they must pay first
         };
 
@@ -130,10 +138,13 @@ export async function POST(request: NextRequest) {
           data: companyData
         });
 
-        // Link user to their company
+        // Link user to their company and set userType to 'COMPANY' for business users
         await tx.user.update({
           where: { id: user.id },
-          data: { companyId: company.id }
+          data: { 
+            companyId: company.id,
+            userType: 'COMPANY' // Business users are company users
+          }
         });
         
         // If affiliate code was used, increment its usage counter

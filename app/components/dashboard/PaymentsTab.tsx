@@ -70,9 +70,9 @@ export default function PaymentsTab({
               {activeSubscription ? 'Change Plan' : 'Select a Plan'}
             </h3>
             
-            {((monthlyPrice === 0 || monthlyPrice === undefined) &&
-              (quarterlyPrice === 0 || quarterlyPrice === undefined) &&
-              (annualPrice === 0 || annualPrice === undefined)) ? (
+            {/* Show "No Payment Required" only if ALL three prices are exactly $0 */}
+            {/* Do NOT treat null as free - null means "use default pricing" which requires payment */}
+            {(monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? (
               <div style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px' }}>
                 <p style={{ fontSize: '14px', color: '#065f46', fontWeight: '600' }}>
                   No Payment Required

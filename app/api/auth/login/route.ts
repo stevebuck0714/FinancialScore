@@ -72,6 +72,26 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Login successful');
     
+    // Auto-fix: Set userType for existing business users who don't have it set
+    // Business users are: role='USER', have companyId, and company has no consultantId (standalone business)
+    if (user.role === 'USER' && user.companyId && !user.userType) {
+      const company = await prisma.company.findUnique({
+        where: { id: user.companyId },
+        select: { consultantId: true }
+      });
+      
+      // If this is a standalone business (no consultant), set userType to COMPANY
+      if (company && !company.consultantId) {
+        console.log(`🔧 Auto-fixing userType for business user: ${user.email}`);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { userType: 'COMPANY' }
+        });
+        user.userType = 'COMPANY';
+        console.log(`✅ Set userType to COMPANY for ${user.email}`);
+      }
+    }
+    
     // Get consultant info - either from primaryConsultant relation or consultantFirm relation
     const consultant = user.primaryConsultant || user.consultantFirm;
     const consultantId = consultant?.id || user.consultantId;

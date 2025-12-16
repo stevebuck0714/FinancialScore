@@ -7,13 +7,24 @@ const { Server: SocketIOServer } = require('socket.io');
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config(); // Fallback to .env for any missing vars
 
-// SAFETY CHECK: Ensure dev environment never connects to prod database
-const isAllowedDatabase = process.env.DATABASE_URL?.includes('cold-frost') ||
-                         process.env.DATABASE_URL?.includes('orange-poetry') ||
-                         process.env.DATABASE_URL?.includes('neon.tech');
+// SAFETY CHECK: Ensure staging/dev environment NEVER connects to production database
+// Staging should ONLY use cold-frost, NEVER orange-poetry (production)
+const isProductionDatabase = process.env.DATABASE_URL?.includes('orange-poetry');
+const isStagingDatabase = process.env.DATABASE_URL?.includes('cold-frost');
+const isAllowedDatabase = isStagingDatabase || 
+                         process.env.DATABASE_URL?.includes('neon.tech') ||
+                         process.env.DATABASE_URL?.includes('file:');
+
+if (process.env.NODE_ENV === 'development' && isProductionDatabase) {
+  console.error('🚨 SECURITY ERROR: Staging/Dev environment is trying to connect to PRODUCTION database (orange-poetry)!');
+  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL);
+  console.error('🚨 This is a critical security violation. Staging must use cold-frost only.');
+  console.error('🚨 Aborting startup.');
+  process.exit(1);
+}
 
 if (process.env.NODE_ENV === 'development' && !isAllowedDatabase) {
-  console.error('🚨 SECURITY ERROR: Dev environment is trying to connect to non-dev database!');
+  console.error('🚨 SECURITY ERROR: Dev environment is trying to connect to unknown database!');
   console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL);
   console.error('🚨 This is a critical security violation. Aborting startup.');
   process.exit(1);
@@ -21,10 +32,11 @@ if (process.env.NODE_ENV === 'development' && !isAllowedDatabase) {
 
 // Log which database we're connecting to
 let dbLabel = 'UNKNOWN';
-if (process.env.DATABASE_URL?.includes('cold-frost')) {
-  dbLabel = 'DEV (cold-frost)';
-} else if (process.env.DATABASE_URL?.includes('orange-poetry')) {
-  dbLabel = 'STAGING (orange-poetry)';
+if (isStagingDatabase) {
+  dbLabel = 'STAGING (cold-frost)';
+} else if (isProductionDatabase) {
+  dbLabel = 'PRODUCTION (orange-poetry) ⚠️';
+  console.warn('⚠️  WARNING: Connected to PRODUCTION database!');
 } else if (process.env.DATABASE_URL?.includes('file:')) {
   dbLabel = 'SQLITE (file)';
 } else {

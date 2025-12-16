@@ -3,21 +3,18 @@ import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
 
-// GET users for a company
+// GET users for a company (or all users if no companyId provided - for site admin)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('companyId');
     const userType = searchParams.get('userType');
 
-    if (!companyId) {
-      return NextResponse.json(
-        { error: 'Company ID required' },
-        { status: 400 }
-      );
+    // Build where clause - companyId is optional (for site admin to get all users)
+    const where: any = {};
+    if (companyId) {
+      where.companyId = companyId;
     }
-
-    const where: any = { companyId };
     if (userType) {
       where.userType = userType;
     }

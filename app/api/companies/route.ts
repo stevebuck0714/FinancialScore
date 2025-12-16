@@ -37,14 +37,15 @@ export async function GET(request: NextRequest) {
         linesOfBusiness: true,
         userDefinedAllocations: true,
         createdAt: true,
-        // Skip problematic fields in production
+        // Always include pricing fields - they're needed for payment logic
+        subscriptionMonthlyPrice: true,
+        subscriptionQuarterlyPrice: true,
+        subscriptionAnnualPrice: true,
+        // Skip affiliateCode in production (not needed)
         ...(process.env.NODE_ENV === "production"
           ? {}
           : {
               affiliateCode: true,
-              subscriptionMonthlyPrice: true,
-              subscriptionQuarterlyPrice: true,
-              subscriptionAnnualPrice: true,
             }),
       },
       orderBy: { createdAt: "desc" },
@@ -262,10 +263,10 @@ export async function POST(request: NextRequest) {
           data: { currentUses: affiliateCodeBasic.currentUses + 1 },
         });
 
-        // Use affiliate pricing
-        monthlyPrice = affiliateCodeBasic.monthlyPrice;
-        quarterlyPrice = affiliateCodeBasic.quarterlyPrice;
-        annualPrice = affiliateCodeBasic.annualPrice;
+        // Use affiliate pricing - ensure $0 values are stored as 0, not null
+        monthlyPrice = affiliateCodeBasic.monthlyPrice ?? 0;
+        quarterlyPrice = affiliateCodeBasic.quarterlyPrice ?? 0;
+        annualPrice = affiliateCodeBasic.annualPrice ?? 0;
         affiliateId = affiliateCodeBasic.affiliateId;
         validatedAffiliateCode = affiliateCodeBasic.code;
         useAffiliatePricing = true;
@@ -416,29 +417,31 @@ export async function POST(request: NextRequest) {
           industrySector,
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES WORK IN BOTH ENVIRONMENTS
           // Always store pricing fields regardless of environment for affiliate codes
-          subscriptionMonthlyPrice: monthlyPrice,
-          subscriptionQuarterlyPrice: quarterlyPrice,
-          subscriptionAnnualPrice: annualPrice,
+          // Ensure $0 values are stored as 0, not null
+          subscriptionMonthlyPrice: monthlyPrice ?? 0,
+          subscriptionQuarterlyPrice: quarterlyPrice ?? 0,
+          subscriptionAnnualPrice: annualPrice ?? 0,
           subscriptionStatus:
             monthlyPrice === 0 &&
             quarterlyPrice === 0 &&
             annualPrice === 0
               ? "free"
               : "active",
-          // Store pricing in userDefinedAllocations for affiliate codes (works in all environments)
-          userDefinedAllocations: {
+          // Store pricing in userDefinedAllocations (only for affiliate codes, not for default pricing)
+          // Only store userDefinedAllocations if affiliate code was used
+          userDefinedAllocations: useAffiliatePricing ? {
             subscriptionPricing: {
-              monthly: monthlyPrice,
-              quarterly: quarterlyPrice,
-              annual: annualPrice,
+              monthly: monthlyPrice ?? 0,
+              quarterly: quarterlyPrice ?? 0,
+              annual: annualPrice ?? 0,
               isFree:
-                monthlyPrice === 0 &&
-                quarterlyPrice === 0 &&
-                annualPrice === 0,
+                (monthlyPrice ?? 0) === 0 &&
+                (quarterlyPrice ?? 0) === 0 &&
+                (annualPrice ?? 0) === 0,
               source: "affiliate_code",
               createdAt: new Date().toISOString(),
             },
-          },
+          } : undefined,
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },

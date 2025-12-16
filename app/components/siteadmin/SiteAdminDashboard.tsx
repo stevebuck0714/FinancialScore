@@ -43,6 +43,7 @@ export default function SiteAdminDashboard(props: any) {
     newConsultantCompanyWebsite, setNewConsultantCompanyWebsite,
     addConsultant, deleteConsultant, updateConsultantInfo, getConsultantCompanies,
     setCurrentUser, setSiteAdminViewingAs, setCurrentView, setLoadedConsultantId, setCompanies, currentUser,
+    setSelectedCompanyId, setCompanyToDelete, setShowDeleteConfirmation,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
     newSiteAdminEmail, setNewSiteAdminEmail,
@@ -51,11 +52,11 @@ export default function SiteAdminDashboard(props: any) {
   } = props;
 
   return (
-            <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
-              <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Site Administration</h1>
-              
-              {/* Tab Navigation */}
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '2px solid #e2e8f0' }}>
+    <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
+      <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Site Administration</h1>
+      
+      {/* Tab Navigation */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '2px solid #e2e8f0' }}>
                 <button
                   onClick={() => setSiteAdminTab('consultants')}
                   style={{
@@ -162,32 +163,32 @@ export default function SiteAdminDashboard(props: any) {
 
               {/* Consultants Tab */}
               {siteAdminTab === 'consultants' && (
-              <>
-              {/* Add Consultant Form */}
-              <div style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showAddConsultantForm ? '12px' : '0' }}>
-                  <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Add New Consultant</h2>
-                  <button
-                    onClick={() => setShowAddConsultantForm(!showAddConsultantForm)}
-                    style={{ 
-                      padding: '4px 12px', 
-                      background: showAddConsultantForm ? '#f1f5f9' : '#667eea', 
-                      color: showAddConsultantForm ? '#475569' : 'white', 
-                      border: 'none', 
-                      borderRadius: '6px', 
-                      fontSize: '12px', 
-                      fontWeight: '600', 
-                      cursor: 'pointer' 
-                    }}
-                  >
-                    {showAddConsultantForm ? '?' : '?'}
-                  </button>
-                </div>
-                {showAddConsultantForm && (
-                  <>
-                    {/* Personal Information Section */}
-                    <div style={{ marginBottom: '16px' }}>
-                      <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Contact Person Information</h4>
+                <>
+                  {/* Add Consultant Form */}
+                  <div style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showAddConsultantForm ? '12px' : '0' }}>
+                      <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Add New Consultant</h2>
+                      <button
+                        onClick={() => setShowAddConsultantForm(!showAddConsultantForm)}
+                        style={{ 
+                          padding: '4px 12px', 
+                          background: showAddConsultantForm ? '#f1f5f9' : '#667eea', 
+                          color: showAddConsultantForm ? '#475569' : 'white', 
+                          border: 'none', 
+                          borderRadius: '6px', 
+                          fontSize: '12px', 
+                          fontWeight: '600', 
+                          cursor: 'pointer' 
+                        }}
+                      >
+                        {showAddConsultantForm ? '?' : '?'}
+                      </button>
+                    </div>
+                    {showAddConsultantForm && (
+                      <>
+                        {/* Personal Information Section */}
+                        <div style={{ marginBottom: '16px' }}>
+                          <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Contact Person Information</h4>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                         <input
                           type="text"
@@ -311,22 +312,22 @@ export default function SiteAdminDashboard(props: any) {
                     </button>
                   </>
                 )}
-              </div>
+                  </div>
 
-              {/* Consultants List */}
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '10px' }}>
-                Total Consultants: {consultants.filter(c => c.type !== 'business').length}
-              </div>
+                  {/* Consultants List */}
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '10px' }}>
+                    Total Consultants: {consultants.filter(c => c.type !== 'business').length}
+                  </div>
 
-              {consultants.filter(c => c.type !== 'business').length === 0 ? (
-                <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                  <div style={{ fontSize: '36px', marginBottom: '12px' }}>👥</div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No Consultants</h3>
-                  <p style={{ fontSize: '13px', color: '#94a3b8' }}>Add your first consultant to get started</p>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: '12px' }}>
-                  {consultants.filter(c => c.type !== 'business').map((consultant) => {
+                  {consultants.filter(c => c.type !== 'business').length === 0 ? (
+                    <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                      <div style={{ fontSize: '36px', marginBottom: '12px' }}>👥</div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No Consultants</h3>
+                      <p style={{ fontSize: '13px', color: '#94a3b8' }}>Add your first consultant to get started</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: '12px' }}>
+                      {consultants.filter(c => c.type !== 'business').map((consultant) => {
                     const consultantCompanies = getConsultantCompanies(consultant.id);
                     const expanded = selectedConsultantId === consultant.id;
 
@@ -840,10 +841,10 @@ export default function SiteAdminDashboard(props: any) {
                         )}
                       </div>
                     );
-                  })}
-                </div>
-              )}
-              </>
+                      })}
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Businesses Tab */}
@@ -852,7 +853,7 @@ export default function SiteAdminDashboard(props: any) {
                   {/* Businesses List */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                      Total Businesses: {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).length}
+                      Total Businesses: {Array.isArray(companies) ? companies.filter(comp => comp.consultantId === null).length : 0}
                     </div>
                     <button
                       onClick={async () => {
@@ -922,7 +923,7 @@ export default function SiteAdminDashboard(props: any) {
                     </button>
                   </div>
 
-                  {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).length === 0 ? (
+                  {Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses registered yet</h3>
@@ -930,32 +931,76 @@ export default function SiteAdminDashboard(props: any) {
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gap: '12px' }}>
-                      {consultants.filter(c => c.type === 'business' && companies.some(comp => comp.consultantId === c.id)).map((business) => {
-                        const businessCompany = Array.isArray(companies) ? companies.find(comp => comp.consultantId === business.id) : undefined;
-                        const isExpanded = expandedBusinessIds.has(business.id);
-                        const editing = editingPricing?.[business.id];
+                      {Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).map((businessCompany) => {
+                        // Find the user associated with this company
+                        const businessUser = users.find(u => u.companyId === businessCompany.id);
+                        const isExpanded = expandedBusinessIds.has(businessCompany.id);
+                        const editing = editingPricing?.[businessCompany.id];
                         
                         return (
-                          <div key={business.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                          <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
                             {/* Business Header */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   <h3 
                                     onClick={() => {
+                                      if (!businessUser) {
+                                        console.error('User not found for company:', businessCompany.id, 'Available users:', users);
+                                        alert('User not found for this company. Please ensure the business has a registered user.');
+                                        return;
+                                      }
                                       // Save current admin user
                                       setSiteAdminViewingAs(currentUser);
-                                      // CRITICAL: Clear companies to prevent showing all companies
-                                      setCompanies([]);
-                                      setLoadedConsultantId(null);
-                                      // Switch to viewing this business's dashboard
-                                      setCurrentUser({
-                                        ...business.user,
-                                        role: 'consultant',
-                                        consultantId: business.id,
-                                        consultantType: business.type
-                                      });
-                                      setCurrentView('admin');
+                                      // Load the specific company data with all fields from API
+                                      fetch(`/api/companies?companyId=${businessCompany.id}`)
+                                        .then(res => res.json())
+                                        .then(data => {
+                                          if (data.companies && data.companies.length > 0) {
+                                            const fullCompany = data.companies[0];
+                                            setCompanies([fullCompany]);
+                                            setLoadedConsultantId(null);
+                                            // Switch to viewing this business's dashboard
+                                            // Normalize userType to lowercase 'company' to match sidebar checks
+                                            const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                            setCurrentUser({
+                                              ...businessUser,
+                                              role: 'user',
+                                              userType: normalizedUserType,
+                                              companyId: businessCompany.id
+                                            });
+                                            setSelectedCompanyId(businessCompany.id);
+                                            setCurrentView('admin');
+                                          } else {
+                                            // Fallback to using the company from the list
+                                            setCompanies([businessCompany]);
+                                            setLoadedConsultantId(null);
+                                            const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                            setCurrentUser({
+                                              ...businessUser,
+                                              role: 'user',
+                                              userType: normalizedUserType,
+                                              companyId: businessCompany.id
+                                            });
+                                            setSelectedCompanyId(businessCompany.id);
+                                            setCurrentView('admin');
+                                          }
+                                        })
+                                        .catch(err => {
+                                          console.error('Error loading company:', err);
+                                          // Fallback to using the company from the list
+                                          setCompanies([businessCompany]);
+                                          setLoadedConsultantId(null);
+                                          const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                          setCurrentUser({
+                                            ...businessUser,
+                                            role: 'user',
+                                            userType: normalizedUserType,
+                                            companyId: businessCompany.id
+                                          });
+                                          setSelectedCompanyId(businessCompany.id);
+                                          setCurrentView('admin');
+                                        });
                                     }}
                                     style={{ 
                                       fontSize: '15px', 
@@ -968,7 +1013,7 @@ export default function SiteAdminDashboard(props: any) {
                                     onMouseEnter={(e) => e.currentTarget.style.color = '#5568d3'}
                                     onMouseLeave={(e) => e.currentTarget.style.color = '#667eea'}
                                   >
-                                    {business.fullName}
+                                    {businessCompany.name}
                                   </h3>
                                 </div>
                               </div>
@@ -977,10 +1022,10 @@ export default function SiteAdminDashboard(props: any) {
                                   onClick={() => {
                                     setExpandedBusinessIds(prev => {
                                       const newSet = new Set(prev);
-                                      if (newSet.has(business.id)) {
-                                        newSet.delete(business.id);
+                                      if (newSet.has(businessCompany.id)) {
+                                        newSet.delete(businessCompany.id);
                                       } else {
-                                        newSet.add(business.id);
+                                        newSet.add(businessCompany.id);
                                       }
                                       return newSet;
                                     });
@@ -993,12 +1038,12 @@ export default function SiteAdminDashboard(props: any) {
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    console.log('Delete button clicked', { businessCompany, business });
+                                    console.log('Delete button clicked', { businessCompany });
                                     if (businessCompany) {
                                       console.log('Setting company to delete:', businessCompany.name);
                                       setCompanyToDelete({
                                         companyId: businessCompany.id,
-                                        businessId: business.id,
+                                        businessId: null,
                                         companyName: businessCompany.name
                                       });
                                       setShowDeleteConfirmation(true);
@@ -1034,9 +1079,10 @@ export default function SiteAdminDashboard(props: any) {
                                 <div style={{ marginBottom: '8px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
                                   <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Business Information</h4>
                                   <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                    <div><strong>Type:</strong> {business.type}</div>
-                                    <div><strong>Email:</strong> {business.user?.email}</div>
-                                    <div><strong>Phone:</strong> {business.phone || 'Not provided'}</div>
+                                    <div><strong>Type:</strong> Standalone Business</div>
+                                    <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                    <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                    <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
                                     <div><strong>Address:</strong> {
                                       businessCompany && (businessCompany.addressStreet || businessCompany.addressCity) ? (
                                         <>
@@ -1074,7 +1120,7 @@ export default function SiteAdminDashboard(props: any) {
                                           value={editing.monthly}
                                           onChange={(e) => setEditingPricing({
                                             ...editingPricing,
-                                            [business.id]: { ...editing, monthly: parseFloat(e.target.value) || 0 }
+                                            [businessCompany.id]: { ...editing, monthly: parseFloat(e.target.value) || 0 }
                                           })}
                                           style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                         />
@@ -1086,7 +1132,7 @@ export default function SiteAdminDashboard(props: any) {
                                           value={editing.quarterly}
                                           onChange={(e) => setEditingPricing({
                                             ...editingPricing,
-                                            [business.id]: { ...editing, quarterly: parseFloat(e.target.value) || 0 }
+                                            [businessCompany.id]: { ...editing, quarterly: parseFloat(e.target.value) || 0 }
                                           })}
                                           style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                         />
@@ -1098,7 +1144,7 @@ export default function SiteAdminDashboard(props: any) {
                                           value={editing.annual}
                                           onChange={(e) => setEditingPricing({
                                             ...editingPricing,
-                                            [business.id]: { ...editing, annual: parseFloat(e.target.value) || 0 }
+                                            [businessCompany.id]: { ...editing, annual: parseFloat(e.target.value) || 0 }
                                           })}
                                           style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                         />
@@ -1117,7 +1163,7 @@ export default function SiteAdminDashboard(props: any) {
                                         onClick={() => {
                                           setEditingPricing((prev) => {
                                             const newState = { ...prev };
-                                            delete newState[business.id];
+                                            delete newState[businessCompany.id];
                                             return newState;
                                           });
                                         }}
@@ -1137,7 +1183,7 @@ export default function SiteAdminDashboard(props: any) {
                                         onClick={() => {
                                           setEditingPricing({
                                             ...editingPricing,
-                                            [business.id]: {
+                                            [businessCompany.id]: {
                                               monthly: businessCompany?.subscriptionMonthlyPrice ?? 0,
                                               quarterly: businessCompany?.subscriptionQuarterlyPrice ?? 0,
                                               annual: businessCompany?.subscriptionAnnualPrice ?? 0
@@ -2415,11 +2461,10 @@ export default function SiteAdminDashboard(props: any) {
               </>
               )}
 
-              {/* Billing & Revenue Tab */}
-              {siteAdminTab === 'billing' && (
-                <BillingDashboard />
-              )}
-            </div>
-
+      {/* Billing & Revenue Tab */}
+      {siteAdminTab === 'billing' && (
+        <BillingDashboard />
+      )}
+    </div>
   );
 }

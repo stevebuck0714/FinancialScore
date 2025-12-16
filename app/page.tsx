@@ -377,6 +377,10 @@ function FinancialScorePage() {
                 .then(data => {
                   if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
                     safeSetCompanies(data.companies);
+                    // Ensure selectedCompanyId is set if not already
+                    if (!selectedCompanyId && data.companies.length > 0) {
+                      setSelectedCompanyId(data.companies[0].id);
+                    }
                   } else {
                     safeSetCompanies([]);
                   }
@@ -386,6 +390,20 @@ function FinancialScorePage() {
           } else {
             setCurrentView('upload');
             setSelectedCompanyId(user.companyId || '');
+            // For business users without userType set, try to load their company
+            if (user.companyId) {
+              fetch(`/api/companies?companyId=${user.companyId}`)
+                .then(res => res.json())
+                .then(data => {
+                  if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
+                    safeSetCompanies(data.companies);
+                    if (!selectedCompanyId && data.companies.length > 0) {
+                      setSelectedCompanyId(data.companies[0].id);
+                    }
+                  }
+                })
+                .catch(err => console.error('Error loading company:', err));
+            }
           }
         }
         // Clear the pending login data
@@ -536,6 +554,8 @@ function FinancialScorePage() {
   // Affiliate pricing cache removed - pricing now stored permanently in database
 
   // Check if payment is required for the current company
+  // Payment is required if ANY of the 3 subscription prices are > $0
+  // Payment is NOT required only if ALL 3 prices are exactly $0
   const isPaymentRequired = useCallback(() => {
     if (!selectedCompanyId || !currentUser) return false;
 
@@ -543,21 +563,17 @@ function FinancialScorePage() {
     if (!Array.isArray(companies)) return false;
 
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
-    if (!selectedCompany) return false;
-
-    // Check if company is free (multiple ways to detect)
-    // 1. Explicit free status
-    if (selectedCompany.subscriptionStatus === "free") {
-      console.log('🔒 Company marked as free - no payment required');
-      return false;
+    if (!selectedCompany) {
+      console.log('🔒 No company found - allowing access temporarily');
+      return false; // Don't block if company not loaded yet
     }
 
-    // 2. Check dedicated pricing fields
+    // Check dedicated pricing fields
     let monthly = selectedCompany.subscriptionMonthlyPrice;
     let quarterly = selectedCompany.subscriptionQuarterlyPrice;
     let annual = selectedCompany.subscriptionAnnualPrice;
 
-    // 3. Fall back to userDefinedAllocations if dedicated fields are null
+    // Fall back to userDefinedAllocations if dedicated fields are null/undefined
     if ((monthly === null || monthly === undefined) &&
         selectedCompany.userDefinedAllocations?.subscriptionPricing) {
       monthly = selectedCompany.userDefinedAllocations.subscriptionPricing.monthly;
@@ -565,26 +581,40 @@ function FinancialScorePage() {
       annual = selectedCompany.userDefinedAllocations.subscriptionPricing.annual;
     }
 
-    // 4. Check if pricing is $0
-    if (monthly === 0 && quarterly === 0 && annual === 0) {
-      console.log('🔒 Company has $0 pricing - no payment required');
+    // Check userDefinedAllocations for explicit free pricing flag
+    const userDefinedPricing = (selectedCompany as any).userDefinedAllocations?.subscriptionPricing;
+    const isExplicitlyFree = userDefinedPricing?.isFree === true;
+
+    // If pricing is null/undefined and no userDefinedAllocations, treat as "needs default pricing" = payment required
+    // Only treat as free if:
+    // 1. All prices are explicitly $0, OR
+    // 2. userDefinedAllocations has isFree: true (from affiliate code)
+    if (monthly === null && quarterly === null && annual === null && !userDefinedPricing) {
+      console.log('🔒 Pricing is null and no userDefinedAllocations - payment required (will use defaults)', { monthly, quarterly, annual });
+      return true; // Payment required - will use default pricing
+    }
+
+    // Check if explicitly free (all prices are exactly $0 OR isFree flag is true)
+    if (isExplicitlyFree || (monthly === 0 && quarterly === 0 && annual === 0)) {
+      console.log('🔒 Company has $0 pricing - no payment required', { monthly, quarterly, annual, isExplicitlyFree });
       return false;
     }
 
-    // 5. If no pricing data or non-zero pricing, payment required
-    console.log('🔒 Payment required - no free pricing detected');
-    return true;
-
-    // If pricing hasn't loaded yet, don't block (avoid false positives)
-    if (subscriptionMonthlyPrice === undefined || subscriptionQuarterlyPrice === undefined || subscriptionAnnualPrice === undefined) {
-      console.log('🔒 Pricing still loading - allowing access temporarily');
-      return false; // Don't block while pricing is loading
+    // If ANY price is > $0, payment is required
+    if ((monthly ?? 0) > 0 || (quarterly ?? 0) > 0 || (annual ?? 0) > 0) {
+      console.log('🔒 Payment required - non-zero pricing detected', { monthly, quarterly, annual });
+      return true;
     }
 
-    // Payment required for non-free pricing
-    console.log('🔒 Payment required for pricing:', { subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice });
-    return true;
-  }, [selectedCompanyId, currentUser, companies, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice]);
+    // If we have pricing data but it's not explicitly $0, payment required
+    if (monthly !== null || quarterly !== null || annual !== null) {
+      console.log('🔒 Payment required - has pricing data that is not free', { monthly, quarterly, annual });
+      return true;
+    }
+
+    // Default: no payment required (shouldn't reach here, but safe fallback)
+    return false;
+  }, [selectedCompanyId, currentUser, companies]);
 
   // State - Management Assessment
   const [assessmentResponses, setAssessmentResponses] = useState<AssessmentResponses>({});
@@ -1319,24 +1349,79 @@ function FinancialScorePage() {
     }
   }, [siteAdminTab]);
 
-  // Load default pricing when Default Pricing tab is opened
+  // Load all companies and users when Businesses tab is opened in site admin
   useEffect(() => {
-    if (siteAdminTab === 'default-pricing') {
-      fetch('/api/settings')
+    if (siteAdminTab === 'businesses' && currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
+      console.log('📊 Loading all companies and users for site admin businesses tab...');
+      
+      // Load companies
+      fetch('/api/companies')
         .then(res => res.json())
         .then(data => {
-          if (data.settings) {
-            setDefaultBusinessMonthlyPrice(data.settings.businessMonthlyPrice ?? 195);
-            setDefaultBusinessQuarterlyPrice(data.settings.businessQuarterlyPrice ?? 500);
-            setDefaultBusinessAnnualPrice(data.settings.businessAnnualPrice ?? 1750);
-            setDefaultConsultantMonthlyPrice(data.settings.consultantMonthlyPrice ?? 195);
-            setDefaultConsultantQuarterlyPrice(data.settings.consultantQuarterlyPrice ?? 500);
-            setDefaultConsultantAnnualPrice(data.settings.consultantAnnualPrice ?? 1750);
+          if (data.companies && Array.isArray(data.companies)) {
+            safeSetCompanies(data.companies);
+            console.log(`✅ Loaded ${data.companies.length} companies for businesses tab`);
+          } else {
+            console.warn('⚠️ No companies array in response:', data);
+            safeSetCompanies([]);
           }
         })
-        .catch(err => console.error('Error loading default pricing:', err));
+        .catch(err => {
+          console.error('❌ Error loading companies for businesses tab:', err);
+          safeSetCompanies([]);
+        });
+      
+      // Load users to find business users
+      fetch('/api/users')
+        .then(res => res.json())
+        .then(data => {
+          if (data.users && Array.isArray(data.users)) {
+            setUsers(data.users);
+            console.log(`✅ Loaded ${data.users.length} users for businesses tab`);
+          } else {
+            console.warn('⚠️ No users array in response:', data);
+            setUsers([]);
+          }
+        })
+        .catch(err => {
+          console.error('❌ Error loading users for businesses tab:', err);
+          setUsers([]);
+        });
     }
-  }, [siteAdminTab]);
+  }, [siteAdminTab, currentView, currentUser?.role]);
+
+  // Load default pricing on page load and when Default Pricing tab is opened
+  useEffect(() => {
+    // Load default pricing from SystemSettings (stored in database)
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.settings) {
+          setDefaultBusinessMonthlyPrice(data.settings.businessMonthlyPrice ?? 195);
+          setDefaultBusinessQuarterlyPrice(data.settings.businessQuarterlyPrice ?? 500);
+          setDefaultBusinessAnnualPrice(data.settings.businessAnnualPrice ?? 1750);
+          setDefaultConsultantMonthlyPrice(data.settings.consultantMonthlyPrice ?? 195);
+          setDefaultConsultantQuarterlyPrice(data.settings.consultantQuarterlyPrice ?? 500);
+          setDefaultConsultantAnnualPrice(data.settings.consultantAnnualPrice ?? 1750);
+          console.log('✅ Loaded default pricing from SystemSettings:', {
+            business: {
+              monthly: data.settings.businessMonthlyPrice ?? 195,
+              quarterly: data.settings.businessQuarterlyPrice ?? 500,
+              annual: data.settings.businessAnnualPrice ?? 1750
+            },
+            consultant: {
+              monthly: data.settings.consultantMonthlyPrice ?? 195,
+              quarterly: data.settings.consultantQuarterlyPrice ?? 500,
+              annual: data.settings.consultantAnnualPrice ?? 1750
+            }
+          });
+        }
+      })
+      .catch(err => {
+        console.error('Error loading default pricing:', err);
+        // Keep default values (195/500/1750) if API fails
+      });
+  }, []); // Load once on mount
 
   // Handle URL parameters for navigation and messages
   useEffect(() => {
@@ -1694,22 +1779,68 @@ function FinancialScorePage() {
               annual = company.userDefinedAllocations.subscriptionPricing.annual;
             }
 
-            // Check if we have valid pricing data
-            const hasPricingData = monthly !== null && quarterly !== null && annual !== null &&
-                                  monthly !== undefined && quarterly !== undefined && annual !== undefined;
+            // IMPORTANT: Existing companies keep their original pricing (set at registration)
+            // Only use default pricing if company has NO pricing data (null/undefined)
+            // This ensures existing companies maintain their registration pricing
+            const hasPricingData = monthly !== null && monthly !== undefined &&
+                                  quarterly !== null && quarterly !== undefined &&
+                                  annual !== null && annual !== undefined;
+
+            // Check if company has explicit free pricing flag
+            const userDefinedPricing = (company as any)?.userDefinedAllocations?.subscriptionPricing;
+            const isExplicitlyFree = userDefinedPricing?.isFree === true;
 
             if (hasPricingData) {
-              // Use stored pricing from database
+              // Company has pricing data - use it (this is the pricing from registration)
+              // This preserves existing company pricing and doesn't override it
               setSubscriptionMonthlyPrice(monthly);
               setSubscriptionQuarterlyPrice(quarterly);
               setSubscriptionAnnualPrice(annual);
-              console.log('✅ Loaded pricing from database:', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
+              console.log('✅ Loaded existing company pricing from database (preserved from registration):', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
+            } else if (isExplicitlyFree) {
+              // Explicitly free (affiliate code with $0 pricing)
+              console.log('✅ Company has explicit free pricing - setting to $0');
+              setSubscriptionMonthlyPrice(0);
+              setSubscriptionQuarterlyPrice(0);
+              setSubscriptionAnnualPrice(0);
             } else {
-              // No pricing data available, fall back to defaults
-              console.log('⚠️ No pricing data available, using defaults');
-              setSubscriptionMonthlyPrice(195);
-              setSubscriptionQuarterlyPrice(500);
-              setSubscriptionAnnualPrice(1750);
+              // No pricing data = company was created before pricing was saved
+              // This should only happen for very old companies - use current default pricing
+              console.log('⚠️ No pricing data in database - using current default pricing (payment required)');
+              // Load default pricing from SystemSettings
+              fetch('/api/settings')
+                .then(res => res.json())
+                .then(data => {
+                  if (data.settings) {
+                    // Determine if the current user is a business user (not a consultant or site admin)
+                    const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
+                    const defaultMonthly = isBusinessUser 
+                      ? (data.settings.businessMonthlyPrice ?? 195)
+                      : (data.settings.consultantMonthlyPrice ?? 195);
+                    const defaultQuarterly = isBusinessUser
+                      ? (data.settings.businessQuarterlyPrice ?? 500)
+                      : (data.settings.consultantQuarterlyPrice ?? 500);
+                    const defaultAnnual = isBusinessUser
+                      ? (data.settings.businessAnnualPrice ?? 1750)
+                      : (data.settings.consultantAnnualPrice ?? 1750);
+                    setSubscriptionMonthlyPrice(defaultMonthly);
+                    setSubscriptionQuarterlyPrice(defaultQuarterly);
+                    setSubscriptionAnnualPrice(defaultAnnual);
+                    console.log('✅ Loaded default pricing for company without saved pricing:', { defaultMonthly, defaultQuarterly, defaultAnnual, isBusinessUser });
+                  } else {
+                    // Fallback to hardcoded defaults
+                    setSubscriptionMonthlyPrice(195);
+                    setSubscriptionQuarterlyPrice(500);
+                    setSubscriptionAnnualPrice(1750);
+                  }
+                })
+                .catch(err => {
+                  console.error('Error loading default pricing:', err);
+                  // Fallback to hardcoded defaults
+                  setSubscriptionMonthlyPrice(195);
+                  setSubscriptionQuarterlyPrice(500);
+                  setSubscriptionAnnualPrice(1750);
+                });
             }
 
             console.log('✅ Pricing loaded from database:', {
@@ -4605,7 +4736,42 @@ function FinancialScorePage() {
               </div>
             )}
 
-            {/* Consultant Dashboard Section */}
+            {/* Company Dashboard Section - For Business Users (Company Users) */}
+            {currentUser?.role === 'user' && currentUser?.userType === 'company' && (
+              <div style={{ marginBottom: '12px' }}>
+                <h3 
+                  onClick={() => {
+                    if (selectedCompanyId) {
+                      setCurrentView('dashboard');
+                    } else {
+                      setCurrentView('admin');
+                      setAdminDashboardTab('company-management');
+                    }
+                  }}
+                  style={{ 
+                    fontSize: '14px', 
+                    fontWeight: '700', 
+                    color: (currentView === 'dashboard' || currentView === 'admin') ? '#667eea' : '#1e293b',
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.5px',
+                    padding: '8px 24px',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    transition: 'color 0.2s',
+                    borderLeft: (currentView === 'dashboard' || currentView === 'admin') ? '4px solid #667eea' : '4px solid transparent'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#667eea';
+                    e.currentTarget.title = 'Company Dashboard';
+                  }}
+                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'dashboard' || currentView === 'admin') ? '#667eea' : '#1e293b'}
+                >
+                  Company Dashboard
+                </h3>
+              </div>
+            )}
+
+            {/* Consultant Dashboard Section - For Consultants */}
             {currentUser?.role === 'consultant' && (
               <div style={{ marginBottom: '12px' }}>
                 <h3 
@@ -4631,14 +4797,6 @@ function FinancialScorePage() {
                   {(() => {
                     if (currentUser.consultantType === 'business') {
                       return 'Business Dashboard';
-                    }
-                    // For company users, show their consultant's company name
-                    if (currentUser.role === 'user' && currentUser.userType === 'company' && currentUser.consultantId) {
-                      const consultant = consultants.find(c => c.id === currentUser.consultantId);
-                      if (consultant && consultant.companyName) {
-                        return `Advisor: ${consultant.companyName}`;
-                      }
-                      return 'Dashboard';
                     }
                     // For consultants, show company name or default
                     return currentUser.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard';
@@ -5161,6 +5319,9 @@ function FinancialScorePage() {
               setLoadedConsultantId={setLoadedConsultantId}
               setCompanies={setCompanies}
               currentUser={currentUser}
+              setSelectedCompanyId={setSelectedCompanyId}
+              setCompanyToDelete={setCompanyToDelete}
+              setShowDeleteConfirmation={setShowDeleteConfirmation}
               newSiteAdminFirstName={newSiteAdminFirstName}
               setNewSiteAdminFirstName={setNewSiteAdminFirstName}
               newSiteAdminLastName={newSiteAdminLastName}
@@ -6183,22 +6344,136 @@ function FinancialScorePage() {
           )}
 
           {/* Payments Tab */}
-          {adminDashboardTab === 'payments' && selectedCompanyId && (
-            <PaymentsTab
-              selectedCompany={Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined}
-              selectedSubscriptionPlan={selectedSubscriptionPlan}
-              setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
-              activeSubscription={activeSubscription}
-              setActiveSubscription={setActiveSubscription}
-              loadingSubscription={loadingSubscription}
-              setShowCheckoutModal={setShowCheckoutModal}
-              setShowUpdatePaymentModal={setShowUpdatePaymentModal}
-              selectedCompanyId={selectedCompanyId}
-              subscriptionMonthlyPrice={subscriptionMonthlyPrice}
-              subscriptionQuarterlyPrice={subscriptionQuarterlyPrice}
-              subscriptionAnnualPrice={subscriptionAnnualPrice}
-            />
-          )}
+          {adminDashboardTab === 'payments' && selectedCompanyId && (() => {
+            const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+            
+            // Get pricing directly from company data (not state variables)
+            let monthlyPrice = selectedCompany?.subscriptionMonthlyPrice;
+            let quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice;
+            let annualPrice = selectedCompany?.subscriptionAnnualPrice;
+            
+            // Fall back to userDefinedAllocations if dedicated fields are null/undefined
+            if ((monthlyPrice === null || monthlyPrice === undefined) &&
+                selectedCompany?.userDefinedAllocations?.subscriptionPricing) {
+              monthlyPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.monthly;
+              quarterlyPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.quarterly;
+              annualPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.annual;
+            }
+            
+            // Check if company has explicit free pricing (isFree flag in userDefinedAllocations)
+            const userDefinedPricing = (selectedCompany as any)?.userDefinedAllocations?.subscriptionPricing;
+            const isExplicitlyFree = userDefinedPricing?.isFree === true;
+            
+            // Determine final pricing values
+            let finalMonthlyPrice: number;
+            let finalQuarterlyPrice: number;
+            let finalAnnualPrice: number;
+            
+            // Normalize pricing values to numbers (handle string "0" and number 0)
+            // Also handle the case where values might be 0, "0", or null/undefined
+            const normalizedMonthly = monthlyPrice != null ? Number(monthlyPrice) : null;
+            const normalizedQuarterly = quarterlyPrice != null ? Number(quarterlyPrice) : null;
+            const normalizedAnnual = annualPrice != null ? Number(annualPrice) : null;
+            
+            // Determine final pricing values
+            // Check if all prices are explicitly 0 (free pricing) - handle both string "0" and number 0
+            // Also check raw values in case normalization didn't work
+            const allPricesAreZero = (normalizedMonthly === 0 && normalizedQuarterly === 0 && normalizedAnnual === 0) ||
+                                    (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0);
+            
+            // Check if pricing is null/undefined and no userDefinedAllocations (use default pricing)
+            const pricingIsMissing = normalizedMonthly === null && normalizedQuarterly === null && normalizedAnnual === null && !userDefinedPricing;
+            
+            // CRITICAL: If company has $0 pricing, always use $0 (don't fall back to defaults)
+            if (isExplicitlyFree || allPricesAreZero) {
+              // Explicitly free (affiliate code with $0 pricing) - use $0
+              finalMonthlyPrice = 0;
+              finalQuarterlyPrice = 0;
+              finalAnnualPrice = 0;
+              console.log('✅ Company has $0 pricing - setting all prices to 0');
+            } else if (pricingIsMissing) {
+              // Company was created without affiliate code - use default pricing from SystemSettings
+              // For business users, use business pricing defaults; for consultants, use consultant defaults
+              const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
+              if (isBusinessUser) {
+                // Use business pricing defaults from SystemSettings (loaded in state)
+                finalMonthlyPrice = defaultBusinessMonthlyPrice ?? 195;
+                finalQuarterlyPrice = defaultBusinessQuarterlyPrice ?? 500;
+                finalAnnualPrice = defaultBusinessAnnualPrice ?? 1750;
+              } else {
+                // Consultant pricing from SystemSettings (loaded in state)
+                finalMonthlyPrice = defaultConsultantMonthlyPrice ?? 195;
+                finalQuarterlyPrice = defaultConsultantQuarterlyPrice ?? 500;
+                finalAnnualPrice = defaultConsultantAnnualPrice ?? 1750;
+              }
+            } else {
+              // Has pricing data - use it (or defaults for any null/undefined values)
+              // For business users, use business defaults; for consultants, use consultant defaults
+              const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
+              const defaultMonthly = isBusinessUser ? (defaultBusinessMonthlyPrice ?? 195) : (defaultConsultantMonthlyPrice ?? 195);
+              const defaultQuarterly = isBusinessUser ? (defaultBusinessQuarterlyPrice ?? 500) : (defaultConsultantQuarterlyPrice ?? 500);
+              const defaultAnnual = isBusinessUser ? (defaultBusinessAnnualPrice ?? 1750) : (defaultConsultantAnnualPrice ?? 1750);
+              
+              // Use normalized values if they exist, but preserve 0 values (don't replace 0 with defaults)
+              finalMonthlyPrice = (normalizedMonthly !== null && normalizedMonthly !== undefined) 
+                ? normalizedMonthly 
+                : ((monthlyPrice === 0) ? 0 : defaultMonthly);
+              finalQuarterlyPrice = (normalizedQuarterly !== null && normalizedQuarterly !== undefined) 
+                ? normalizedQuarterly 
+                : ((quarterlyPrice === 0) ? 0 : defaultQuarterly);
+              finalAnnualPrice = (normalizedAnnual !== null && normalizedAnnual !== undefined) 
+                ? normalizedAnnual 
+                : ((annualPrice === 0) ? 0 : defaultAnnual);
+              
+              // Double-check: if all final prices are 0, ensure they stay 0
+              if (finalMonthlyPrice === 0 && finalQuarterlyPrice === 0 && finalAnnualPrice === 0) {
+                console.log('✅ All final prices are 0 - confirming free pricing');
+              }
+            }
+            
+            // Debug logging
+            console.log('💰 PaymentsTab Pricing Debug:', {
+              companyId: selectedCompanyId,
+              companyName: selectedCompany?.name,
+              fromCompany: {
+                monthly: selectedCompany?.subscriptionMonthlyPrice,
+                quarterly: selectedCompany?.subscriptionQuarterlyPrice,
+                annual: selectedCompany?.subscriptionAnnualPrice
+              },
+              fromUserDefined: userDefinedPricing,
+              isExplicitlyFree,
+              rawValues: { monthlyPrice, quarterlyPrice, annualPrice },
+              normalizedValues: { normalizedMonthly, normalizedQuarterly, normalizedAnnual },
+              allPricesAreZero,
+              pricingIsMissing,
+              finalValues: { finalMonthlyPrice, finalQuarterlyPrice, finalAnnualPrice },
+              isFree: isExplicitlyFree || allPricesAreZero || (finalMonthlyPrice === 0 && finalQuarterlyPrice === 0 && finalAnnualPrice === 0),
+              defaultPricing: {
+                business: { monthly: defaultBusinessMonthlyPrice, quarterly: defaultBusinessQuarterlyPrice, annual: defaultBusinessAnnualPrice },
+                consultant: { monthly: defaultConsultantMonthlyPrice, quarterly: defaultConsultantQuarterlyPrice, annual: defaultConsultantAnnualPrice }
+              },
+              userType: currentUser?.userType,
+              role: currentUser?.role,
+              consultantId: currentUser?.consultantId
+            });
+            
+            return (
+              <PaymentsTab
+                selectedCompany={selectedCompany}
+                selectedSubscriptionPlan={selectedSubscriptionPlan}
+                setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
+                activeSubscription={activeSubscription}
+                setActiveSubscription={setActiveSubscription}
+                loadingSubscription={loadingSubscription}
+                setShowCheckoutModal={setShowCheckoutModal}
+                setShowUpdatePaymentModal={setShowUpdatePaymentModal}
+                selectedCompanyId={selectedCompanyId}
+                subscriptionMonthlyPrice={finalMonthlyPrice}
+                subscriptionQuarterlyPrice={finalQuarterlyPrice}
+                subscriptionAnnualPrice={finalAnnualPrice}
+              />
+            );
+          })()}
 
           {!selectedCompanyId && adminDashboardTab === 'payments' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
