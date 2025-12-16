@@ -9,24 +9,26 @@ require('dotenv').config(); // Fallback to .env for any missing vars
 
 // SAFETY CHECK: Ensure staging/dev environment NEVER connects to production database
 // Staging should ONLY use cold-frost, NEVER orange-poetry (production)
+// This is the first line of defense - additional checks in lib/db-security.ts
+
 const isProductionDatabase = process.env.DATABASE_URL?.includes('orange-poetry');
 const isStagingDatabase = process.env.DATABASE_URL?.includes('cold-frost');
-const isAllowedDatabase = isStagingDatabase || 
-                         process.env.DATABASE_URL?.includes('neon.tech') ||
-                         process.env.DATABASE_URL?.includes('file:');
 
-if (process.env.NODE_ENV === 'development' && isProductionDatabase) {
+// CRITICAL: Block production database in development/preview environments
+if ((process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'preview') && isProductionDatabase) {
   console.error('🚨 SECURITY ERROR: Staging/Dev environment is trying to connect to PRODUCTION database (orange-poetry)!');
-  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL);
+  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
   console.error('🚨 This is a critical security violation. Staging must use cold-frost only.');
   console.error('🚨 Aborting startup.');
   process.exit(1);
 }
 
-if (process.env.NODE_ENV === 'development' && !isAllowedDatabase) {
-  console.error('🚨 SECURITY ERROR: Dev environment is trying to connect to unknown database!');
-  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL);
-  console.error('🚨 This is a critical security violation. Aborting startup.');
+// CRITICAL: Block staging database in production environment
+if (process.env.VERCEL_ENV === 'production' && isStagingDatabase) {
+  console.error('🚨 SECURITY ERROR: Production environment is trying to connect to STAGING database (cold-frost)!');
+  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
+  console.error('🚨 This is a critical security violation. Production must use orange-poetry only.');
+  console.error('🚨 Aborting startup.');
   process.exit(1);
 }
 
