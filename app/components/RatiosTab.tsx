@@ -5,6 +5,7 @@ import { useMasterData } from '@/lib/master-data-store';
 import type { MonthlyDataRow } from '../types';
 import dynamic from 'next/dynamic';
 import { exportMonthlyRatiosToExcel } from '../utils/excel-export';
+import { getBenchmarkValue } from '../utils/data-processing';
 
 const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
 
@@ -23,6 +24,14 @@ export default function RatiosTab({
 }: RatiosTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
   const monthly = monthlyData || [];
+
+  // Debug: Log benchmarks when component receives them
+  React.useEffect(() => {
+    console.log('[RatiosTab] Benchmarks received:', {
+      count: benchmarks?.length || 0,
+      sample: benchmarks?.slice(0, 3).map((b: any) => ({ metricName: b.metricName, value: b.fiveYearValue }))
+    });
+  }, [benchmarks]);
 
   const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios' | 'monthly-ratios'>('all-ratios');
   const [priorityRatios, setPriorityRatios] = useState<string[]>([]);
@@ -173,11 +182,11 @@ export default function RatiosTab({
     });
   }, [monthly]);
 
-  const getBenchmarkValue = (benchmarks: any[], metricName: string) => {
-    if (!benchmarks || benchmarks.length === 0) return null;
-    const benchmark = benchmarks.find(b => b.metricName === metricName);
-    return benchmark ? benchmark.value : null;
-  };
+  // Using getBenchmarkValue from utils/data-processing which handles:
+  // - Case-insensitive matching
+  // - KPI_TO_BENCHMARK_MAP mappings
+  // - fiveYearValue property (not 'value')
+  // - Partial matching fallback
 
   const savePriorityRatios = () => {
     if (selectedCompanyId) {

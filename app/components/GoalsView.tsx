@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
+import toast from 'react-hot-toast';
 
 interface GoalsViewProps {
   selectedCompanyId: string;
@@ -18,6 +19,8 @@ export default function GoalsView({
   expenseGoals,
   setExpenseGoals
 }: GoalsViewProps) {
+  const [isSaving, setIsSaving] = React.useState(false);
+  
   // Use the master data store hook
   const { data: masterData, loading, error } = useMasterData(selectedCompanyId);
 
@@ -40,6 +43,93 @@ export default function GoalsView({
     { month: 'May 2024', date: new Date('2024-05-01') },
     { month: 'Jun 2024', date: new Date('2024-06-01') }
   ];
+
+  // Calculate monthly totals for COGS categories
+  const cogsMonthlyTotals = React.useMemo(() => {
+    const totals: number[] = [];
+    const monthsCount = last6Months.length;
+    for (let i = 0; i < monthsCount; i++) {
+      let total = 0;
+      cogsCategories.forEach(category => {
+        if (category.monthlyPercentages && category.monthlyPercentages[i]) {
+          const mp = category.monthlyPercentages[i];
+          if (mp && !isNaN(mp.percentage)) {
+            total += mp.percentage;
+          }
+        }
+      });
+      totals.push(total);
+    }
+    return totals;
+  }, [cogsCategories, last6Months]);
+
+  // Calculate average of COGS monthly totals (6-Mo Avg)
+  const cogsTotalAverage = React.useMemo(() => {
+    if (cogsMonthlyTotals.length === 0) return 0;
+    const sum = cogsMonthlyTotals.reduce((acc, total) => acc + total, 0);
+    return sum / cogsMonthlyTotals.length;
+  }, [cogsMonthlyTotals]);
+
+  // Calculate monthly totals for Operating Expenses categories
+  const expenseMonthlyTotals = React.useMemo(() => {
+    const totals: number[] = [];
+    const monthsCount = last6Months.length;
+    for (let i = 0; i < monthsCount; i++) {
+      let total = 0;
+      expenseCategories.forEach(category => {
+        if (category.monthlyPercentages && category.monthlyPercentages[i]) {
+          const mp = category.monthlyPercentages[i];
+          if (mp && !isNaN(mp.percentage)) {
+            total += mp.percentage;
+          }
+        }
+      });
+      totals.push(total);
+    }
+    return totals;
+  }, [expenseCategories, last6Months]);
+
+  // Calculate average of Operating Expenses monthly totals (6-Mo Avg)
+  const expenseTotalAverage = React.useMemo(() => {
+    if (expenseMonthlyTotals.length === 0) return 0;
+    const sum = expenseMonthlyTotals.reduce((acc, total) => acc + total, 0);
+    return sum / expenseMonthlyTotals.length;
+  }, [expenseMonthlyTotals]);
+
+  // Save goals to database
+  const handleSave = async () => {
+    if (!selectedCompanyId) {
+      toast.error('No company selected');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await fetch('/api/expense-goals', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          goals: expenseGoals,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save goals');
+      }
+
+      toast.success('Goals saved successfully!');
+    } catch (error: any) {
+      console.error('Error saving goals:', error);
+      toast.error(error.message || 'Failed to save goals. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '32px' }}>
@@ -147,6 +237,26 @@ export default function GoalsView({
               </tr>
             ))}
 
+            {/* COGS Total Row */}
+            {cogsCategories.length > 0 && (
+              <tr style={{ borderTop: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+                <td style={{ padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                  Total COGS
+                </td>
+                {cogsMonthlyTotals.map((total, i) => (
+                  <td key={i} style={{ textAlign: 'right', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                    {total.toFixed(1)}%
+                  </td>
+                ))}
+                <td style={{ textAlign: 'right', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                  {cogsTotalAverage.toFixed(1)}%
+                </td>
+                <td style={{ textAlign: 'center', padding: '16px 12px' }}>
+                  {/* Empty cell for goal column */}
+                </td>
+              </tr>
+            )}
+
             {/* Render Expense categories */}
             {expenseCategories.length > 0 && (
               <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
@@ -211,8 +321,60 @@ export default function GoalsView({
                 </td>
               </tr>
             ))}
+
+            {/* Operating Expenses Total Row */}
+            {expenseCategories.length > 0 && (
+              <tr style={{ borderTop: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+                <td style={{ padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                  Total Operating Expenses
+                </td>
+                {expenseMonthlyTotals.map((total, i) => (
+                  <td key={i} style={{ textAlign: 'right', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                    {total.toFixed(1)}%
+                  </td>
+                ))}
+                <td style={{ textAlign: 'right', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+                  {expenseTotalAverage.toFixed(1)}%
+                </td>
+                <td style={{ textAlign: 'center', padding: '16px 12px' }}>
+                  {/* Empty cell for goal column */}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
+
+        {/* Save Button */}
+        <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            style={{
+              padding: '12px 32px',
+              fontSize: '16px',
+              fontWeight: '600',
+              color: 'white',
+              backgroundColor: isSaving ? '#94a3b8' : '#667eea',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: isSaving ? 'not-allowed' : 'pointer',
+              transition: 'background-color 0.2s',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            }}
+            onMouseEnter={(e) => {
+              if (!isSaving) {
+                e.currentTarget.style.backgroundColor = '#5568d3';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isSaving) {
+                e.currentTarget.style.backgroundColor = '#667eea';
+              }
+            }}
+          >
+            {isSaving ? 'Saving...' : 'Save Goals'}
+          </button>
+        </div>
       </div>
     </div>
   );
