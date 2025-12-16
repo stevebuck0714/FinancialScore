@@ -17,8 +17,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Use raw SQL to bypass Prisma schema validation issues
+    // The ExpenseGoal model is commented out in schema, but table exists in DB
     const goalsJson = JSON.stringify(goals);
-    const now = new Date().toISOString();
+    const now = new Date();
     
     // Check if record exists
     const existing = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -28,21 +29,29 @@ export async function POST(request: NextRequest) {
     console.log('💾 API: Existing record check:', existing);
     
     if (existing.length > 0) {
-      // Update existing
+      // Update existing - use jsonb casting and proper timestamp
       console.log('💾 API: Updating existing record');
-      await prisma.$executeRaw`
-        UPDATE "ExpenseGoal" 
-        SET goals = ${goalsJson}::json, "updatedAt" = ${now}::timestamp
-        WHERE "companyId" = ${companyId}
-      `;
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ExpenseGoal" 
+         SET goals = $1::jsonb, "updatedAt" = $2
+         WHERE "companyId" = $3`,
+        goalsJson,
+        now,
+        companyId
+      );
     } else {
-      // Create new
+      // Create new - use jsonb casting and proper timestamp
       console.log('💾 API: Creating new record');
       const id = `eg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      await prisma.$executeRaw`
-        INSERT INTO "ExpenseGoal" (id, "companyId", goals, "createdAt", "updatedAt")
-        VALUES (${id}, ${companyId}, ${goalsJson}::json, ${now}::timestamp, ${now}::timestamp)
-      `;
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "ExpenseGoal" (id, "companyId", goals, "createdAt", "updatedAt")
+         VALUES ($1, $2, $3::jsonb, $4, $5)`,
+        id,
+        companyId,
+        goalsJson,
+        now,
+        now
+      );
     }
 
     console.log('✅ API: Goals saved successfully');
