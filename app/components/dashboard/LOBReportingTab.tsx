@@ -17,6 +17,7 @@ interface LOBReportingTabProps {
   onLineOfBusinessChange: (lob: string) => void;
   onPeriodChange: (period: string) => void;
   onDisplayChange: (display: 'monthly' | 'quarterly' | 'annual') => void;
+  onNavigateToAccountMappings?: () => void;
 }
 
 export default function LOBReportingTab({
@@ -31,6 +32,7 @@ export default function LOBReportingTab({
   onLineOfBusinessChange,
   onPeriodChange,
   onDisplayChange,
+  onNavigateToAccountMappings,
 }: LOBReportingTabProps) {
   // Use master data store instead of receiving monthly data as prop
   const { data: masterData, monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
@@ -54,7 +56,14 @@ export default function LOBReportingTab({
             To view line of business reporting, you need to configure LOB allocations in your account mappings.
           </p>
           <button
-            onClick={() => window.location.href = '#account-mappings'}
+            onClick={() => {
+              if (onNavigateToAccountMappings) {
+                onNavigateToAccountMappings();
+              } else {
+                // Fallback: try to navigate using window location if prop not provided
+                window.location.href = '#account-mappings';
+              }
+            }}
             style={{
               padding: '8px 16px',
               background: '#f59e0b',
@@ -195,6 +204,36 @@ export default function LOBReportingTab({
     }));
   };
   
+  // Format month as MM-YYYY
+  const formatMonth = (monthValue: any): string => {
+    if (!monthValue) return '';
+    
+    // If already in MM-YYYY format, return as is
+    if (typeof monthValue === 'string' && /^\d{2}-\d{4}$/.test(monthValue)) {
+      return monthValue;
+    }
+    
+    // If already in MM/YYYY format, convert to MM-YYYY
+    if (typeof monthValue === 'string' && /^\d{1,2}\/\d{4}$/.test(monthValue)) {
+      const [month, year] = monthValue.split('/');
+      return `${month.padStart(2, '0')}-${year}`;
+    }
+    
+    // Try to parse as date
+    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // If it's a string that doesn't match expected formats, return as is
+      return String(monthValue);
+    }
+    
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${month}-${year}`;
+  };
+  
   // Process monthly data for LOB reporting
   if (filteredMonthly && filteredMonthly.length > 0 && accountMappings && accountMappings.length > 0) {
     
@@ -203,7 +242,8 @@ export default function LOBReportingTab({
     
     // First, process month by month to build detailed data
     filteredMonthly.forEach((monthData, idx) => {
-      const monthLabel = monthData.month || monthData.date || `Month ${idx + 1}`;
+      const rawMonth = monthData.month || monthData.date || monthData.monthDate;
+      const monthLabel = rawMonth ? formatMonth(rawMonth) : `Month ${idx + 1}`;
       
       // All financial fields we want to track
       const fields = {
@@ -464,8 +504,8 @@ export default function LOBReportingTab({
           const monthStr = m.month;
           let quarter = '';
           
-          // Parse month from format like "12/2024" or month names
-          const monthMatch = monthStr.match(/^(\d{1,2})\/(\d{4})$/); // MM/YYYY format
+          // Parse month from format like "12-2024" (MM-YYYY) or "12/2024" (MM/YYYY) or month names
+          const monthMatch = monthStr.match(/^(\d{1,2})[-\/](\d{4})$/); // MM-YYYY or MM/YYYY format
           if (monthMatch) {
             const monthNum = parseInt(monthMatch[1]);
             const year = monthMatch[2];
@@ -480,7 +520,7 @@ export default function LOBReportingTab({
               quarter = `Q4 ${year}`;
             }
           } else {
-            // Fallback for month names
+            // Fallback for month names or try to parse as date
             const year = monthStr.match(/\d{4}/)?.[0] || '';
             if (monthStr.includes('Jan') || monthStr.includes('Feb') || monthStr.includes('Mar')) {
               quarter = `Q1 ${year}`;
@@ -490,6 +530,22 @@ export default function LOBReportingTab({
               quarter = `Q3 ${year}`;
             } else if (monthStr.includes('Oct') || monthStr.includes('Nov') || monthStr.includes('Dec')) {
               quarter = `Q4 ${year}`;
+            } else {
+              // Try to parse as date and extract quarter
+              const date = new Date(monthStr);
+              if (!isNaN(date.getTime())) {
+                const monthNum = date.getMonth() + 1;
+                const year = date.getFullYear();
+                if (monthNum >= 1 && monthNum <= 3) {
+                  quarter = `Q1 ${year}`;
+                } else if (monthNum >= 4 && monthNum <= 6) {
+                  quarter = `Q2 ${year}`;
+                } else if (monthNum >= 7 && monthNum <= 9) {
+                  quarter = `Q3 ${year}`;
+                } else if (monthNum >= 10 && monthNum <= 12) {
+                  quarter = `Q4 ${year}`;
+                }
+              }
             }
           }
           

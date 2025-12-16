@@ -34,6 +34,36 @@ export default function CashFlowTab({
     );
   }
 
+  // Format month as MM-YYYY
+  const formatMonth = (monthValue: any): string => {
+    if (!monthValue) return '';
+    
+    // If already in MM-YYYY format, return as is
+    if (typeof monthValue === 'string' && /^\d{2}-\d{4}$/.test(monthValue)) {
+      return monthValue;
+    }
+    
+    // If already in MM/YYYY format, convert to MM-YYYY
+    if (typeof monthValue === 'string' && /^\d{1,2}\/\d{4}$/.test(monthValue)) {
+      const [month, year] = monthValue.split('/');
+      return `${month.padStart(2, '0')}-${year}`;
+    }
+    
+    // Try to parse as date
+    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // If it's a string that doesn't match expected formats, return as is
+      return String(monthValue);
+    }
+    
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${month}-${year}`;
+  };
+
   // Calculate cash flow data based on view
   const dataMonths = cashFlowDisplay === 'quarterly' ? 12 : (cashFlowDisplay === 'annual' ? 36 : 12);
   const dataSet = monthly.slice(-dataMonths);
@@ -88,8 +118,9 @@ export default function CashFlowTab({
     const DPO = payablesTurnover > 0 ? 365 / payablesTurnover : 0;
     const CCC = DIO + DSO - DPO;
     
+    const monthValue = curr.monthDate || curr.month;
     return {
-      month: (curr.monthDate || curr.month) as string,
+      month: formatMonth(monthValue),
       netIncome,
       depreciation,
       changeInWorkingCapital,
@@ -118,9 +149,18 @@ export default function CashFlowTab({
     displayData = [];
     for (let i = 0; i < cashFlowData.length; i += 3) {
       const quarter = cashFlowData.slice(i, i + 3);
-      const quarterEnd = quarter[quarter.length - 1].month;
+      const quarterEndMonth = quarter[quarter.length - 1].month;
+      // Format quarter label (e.g., "Q1 2024" or "03-2024")
+      let quarterLabel = quarterEndMonth;
+      const monthMatch = quarterEndMonth.match(/^(\d{2})-(\d{4})$/);
+      if (monthMatch) {
+        const monthNum = parseInt(monthMatch[1]);
+        const year = monthMatch[2];
+        const quarterNum = Math.ceil(monthNum / 3);
+        quarterLabel = `Q${quarterNum} ${year}`;
+      }
       const aggregated = {
-        month: quarterEnd,
+        month: quarterLabel,
         netIncome: quarter.reduce((sum, d) => sum + d.netIncome, 0),
         depreciation: quarter.reduce((sum, d) => sum + d.depreciation, 0),
         changeInWorkingCapital: quarter.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
@@ -154,9 +194,21 @@ export default function CashFlowTab({
       const yearData = cashFlowData.slice(yearStart, yearEnd);
       
       if (yearData.length > 0) {
-        const yearEndDate = yearData[yearData.length - 1].month;
+        const yearEndMonth = yearData[yearData.length - 1].month;
+        // Format year label (e.g., "2024" or extract year from "MM-YYYY")
+        let yearLabel = yearEndMonth;
+        const yearMatch = yearEndMonth.match(/-(\d{4})$/);
+        if (yearMatch) {
+          yearLabel = yearMatch[1];
+        } else {
+          // Try to extract year from date string
+          const date = new Date(yearEndMonth);
+          if (!isNaN(date.getTime())) {
+            yearLabel = String(date.getFullYear());
+          }
+        }
         displayData.push({
-          month: yearEndDate,
+          month: yearLabel,
           netIncome: yearData.reduce((sum, d) => sum + d.netIncome, 0),
           depreciation: yearData.reduce((sum, d) => sum + d.depreciation, 0),
           changeInWorkingCapital: yearData.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),

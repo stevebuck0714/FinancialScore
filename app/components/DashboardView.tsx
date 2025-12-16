@@ -1311,11 +1311,30 @@ export default function DashboardView({
                   const wcProjections = tcaProjections.map((tca, i) => tca - tclProjections[i]);
                   
                   // Generate month labels for projections
-                  const lastMonth = new Date(historicalData[historicalData.length - 1].month);
+                  // Format month helper
+                  const formatMonth = (monthValue: any): string => {
+                    if (!monthValue) return '';
+                    if (typeof monthValue === 'string' && /^\d{2}-\d{4}$/.test(monthValue)) {
+                      return monthValue;
+                    }
+                    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
+                    if (isNaN(date.getTime())) return String(monthValue);
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const year = date.getFullYear();
+                    return `${month}-${year}`;
+                  };
+                  
+                  // Get last month date
+                  const lastMonthValue = historicalData[historicalData.length - 1].month;
+                  const lastMonth = lastMonthValue instanceof Date ? lastMonthValue : new Date(lastMonthValue);
+                  
+                  // Generate projected months in MM-YYYY format
                   const projectedMonths = Array.from({ length: 12 }, (_, i) => {
                     const date = new Date(lastMonth);
                     date.setMonth(date.getMonth() + i + 1);
-                    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const year = date.getFullYear();
+                    return `${month}-${year}`;
                   });
                   
                   const projectedData = projectedMonths.map((month, i) => ({

@@ -37,6 +37,36 @@ export default function RatiosTab({
     }
   }, [selectedCompanyId]);
 
+  // Format month as MM-YYYY
+  const formatMonth = (monthValue: any): string => {
+    if (!monthValue) return '';
+    
+    // If already in MM-YYYY format, return as is
+    if (typeof monthValue === 'string' && /^\d{2}-\d{4}$/.test(monthValue)) {
+      return monthValue;
+    }
+    
+    // If already in MM/YYYY format, convert to MM-YYYY
+    if (typeof monthValue === 'string' && /^\d{1,2}\/\d{4}$/.test(monthValue)) {
+      const [month, year] = monthValue.split('/');
+      return `${month.padStart(2, '0')}-${year}`;
+    }
+    
+    // Try to parse as date
+    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // If it's a string that doesn't match expected formats, return as is
+      return String(monthValue);
+    }
+    
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${month}-${year}`;
+  };
+
   // Calculate trendData from monthly data (ratios/KPIs)
   const trendData = React.useMemo(() => {
     if (!monthly || monthly.length === 0) return [];
@@ -109,8 +139,9 @@ export default function RatiosTab({
       const ebitdaMargin = revenue > 0 ? ebitda / revenue : 0;
       const ebitMargin = revenue > 0 ? ebit / revenue : 0;
 
+      const monthValue = m.monthDate || m.month;
       return {
-        month: m.monthDate || m.month,
+        month: formatMonth(monthValue),
         monthDate: m.monthDate,
         // Liquidity
         currentRatio,
@@ -564,7 +595,7 @@ export default function RatiosTab({
                   <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
                   {trendData.slice(-12).map((data, i) => (
                     <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                      {data.month}
                     </th>
                   ))}
                 </tr>
@@ -599,7 +630,7 @@ export default function RatiosTab({
                   <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
                   {trendData.slice(-12).map((data, i) => (
                     <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                      {data.month}
                     </th>
                   ))}
                 </tr>
@@ -674,7 +705,7 @@ export default function RatiosTab({
                   <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
                   {trendData.slice(-12).map((data, i) => (
                     <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                      {data.month}
                     </th>
                   ))}
                 </tr>
@@ -717,7 +748,7 @@ export default function RatiosTab({
                   <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
                   {trendData.slice(-12).map((data, i) => (
                     <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                      {data.month}
                     </th>
                   ))}
                 </tr>
@@ -760,7 +791,7 @@ export default function RatiosTab({
                   <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
                   {trendData.slice(-12).map((data, i) => (
                     <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                      {data.month.substring(0, data.month.lastIndexOf('/'))}
+                      {data.month}
                     </th>
                   ))}
                 </tr>

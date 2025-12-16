@@ -8201,6 +8201,10 @@ function FinancialScorePage() {
               onLineOfBusinessChange={setSelectedLineOfBusiness}
               onPeriodChange={setStatementPeriod}
               onDisplayChange={setStatementDisplay}
+              onNavigateToAccountMappings={() => {
+                setCurrentView('admin');
+                setAdminDashboardTab('data-mapping');
+              }}
             />
           )}
 
@@ -10644,6 +10648,10 @@ function FinancialScorePage() {
               onLineOfBusinessChange={setSelectedLineOfBusiness}
               onPeriodChange={setStatementPeriod}
               onDisplayChange={setStatementDisplay}
+              onNavigateToAccountMappings={() => {
+                setCurrentView('admin');
+                setAdminDashboardTab('data-mapping');
+              }}
             />
           )}
         </div>
