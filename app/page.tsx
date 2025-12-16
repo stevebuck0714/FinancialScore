@@ -2672,6 +2672,12 @@ function FinancialScorePage() {
         // Update sync timestamp - this will trigger the useEffect to reload data
         setQbLastSync(new Date());
         
+        // Clear the master data cache so Data Review tab shows updated data
+        if (selectedCompanyId) {
+          masterDataStore.clearCompanyCache(selectedCompanyId);
+          console.log('🧹 Master data cache cleared after QuickBooks sync');
+        }
+        
         // Refresh QuickBooks status
         if (selectedCompanyId) {
           await checkQBStatus(selectedCompanyId);
@@ -7041,18 +7047,21 @@ function FinancialScorePage() {
                                     })
                                   });
 
-                                  const masterDataResult = await masterDataResponse.json();
-                                  if (masterDataResult.success) {
-                                    console.log(`✅ Master data auto-created: ${masterDataResult.months} months`);
-                                  } else {
-                                    console.error('❌ Failed to auto-create master data:', masterDataResult.error);
-                                  }
-                                } catch (masterDataError) {
-                                  console.error('❌ Error auto-creating master data:', masterDataError);
+                                const masterDataResult = await masterDataResponse.json();
+                                if (masterDataResult.success) {
+                                  console.log(`✅ Master data auto-created: ${masterDataResult.months} months`);
+                                  // Clear the master data cache so Data Review tab shows updated data
+                                  masterDataStore.clearCompanyCache(selectedCompanyId);
+                                  console.log('🧹 Master data cache cleared - Data Review will show fresh data');
+                                } else {
+                                  console.error('❌ Failed to auto-create master data:', masterDataResult.error);
                                 }
+                              } catch (masterDataError) {
+                                console.error('❌ Error auto-creating master data:', masterDataError);
+                              }
 
-                                // Update local state
-                                setLoadedMonthlyData(processedData);
+                              // Update local state
+                              setLoadedMonthlyData(processedData);
 
                                 alert(`✅ Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
                               } catch (error: any) {

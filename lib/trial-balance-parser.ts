@@ -72,18 +72,37 @@ export const ACCOUNT_TYPE_TO_TARGET_FIELD: { [key: string]: string } = {
 };
 
 /**
- * Parse a number from a CSV value (handles commas, quotes, negative numbers)
+ * Parse a number from a CSV value (handles commas, quotes, negative numbers, accounting parentheses)
  */
 function parseNumber(value: string | undefined): number {
   if (!value || value === '' || value === null || value === undefined) return 0;
   
-  // Remove quotes, commas, and whitespace
-  const cleaned = String(value).replace(/[",\s]/g, '').trim();
+  // Convert to string and remove quotes, dollar signs, and whitespace
+  let cleaned = String(value).replace(/["$\s]/g, '').trim();
   
   if (cleaned === '' || cleaned === '0') return 0;
   
+  // Check for accounting format negative numbers with parentheses: (1000.00)
+  let isNegative = false;
+  if (cleaned.startsWith('(') && cleaned.endsWith(')')) {
+    isNegative = true;
+    // Remove parentheses
+    cleaned = cleaned.slice(1, -1);
+  }
+  
+  // Remove commas
+  cleaned = cleaned.replace(/,/g, '');
+  
+  // Handle explicit negative sign
+  if (cleaned.startsWith('-')) {
+    isNegative = true;
+    cleaned = cleaned.slice(1);
+  }
+  
   const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+  if (isNaN(num)) return 0;
+  
+  return isNegative ? -num : num;
 }
 
 /**
@@ -253,19 +272,31 @@ export function processTrialBalanceToMonthly(
 ): any[] {
   const monthlyRecords: any[] = [];
   
+  // Normalize account names for better matching (trim, lowercase, normalize whitespace)
+  const normalizeAccountName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+  
   // Count mappings with LOB allocations for validation
   const mappingsWithLOB = accountMappings.filter(m => 
     m.lobAllocations && typeof m.lobAllocations === 'object' && Object.keys(m.lobAllocations).length > 0
   );
   
-  // Create a mapping lookup
+  // Create a mapping lookup with normalized keys for better matching
   const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
+  
   for (const mapping of accountMappings) {
+    const normalizedKey = normalizeAccountName(mapping.qbAccount);
+    mappingLookup[normalizedKey] = {
+      targetField: mapping.targetField,
+      lobAllocations: mapping.lobAllocations,
+    };
+    // Also keep the original key for backwards compatibility
     mappingLookup[mapping.qbAccount] = {
       targetField: mapping.targetField,
       lobAllocations: mapping.lobAllocations,
     };
   }
+  
+  console.log('📋 Mapping lookup keys:', Object.keys(mappingLookup));
   
   // Process each date column
   for (const dateStr of parsedData.dates) {
@@ -350,13 +381,25 @@ export function processTrialBalanceToMonthly(
     
     // Sum up values based on mappings AND collect account values for LOB processing
     for (const account of parsedData.accounts) {
-      const mapping = mappingLookup[account.description];
+      // Try exact match first, then normalized match
+      let mapping = mappingLookup[account.description];
+      if (!mapping) {
+        const normalizedName = normalizeAccountName(account.description);
+        mapping = mappingLookup[normalizedName];
+        if (mapping) {
+          console.log(`✅ Mapped via normalized key: "${account.description}" → "${normalizedName}" → ${mapping.targetField}`);
+        }
+      }
+      
       const value = account.values[dateStr] || 0;
 
       if (mapping && mapping.targetField && value !== 0) {
         // Add to the target field
         if (monthlyRecord[mapping.targetField] !== undefined) {
           monthlyRecord[mapping.targetField] += value;
+          if (mapping.targetField === 'additionalPaidInCapital') {
+            console.log(`💰 Added ${value} to additionalPaidInCapital for ${dateStr}`);
+          }
         }
 
         // Collect account value for LOB allocation
@@ -370,6 +413,11 @@ export function processTrialBalanceToMonthly(
         const defaultField = ACCOUNT_TYPE_TO_TARGET_FIELD[account.acctType];
         if (defaultField && monthlyRecord[defaultField] !== undefined) {
           monthlyRecord[defaultField] += value;
+        }
+      } else if (mapping && value === 0) {
+        // Log when we have a mapping but the value is zero
+        if (mapping.targetField === 'additionalPaidInCapital') {
+          console.log(`⚠️ Skipping "${account.description}" → additionalPaidInCapital because value is 0 for ${dateStr}`);
         }
       }
     }

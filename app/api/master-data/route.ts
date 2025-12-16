@@ -79,6 +79,8 @@ export async function GET(request: NextRequest) {
       commonStock: month.commonStock || 0,
       preferredStock: month.preferredStock || 0,
       retainedEarnings: month.retainedEarnings || 0,
+      additionalPaidInCapital: month.additionalPaidInCapital || 0,
+      treasuryStock: month.treasuryStock || 0,
       totalEquity: month.totalEquity || 0,
       revenueBreakdown: month.revenueBreakdown,
       expenseBreakdown: month.expenseBreakdown,
