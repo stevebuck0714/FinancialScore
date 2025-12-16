@@ -75,6 +75,21 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   // Use master data as monthly data
   const monthly = monthlyData;
 
+  // Format month as MM-YYYY
+  const formatMonth = (monthValue: any): string => {
+    if (!monthValue) return '';
+    
+    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return String(monthValue);
+    
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${month}-${year}`;
+  };
+
   return (
     <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
       <div
@@ -235,7 +250,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           minWidth: "90px",
                         }}
                       >
-                        {m.month}
+                        {formatMonth(m.month)}
                       </th>
                     ))}
                   </tr>
@@ -1318,7 +1333,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           minWidth: "90px",
                         }}
                       >
-                        {m.month}
+                        {formatMonth(m.month)}
                       </th>
                     ))}
                   </tr>
