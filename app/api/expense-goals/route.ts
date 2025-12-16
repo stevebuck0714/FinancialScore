@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     console.log('💾 API: Existing record check:', existing);
     
     if (existing.length > 0) {
-      // Update existing - use jsonb casting and proper timestamp
+      // Update existing - use parameterized query with JSONB cast
       console.log('💾 API: Updating existing record');
       await prisma.$executeRawUnsafe(
         `UPDATE "ExpenseGoal" 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
         companyId
       );
     } else {
-      // Create new - use jsonb casting and proper timestamp
+      // Create new - use parameterized query with JSONB cast
       console.log('💾 API: Creating new record');
       const id = `eg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       await prisma.$executeRawUnsafe(
