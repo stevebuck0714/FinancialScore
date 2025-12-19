@@ -253,6 +253,29 @@ export default function LOBReportingTab({
         expense: monthData.expense || 0,
         stateIncomeTaxes: monthData.stateIncomeTaxes || 0,
         federalIncomeTaxes: monthData.federalIncomeTaxes || 0,
+        // COGS components
+        cogsContractors: monthData.cogsContractors || 0,
+        cogsPayroll: monthData.cogsPayroll || 0,
+        cogsMaterials: monthData.cogsMaterials || 0,
+        cogsOwnerPay: monthData.cogsOwnerPay || 0,
+        cogsCommissions: monthData.cogsCommissions || 0,
+        cogsOther: monthData.cogsOther || 0,
+        // Operating expense components
+        payroll: monthData.payroll || 0,
+        benefits: monthData.benefits || 0,
+        insurance: monthData.insurance || 0,
+        professionalFees: monthData.professionalFees || 0,
+        subcontractors: monthData.subcontractors || 0,
+        rent: monthData.rent || 0,
+        taxLicense: monthData.taxLicense || 0,
+        phoneComm: monthData.phoneComm || 0,
+        infrastructure: monthData.infrastructure || 0,
+        autoTravel: monthData.autoTravel || 0,
+        salesExpense: monthData.salesExpense || 0,
+        marketing: monthData.marketing || 0,
+        mealsEntertainment: monthData.mealsEntertainment || 0,
+        otherExpense: monthData.otherExpense || 0,
+        // Balance sheet fields
         cash: monthData.cash || 0,
         ar: monthData.ar || 0,
         inventory: monthData.inventory || 0,
@@ -296,38 +319,46 @@ export default function LOBReportingTab({
         monthBreakdowns = lobData.breakdowns;
       }
       
-      // If breakdowns are still empty or missing key fields, populate them with distributed values
-      // This ensures data is always visible even if LOB allocations aren't configured
-      if (!monthBreakdowns || Object.keys(monthBreakdowns).length === 0 || 
-          !monthBreakdowns.revenue || Object.keys(monthBreakdowns.revenue || {}).length === 0) {
-        const totalHeadcount = linesOfBusiness.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
-        const hasHeadcount = totalHeadcount > 0;
+      // Always ensure component fields are populated, even if applyLOBAllocations didn't return them
+      // This ensures COGS and expense detail rows will render
+      const totalHeadcount = linesOfBusiness.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
+      const hasHeadcount = totalHeadcount > 0;
+      
+      // Define all fields including component fields
+      const allFieldNames = [
+        'revenue', 'cogs', 'expense', 'stateIncomeTaxes', 'federalIncomeTaxes',
+        // COGS components
+        'cogsContractors', 'cogsPayroll', 'cogsMaterials', 'cogsOwnerPay', 'cogsCommissions', 'cogsOther',
+        // Operating expense components
+        'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors', 'rent', 
+        'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 
+        'marketing', 'mealsEntertainment', 'otherExpense',
+        // Balance sheet fields
+        'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
+        'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
+        'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'
+      ];
+      
+      // Populate any missing fields with distributed values
+      allFieldNames.forEach(fieldName => {
+        if (!monthBreakdowns[fieldName]) {
+          monthBreakdowns[fieldName] = {};
+        }
+        const fieldValue = fields[fieldName as keyof typeof fields] || 0;
         
-        // Initialize breakdowns for all fields
-        const fieldNames = ['revenue', 'cogs', 'expense', 'stateIncomeTaxes', 'federalIncomeTaxes', 
-                           'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
-                           'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
-                           'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'];
-        
-        fieldNames.forEach(fieldName => {
-          if (!monthBreakdowns[fieldName]) {
-            monthBreakdowns[fieldName] = {};
-          }
-          const fieldValue = fields[fieldName as keyof typeof fields] || 0;
-          
-          linesOfBusiness.forEach((lob: any) => {
-            if (!monthBreakdowns[fieldName][lob.name]) {
-              if (hasHeadcount && totalHeadcount > 0) {
-                // Distribute based on headcount percentage
-                monthBreakdowns[fieldName][lob.name] = (fieldValue * (lob.headcountPercentage || 0)) / totalHeadcount;
-              } else {
-                // Distribute equally
-                monthBreakdowns[fieldName][lob.name] = fieldValue / linesOfBusiness.length;
-              }
+        linesOfBusiness.forEach((lob: any) => {
+          // Only populate if the field doesn't already have a value for this LOB
+          if (monthBreakdowns[fieldName][lob.name] === undefined || monthBreakdowns[fieldName][lob.name] === null) {
+            if (hasHeadcount && totalHeadcount > 0) {
+              // Distribute based on headcount percentage
+              monthBreakdowns[fieldName][lob.name] = (fieldValue * (lob.headcountPercentage || 0)) / totalHeadcount;
+            } else {
+              // Distribute equally
+              monthBreakdowns[fieldName][lob.name] = fieldValue / linesOfBusiness.length;
             }
-          });
+          }
         });
-      }
+      });
 
       // Calculate total COGS and expense for each LOB in this month
       linesOfBusiness.forEach((lob: any) => {
@@ -390,8 +421,15 @@ export default function LOBReportingTab({
           const totalHeadcount = linesOfBusiness.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
           const hasHeadcount = totalHeadcount > 0;
           
-          // Initialize breakdowns for all fields
+          // Initialize breakdowns for all fields including component fields
           const fieldNames = ['revenue', 'cogs', 'expense', 'stateIncomeTaxes', 'federalIncomeTaxes', 
+                             // COGS components
+                             'cogsContractors', 'cogsPayroll', 'cogsMaterials', 'cogsOwnerPay', 'cogsCommissions', 'cogsOther',
+                             // Operating expense components
+                             'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors', 'rent', 
+                             'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 
+                             'marketing', 'mealsEntertainment', 'otherExpense',
+                             // Balance sheet fields
                              'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
                              'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
                              'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'];

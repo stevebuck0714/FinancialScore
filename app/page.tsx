@@ -8771,7 +8771,13 @@ function FinancialScorePage() {
             });
             
             if (statementType === 'income-statement' && statementPeriod === 'current-month') {
-              const currentMonth = monthly[monthly.length - 1];
+              // Sort by date to ensure we get the most recent month (in case data isn't sorted)
+              const sortedMonthly = [...monthly].sort((a, b) => {
+                const dateA = new Date(a.date || a.month || 0).getTime();
+                const dateB = new Date(b.date || b.month || 0).getTime();
+                return dateA - dateB;
+              });
+              const currentMonth = sortedMonthly[sortedMonthly.length - 1];
               const monthDate = new Date(currentMonth.date || currentMonth.month);
               const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
@@ -8820,8 +8826,9 @@ function FinancialScorePage() {
               const extraordinaryItems = currentMonth.extraordinaryItems || 0;
               
               const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-              const stateIncomeTaxes = currentMonth.stateIncomeTaxes || 0;
-              const federalIncomeTaxes = currentMonth.federalIncomeTaxes || 0;
+              // Parse as numbers in case they come as strings
+              const stateIncomeTaxes = Number(currentMonth.stateIncomeTaxes) || 0;
+              const federalIncomeTaxes = Number(currentMonth.federalIncomeTaxes) || 0;
               const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
               const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
               
@@ -8994,23 +9001,27 @@ function FinancialScorePage() {
                   </div>
 
                   {/* Income Taxes */}
-                  {(stateIncomeTaxes > 0 || federalIncomeTaxes > 0) && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Taxes</div>
-                      {stateIncomeTaxes > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>State Income Taxes</span>
-                          <span style={{ color: '#ef4444' }}>($  {stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
-                        </div>
-                      )}
-                      {federalIncomeTaxes > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Federal Income Taxes</span>
-                          <span style={{ color: '#ef4444' }}>($  {federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Taxes</div>
+                    {stateIncomeTaxes > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>State Income Taxes</span>
+                        <span style={{ color: '#ef4444' }}>($  {stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                      </div>
+                    )}
+                    {federalIncomeTaxes > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Federal Income Taxes</span>
+                        <span style={{ color: '#ef4444' }}>($  {federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                      </div>
+                    )}
+                    {stateIncomeTaxes === 0 && federalIncomeTaxes === 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px', color: '#94a3b8', fontStyle: 'italic' }}>
+                        <span>No income taxes recorded</span>
+                        <span>$0</span>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Net Income */}
                   <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>

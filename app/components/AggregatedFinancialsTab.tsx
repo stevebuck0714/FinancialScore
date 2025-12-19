@@ -63,7 +63,13 @@ export default function AggregatedFinancialsTab({
 
   // Current Month Income Statement
   if (statementType === 'income-statement' && statementPeriod === 'current-month' && monthly.length > 0) {
-    const currentMonth = monthly[monthly.length - 1];
+    // Sort by date to ensure we get the most recent month (in case data isn't sorted)
+    const sortedMonthly = [...monthly].sort((a, b) => {
+      const dateA = new Date(a.monthDate || a.date || a.month || 0).getTime();
+      const dateB = new Date(b.monthDate || b.date || b.month || 0).getTime();
+      return dateA - dateB;
+    });
+    const currentMonth = sortedMonthly[sortedMonthly.length - 1];
     const monthDate = new Date(currentMonth.monthDate || currentMonth.date || currentMonth.month);
     const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
@@ -111,7 +117,16 @@ export default function AggregatedFinancialsTab({
     const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
     const extraordinaryItems = currentMonth.extraordinaryItems || 0;
 
-    const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+    // Income taxes (NOT part of operating expenses)
+    // Parse as numbers in case they come as strings
+    const stateIncomeTaxes = Number(currentMonth.stateIncomeTaxes) || 0;
+    const federalIncomeTaxes = Number(currentMonth.federalIncomeTaxes) || 0;
+
+    // Calculate income before tax
+    const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+    
+    // Calculate net income (after income taxes)
+    const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
     const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
 
     return (
@@ -317,6 +332,37 @@ export default function AggregatedFinancialsTab({
               )}
             </div>
           )}
+
+          {/* Income Before Tax */}
+          <div style={{ marginBottom: '12px', background: '#fef3c7', padding: '12px', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: '700', color: '#92400e' }}>Income Before Tax</span>
+              <span style={{ fontWeight: '700', color: '#92400e' }}>${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+            </div>
+          </div>
+
+          {/* Income Taxes */}
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Taxes</div>
+            {stateIncomeTaxes > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                <span style={{ color: '#475569' }}>State Income Taxes</span>
+                <span style={{ color: '#475569' }}>(${stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+              </div>
+            )}
+            {federalIncomeTaxes > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                <span style={{ color: '#475569' }}>Federal Income Taxes</span>
+                <span style={{ color: '#475569' }}>(${federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+              </div>
+            )}
+            {stateIncomeTaxes === 0 && federalIncomeTaxes === 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px', color: '#94a3b8', fontStyle: 'italic' }}>
+                <span>No income taxes recorded</span>
+                <span>$0</span>
+              </div>
+            )}
+          </div>
 
           {/* Net Income */}
           <div style={{ marginBottom: '12px', background: '#16a34a', color: 'white', padding: '12px', borderRadius: '8px' }}>
