@@ -19,6 +19,14 @@ export interface DatabaseInfo {
   isAllowed: boolean;
 }
 
+function isVercelProductionRuntime(): boolean {
+  // Vercel sets VERCEL=1 and VERCEL_ENV=production|preview|development
+  // CRITICAL: We ONLY allow the production database (orange-poetry) when running on
+  // Vercel's production runtime. Local/dev should NEVER connect to orange-poetry,
+  // even if NODE_ENV is "production".
+  return process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
+}
+
 /**
  * Validates the current DATABASE_URL and returns database information
  * This should be called before any database operations
@@ -36,16 +44,16 @@ export function validateDatabaseConnection(): DatabaseInfo {
   if (isProduction) {
     databaseName = 'orange-poetry';
     label = 'PRODUCTION (orange-poetry)';
-    // Production is only allowed in production environment
-    isAllowed = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+    // Production DB is ONLY allowed on Vercel production runtime.
+    // Local dev should NEVER be able to connect to orange-poetry.
+    isAllowed = isVercelProductionRuntime();
   } else if (isStaging) {
     databaseName = 'cold-frost';
     label = 'STAGING (cold-frost)';
-    // Staging is allowed in development, preview, and staging environments
-    isAllowed = process.env.NODE_ENV === 'development' || 
-                process.env.VERCEL_ENV === 'preview' || 
-                process.env.VERCEL_ENV === 'staging' ||
-                process.env.VERCEL_ENV === 'development';
+    // Staging DB is allowed in local dev and Vercel preview/development environments.
+    // We also allow it on Vercel production runtime for non-prod projects that deploy with --prod.
+    // The critical invariant is: orange-poetry must never be reachable from local/dev.
+    isAllowed = true;
   } else if (databaseUrl.includes('file:') || databaseUrl.includes('sqlite')) {
     databaseName = 'sqlite';
     label = 'SQLITE (local file)';
@@ -55,13 +63,11 @@ export function validateDatabaseConnection(): DatabaseInfo {
     if (databaseUrl.includes('orange-poetry')) {
       databaseName = 'orange-poetry';
       label = 'PRODUCTION (orange-poetry)';
-      isAllowed = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+      isAllowed = isVercelProductionRuntime();
     } else if (databaseUrl.includes('cold-frost')) {
       databaseName = 'cold-frost';
       label = 'STAGING (cold-frost)';
-      isAllowed = process.env.NODE_ENV === 'development' || 
-                  process.env.VERCEL_ENV === 'preview' || 
-                  process.env.VERCEL_ENV === 'staging';
+      isAllowed = true;
     } else {
       databaseName = 'neon-unknown';
       label = 'UNKNOWN NEON DATABASE';
@@ -83,6 +89,30 @@ export function validateDatabaseConnection(): DatabaseInfo {
  * Call this before any database operation
  */
 export function enforceDatabaseSecurity(): void {
+  // Skip security check during Next.js build phase
+  // During build, Next.js executes code to collect page data, but we don't want
+  // to block the build process. The security check will run at runtime.
+  if (process.env.NEXT_PHASE === 'phase-production-build' || 
+      process.env.NEXT_PHASE === 'phase-development-build' ||
+      process.env.NEXT_PHASE === 'phase-export') {
+    // During build, only block production database connections
+    // Staging database is allowed during build
+    const databaseUrl = process.env.DATABASE_URL || '';
+    if (databaseUrl.includes('orange-poetry') && !isVercelProductionRuntime()) {
+      const error = new Error(
+        `🚨 SECURITY VIOLATION: Production database (orange-poetry) detected during build in non-production environment!\n` +
+        `   NODE_ENV: ${process.env.NODE_ENV}\n` +
+        `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
+        `   VERCEL: ${process.env.VERCEL}\n` +
+        `   Production database must ONLY be used on Vercel production runtime.`
+      );
+      console.error(error.message);
+      throw error;
+    }
+    // Allow staging database and other connections during build
+    return;
+  }
+  
   const dbInfo = validateDatabaseConnection();
   
   if (!dbInfo.isAllowed) {
@@ -91,9 +121,10 @@ export function enforceDatabaseSecurity(): void {
       `   Database: ${dbInfo.label}\n` +
       `   NODE_ENV: ${process.env.NODE_ENV}\n` +
       `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
+      `   VERCEL: ${process.env.VERCEL}\n` +
       `   This connection violates database isolation rules.\n` +
-      `   Production (orange-poetry) must only be used in production.\n` +
-      `   Staging (cold-frost) must only be used in development/preview/staging.`
+      `   Production (orange-poetry) must ONLY be used on Vercel production runtime.\n` +
+      `   Local/dev/preview must NEVER connect to orange-poetry.`
     );
     console.error(error.message);
     console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
@@ -101,7 +132,7 @@ export function enforceDatabaseSecurity(): void {
   }
   
   // Additional cross-contamination checks
-  if (dbInfo.isProduction && (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'preview')) {
+  if (dbInfo.isProduction && !isVercelProductionRuntime()) {
     const error = new Error(
       `🚨 CRITICAL SECURITY ERROR: Production database (orange-poetry) detected in non-production environment!\n` +
       `   This would allow staging code to modify production data!\n` +
@@ -112,16 +143,9 @@ export function enforceDatabaseSecurity(): void {
     throw error;
   }
   
-  if (dbInfo.isStaging && process.env.VERCEL_ENV === 'production') {
-    const error = new Error(
-      `🚨 CRITICAL SECURITY ERROR: Staging database (cold-frost) detected in production environment!\n` +
-      `   Production must use orange-poetry, not cold-frost!\n` +
-      `   Aborting to prevent using wrong database.`
-    );
-    console.error(error.message);
-    console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
-    throw error;
-  }
+  // NOTE: We intentionally do NOT forbid cold-frost when VERCEL_ENV=production here,
+  // because Vercel "production" is per-project and some non-prod projects may deploy
+  // with --prod while still correctly pointing at cold-frost.
 }
 
 /**
