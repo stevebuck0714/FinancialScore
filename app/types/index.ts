@@ -26,6 +26,8 @@ export type Mappings = {
   subcontractors?: string;
   benefits?: string;
   taxLicense?: string;
+  stateIncomeTaxes?: string;
+  federalIncomeTaxes?: string;
   phoneComm?: string;
   trainingCert?: string;
   mealsEntertainment?: string;
@@ -109,6 +111,8 @@ export type MonthlyDataRow = {
   subcontractors: number;
   benefits: number;
   taxLicense: number;
+  stateIncomeTaxes: number;
+  federalIncomeTaxes: number;
   phoneComm: number;
   trainingCert: number;
   mealsEntertainment: number;

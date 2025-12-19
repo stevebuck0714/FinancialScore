@@ -37,9 +37,18 @@ export default function LOBReportingTab({
   // Use master data store instead of receiving monthly data as prop
   const { data: masterData, monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
   
-  
   // Get Lines of Business from company
   const linesOfBusiness = company?.linesOfBusiness || [];
+  
+  // Auto-select first LOB if none selected or invalid (but allow "all")
+  // IMPORTANT: This hook must be called before any early returns to maintain hook order
+  React.useEffect(() => {
+    if (!selectedLineOfBusiness || (selectedLineOfBusiness !== 'all' && !linesOfBusiness.some((lob: any) => lob.name === selectedLineOfBusiness))) {
+      if (linesOfBusiness.length > 0) {
+        onLineOfBusinessChange(linesOfBusiness[0].name);
+      }
+    }
+  }, [selectedLineOfBusiness, linesOfBusiness, onLineOfBusinessChange]);
   
   // Check if LOBs are configured
   if (!linesOfBusiness || linesOfBusiness.length === 0) {
@@ -124,15 +133,6 @@ export default function LOBReportingTab({
   // Use master data monthly data
   const monthly = monthlyData;
   
-  // Auto-select first LOB if none selected or invalid (but allow "all")
-  React.useEffect(() => {
-    if (!selectedLineOfBusiness || (selectedLineOfBusiness !== 'all' && !linesOfBusiness.some((lob: any) => lob.name === selectedLineOfBusiness))) {
-      if (linesOfBusiness.length > 0) {
-        onLineOfBusinessChange(linesOfBusiness[0].name);
-      }
-    }
-  }, [selectedLineOfBusiness, linesOfBusiness, onLineOfBusinessChange]);
-  
   // Filter monthly data by selected period
   const now = new Date();
   let filteredMonthly: any[] = [];
@@ -170,6 +170,7 @@ export default function LOBReportingTab({
   let detailedBreakdowns: any = {};
   let monthlyLOBData: any[] = [];
   let monthLabels: string[] = [];
+  let allMonthlyData: any[] = []; // Initialize before conditional block
   
   // Helper to get LOB value from a breakdown field - DEFINE BEFORE USE
   const getLOBValue = (fieldName: string): number => {
@@ -238,7 +239,7 @@ export default function LOBReportingTab({
   if (filteredMonthly && filteredMonthly.length > 0 && accountMappings && accountMappings.length > 0) {
     
     // Process each month in the filtered monthly data
-    const allMonthlyData: any[] = [];
+    // allMonthlyData is already initialized above
     
     // First, process month by month to build detailed data
     filteredMonthly.forEach((monthData, idx) => {
@@ -250,6 +251,8 @@ export default function LOBReportingTab({
         revenue: monthData.revenue || 0,
         cogs: monthData.cogsTotal || monthData.cogs || 0,
         expense: monthData.expense || 0,
+        stateIncomeTaxes: monthData.stateIncomeTaxes || 0,
+        federalIncomeTaxes: monthData.federalIncomeTaxes || 0,
         cash: monthData.cash || 0,
         ar: monthData.ar || 0,
         inventory: monthData.inventory || 0,
@@ -292,12 +295,45 @@ export default function LOBReportingTab({
         const lobData = applyLOBAllocations(accountValues, convertedMappings, convertedLOBs);
         monthBreakdowns = lobData.breakdowns;
       }
+      
+      // If breakdowns are still empty or missing key fields, populate them with distributed values
+      // This ensures data is always visible even if LOB allocations aren't configured
+      if (!monthBreakdowns || Object.keys(monthBreakdowns).length === 0 || 
+          !monthBreakdowns.revenue || Object.keys(monthBreakdowns.revenue || {}).length === 0) {
+        const totalHeadcount = linesOfBusiness.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
+        const hasHeadcount = totalHeadcount > 0;
+        
+        // Initialize breakdowns for all fields
+        const fieldNames = ['revenue', 'cogs', 'expense', 'stateIncomeTaxes', 'federalIncomeTaxes', 
+                           'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
+                           'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
+                           'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'];
+        
+        fieldNames.forEach(fieldName => {
+          if (!monthBreakdowns[fieldName]) {
+            monthBreakdowns[fieldName] = {};
+          }
+          const fieldValue = fields[fieldName as keyof typeof fields] || 0;
+          
+          linesOfBusiness.forEach((lob: any) => {
+            if (!monthBreakdowns[fieldName][lob.name]) {
+              if (hasHeadcount && totalHeadcount > 0) {
+                // Distribute based on headcount percentage
+                monthBreakdowns[fieldName][lob.name] = (fieldValue * (lob.headcountPercentage || 0)) / totalHeadcount;
+              } else {
+                // Distribute equally
+                monthBreakdowns[fieldName][lob.name] = fieldValue / linesOfBusiness.length;
+              }
+            }
+          });
+        });
+      }
 
       // Calculate total COGS and expense for each LOB in this month
       linesOfBusiness.forEach((lob: any) => {
         const lobName = lob.name;
 
-        // Calculate total COGS
+        // Calculate total COGS from components, or use the cogs field if components aren't available
         const cogsComponents = ['cogsContractors', 'cogsPayroll', 'cogsMaterials'];
         let totalCogs = 0;
         cogsComponents.forEach(component => {
@@ -308,9 +344,19 @@ export default function LOBReportingTab({
         if (!monthBreakdowns.cogs) {
           monthBreakdowns.cogs = {};
         }
-        monthBreakdowns.cogs[lobName] = totalCogs;
+        // If no component breakdowns exist, use the total COGS value distributed
+        if (totalCogs === 0 && monthBreakdowns.cogs[lobName] === undefined) {
+          const totalHeadcount = linesOfBusiness.reduce((sum, l) => sum + (l.headcountPercentage || 0), 0);
+          if (totalHeadcount > 0) {
+            monthBreakdowns.cogs[lobName] = (fields.cogs * (lob.headcountPercentage || 0)) / totalHeadcount;
+          } else {
+            monthBreakdowns.cogs[lobName] = fields.cogs / linesOfBusiness.length;
+          }
+        } else if (totalCogs > 0) {
+          monthBreakdowns.cogs[lobName] = totalCogs;
+        }
 
-        // Calculate total expenses
+        // Calculate total expenses from components, or use the expense field if components aren't available
         const expenseComponents = ['payroll', 'rent', 'utilities', 'insurance', 'professionalFees', 'salesExpense', 'taxLicense', 'otherExpense', 'benefits', 'autoTravel', 'phoneComm', 'infrastructure', 'mealsEntertainment'];
         let totalExpense = 0;
         expenseComponents.forEach(component => {
@@ -321,11 +367,75 @@ export default function LOBReportingTab({
         if (!monthBreakdowns.expense) {
           monthBreakdowns.expense = {};
         }
-        monthBreakdowns.expense[lobName] = totalExpense;
+        // If no component breakdowns exist, use the total expense value distributed
+        if (totalExpense === 0 && monthBreakdowns.expense[lobName] === undefined) {
+          const totalHeadcount = linesOfBusiness.reduce((sum, l) => sum + (l.headcountPercentage || 0), 0);
+          if (totalHeadcount > 0) {
+            monthBreakdowns.expense[lobName] = (fields.expense * (lob.headcountPercentage || 0)) / totalHeadcount;
+          } else {
+            monthBreakdowns.expense[lobName] = fields.expense / linesOfBusiness.length;
+          }
+        } else if (totalExpense > 0) {
+          monthBreakdowns.expense[lobName] = totalExpense;
+        }
       });
 
       // Extract values based on selected LOB
       if (selectedLineOfBusiness === 'all') {
+        // When showing "all", we need to ensure breakdowns are populated for display
+        // If monthBreakdowns is empty or missing allocations, populate it with field values
+        // distributed across LOBs based on headcount or equally
+        if (!monthBreakdowns || Object.keys(monthBreakdowns).length === 0) {
+          // No breakdowns exist - create them by distributing totals across LOBs
+          const totalHeadcount = linesOfBusiness.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
+          const hasHeadcount = totalHeadcount > 0;
+          
+          // Initialize breakdowns for all fields
+          const fieldNames = ['revenue', 'cogs', 'expense', 'stateIncomeTaxes', 'federalIncomeTaxes', 
+                             'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
+                             'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
+                             'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'];
+          
+          fieldNames.forEach(fieldName => {
+            if (!monthBreakdowns[fieldName]) {
+              monthBreakdowns[fieldName] = {};
+            }
+            const fieldValue = fields[fieldName as keyof typeof fields] || 0;
+            
+            linesOfBusiness.forEach((lob: any) => {
+              if (hasHeadcount && totalHeadcount > 0) {
+                // Distribute based on headcount percentage
+                monthBreakdowns[fieldName][lob.name] = (fieldValue * (lob.headcountPercentage || 0)) / totalHeadcount;
+              } else {
+                // Distribute equally
+                monthBreakdowns[fieldName][lob.name] = fieldValue / linesOfBusiness.length;
+              }
+            });
+          });
+          
+          // Also ensure COGS and expense breakdowns are set (they might be calculated separately)
+          if (!monthBreakdowns.cogs) {
+            monthBreakdowns.cogs = {};
+            linesOfBusiness.forEach((lob: any) => {
+              if (hasHeadcount && totalHeadcount > 0) {
+                monthBreakdowns.cogs[lob.name] = (fields.cogs * (lob.headcountPercentage || 0)) / totalHeadcount;
+              } else {
+                monthBreakdowns.cogs[lob.name] = fields.cogs / linesOfBusiness.length;
+              }
+            });
+          }
+          if (!monthBreakdowns.expense) {
+            monthBreakdowns.expense = {};
+            linesOfBusiness.forEach((lob: any) => {
+              if (hasHeadcount && totalHeadcount > 0) {
+                monthBreakdowns.expense[lob.name] = (fields.expense * (lob.headcountPercentage || 0)) / totalHeadcount;
+              } else {
+                monthBreakdowns.expense[lob.name] = fields.expense / linesOfBusiness.length;
+              }
+            });
+          }
+        }
+        
         // Sum across all LOBs (use totals)
         const cash = fields.cash;
         const ar = fields.ar;
@@ -356,6 +466,8 @@ export default function LOBReportingTab({
           revenue: fields.revenue,
           expense: fields.expense,
           cogs: fields.cogs,
+          stateIncomeTaxes: fields.stateIncomeTaxes,
+          federalIncomeTaxes: fields.federalIncomeTaxes,
           cash,
           ar,
           inventory,
@@ -414,6 +526,8 @@ export default function LOBReportingTab({
           revenue: getLOBVal('revenue'),
           expense: getLOBVal('expense'),
           cogs: getLOBVal('cogs'),
+          stateIncomeTaxes: getLOBVal('stateIncomeTaxes'),
+          federalIncomeTaxes: getLOBVal('federalIncomeTaxes'),
           cash,
           ar,
           inventory,
@@ -757,7 +871,10 @@ export default function LOBReportingTab({
   // Calculate metrics
   const grossProfit = lobRevenue - lobCOGS;
   const grossMargin = lobRevenue > 0 ? (grossProfit / lobRevenue) * 100 : 0;
-  const netIncome = lobRevenue - lobCOGS - lobExpense;
+  const lobStateIncomeTaxes = allMonthlyData.reduce((sum, m: any) => sum + (m.stateIncomeTaxes || 0), 0);
+  const lobFederalIncomeTaxes = allMonthlyData.reduce((sum, m: any) => sum + (m.federalIncomeTaxes || 0), 0);
+  const incomeBeforeTax = lobRevenue - lobCOGS - lobExpense;
+  const netIncome = incomeBeforeTax - lobStateIncomeTaxes - lobFederalIncomeTaxes;
   const netMargin = lobRevenue > 0 ? (netIncome / lobRevenue) * 100 : 0;
   
   // Check if we have any data to display (income statement OR balance sheet items)
@@ -1161,6 +1278,60 @@ export default function LOBReportingTab({
                       {fmt(lobExpense)}
                     </td>
                   </tr>
+
+                  {/* Income Before Tax */}
+                  <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
+                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>Income Before Tax</td>
+                    {linesOfBusiness.map((lob: any) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                      const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
+                      const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
+                      const preTax = lobRev - lobCogs - lobExp;
+                      return (
+                        <td key={lob.name} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: preTax >= 0 ? '#059669' : '#dc2626' }}>
+                          {fmt(preTax)}
+                        </td>
+                      );
+                    })}
+                    <td style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', fontSize: '14px', color: incomeBeforeTax >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
+                      {fmt(incomeBeforeTax)}
+                    </td>
+                  </tr>
+
+                  {/* Income Taxes (only if present) */}
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0) > 0) && (
+                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>State Income Taxes</td>
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0;
+                        return (
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(getTotalAcrossLOBs('stateIncomeTaxes'))}
+                      </td>
+                    </tr>
+                  )}
+
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0) > 0) && (
+                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Federal Income Taxes</td>
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0;
+                        return (
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(getTotalAcrossLOBs('federalIncomeTaxes'))}
+                      </td>
+                    </tr>
+                  )}
                   
                   {/* Net Income */}
                   <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
@@ -1169,7 +1340,10 @@ export default function LOBReportingTab({
                       const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                       const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
                       const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
-                      const ni = lobRev - lobCogs - lobExp;
+                      const preTax = lobRev - lobCogs - lobExp;
+                      const stateTax = detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0;
+                      const fedTax = detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0;
+                      const ni = preTax - stateTax - fedTax;
                       return (
                         <td key={lob.name} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: ni >= 0 ? '#059669' : '#dc2626' }}>
                           {fmt(ni)}
@@ -1189,9 +1363,11 @@ export default function LOBReportingTab({
                   {linesOfBusiness.map((lob: any) => {
                     const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                     const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
-                    const lobExp = detailedBreakdowns.expense?.[lob] || 0;
+                    const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
+                    const stateTax = detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0;
+                    const fedTax = detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0;
                     const gp = lobRev - lobCogs;
-                    const ni = lobRev - lobCogs - lobExp;
+                    const ni = (lobRev - lobCogs - lobExp) - stateTax - fedTax;
                     const gm = lobRev > 0 ? (gp / lobRev) * 100 : 0;
                     const nm = lobRev > 0 ? (ni / lobRev) * 100 : 0;
                     

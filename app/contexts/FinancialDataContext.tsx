@@ -60,6 +60,8 @@ export function FinancialDataProvider({ children }: FinancialDataProviderProps) 
       subcontractors: m.subcontractors || 0,
       rent: m.rent || 0,
       taxLicense: m.taxLicense || 0,
+      stateIncomeTaxes: m.stateIncomeTaxes || 0,
+      federalIncomeTaxes: m.federalIncomeTaxes || 0,
       phoneComm: m.phoneComm || 0,
       infrastructure: m.infrastructure || 0,
       autoTravel: m.autoTravel || 0,

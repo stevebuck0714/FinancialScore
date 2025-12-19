@@ -24,6 +24,10 @@ const mappingRules = [
   { keywords: ['professional', 'legal', 'accounting', 'consulting', 'attorney', 'professional fees', 'professional services'], targetField: 'professionalFees', confidence: 'high' },
   { keywords: ['subcontractors', 'independent contractors', 'contract labor'], targetField: 'subcontractors', confidence: 'high' },
   { keywords: ['rent', 'lease', 'office rent', 'facility'], targetField: 'rent', confidence: 'high' },
+  // Income taxes (NOT Tax & License)
+  { keywords: ['state income tax', 'state income taxes'], targetField: 'stateIncomeTaxes', confidence: 'high' },
+  { keywords: ['federal income tax', 'federal income taxes'], targetField: 'federalIncomeTaxes', confidence: 'high' },
+  { keywords: ['income tax', 'income taxes'], targetField: 'federalIncomeTaxes', confidence: 'medium' },
   { keywords: ['tax', 'license', 'permit', 'business license'], targetField: 'taxLicense', confidence: 'high' },
   { keywords: ['phone', 'telephone', 'communication', 'internet', 'cell phone'], targetField: 'phoneComm', confidence: 'high' },
   { keywords: ['utilities', 'electric', 'water', 'gas bill'], targetField: 'infrastructure', confidence: 'high' },

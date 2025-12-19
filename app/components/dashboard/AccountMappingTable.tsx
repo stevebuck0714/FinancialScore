@@ -92,6 +92,8 @@ export default function AccountMappingTable({
       { value: 'subcontractors', label: 'Subcontractors' },
       { value: 'rent', label: 'Rent' },
       { value: 'taxLicense', label: 'Tax & License' },
+      { value: 'stateIncomeTaxes', label: 'State Income Taxes' },
+      { value: 'federalIncomeTaxes', label: 'Federal Income Taxes' },
       { value: 'phoneComm', label: 'Phone & Comm' },
       { value: 'infrastructure', label: 'Infrastructure' },
       { value: 'autoTravel', label: 'Auto & Travel' },

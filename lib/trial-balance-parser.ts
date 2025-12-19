@@ -331,6 +331,9 @@ export function processTrialBalanceToMonthly(
       subcontractors: 0,
       rent: 0,
       taxLicense: 0,
+      // Income taxes (NOT operating expenses)
+      stateIncomeTaxes: 0,
+      federalIncomeTaxes: 0,
       phoneComm: 0,
       infrastructure: 0,
       autoTravel: 0,

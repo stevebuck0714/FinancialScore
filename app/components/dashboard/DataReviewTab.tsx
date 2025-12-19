@@ -1203,6 +1203,138 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                     })}
                   </tr>
 
+                  {/* Income Before Tax */}
+                  <tr
+                    style={{
+                      borderBottom: "2px solid #e2e8f0",
+                      background: "#f1f5f9",
+                    }}
+                  >
+                    <td
+                      style={{
+                        padding: "10px 10px",
+                        fontWeight: "700",
+                        position: "sticky",
+                        left: 0,
+                        background: "#f1f5f9",
+                        zIndex: 1,
+                      }}
+                    >
+                      INCOME BEFORE TAX
+                    </td>
+                    {monthly.slice(-36).map((m: any, idx: number) => {
+                      const totalOpex =
+                        (m.payroll || 0) +
+                        (m.ownerBasePay || 0) +
+                        (m.ownersRetirement || 0) +
+                        (m.professionalFees || 0) +
+                        (m.rent || 0) +
+                        (m.utilities || 0) +
+                        (m.infrastructure || 0) +
+                        (m.autoTravel || 0) +
+                        (m.insurance || 0) +
+                        (m.salesExpense || 0) +
+                        (m.subcontractors || 0) +
+                        (m.depreciationAmortization || 0) +
+                        (m.interestExpense || 0) +
+                        (m.marketing || 0) +
+                        (m.benefits || 0) +
+                        (m.taxLicense || 0) +
+                        (m.phoneComm || 0) +
+                        (m.trainingCert || 0) +
+                        (m.mealsEntertainment || 0) +
+                        (m.otherExpense || 0);
+
+                      const incomeBeforeTax =
+                        (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
+
+                      return (
+                        <td
+                          key={idx}
+                          style={{
+                            padding: "10px 10px",
+                            textAlign: "right",
+                            fontFamily: "monospace",
+                            fontWeight: "700",
+                          }}
+                        >
+                          $
+                          {incomeBeforeTax.toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                      );
+                    })}
+                  </tr>
+
+                  {/* Income Taxes (only show if any month has > 0) */}
+                  {monthly.slice(-36).some((m: any) => (m.stateIncomeTaxes || 0) > 0) && (
+                    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td
+                        style={{
+                          padding: "8px 10px",
+                          paddingLeft: "20px",
+                          position: "sticky",
+                          left: 0,
+                          background: "white",
+                          zIndex: 1,
+                        }}
+                      >
+                        State Income Taxes
+                      </td>
+                      {monthly.slice(-36).map((m: any, idx: number) => (
+                        <td
+                          key={idx}
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "right",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          $
+                          {(m.stateIncomeTaxes || 0).toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                      ))}
+                    </tr>
+                  )}
+
+                  {monthly.slice(-36).some((m: any) => (m.federalIncomeTaxes || 0) > 0) && (
+                    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td
+                        style={{
+                          padding: "8px 10px",
+                          paddingLeft: "20px",
+                          position: "sticky",
+                          left: 0,
+                          background: "white",
+                          zIndex: 1,
+                        }}
+                      >
+                        Federal Income Taxes
+                      </td>
+                      {monthly.slice(-36).map((m: any, idx: number) => (
+                        <td
+                          key={idx}
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "right",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          $
+                          {(m.federalIncomeTaxes || 0).toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                      ))}
+                    </tr>
+                  )}
+
                   {/* Net Income */}
                   <tr
                     style={{
@@ -1246,8 +1378,12 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                         (m.trainingCert || 0) +
                         (m.mealsEntertainment || 0) +
                         (m.otherExpense || 0);
-                      const netIncome =
+                      const incomeBeforeTax =
                         (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
+                      const netIncome =
+                        incomeBeforeTax -
+                        (m.stateIncomeTaxes || 0) -
+                        (m.federalIncomeTaxes || 0);
                       return (
                         <td
                           key={idx}

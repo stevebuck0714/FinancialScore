@@ -22,10 +22,46 @@ export default function ProjectionsTab({
   const projections = useMemo(() => {
     if (monthly.length < 24) return { mostLikely: [], bestCase: [], worstCase: [], monthlyWithNetIncome: [] };
     
-    // Add computed netIncome field to monthly data
+    // Helper function to calculate total operating expenses (excluding income taxes)
+    const calculateTotalOpex = (m: any): number => {
+      return (m.payroll || 0) +
+             (m.benefits || 0) +
+             (m.insurance || 0) +
+             (m.professionalFees || 0) +
+             (m.subcontractors || 0) +
+             (m.rent || 0) +
+             (m.taxLicense || 0) +
+             (m.phoneComm || 0) +
+             (m.infrastructure || 0) +
+             (m.autoTravel || 0) +
+             (m.salesExpense || 0) +
+             (m.marketing || 0) +
+             (m.mealsEntertainment || 0) +
+             (m.otherExpense || 0);
+    };
+    
+    // Helper function to calculate net income correctly
+    const calculateNetIncome = (m: any): number => {
+      const revenue = m.revenue || 0;
+      const cogsTotal = m.cogsTotal || 0;
+      const totalOpex = calculateTotalOpex(m);
+      const operatingIncome = revenue - cogsTotal - totalOpex;
+      const interestExpense = m.interestExpense || 0;
+      const nonOperatingIncome = m.nonOperatingIncome || 0;
+      const extraordinaryItems = m.extraordinaryItems || 0;
+      const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+      const stateIncomeTaxes = m.stateIncomeTaxes || 0;
+      const federalIncomeTaxes = m.federalIncomeTaxes || 0;
+      return incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
+    };
+    
+    // Add computed netIncome and totalOpex fields to monthly data
+    // Note: We set expense to totalOpex for consistency with projections
     const monthlyWithNetIncome = monthly.map(m => ({
       ...m,
-      netIncome: (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0)
+      totalOpex: calculateTotalOpex(m),
+      expense: calculateTotalOpex(m), // Use totalOpex for expense projection (excludes income taxes)
+      netIncome: calculateNetIncome(m)
     }));
     
     // Holt-Winters Triple Exponential Smoothing
@@ -80,7 +116,7 @@ export default function ProjectionsTab({
     // Apply Holt-Winters to each metric
     const revData = monthlyWithNetIncome.map(m => m.revenue || 0);
     const cogsData = monthlyWithNetIncome.map(m => m.cogsTotal || 0);
-    const expData = monthlyWithNetIncome.map(m => m.expense || 0);
+    const expData = monthlyWithNetIncome.map(m => m.totalOpex || 0);
     
     const revHW = holtWinters(revData);
     const cogsHW = holtWinters(cogsData);
@@ -109,16 +145,32 @@ export default function ProjectionsTab({
         // Most Likely: Standard Holt-Winters forecast
         const mlRev = Math.max(0, (revHW.level + i * revHW.trend) * revHW.seasonal[seasonalIdx]);
         const mlCogs = Math.max(0, (cogsHW.level + i * cogsHW.trend) * cogsHW.seasonal[seasonalIdx]);
-        const mlExp = Math.max(0, (expHW.level + i * expHW.trend) * expHW.seasonal[seasonalIdx]);
+        const mlOpex = Math.max(0, (expHW.level + i * expHW.trend) * expHW.seasonal[seasonalIdx]);
         const mlAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth, i);
         const mlLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth, i);
         const mlEquity = mlAssets - mlLiab;
         
+        // Project other items using average ratios from last 12 months
+        const avgInterestRatio = last12.reduce((sum, m) => sum + ((m.interestExpense || 0) / Math.max(m.revenue || 1, 1)), 0) / 12;
+        const avgNonOpIncomeRatio = last12.reduce((sum, m) => sum + ((m.nonOperatingIncome || 0) / Math.max(m.revenue || 1, 1)), 0) / 12;
+        const avgExtraordinaryRatio = last12.reduce((sum, m) => sum + ((m.extraordinaryItems || 0) / Math.max(m.revenue || 1, 1)), 0) / 12;
+        const avgStateTaxRatio = last12.reduce((sum, m) => sum + ((m.stateIncomeTaxes || 0) / Math.max(m.revenue || 1, 1)), 0) / 12;
+        const avgFederalTaxRatio = last12.reduce((sum, m) => sum + ((m.federalIncomeTaxes || 0) / Math.max(m.revenue || 1, 1)), 0) / 12;
+        
+        const mlInterestExpense = mlRev * avgInterestRatio;
+        const mlNonOperatingIncome = mlRev * avgNonOpIncomeRatio;
+        const mlExtraordinaryItems = mlRev * avgExtraordinaryRatio;
+        const mlOperatingIncome = mlRev - mlCogs - mlOpex;
+        const mlIncomeBeforeTax = mlOperatingIncome - mlInterestExpense + mlNonOperatingIncome + mlExtraordinaryItems;
+        const mlStateIncomeTaxes = mlRev * avgStateTaxRatio;
+        const mlFederalIncomeTaxes = mlRev * avgFederalTaxRatio;
+        const mlNetIncome = mlIncomeBeforeTax - mlStateIncomeTaxes - mlFederalIncomeTaxes;
+        
         mostLikely.push({
           month: monthName,
           revenue: mlRev,
-          expense: mlExp,
-          netIncome: mlRev - mlCogs - mlExp,
+          expense: mlOpex,
+          netIncome: mlNetIncome,
           totalAssets: mlAssets,
           totalLiab: mlLiab,
           totalEquity: mlEquity
@@ -127,16 +179,26 @@ export default function ProjectionsTab({
         // Best Case: Amplify trend by 50%
         const bcRev = Math.max(0, (revHW.level + i * revHW.trend * 1.5) * revHW.seasonal[seasonalIdx]);
         const bcCogs = Math.max(0, (cogsHW.level + i * cogsHW.trend * 0.5) * cogsHW.seasonal[seasonalIdx]); // Lower trend is better
-        const bcExp = Math.max(0, (expHW.level + i * expHW.trend * 0.5) * expHW.seasonal[seasonalIdx]); // Lower trend is better
+        const bcOpex = Math.max(0, (expHW.level + i * expHW.trend * 0.5) * expHW.seasonal[seasonalIdx]); // Lower trend is better
         const bcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 1.2, i);
         const bcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 0.8, i);
         const bcEquity = bcAssets - bcLiab;
         
+        // Best case: Lower interest, higher non-op income, lower taxes
+        const bcInterestExpense = bcRev * avgInterestRatio * 0.8;
+        const bcNonOperatingIncome = bcRev * avgNonOpIncomeRatio * 1.2;
+        const bcExtraordinaryItems = bcRev * avgExtraordinaryRatio;
+        const bcOperatingIncome = bcRev - bcCogs - bcOpex;
+        const bcIncomeBeforeTax = bcOperatingIncome - bcInterestExpense + bcNonOperatingIncome + bcExtraordinaryItems;
+        const bcStateIncomeTaxes = bcRev * avgStateTaxRatio * 0.8;
+        const bcFederalIncomeTaxes = bcRev * avgFederalTaxRatio * 0.8;
+        const bcNetIncome = bcIncomeBeforeTax - bcStateIncomeTaxes - bcFederalIncomeTaxes;
+        
         bestCase.push({
           month: monthName,
           revenue: bcRev,
-          expense: bcExp,
-          netIncome: bcRev - bcCogs - bcExp,
+          expense: bcOpex,
+          netIncome: bcNetIncome,
           totalAssets: bcAssets,
           totalLiab: bcLiab,
           totalEquity: bcEquity
@@ -145,16 +207,26 @@ export default function ProjectionsTab({
         // Worst Case: Reduce trend by 50%
         const wcRev = Math.max(0, (revHW.level + i * revHW.trend * 0.5) * revHW.seasonal[seasonalIdx]);
         const wcCogs = Math.max(0, (cogsHW.level + i * cogsHW.trend * 1.5) * cogsHW.seasonal[seasonalIdx]); // Higher trend is worse
-        const wcExp = Math.max(0, (expHW.level + i * expHW.trend * 1.5) * expHW.seasonal[seasonalIdx]); // Higher trend is worse
+        const wcOpex = Math.max(0, (expHW.level + i * expHW.trend * 1.5) * expHW.seasonal[seasonalIdx]); // Higher trend is worse
         const wcAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth * 0.8, i);
         const wcLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth * 1.2, i);
         const wcEquity = wcAssets - wcLiab;
         
+        // Worst case: Higher interest, lower non-op income, higher taxes
+        const wcInterestExpense = wcRev * avgInterestRatio * 1.2;
+        const wcNonOperatingIncome = wcRev * avgNonOpIncomeRatio * 0.8;
+        const wcExtraordinaryItems = wcRev * avgExtraordinaryRatio;
+        const wcOperatingIncome = wcRev - wcCogs - wcOpex;
+        const wcIncomeBeforeTax = wcOperatingIncome - wcInterestExpense + wcNonOperatingIncome + wcExtraordinaryItems;
+        const wcStateIncomeTaxes = wcRev * avgStateTaxRatio * 1.2;
+        const wcFederalIncomeTaxes = wcRev * avgFederalTaxRatio * 1.2;
+        const wcNetIncome = wcIncomeBeforeTax - wcStateIncomeTaxes - wcFederalIncomeTaxes;
+        
         worstCase.push({
           month: monthName,
           revenue: wcRev,
-          expense: wcExp,
-          netIncome: wcRev - wcCogs - wcExp,
+          expense: wcOpex,
+          netIncome: wcNetIncome,
           totalAssets: wcAssets,
           totalLiab: wcLiab,
           totalEquity: wcEquity
@@ -168,45 +240,85 @@ export default function ProjectionsTab({
       const avgCogsGrowth = monthlyWithNetIncome.length >= 2 
         ? ((lastMonth.cogsTotal || 0) - (monthlyWithNetIncome[0].cogsTotal || 0)) / (monthlyWithNetIncome[0].cogsTotal || 1) / monthlyWithNetIncome.length
         : 0;
-      const avgExpGrowth = monthlyWithNetIncome.length >= 2 
-        ? (lastMonth.expense - monthlyWithNetIncome[0].expense) / monthlyWithNetIncome[0].expense / monthlyWithNetIncome.length
+      const avgOpexGrowth = monthlyWithNetIncome.length >= 2 
+        ? ((lastMonth.totalOpex || 0) - (monthlyWithNetIncome[0].totalOpex || 0)) / (monthlyWithNetIncome[0].totalOpex || 1) / monthlyWithNetIncome.length
         : 0;
+      
+      // Calculate average ratios for other items
+      const avgInterestRatio = monthlyWithNetIncome.reduce((sum, m) => sum + ((m.interestExpense || 0) / Math.max(m.revenue || 1, 1)), 0) / monthlyWithNetIncome.length;
+      const avgNonOpIncomeRatio = monthlyWithNetIncome.reduce((sum, m) => sum + ((m.nonOperatingIncome || 0) / Math.max(m.revenue || 1, 1)), 0) / monthlyWithNetIncome.length;
+      const avgExtraordinaryRatio = monthlyWithNetIncome.reduce((sum, m) => sum + ((m.extraordinaryItems || 0) / Math.max(m.revenue || 1, 1)), 0) / monthlyWithNetIncome.length;
+      const avgStateTaxRatio = monthlyWithNetIncome.reduce((sum, m) => sum + ((m.stateIncomeTaxes || 0) / Math.max(m.revenue || 1, 1)), 0) / monthlyWithNetIncome.length;
+      const avgFederalTaxRatio = monthlyWithNetIncome.reduce((sum, m) => sum + ((m.federalIncomeTaxes || 0) / Math.max(m.revenue || 1, 1)), 0) / monthlyWithNetIncome.length;
       
       for (let i = 1; i <= 12; i++) {
         const monthName = `+${i}mo`;
         
         const mlRev = lastMonth.revenue * Math.pow(1 + avgRevGrowth, i);
         const mlCogs = (lastMonth.cogsTotal || 0) * Math.pow(1 + avgCogsGrowth, i);
-        const mlExp = lastMonth.expense * Math.pow(1 + avgExpGrowth, i);
+        const mlOpex = (lastMonth.totalOpex || 0) * Math.pow(1 + avgOpexGrowth, i);
         const mlAssets = lastMonth.totalAssets * Math.pow(1 + avgAssetGrowth, i);
         const mlLiab = lastMonth.totalLiab * Math.pow(1 + avgLiabGrowth, i);
         const mlEquity = mlAssets - mlLiab;
         
+        const mlInterestExpense = mlRev * avgInterestRatio;
+        const mlNonOperatingIncome = mlRev * avgNonOpIncomeRatio;
+        const mlExtraordinaryItems = mlRev * avgExtraordinaryRatio;
+        const mlOperatingIncome = mlRev - mlCogs - mlOpex;
+        const mlIncomeBeforeTax = mlOperatingIncome - mlInterestExpense + mlNonOperatingIncome + mlExtraordinaryItems;
+        const mlStateIncomeTaxes = mlRev * avgStateTaxRatio;
+        const mlFederalIncomeTaxes = mlRev * avgFederalTaxRatio;
+        const mlNetIncome = mlIncomeBeforeTax - mlStateIncomeTaxes - mlFederalIncomeTaxes;
+        
         mostLikely.push({
           month: monthName,
           revenue: mlRev,
-          expense: mlExp,
-          netIncome: mlRev - mlCogs - mlExp,
+          expense: mlOpex,
+          netIncome: mlNetIncome,
           totalAssets: mlAssets,
           totalLiab: mlLiab,
           totalEquity: mlEquity
         });
+        
+        const bcRev = mlRev * 1.1;
+        const bcCogs = mlCogs * 0.9;
+        const bcOpex = mlOpex * 0.9;
+        const bcInterestExpense = bcRev * avgInterestRatio * 0.8;
+        const bcNonOperatingIncome = bcRev * avgNonOpIncomeRatio * 1.2;
+        const bcExtraordinaryItems = bcRev * avgExtraordinaryRatio;
+        const bcOperatingIncome = bcRev - bcCogs - bcOpex;
+        const bcIncomeBeforeTax = bcOperatingIncome - bcInterestExpense + bcNonOperatingIncome + bcExtraordinaryItems;
+        const bcStateIncomeTaxes = bcRev * avgStateTaxRatio * 0.8;
+        const bcFederalIncomeTaxes = bcRev * avgFederalTaxRatio * 0.8;
+        const bcNetIncome = bcIncomeBeforeTax - bcStateIncomeTaxes - bcFederalIncomeTaxes;
         
         bestCase.push({
           month: monthName,
-          revenue: mlRev * 1.1,
-          expense: mlExp * 0.9,
-          netIncome: (mlRev * 1.1) - (mlCogs * 0.9) - (mlExp * 0.9),
+          revenue: bcRev,
+          expense: bcOpex,
+          netIncome: bcNetIncome,
           totalAssets: mlAssets,
           totalLiab: mlLiab,
           totalEquity: mlEquity
         });
         
+        const wcRev = mlRev * 0.9;
+        const wcCogs = mlCogs * 1.1;
+        const wcOpex = mlOpex * 1.1;
+        const wcInterestExpense = wcRev * avgInterestRatio * 1.2;
+        const wcNonOperatingIncome = wcRev * avgNonOpIncomeRatio * 0.8;
+        const wcExtraordinaryItems = wcRev * avgExtraordinaryRatio;
+        const wcOperatingIncome = wcRev - wcCogs - wcOpex;
+        const wcIncomeBeforeTax = wcOperatingIncome - wcInterestExpense + wcNonOperatingIncome + wcExtraordinaryItems;
+        const wcStateIncomeTaxes = wcRev * avgStateTaxRatio * 1.2;
+        const wcFederalIncomeTaxes = wcRev * avgFederalTaxRatio * 1.2;
+        const wcNetIncome = wcIncomeBeforeTax - wcStateIncomeTaxes - wcFederalIncomeTaxes;
+        
         worstCase.push({
           month: monthName,
-          revenue: mlRev * 0.9,
-          expense: mlExp * 1.1,
-          netIncome: (mlRev * 0.9) - (mlCogs * 1.1) - (mlExp * 1.1),
+          revenue: wcRev,
+          expense: wcOpex,
+          netIncome: wcNetIncome,
           totalAssets: mlAssets,
           totalLiab: mlLiab,
           totalEquity: mlEquity

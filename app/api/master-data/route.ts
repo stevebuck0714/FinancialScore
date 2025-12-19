@@ -53,6 +53,8 @@ export async function GET(request: NextRequest) {
       subcontractors: month.subcontractors || 0,
       rent: month.rent || 0,
       taxLicense: month.taxLicense || 0,
+      stateIncomeTaxes: month.stateIncomeTaxes || 0,
+      federalIncomeTaxes: month.federalIncomeTaxes || 0,
       phoneComm: month.phoneComm || 0,
       infrastructure: month.infrastructure || 0,
       autoTravel: month.autoTravel || 0,

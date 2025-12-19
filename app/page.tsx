@@ -8819,7 +8819,10 @@ function FinancialScorePage() {
               const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
               const extraordinaryItems = currentMonth.extraordinaryItems || 0;
               
-              const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const stateIncomeTaxes = currentMonth.stateIncomeTaxes || 0;
+              const federalIncomeTaxes = currentMonth.federalIncomeTaxes || 0;
+              const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
               const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
               
               return (
@@ -8982,6 +8985,33 @@ function FinancialScorePage() {
                     </div>
                   )}
 
+                  {/* Income Before Tax */}
+                  <div style={{ marginBottom: '12px', background: '#f1f5f9', padding: '12px', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: '700', color: '#0f172a' }}>Income Before Tax</span>
+                      <span style={{ fontWeight: '700', color: '#0f172a' }}>${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    </div>
+                  </div>
+
+                  {/* Income Taxes */}
+                  {(stateIncomeTaxes > 0 || federalIncomeTaxes > 0) && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Taxes</div>
+                      {stateIncomeTaxes > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>State Income Taxes</span>
+                          <span style={{ color: '#ef4444' }}>($  {stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                        </div>
+                      )}
+                      {federalIncomeTaxes > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Federal Income Taxes</span>
+                          <span style={{ color: '#ef4444' }}>($  {federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Net Income */}
                   <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -9050,7 +9080,10 @@ function FinancialScorePage() {
               const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
               const extraordinaryItems = currentMonth.extraordinaryItems || 0;
               
-              const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const stateIncomeTaxes = currentMonth.stateIncomeTaxes || 0;
+              const federalIncomeTaxes = currentMonth.federalIncomeTaxes || 0;
+              const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
               const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
               
               // Helper function to calculate percentage
@@ -9305,6 +9338,36 @@ function FinancialScorePage() {
                           <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
                             {extraordinaryItems >= 0 ? '' : '('}{pct(Math.abs(extraordinaryItems)).toFixed(1)}%{extraordinaryItems < 0 ? ')' : ''}
                           </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Income Before Tax */}
+                  <div style={{ marginBottom: '12px', background: '#f1f5f9', padding: '12px', borderRadius: '8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
+                      <span style={{ fontWeight: '700', color: '#0f172a' }}>Income Before Tax</span>
+                      <span style={{ fontWeight: '700', color: '#0f172a', textAlign: 'right' }}>${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      <span style={{ fontWeight: '700', color: '#0f172a', textAlign: 'right' }}>{pct(incomeBeforeTax).toFixed(1)}%</span>
+                    </div>
+                  </div>
+
+                  {/* Income Taxes */}
+                  {(stateIncomeTaxes > 0 || federalIncomeTaxes > 0) && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Income Taxes</div>
+                      {stateIncomeTaxes > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>State Income Taxes</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>($  {stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>({pct(stateIncomeTaxes).toFixed(1)}%)</span>
+                        </div>
+                      )}
+                      {federalIncomeTaxes > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Federal Income Taxes</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>($  {federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>({pct(federalIncomeTaxes).toFixed(1)}%)</span>
                         </div>
                       )}
                     </div>
@@ -9720,7 +9783,10 @@ function FinancialScorePage() {
                   const interestExpense = months.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                   const nonOperatingIncome = months.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                   const extraordinaryItems = months.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                  const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                  const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                  const stateIncomeTaxes = months.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+                  const federalIncomeTaxes = months.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                  const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
                   
                   return {
                     revenue,
@@ -9730,6 +9796,9 @@ function FinancialScorePage() {
                     totalOpex,
                     operatingIncome,
                     interestExpense, nonOperatingIncome, extraordinaryItems,
+                    incomeBeforeTax,
+                    stateIncomeTaxes,
+                    federalIncomeTaxes,
                     netIncome
                   };
                 };
@@ -9930,6 +9999,42 @@ function FinancialScorePage() {
                           </>
                         )}
                         
+                        {/* Income Before Tax */}
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#f1f5f9', borderRadius: '4px', marginTop: '12px', fontWeight: '700' }}>
+                          <div style={{ color: '#0f172a' }}>Income Before Tax</div>
+                          {periodsData.map((p, i) => (
+                            <div key={i} style={{ textAlign: 'right', color: '#0f172a' }}>
+                              ${p.incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Income Taxes */}
+                        {periodsData.some(p => (p.stateIncomeTaxes || 0) > 0 || (p.federalIncomeTaxes || 0) > 0) && (
+                          <>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '12px' }}>
+                              <div style={{ color: '#475569' }}>Income Taxes</div>
+                              {periodsData.map((p, i) => <div key={i}></div>)}
+                            </div>
+                            {periodsData.some(p => (p.stateIncomeTaxes || 0) > 0) && (
+                              <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                                <div style={{ color: '#64748b', paddingLeft: '20px' }}>State Income Taxes</div>
+                                {periodsData.map((p, i) => (
+                                  <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${(p.stateIncomeTaxes || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                                ))}
+                              </div>
+                            )}
+                            {periodsData.some(p => (p.federalIncomeTaxes || 0) > 0) && (
+                              <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                                <div style={{ color: '#64748b', paddingLeft: '20px' }}>Federal Income Taxes</div>
+                                {periodsData.map((p, i) => (
+                                  <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${(p.federalIncomeTaxes || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                        
                         {/* Net Income */}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '12px', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
@@ -9981,8 +10086,10 @@ function FinancialScorePage() {
                 const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                 const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                 const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                
-                const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const stateIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+                const federalIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
                 const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
                 
                 return (
@@ -10220,14 +10327,18 @@ function FinancialScorePage() {
                     // Calculate all operating expenses - include all expense fields
                     const benefits = calc(m, 'benefits');
                     const taxLicense = calc(m, 'taxLicense');
+                    const stateIncomeTaxes = calc(m, 'stateIncomeTaxes');
+                    const federalIncomeTaxes = calc(m, 'federalIncomeTaxes');
                     const phoneComm = calc(m, 'phoneComm');
                     const mealsEntertainment = calc(m, 'mealsEntertainment');
                     const otherExpense = calc(m, 'otherExpense');
                     const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing + benefits + taxLicense + phoneComm + mealsEntertainment + otherExpense;
                     const grossProfit = revenue - cogs;
                     const operatingIncome = grossProfit - totalOpex;
-                    const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, benefits, taxLicense, phoneComm, mealsEntertainment, otherExpense, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
+                    const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                    const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
+                    const netIncome = incomeBeforeTax - totalIncomeTaxes;
+                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, benefits, taxLicense, phoneComm, mealsEntertainment, otherExpense, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, incomeBeforeTax, stateIncomeTaxes, federalIncomeTaxes, totalIncomeTaxes, netIncome };
                   });
                   const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -10338,6 +10449,27 @@ function FinancialScorePage() {
                             {periodsData.some(p => p.extraordinaryItems !== 0) && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
                           </>
                         )}
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#f1f5f9', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', color: '#0f172a' }}>
+                          <div>Income Before Tax</div>
+                          {periodsData.map((p, i) => {
+                            const pct = p.revenue > 0 ? (p.incomeBeforeTax / p.revenue) * 100 : 0;
+                            return (
+                              <div key={i} style={{ display: 'contents' }}>
+                                <div style={{ textAlign: 'right' }}>${p.incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                                <div style={{ textAlign: 'right', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {periodsData.some(p => (p.stateIncomeTaxes || 0) > 0 || (p.federalIncomeTaxes || 0) > 0) && (
+                          <>
+                            <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Income Taxes</div>
+                            {periodsData.some(p => (p.stateIncomeTaxes || 0) > 0) && <RowWithPercent label="State Income Taxes" values={periodsData.map(p => -(p.stateIncomeTaxes || 0))} indent={20} />}
+                            {periodsData.some(p => (p.federalIncomeTaxes || 0) > 0) && <RowWithPercent label="Federal Income Taxes" values={periodsData.map(p => -(p.federalIncomeTaxes || 0))} indent={20} />}
+                          </>
+                        )}
+
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
                           {periodsData.map((p, i) => {
@@ -10391,7 +10523,11 @@ function FinancialScorePage() {
                 const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                 const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
                 
-                const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const stateIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+                const federalIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
+                const netIncome = incomeBeforeTax - totalIncomeTaxes;
                 
                 const calcPercent = (value: number) => revenue > 0 ? ((value / revenue) * 100).toFixed(1) + '%' : '0.0%';
                 
@@ -10554,6 +10690,34 @@ function FinancialScorePage() {
                               <div style={{ textAlign: 'right', color: '#64748b' }}>
                                 {extraordinaryItems >= 0 ? calcPercent(extraordinaryItems) : `(${calcPercent(Math.abs(extraordinaryItems))})`}
                               </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Income Before Tax */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#f1f5f9', borderRadius: '6px', marginTop: '16px', fontWeight: '700', color: '#0f172a' }}>
+                        <div>Income Before Tax</div>
+                        <div style={{ textAlign: 'right' }}>${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                        <div style={{ textAlign: 'right' }}>{calcPercent(incomeBeforeTax)}</div>
+                      </div>
+
+                      {/* Income Taxes */}
+                      {(stateIncomeTaxes > 0 || federalIncomeTaxes > 0) && (
+                        <div style={{ marginTop: '16px' }}>
+                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Income Taxes</div>
+                          {stateIncomeTaxes > 0 && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b' }}>State Income Taxes</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>(${stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(stateIncomeTaxes)})</div>
+                            </div>
+                          )}
+                          {federalIncomeTaxes > 0 && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b' }}>Federal Income Taxes</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>(${federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(federalIncomeTaxes)})</div>
                             </div>
                           )}
                         </div>
