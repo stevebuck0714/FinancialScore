@@ -91,6 +91,39 @@ export async function GET(request: NextRequest) {
 
     console.log(`✅ Master data loaded from database for company: ${companyId}`);
     console.log(`📊 Loaded ${monthlyData.length} months of Master data`);
+    
+    // Debug: Log sample month to verify income tax fields are present
+    if (monthlyData.length > 0) {
+      const sampleMonth = monthlyData[monthlyData.length - 1];
+      console.log(`🔍 Sample month (latest) income tax fields:`, {
+        monthDate: sampleMonth.date || sampleMonth.month,
+        stateIncomeTaxes: sampleMonth.stateIncomeTaxes,
+        federalIncomeTaxes: sampleMonth.federalIncomeTaxes,
+        stateType: typeof sampleMonth.stateIncomeTaxes,
+        federalType: typeof sampleMonth.federalIncomeTaxes,
+        marketing: sampleMonth.marketing,
+        marketingType: typeof sampleMonth.marketing
+      });
+      
+      // Check for November 2025 specifically
+      const nov2025 = monthlyData.find((m: any) => {
+        const dateValue = m.date || m.month;
+        if (!dateValue) return false;
+        const dateStr = typeof dateValue === 'string' ? dateValue : (dateValue instanceof Date ? dateValue.toISOString() : String(dateValue));
+        const dateObj = dateValue instanceof Date ? dateValue : new Date(dateValue);
+        if (isNaN(dateObj.getTime())) return false;
+        return dateObj.getFullYear() === 2025 && dateObj.getMonth() === 10; // Month is 0-indexed, so 10 = November
+      });
+      if (nov2025) {
+        console.log(`📅 November 2025 data:`, {
+          monthDate: nov2025.date || nov2025.month,
+          federalIncomeTaxes: nov2025.federalIncomeTaxes,
+          federalIncomeTaxesType: typeof nov2025.federalIncomeTaxes,
+          stateIncomeTaxes: nov2025.stateIncomeTaxes,
+          marketing: nov2025.marketing
+        });
+      }
+    }
 
     return NextResponse.json({
       success: true,

@@ -50,8 +50,8 @@ const MasterDataResponseSchema = z.object({
 
 export class MasterDataStore {
   private static instance: MasterDataStore;
-  private cache: Map<string, { data: any; timestamp: number }> = new Map();
-  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  // REMOVED CACHING - Financial data must always be fresh
+  // Caching was causing stale data issues where income taxes and other fields weren't updating
 
   private constructor() {}
 
@@ -68,15 +68,8 @@ export class MasterDataStore {
     error?: string;
   }> {
     try {
-      // Check cache first
-      const cacheKey = `master-data-${companyId}`;
-      const cached = this.cache.get(cacheKey);
-
-      if (cached && (Date.now() - cached.timestamp) < this.CACHE_DURATION) {
-        return { success: true, data: cached.data };
-      }
-
-      console.log(`🎯 Fetching master data for company: ${companyId}`);
+      // Always fetch fresh data - no caching for financial data
+      console.log(`🎯 Fetching fresh master data for company: ${companyId}`);
 
       const response = await fetch(`/api/master-data?companyId=${companyId}`);
 
@@ -93,10 +86,7 @@ export class MasterDataStore {
       // Validate the data structure
       const validatedData = MasterDataResponseSchema.parse(rawData);
 
-      // Cache the result
-      this.cache.set(cacheKey, { data: validatedData, timestamp: Date.now() });
-
-      console.log(`✅ Master data loaded: ${validatedData.months} months`);
+      console.log(`✅ Master data loaded (fresh): ${validatedData.months} months`);
       return { success: true, data: validatedData };
 
     } catch (error) {
@@ -266,20 +256,19 @@ export class MasterDataStore {
   }
 
   clearCache(): void {
-    this.cache.clear();
-    console.log('🧹 Master data cache cleared');
+    // No-op: Caching removed - always fetches fresh data
+    console.log('🔄 Cache clear requested (caching disabled - always fresh)');
   }
 
   // Clear cache on category extraction changes
   clearAllCaches(): void {
-    this.cache.clear();
-    console.log('🧹 All master data caches cleared');
+    // No-op: Caching removed - always fetches fresh data
+    console.log('🔄 Cache clear requested (caching disabled - always fresh)');
   }
 
   clearCompanyCache(companyId: string): void {
-    const cacheKey = `master-data-${companyId}`;
-    this.cache.delete(cacheKey);
-    console.log(`🧹 Cache cleared for company: ${companyId}`);
+    // No-op: Caching removed - always fetches fresh data
+    console.log(`🔄 Cache clear requested for company: ${companyId} (caching disabled - always fresh)`);
   }
 }
 
@@ -336,8 +325,25 @@ export function useMasterData(companyId: string | null) {
     error,
     refetch: () => {
       if (companyId) {
+        // Force re-fetch by clearing cache (though caching is disabled now)
         masterDataStore.clearCompanyCache(companyId);
-        // Trigger re-fetch by updating a dependency
+        // Re-trigger the useEffect by updating companyId dependency
+        // This will cause a fresh fetch
+        setLoading(true);
+        setError(null);
+        masterDataStore.fetchMasterData(companyId).then(result => {
+          if (result.success && result.data) {
+            const transformed = masterDataStore.transformForGoals(result.data);
+            setData(transformed);
+            setMonthlyData(result.data.monthlyData);
+          } else {
+            setError(result.error || 'Failed to load master data');
+          }
+          setLoading(false);
+        }).catch(err => {
+          setError(err instanceof Error ? err.message : 'Unknown error');
+          setLoading(false);
+        });
       }
     }
   };

@@ -16,6 +16,7 @@ import { exportDataReviewToExcel, exportMonthlyRatiosToExcel } from './utils/exc
 import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, AssessmentResponses, AssessmentNotes, AssessmentRecord, Consultant, User, FinancialDataRecord, LOBData } from './types';
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
+import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
 // Dynamic chart components
 const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.LineChart), { ssr: false });
@@ -633,90 +634,50 @@ function FinancialScorePage() {
   
   // Helper function to get full display name for trend items
   const getTrendItemDisplayName = (item: string): string => {
-    const displayNames: { [key: string]: string } = {
-      // Income Statement
-      'revenue': 'Total Revenue',
+    // Use centralized mapping, with fallbacks for items not in the mapping
+    const centralizedName = getFieldDisplayName(item);
+    if (centralizedName !== item) {
+      return centralizedName;
+    }
+    
+    // Fallback for items not in centralized mapping
+    const fallbackNames: { [key: string]: string } = {
       'expense': 'Total Expenses',
-      'cogsTotal': 'COGS Total',
-      'cogsPayroll': 'COGS Payroll',
-      'cogsOwnerPay': 'COGS Owner Pay',
-      'cogsContractors': 'COGS Contractors',
-      'cogsMaterials': 'COGS Materials',
-      'cogsCommissions': 'COGS Commissions',
-      'cogsOther': 'COGS Other',
-      'salesExpense': 'Sales & Marketing',
-      'rent': 'Rent/Lease',
-      'infrastructure': 'Infrastructure/Utilities',
-      'autoTravel': 'Auto & Travel',
-      'professionalFees': 'Professional Services',
-      'insurance': 'Insurance',
-      'marketing': 'OPEX Other',
-      'payroll': 'OPEX Payroll',
-      'ownerBasePay': 'Owners Base Pay',
-      'ownersRetirement': 'Owners Retirement',
-      'subcontractors': 'Contractors/Distribution',
-      'interestExpense': 'Interest Expense',
-      'depreciationAmortization': 'Depreciation Expense',
-      'operatingExpenseTotal': 'Operating Expense Total',
-      'nonOperatingIncome': 'Non-Operating Income',
-      'extraordinaryItems': 'Extraordinary Items',
       'netProfit': 'Net Profit',
       'grossProfit': 'Gross Profit',
       'ebitda': 'EBITDA',
       'ebit': 'EBIT',
-      // Balance Sheet - Assets
-      'totalAssets': 'Total Assets',
-      'cash': 'Cash',
-      'ar': 'Accounts Receivable',
-      'inventory': 'Inventory',
-      'otherCA': 'Other Current Assets',
-      'tca': 'Total Current Assets',
-      'fixedAssets': 'Fixed Assets',
-      'otherAssets': 'Other Assets',
-      // Balance Sheet - Liabilities
-      'totalLiab': 'Total Liabilities',
-      'ap': 'Accounts Payable',
-      'otherCL': 'Other Current Liabilities',
-      'tcl': 'Total Current Liabilities',
-      'ltd': 'Long Term Debt',
-      // Balance Sheet - Equity
-      'totalEquity': 'Total Equity'
+      'operatingExpenseTotal': 'Operating Expense Total',
+      'nonOperatingIncome': 'Non-Operating Income',
+      'extraordinaryItems': 'Extraordinary Items',
     };
     
-    return displayNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1');
+    return fallbackNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1');
   };
 
   // Helper function to get display name for expense analysis items
   const getExpenseFieldDisplayName = (item: string): string => {
-    const displayNames: { [key: string]: string } = {
+    // Convert kebab-case to camelCase for centralized mapping
+    const camelCaseItem = item.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+    const centralizedName = getFieldDisplayName(camelCaseItem);
+    if (centralizedName !== camelCaseItem) {
+      return centralizedName;
+    }
+    
+    // Fallback for items not in centralized mapping
+    const fallbackNames: { [key: string]: string } = {
       'total-expenses': 'Total Expenses',
-      'cogs-total': 'COGS Total',
-      'cogs-payroll': 'COGS Payroll',
-      'cogs-owner-pay': 'COGS Owner Pay',
-      'cogs-contractors': 'COGS Contractors',
-      'cogs-materials': 'COGS Materials',
-      'cogs-commissions': 'COGS Commissions',
-      'cogs-other': 'COGS Other',
-      'payroll': 'Payroll',
-      'owner-base-pay': 'Owner Base Pay',
-      'owners-retirement': 'Owners Retirement',
-      'subcontractors': 'Subcontractors',
-      'professional-fees': 'Professional Fees',
-      'insurance': 'Insurance',
-      'rent': 'Rent',
-      'phone-comm': 'Phone & Communications',
-      'infrastructure': 'Infrastructure',
-      'auto-travel': 'Auto & Travel',
-      'sales-expense': 'Sales Expense',
-      'marketing': 'Marketing',
-      'training-cert': 'Training & Certification',
-      'meals-entertainment': 'Meals & Entertainment',
-      'interest-expense': 'Interest Expense',
-      'depreciation-amortization': 'Depreciation & Amortization',
-      'other-expense': 'Other Expense'
+      'cogs-total': getFieldDisplayName('cogsTotal'),
+      'cogs-payroll': getFieldDisplayName('cogsPayroll'),
+      'cogs-owner-pay': getFieldDisplayName('cogsOwnerPay'),
+      'cogs-contractors': getFieldDisplayName('cogsContractors'),
+      'cogs-materials': getFieldDisplayName('cogsMaterials'),
+      'cogs-commissions': getFieldDisplayName('cogsCommissions'),
+      'cogs-other': getFieldDisplayName('cogsOther'),
+      'sales-expense': getFieldDisplayName('salesExpense'),
     };
 
-    return displayNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/-/g, ' ');
+    return fallbackNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/-/g, ' ');
   };
 
   // State - Valuation
@@ -1635,7 +1596,7 @@ function FinancialScorePage() {
                 infrastructure: m.infrastructure || 0,
                 autoTravel: m.autoTravel || 0,
                 salesExpense: m.salesExpense || 0,
-                marketing: m.marketing || m.otherExpense || 0,
+                marketing: m.marketing || 0,
                 trainingCert: m.trainingCert || 0,
                 mealsEntertainment: m.mealsEntertainment || 0,
                 interestExpense: m.interestExpense || 0,
@@ -2005,12 +1966,14 @@ function FinancialScorePage() {
             infrastructure: m.infrastructure || 0,
             autoTravel: m.autoTravel || 0,
             salesExpense: m.salesExpense || 0,
-            marketing: m.marketing || m.otherExpense || m.marketing || 0,
+            marketing: m.marketing || 0,
             trainingCert: m.trainingCert || 0,
             mealsEntertainment: m.mealsEntertainment || 0,
             interestExpense: m.interestExpense || 0,
             depreciationAmortization: m.depreciationAmortization || m.depreciationAmortization || 0,
             otherExpense: m.otherExpense || 0,
+            stateIncomeTaxes: m.stateIncomeTaxes || 0,
+            federalIncomeTaxes: m.federalIncomeTaxes || 0,
             operatingExpenseTotal: m.operatingExpenseTotal || m.expense || 0,
             nonOperatingIncome: m.nonOperatingIncome || 0,
             extraordinaryItems: m.extraordinaryItems || 0,
@@ -9194,14 +9157,14 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(payroll).toFixed(1)}%</span>
                       </div>
                     )}
-                    {(ownerBasePay && ownerBasePay > 0) && (
+                    {ownerBasePay > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner Base Pay</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownerBasePay).toFixed(1)}%</span>
                       </div>
                     )}
-                    {(ownersRetirement && ownersRetirement > 0) && (
+                    {ownersRetirement > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner's Retirement</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -9243,14 +9206,14 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rent).toFixed(1)}%</span>
                       </div>
                     )}
-                    {(taxLicense && taxLicense > 0) && (
+                    {taxLicense > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Tax & License</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${taxLicense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(taxLicense).toFixed(1)}%</span>
                       </div>
                     )}
-                    {(phoneComm && phoneComm > 0) && (
+                    {phoneComm > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Phone & Communication</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${phoneComm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -9278,14 +9241,14 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(salesExpense).toFixed(1)}%</span>
                       </div>
                     )}
-                    {(marketing && marketing > 0) && (
+                    {marketing > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Marketing</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(marketing).toFixed(1)}%</span>
                       </div>
                     )}
-                    {(mealsEntertainment && mealsEntertainment > 0) && (
+                    {mealsEntertainment > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Meals & Entertainment</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -9299,7 +9262,7 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(depreciationAmortization).toFixed(1)}%</span>
                       </div>
                     )}
-                    {(otherExpense && otherExpense > 0) && (
+                    {otherExpense > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Expenses</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${otherExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -9795,8 +9758,19 @@ function FinancialScorePage() {
                   const nonOperatingIncome = months.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                   const extraordinaryItems = months.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
                   const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                  const stateIncomeTaxes = months.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
-                  const federalIncomeTaxes = months.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                  // Parse income taxes - handle null, undefined, strings, and numbers
+                  const stateIncomeTaxes = months.reduce((sum, m) => {
+                    const val = m.stateIncomeTaxes;
+                    if (val === null || val === undefined) return sum;
+                    const numVal = typeof val === 'number' ? val : (typeof val === 'string' ? parseFloat(val) : 0);
+                    return sum + (isNaN(numVal) ? 0 : numVal);
+                  }, 0);
+                  const federalIncomeTaxes = months.reduce((sum, m) => {
+                    const val = m.federalIncomeTaxes;
+                    if (val === null || val === undefined) return sum;
+                    const numVal = typeof val === 'number' ? val : (typeof val === 'string' ? parseFloat(val) : 0);
+                    return sum + (isNaN(numVal) ? 0 : numVal);
+                  }, 0);
                   const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
                   
                   return {
@@ -10021,29 +9995,52 @@ function FinancialScorePage() {
                         </div>
 
                         {/* Income Taxes */}
-                        {periodsData.some(p => (p.stateIncomeTaxes || 0) > 0 || (p.federalIncomeTaxes || 0) > 0) && (
+                        {periodsData.some(p => {
+                          const stateTax = Number(p.stateIncomeTaxes) || 0;
+                          const federalTax = Number(p.federalIncomeTaxes) || 0;
+                          return stateTax !== 0 || federalTax !== 0;
+                        }) ? (
                           <>
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '12px' }}>
                               <div style={{ color: '#475569' }}>Income Taxes</div>
                               {periodsData.map((p, i) => <div key={i}></div>)}
                             </div>
-                            {periodsData.some(p => (p.stateIncomeTaxes || 0) > 0) && (
+                            {periodsData.some(p => {
+                              const stateTax = Number(p.stateIncomeTaxes) || 0;
+                              return stateTax !== 0;
+                            }) && (
                               <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b', paddingLeft: '20px' }}>State Income Taxes</div>
-                                {periodsData.map((p, i) => (
-                                  <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${(p.stateIncomeTaxes || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
-                                ))}
+                                {periodsData.map((p, i) => {
+                                  const stateTax = Number(p.stateIncomeTaxes) || 0;
+                                  return (
+                                    <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${Math.abs(stateTax).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                                  );
+                                })}
                               </div>
                             )}
-                            {periodsData.some(p => (p.federalIncomeTaxes || 0) > 0) && (
+                            {periodsData.some(p => {
+                              const federalTax = Number(p.federalIncomeTaxes) || 0;
+                              return federalTax !== 0;
+                            }) && (
                               <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
                                 <div style={{ color: '#64748b', paddingLeft: '20px' }}>Federal Income Taxes</div>
-                                {periodsData.map((p, i) => (
-                                  <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${(p.federalIncomeTaxes || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
-                                ))}
+                                {periodsData.map((p, i) => {
+                                  const federalTax = Number(p.federalIncomeTaxes) || 0;
+                                  return (
+                                    <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${Math.abs(federalTax).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                                  );
+                                })}
                               </div>
                             )}
                           </>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', marginTop: '12px' }}>
+                            <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>Income Taxes</div>
+                            {periodsData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#94a3b8', fontStyle: 'italic' }}>No income taxes recorded</div>
+                            ))}
+                          </div>
                         )}
                         
                         {/* Net Income */}
@@ -10324,8 +10321,8 @@ function FinancialScorePage() {
                     const ownersRetirement = calc(m, 'ownersRetirement');
                     const professionalFees = calc(m, 'professionalFees');
                     const rent = calc(m, 'rent');
-                    const infrastructure = calc(m, 'utilities');
-                    const autoTravel = calc(m, 'travel');
+                    const infrastructure = calc(m, 'infrastructure');
+                    const autoTravel = calc(m, 'autoTravel');
                     const insurance = calc(m, 'insurance');
                     const salesExpense = calc(m, 'salesExpense');
                     const subcontractors = calc(m, 'subcontractors');
@@ -10473,12 +10470,35 @@ function FinancialScorePage() {
                           })}
                         </div>
 
-                        {periodsData.some(p => (p.stateIncomeTaxes || 0) > 0 || (p.federalIncomeTaxes || 0) > 0) && (
+                        {periodsData.some(p => {
+                          const stateTax = Number(p.stateIncomeTaxes) || 0;
+                          const federalTax = Number(p.federalIncomeTaxes) || 0;
+                          return stateTax !== 0 || federalTax !== 0;
+                        }) ? (
                           <>
                             <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Income Taxes</div>
-                            {periodsData.some(p => (p.stateIncomeTaxes || 0) > 0) && <RowWithPercent label="State Income Taxes" values={periodsData.map(p => -(p.stateIncomeTaxes || 0))} indent={20} />}
-                            {periodsData.some(p => (p.federalIncomeTaxes || 0) > 0) && <RowWithPercent label="Federal Income Taxes" values={periodsData.map(p => -(p.federalIncomeTaxes || 0))} indent={20} />}
+                            {periodsData.some(p => {
+                              const stateTax = Number(p.stateIncomeTaxes) || 0;
+                              return stateTax !== 0;
+                            }) && <RowWithPercent label="State Income Taxes" values={periodsData.map(p => {
+                              const stateTax = Number(p.stateIncomeTaxes) || 0;
+                              return -Math.abs(stateTax);
+                            })} indent={20} />}
+                            {periodsData.some(p => {
+                              const federalTax = Number(p.federalIncomeTaxes) || 0;
+                              return federalTax !== 0;
+                            }) && <RowWithPercent label="Federal Income Taxes" values={periodsData.map(p => {
+                              const federalTax = Number(p.federalIncomeTaxes) || 0;
+                              return -Math.abs(federalTax);
+                            })} indent={20} />}
                           </>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', marginTop: '12px' }}>
+                            <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>Income Taxes</div>
+                            {periodsData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#94a3b8', fontStyle: 'italic' }}>No income taxes recorded</div>
+                            ))}
+                          </div>
                         )}
 
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
