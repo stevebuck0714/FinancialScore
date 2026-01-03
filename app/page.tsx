@@ -296,7 +296,7 @@ function FinancialScorePage() {
   };
 
   // Handle admin dashboard tab navigation with payment gate
-  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'covenants') => {
+  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping') => {
     // Always allow payments tab
     if (tab === 'payments') {
       setAdminDashboardTab(tab);
@@ -453,7 +453,7 @@ function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments' | 'covenants'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
@@ -4432,6 +4432,52 @@ function FinancialScorePage() {
           )}
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
+            {/* Valuation Section */}
+            <div style={{ marginBottom: '1px' }}>
+              <h3 
+                onClick={() => setCurrentView('valuation')}
+                style={{ 
+                  fontSize: '14px', 
+                  fontWeight: '700', 
+                  color: currentView === 'valuation' ? '#667eea' : '#1e293b',
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.5px',
+                  padding: '8px 24px',
+                  marginBottom: '1px',
+                  cursor: 'pointer',
+                  transition: 'color 0.2s',
+                  borderLeft: currentView === 'valuation' ? '4px solid #667eea' : '4px solid transparent'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'valuation' ? '#667eea' : '#1e293b'}
+              >
+                Valuation
+              </h3>
+            </div>
+
+            {/* Financial Statements Section */}
+            <div style={{ marginBottom: '1px' }}>
+              <h3 
+                onClick={() => setCurrentView('financial-statements')}
+                style={{ 
+                  fontSize: '14px', 
+                  fontWeight: '700', 
+                  color: currentView === 'financial-statements' ? '#667eea' : '#1e293b',
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.5px',
+                  padding: '8px 24px',
+                  marginBottom: '1px',
+                  cursor: 'pointer',
+                  transition: 'color 0.2s',
+                  borderLeft: currentView === 'financial-statements' ? '4px solid #667eea' : '4px solid transparent'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'financial-statements' ? '#667eea' : '#1e293b'}
+              >
+                Financial Statements
+              </h3>
+            </div>
+
             {/* Financial Score Section */}
             <div style={{ marginBottom: '1px' }}>
               <h3 
@@ -5402,23 +5448,6 @@ function FinancialScorePage() {
             >
               Data Review
             </button>
-            <button
-              onClick={() => handleAdminTabNavigation('covenants')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'covenants' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'covenants' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'covenants' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Covenants
-            </button>
           </div>
           
           {/* Company Management Tab */}
@@ -6350,28 +6379,30 @@ function FinancialScorePage() {
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and payments.</p>
             </div>
           )}
+        </div>
+      )}
 
-          {/* Covenants Tab */}
-          {(adminDashboardTab === 'covenants' && currentView === 'admin') &&
-           selectedCompanyId && (
-            <CovenantsTab
-              selectedCompanyId={selectedCompanyId}
-              currentUser={currentUser}
-              monthly={monthly}
-              companyName={companyName}
-            />
-          )}
+      {/* Covenants View - Accessible from header navigation */}
+      {currentView === 'covenants' && selectedCompanyId && (
+        <CovenantsTab
+          selectedCompanyId={selectedCompanyId}
+          currentUser={currentUser}
+          monthly={monthly}
+          companyName={companyName}
+        />
+      )}
 
-          {!selectedCompanyId && (
-            (adminDashboardTab === 'covenants' && currentView === 'admin') ||
-            (consultantDashboardTab === 'covenants' && currentView === 'consultant-dashboard')
-          ) && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage covenants.</p>
-            </div>
-          )}
+      {/* Covenants View - No Company Selected */}
+      {currentView === 'covenants' && !selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to manage covenants.</p>
+        </div>
+      )}
 
+      {/* Admin Dashboard */}
+      {currentView === 'admin' && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           {/* Checkout Modal */}
           {showCheckoutModal && selectedSubscriptionPlan && (() => {
             const planPrice = selectedSubscriptionPlan === 'monthly' ? (subscriptionMonthlyPrice ?? 0) :
