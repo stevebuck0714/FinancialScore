@@ -97,10 +97,7 @@ export async function middleware(request: NextRequest) {
   
   // Public API routes that don't require authentication
   const publicRoutes = [
-    '/api/auth/login',
-    '/api/auth/register',
-    '/api/auth/reset-password',
-    '/api/auth/update-password',
+    '/api/auth/', // All NextAuth routes including callbacks, sessions, etc.
     '/api/check-db',
     '/api/webhooks', // Webhooks have their own authentication
   ]
@@ -109,18 +106,41 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
   
   if (pathname.startsWith('/api') && !isPublicRoute) {
-    // Get the session token
-    const token = await getToken({ 
+    // Get the session token - try multiple cookie names for compatibility
+    let token = await getToken({ 
       req: request,
-      secret: process.env.NEXTAUTH_SECRET 
+      secret: process.env.NEXTAUTH_SECRET,
+      cookieName: 'next-auth.session-token'
+    })
+    
+    // If not found with next-auth name, try authjs name (NextAuth v5)
+    if (!token) {
+      token = await getToken({ 
+        req: request,
+        secret: process.env.NEXTAUTH_SECRET,
+        cookieName: process.env.NODE_ENV === 'production' 
+          ? '__Secure-authjs.session-token' 
+          : 'authjs.session-token'
+      })
+    }
+    
+    console.log('🔐 Middleware auth check:', {
+      path: pathname,
+      hasToken: !!token,
+      hasSecret: !!process.env.NEXTAUTH_SECRET,
+      cookies: request.cookies.getAll().map(c => c.name),
+      tokenEmail: token?.email || 'none'
     })
     
     if (!token) {
+      console.log('❌ No token found, returning 401');
       return NextResponse.json(
         { error: 'Unauthorized', message: 'Authentication required' },
         { status: 401 }
       )
     }
+    
+    console.log('✅ Token found, user:', token.email);
     
     // Add user context to headers for downstream use
     const requestHeaders = new Headers(request.headers)

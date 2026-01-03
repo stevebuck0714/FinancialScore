@@ -11,6 +11,7 @@ async function fetchApi(url: string, options?: RequestInit) {
   try {
     const response = await fetch(url, {
       ...options,
+      credentials: 'include', // Include cookies for NextAuth session
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,

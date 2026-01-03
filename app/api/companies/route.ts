@@ -101,6 +101,19 @@ export async function POST(request: NextRequest) {
   try {
     console.log("🔍 ===== STARTING COMPANY CREATION =====");
 
+    // SECURITY: Require authentication
+    let context;
+    try {
+      context = await requireAuth();
+      console.log("🔍 Authenticated user:", context.email, "Role:", context.role, "ConsultantId:", context.consultantId);
+    } catch (authError) {
+      console.error("❌ Authentication failed:", authError);
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication required" },
+        { status: 401 },
+      );
+    }
+
     let requestBody;
     try {
       requestBody = await request.json();
@@ -170,6 +183,47 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Consultant not found" },
         { status: 404 },
+      );
+    }
+
+    // SECURITY: Validate consultant access - ensure user can create companies for this consultant
+    console.log("🔍 Validating consultant access:");
+    console.log("   User role:", context.role);
+    console.log("   User consultantId:", context.consultantId);
+    console.log("   Target consultantId:", consultantId);
+    
+    // Site admins can create companies for any consultant
+    if (context.role === 'SITEADMIN') {
+      console.log("✅ Site admin access - validation passed");
+    } 
+    // Consultants can only create companies for themselves
+    else if (context.role === 'CONSULTANT') {
+      if (context.consultantId !== consultantId) {
+        console.error("❌ Consultant trying to create company for different consultant");
+        console.error("   User consultantId:", context.consultantId);
+        console.error("   Requested consultantId:", consultantId);
+        await auditForbiddenAccess('Company', consultantId, 'CREATE_FOR_CONSULTANT');
+        return NextResponse.json(
+          { 
+            error: 'Forbidden: You can only create companies for yourself',
+            debug: {
+              userRole: context.role,
+              userConsultantId: context.consultantId,
+              targetConsultantId: consultantId
+            }
+          },
+          { status: 403 }
+        );
+      }
+      console.log("✅ Consultant access validated - creating company for self");
+    } 
+    // Other roles cannot create companies
+    else {
+      console.error("❌ User role cannot create companies:", context.role);
+      await auditForbiddenAccess('Company', consultantId, 'CREATE_FOR_CONSULTANT');
+      return NextResponse.json(
+        { error: 'Forbidden: Only consultants and site admins can create companies' },
+        { status: 403 }
       );
     }
 
@@ -495,6 +549,9 @@ export async function POST(request: NextRequest) {
 
       console.log("🔍 Company created successfully:", company);
 
+      // AUDIT: Log company creation
+      await auditCompanyOperation('COMPANY_CREATED', company.id);
+
       // Transform the response to include consultantId (pricing is now stored in DB)
       const transformedCompany = {
         ...company,
@@ -563,6 +620,11 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     console.log("🔄 ===== PATCH REQUEST RECEIVED =====");
+    
+    // SECURITY: Require authentication
+    const context = await requireAuth();
+    console.log("🔄 Authenticated user:", context.email, "Role:", context.role);
+    
     const body = await request.json();
     console.log("🔄 Request body:", body);
 
@@ -575,6 +637,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(
         { error: "Company ID required" },
         { status: 400 },
+      );
+    }
+
+    // SECURITY: Validate company access
+    const hasAccess = await validateCompanyAccess(targetCompanyId);
+    if (!hasAccess) {
+      console.error("❌ User does not have access to company:", targetCompanyId);
+      await auditForbiddenAccess('Company', targetCompanyId, 'UPDATE');
+      return NextResponse.json(
+        { error: 'Forbidden: You do not have permission to update this company' },
+        { status: 403 }
       );
     }
 
@@ -643,6 +716,10 @@ export async function PATCH(request: NextRequest) {
     });
 
     console.log("✅ Company updated successfully:", company);
+    
+    // AUDIT: Log company update
+    await auditCompanyOperation('COMPANY_UPDATED', targetCompanyId);
+    
     return NextResponse.json({ company }, { status: 200 });
   } catch (error: any) {
     console.error("❌ ===== PATCH ERROR =====");
@@ -663,8 +740,20 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE company
 export async function DELETE(request: NextRequest) {
-  return NextResponse.json(
-    { error: "DELETE function temporarily disabled" },
-    { status: 500 },
-  );
+  try {
+    // SECURITY: Require authentication
+    const context = await requireAuth();
+    console.log("🗑️ Authenticated user:", context.email, "Role:", context.role);
+    
+    return NextResponse.json(
+      { error: "DELETE function temporarily disabled" },
+      { status: 500 },
+    );
+  } catch (error: any) {
+    console.error("❌ DELETE error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete company", details: error.message },
+      { status: 500 }
+    );
+  }
 }

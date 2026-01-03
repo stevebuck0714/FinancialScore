@@ -161,26 +161,45 @@ function FinancialScorePage() {
     }
   }, [selectedCompanyId]);
   
-  // Load user from localStorage on mount (app uses custom auth, not NextAuth)
+  // Load user from localStorage and verify NextAuth session on mount
   useEffect(() => {
     if (typeof window === 'undefined' || currentUser) return;
     
-    const storedUser = localStorage.getItem('fs_currentUser');
-    console.log('🔍 Checking localStorage for currentUser:', !!storedUser);
-    
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        console.log('✅ User loaded from localStorage:', user.email);
-        setCurrentUser(user);
-        setIsLoggedIn(true);
-      } catch (error) {
-        console.error('❌ Failed to parse stored user:', error);
-        localStorage.removeItem('fs_currentUser');
+    const restoreSession = async () => {
+      const storedUser = localStorage.getItem('fs_currentUser');
+      console.log('🔍 Checking localStorage for currentUser:', !!storedUser);
+      
+      if (storedUser) {
+        try {
+          const user = JSON.parse(storedUser);
+          console.log('✅ User loaded from localStorage:', user.email);
+          
+          // Check if NextAuth session exists
+          const { getSession } = await import('next-auth/react');
+          const session = await getSession();
+          
+          if (!session) {
+            console.log('⚠️ No NextAuth session found - user will need to re-login');
+            // Clear localStorage since session expired
+            localStorage.removeItem('fs_currentUser');
+            setIsLoggedIn(false);
+            return;
+          }
+          
+          console.log('✅ NextAuth session valid');
+          setCurrentUser(user);
+          setIsLoggedIn(true);
+        } catch (error) {
+          console.error('❌ Failed to restore session:', error);
+          localStorage.removeItem('fs_currentUser');
+          setIsLoggedIn(false);
+        }
+      } else {
+        console.log('⚠️ No user found in localStorage');
       }
-    } else {
-      console.log('⚠️ No user found in localStorage');
-    }
+    };
+    
+    restoreSession();
   }, [currentUser]);
   
   const [loadingSubscription, setLoadingSubscription] = useState(false);
@@ -2261,6 +2280,34 @@ function FinancialScorePage() {
     }
     
     try {
+      // First, create NextAuth session for API authentication
+      const { signIn, getSession } = await import('next-auth/react');
+      const signInResult = await signIn('credentials', {
+        email: loginEmail,
+        password: loginPassword,
+        redirect: false,
+      });
+      
+      if (signInResult?.error || !signInResult?.ok) {
+        setLoginError('Invalid email or password');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Verify session was created successfully
+      const session = await getSession();
+      console.log('🔐 NextAuth session after login:', session ? 'EXISTS' : 'MISSING');
+      
+      if (!session) {
+        setLoginError('Failed to create session. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Small delay to ensure session is fully propagated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Then get user data from our custom endpoint
       const { user } = await authApi.login(loginEmail, loginPassword);
       
       // Normalize role and userType to lowercase for frontend compatibility
@@ -2289,7 +2336,7 @@ function FinancialScorePage() {
       if (normalizedUser.role === 'siteadmin') {
         setCurrentView('siteadmin');
       } else if (normalizedUser.role === 'consultant') {
-        setCurrentView('admin');
+        setCurrentView('consultant-dashboard');
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
       } else if (normalizedUser.userType === 'company') {
@@ -2330,8 +2377,8 @@ function FinancialScorePage() {
                   needsPayment = !companyToSelect.selectedSubscriptionPlan;
         }
         
-        // Always direct to company management on login
-        setAdminDashboardTab('company-management');
+        // Note: Consultants now start at consultant-dashboard view (Team Management / Company List)
+        // setAdminDashboardTab('company-management'); // Not needed for consultant-dashboard view
       }
       
       // Load company data for company users
@@ -2385,6 +2432,7 @@ function FinancialScorePage() {
     }
     
     try {
+      // Register the user
       const { user } = await authApi.register({
         name: loginName,
         email: loginEmail,
@@ -2399,6 +2447,36 @@ function FinancialScorePage() {
         companyZip: loginCompanyZip,
         companyWebsite: loginCompanyWebsite || undefined
       });
+      
+      // Create NextAuth session after registration
+      const { signIn, getSession } = await import('next-auth/react');
+      const signInResult = await signIn('credentials', {
+        email: loginEmail,
+        password: loginPassword,
+        redirect: false,
+      });
+      
+      if (signInResult?.error || !signInResult?.ok) {
+        console.error('Failed to create session after registration');
+        setLoginError('Registration successful but login failed. Please try logging in.');
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Verify session was created successfully
+      const session = await getSession();
+      console.log('🔐 NextAuth session after registration:', session ? 'EXISTS' : 'MISSING');
+      
+      if (!session) {
+        setLoginError('Registration successful but session creation failed. Please try logging in.');
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Small delay to ensure session is fully propagated
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       // Normalize role and userType to lowercase for frontend compatibility
       const normalizedUser = {
@@ -2454,7 +2532,12 @@ function FinancialScorePage() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Sign out from NextAuth
+    const { signOut } = await import('next-auth/react');
+    await signOut({ redirect: false });
+    
+    // Clear application state
     setCurrentUser(null);
     setIsLoggedIn(false);
     setCurrentView('login');
@@ -2638,6 +2721,7 @@ function FinancialScorePage() {
     try {
       const response = await fetch('/api/consultants/team', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           consultantId: currentUser.consultantId,
@@ -4358,7 +4442,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -4448,7 +4532,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -4654,7 +4738,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
@@ -4682,8 +4766,8 @@ function FinancialScorePage() {
                     color: currentView === 'custom-print' ? '#667eea' : '#1e293b',
                     textTransform: 'uppercase', 
                     letterSpacing: '0.5px',
-                    padding: '8px 24px',
-                    marginBottom: '8px',
+                    padding: '2px 24px',
+                    marginBottom: '2px',
                     cursor: 'pointer',
                     transition: 'color 0.2s',
                     borderLeft: currentView === 'custom-print' ? '4px solid #667eea' : '4px solid transparent'
@@ -4806,10 +4890,10 @@ function FinancialScorePage() {
               </div>
             )}
 
-            {/* Getting Started & Legal Links Section */}
+            {/* Support Section */}
             <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
               <a
-                href="/getting-started"
+                href="/support"
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
@@ -4832,87 +4916,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ℹ️ Getting Started
-              </a>
-              <a
-                href="/privacy-policy"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                🔒 Privacy Policy
-              </a>
-              <a
-                href="/license-agreement"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                📄 License Agreement
-              </a>
-            </div>
-
-            {/* Contact Support Section */}
-            <div style={{ paddingTop: '12px' }}>
-              <a
-                href="mailto:steve@stevebuck.us"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                💬 Contact Support
+                🆘 SUPPORT
               </a>
             </div>
           </nav>
@@ -4945,7 +4949,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -5065,7 +5069,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
@@ -5081,10 +5085,10 @@ function FinancialScorePage() {
               </h3>
             </div>
 
-            {/* Getting Started & Legal Links Section */}
+            {/* Support Section */}
             <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
               <a
-                href="/getting-started"
+                href="/support"
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
@@ -5107,87 +5111,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                ℹ️ Getting Started
-              </a>
-              <a
-                href="/privacy-policy"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                🔒 Privacy Policy
-              </a>
-              <a
-                href="/license-agreement"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                📄 License Agreement
-              </a>
-            </div>
-
-            {/* Contact Support Section */}
-            <div style={{ paddingTop: '12px' }}>
-              <a
-                href="mailto:steve@stevebuck.us"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                💬 Contact Support
+                🆘 SUPPORT
               </a>
             </div>
           </nav>

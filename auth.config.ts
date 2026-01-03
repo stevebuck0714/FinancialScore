@@ -88,6 +88,17 @@ export const authConfig: NextAuthConfig = {
     maxAge: 8 * 60 * 60, // 8 hours
     updateAge: 60 * 60, // Refresh session every 1 hour of activity
   },
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
   secret: process.env.NEXTAUTH_SECRET,
 };
 
