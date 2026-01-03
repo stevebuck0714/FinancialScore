@@ -26,7 +26,7 @@ interface OperationsTabProps {
 const COLORS = ['#667eea', '#2563eb', '#16a34a', '#f59e0b', '#ec4899', '#6366f1', '#8b5cf6', '#14b8a6'];
 
 export default function OperationsTab({ selectedCompanyId, companyName }: OperationsTabProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory' | 'cash'>('overview');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -35,6 +35,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   const [apData, setApData] = useState<any>(null);
   const [productData, setProductData] = useState<any>(null);
   const [inventoryData, setInventoryData] = useState<any>(null);
+  const [cashData, setCashData] = useState<any>(null);
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -82,7 +83,8 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
         'ar': 'ar-aging',
         'ap': 'ap-aging',
         'products': 'products',
-        'inventory': 'inventory'
+        'inventory': 'inventory',
+        'cash': 'cash'
       };
       
       const type = typeMap[tab];
@@ -114,6 +116,9 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
         case 'inventory':
           setInventoryData(data);
           break;
+        case 'cash':
+          setCashData(data);
+          break;
       }
     } catch (err: any) {
       setError(err.message);
@@ -132,7 +137,15 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+    const date = new Date(dateString);
+    // Format based on frequency
+    if (frequency === 'daily') {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } else if (frequency === 'weekly') {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } else {
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+    }
   };
 
   const renderFilters = () => {
@@ -459,6 +472,36 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             </div>
             <p style={{ fontSize: '13px', color: '#64748b' }}>Inventory records</p>
           </div>
+
+          <div style={{ 
+            background: 'white', 
+            borderRadius: '8px', 
+            padding: '16px', 
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            border: '1px solid #e2e8f0',
+            cursor: 'pointer',
+            transition: 'transform 0.2s, box-shadow 0.2s'
+          }}
+          onClick={() => setActiveTab('cash')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ background: '#d1fae5', padding: '8px', borderRadius: '6px' }}>
+                <DollarSign style={{ width: '20px', height: '20px', color: '#10b981' }} />
+              </div>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Cash</h3>
+            </div>
+            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
+              {summary.cashRecords || 0}
+            </div>
+            <p style={{ fontSize: '13px', color: '#64748b' }}>Cash snapshots</p>
+          </div>
         </div>
       )}
 
@@ -564,7 +607,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
         {/* Revenue Trend Chart */}
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Monthly Revenue Trend
+            {frequency.charAt(0).toUpperCase() + frequency.slice(1)} Revenue Trend
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={trendData}>
@@ -1185,6 +1228,157 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     );
   };
 
+  const renderCash = () => {
+    if (loading) {
+      return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading cash data...</div>;
+    }
+
+    if (!cashData) return null;
+
+    const { records, summary } = cashData;
+
+    // Aggregate data by period for trend chart
+    const periodTrend = records.reduce((acc: any, record: any) => {
+      const period = formatDate(record.snapshotDate);
+      if (!acc[period]) {
+        acc[period] = { period, totalCash: 0 };
+      }
+      acc[period].totalCash += record.cashBalance;
+      return acc;
+    }, {});
+
+    const trendData = Object.values(periodTrend);
+
+    // Prepare data for account breakdown chart
+    const accountData = summary.accounts.map((acct: any) => ({
+      name: acct.accountName,
+      balance: acct.currentBalance,
+    }));
+
+    return (
+      <div style={{ padding: '8px 32px 32px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+          Cash Management
+        </h2>
+
+        {/* KPI Cards */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Cash</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
+              {formatCurrency(summary.totalCash)}
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Change</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: summary.changeAmount >= 0 ? '#10b981' : '#ef4444' }}>
+              {summary.changeAmount >= 0 ? '+' : ''}{formatCurrency(summary.changeAmount)}
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Change %</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: summary.changePercent >= 0 ? '#10b981' : '#ef4444' }}>
+              {summary.changePercent >= 0 ? '+' : ''}{summary.changePercent.toFixed(2)}%
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Accounts</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
+              {summary.accountCount}
+            </div>
+          </div>
+        </div>
+
+        {/* Cash Balance Trend Chart */}
+        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+            {frequency.charAt(0).toUpperCase() + frequency.slice(1)} Cash Balance Trend
+          </h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <Tooltip 
+                formatter={(value: any) => [formatCurrency(value), 'Total Cash']}
+                contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
+              />
+              <Legend />
+              <Bar dataKey="totalCash" fill="#10b981" name="Total Cash" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Account Breakdown Table */}
+        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+            Bank Accounts
+          </h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Account Name</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Balance</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Avg Balance</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Min Balance</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Max Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.accounts.map((account: any, index: number) => (
+                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '600' }}>
+                      {account.accountName}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: '14px', color: '#10b981', textAlign: 'right', fontWeight: '600' }}>
+                      {formatCurrency(account.currentBalance)}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
+                      {formatCurrency(account.avgBalance)}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
+                      {formatCurrency(account.minBalance)}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
+                      {formatCurrency(account.maxBalance)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Account Distribution Chart */}
+        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+            Cash Distribution by Account
+          </h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={accountData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={(entry) => `${entry.name}: ${formatCurrency(entry.balance)}`}
+                outerRadius={100}
+                fill="#8884d8"
+                dataKey="balance"
+              >
+                {accountData.map((entry: any, index: number) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value: any) => formatCurrency(value)} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{ 
       maxWidth: '1600px', 
@@ -1203,7 +1397,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
         display: 'flex',
         gap: '20px'
       }}>
-        {['overview', 'customers', 'ar', 'ap', 'products', 'inventory'].map((tab) => (
+        {['overview', 'customers', 'ar', 'ap', 'products', 'inventory', 'cash'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
@@ -1235,6 +1429,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
       {activeTab === 'ap' && renderAPaging()}
       {activeTab === 'products' && renderProducts()}
       {activeTab === 'inventory' && renderInventory()}
+      {activeTab === 'cash' && renderCash()}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
  * 
  * Query parameters:
  * - companyId: string (required)
- * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory'
+ * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash'
  * - startDate: ISO date string (optional) - defaults to 90 days ago
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
@@ -234,14 +234,79 @@ export async function GET(request: NextRequest) {
           summary: inventoryMetrics,
         });
 
+      case 'cash':
+        // Get cash data
+        data = await prisma.cashSnapshot.findMany({
+          where: {
+            companyId,
+            frequency,
+            snapshotDate: dateFilter,
+          },
+          orderBy: { snapshotDate: 'desc' },
+          take: limit,
+        });
+
+        console.log(`💰 Cash API - frequency: ${frequency}, records returned: ${data.length}`);
+
+        // Calculate cash metrics
+        const latestCash = data.filter(
+          (record) =>
+            record.snapshotDate.getTime() === Math.max(...data.map((r) => r.snapshotDate.getTime()))
+        );
+
+        const totalCash = latestCash.reduce((sum, record) => sum + record.cashBalance, 0);
+        const previousCash = data.filter(
+          (record) => {
+            const dates = [...new Set(data.map(r => r.snapshotDate.getTime()))].sort((a, b) => b - a);
+            return record.snapshotDate.getTime() === dates[1];
+          }
+        );
+        const previousTotal = previousCash.reduce((sum, record) => sum + record.cashBalance, 0);
+        const changeAmount = previousTotal ? totalCash - previousTotal : 0;
+        const changePercent = previousTotal ? (changeAmount / previousTotal) * 100 : 0;
+
+        // Calculate average cash balance over the period
+        const accountBalances = data.reduce((acc, record) => {
+          if (!acc[record.accountName]) {
+            acc[record.accountName] = [];
+          }
+          acc[record.accountName].push(record.cashBalance);
+          return acc;
+        }, {} as Record<string, number[]>);
+
+        const accountSummaries = Object.entries(accountBalances).map(([name, balances]) => ({
+          accountName: name,
+          currentBalance: latestCash.find(r => r.accountName === name)?.cashBalance || 0,
+          avgBalance: balances.reduce((sum, b) => sum + b, 0) / balances.length,
+          minBalance: Math.min(...balances),
+          maxBalance: Math.max(...balances),
+        })).sort((a, b) => b.currentBalance - a.currentBalance);
+
+        const cashMetrics = {
+          totalCash,
+          changeAmount,
+          changePercent,
+          accountCount: latestCash.length,
+          accounts: accountSummaries,
+          avgTotalCash: data.length > 0 
+            ? data.reduce((sum, r) => sum + r.cashBalance, 0) / data.length 
+            : 0,
+        };
+
+        return NextResponse.json({
+          records: data,
+          summary: cashMetrics,
+        });
+
       default:
         // Get all data types summary
-        const [customers, arAging, apAging, products, inventory] = await Promise.all([
+        const [customers, arAging, apAging, products, inventory, cash] = await Promise.all([
           prisma.customerSalesSnapshot.count({ where: { companyId } }),
           prisma.aRAgingSnapshot.count({ where: { companyId } }),
           prisma.aPAgingSnapshot.count({ where: { companyId } }),
           prisma.productSalesSnapshot.count({ where: { companyId } }),
           prisma.inventorySnapshot.count({ where: { companyId } }),
+          prisma.cashSnapshot.count({ where: { companyId } }),
         ]);
 
         return NextResponse.json({
@@ -251,6 +316,7 @@ export async function GET(request: NextRequest) {
             apAgingRecords: apAging,
             productSalesRecords: products,
             inventoryRecords: inventory,
+            cashRecords: cash,
           },
         });
     }

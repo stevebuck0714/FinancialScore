@@ -754,3 +754,21 @@ model InventorySnapshot {
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, itemId])
 }
+
+model CashSnapshot {
+  id              String   @id @default(cuid())
+  companyId       String
+  snapshotDate    DateTime
+  frequency       String   @default("daily") // 'daily', 'weekly', 'monthly'
+  accountId       String?  // QuickBooks account ID
+  accountName     String   // Bank account name
+  accountNumber   String?  // Last 4 digits (optional)
+  cashBalance     Float
+  changeAmount    Float?   // Change from previous period
+  changePercent   Float?   // % change from previous period
+  createdAt       DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, accountId])
+}
