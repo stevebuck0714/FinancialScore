@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
-import { requireAuth, validateCompanyAccess, isSiteAdmin } from '@/lib/tenant-security';
+import { requireAuth, validateCompanyAccess, isSiteAdmin, requireCompanyAccess } from '@/lib/tenant-security';
 import { auditUserOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import { createUserSchema, validateInput } from '@/lib/validation-schemas';
 
@@ -90,14 +90,33 @@ export async function POST(request: NextRequest) {
     const { name, title, phone, email, password, companyId, userType } = validation.data;
 
     // SECURITY: Validate access to company
+    let userContext;
     try {
-      await requireCompanyAccess(companyId);
+      userContext = await requireCompanyAccess(companyId);
     } catch (error) {
       await auditForbiddenAccess('User', companyId, 'CREATE');
       return NextResponse.json(
         { error: 'Forbidden: Access to this company denied' },
         { status: 403 }
       );
+    }
+
+    // SECURITY: Check if user has permission to add users
+    // Only Consultants, Site Admins, and Company Admins can add users
+    if (userContext.role === 'USER') {
+      // Regular company users must be Company Admins to add users
+      const requestingUser = await prisma.user.findUnique({
+        where: { id: userContext.userId },
+        select: { companyRole: true }
+      });
+
+      if (requestingUser?.companyRole !== 'admin') {
+        await auditForbiddenAccess('User', companyId, 'CREATE');
+        return NextResponse.json(
+          { error: 'Forbidden: Only Company Admins can add users' },
+          { status: 403 }
+        );
+      }
     }
 
     // Normalize email to lowercase for consistency
@@ -210,9 +229,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     // SECURITY: Validate access to company or user
+    let userContext;
     if (targetUser.companyId) {
       try {
-        await requireCompanyAccess(targetUser.companyId);
+        userContext = await requireCompanyAccess(targetUser.companyId);
       } catch (error) {
         await auditForbiddenAccess('User', id, 'DELETE');
         return NextResponse.json(
@@ -220,10 +240,29 @@ export async function DELETE(request: NextRequest) {
           { status: 403 }
         );
       }
+    } else {
+      userContext = await requireAuth();
+    }
+
+    // SECURITY: Check if user has permission to delete users
+    // Only Consultants, Site Admins, and Company Admins can delete users
+    if (userContext.role === 'USER' && targetUser.companyId) {
+      const requestingUser = await prisma.user.findUnique({
+        where: { id: userContext.userId },
+        select: { companyRole: true }
+      });
+
+      if (requestingUser?.companyRole !== 'admin') {
+        await auditForbiddenAccess('User', id, 'DELETE');
+        return NextResponse.json(
+          { error: 'Forbidden: Only Company Admins can delete users' },
+          { status: 403 }
+        );
+      }
     }
 
     // SECURITY: Prevent users from deleting themselves
-    const context = await requireAuth();
+    const context = userContext;
     if (context.userId === id) {
       return NextResponse.json(
         { error: 'Cannot delete your own account' },

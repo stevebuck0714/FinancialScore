@@ -15,6 +15,14 @@ interface ProfileTabProps {
   trendData: any[];
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
+  setEditingCompanyId?: (id: string) => void;
+  setCompanyAddressStreet?: (street: string) => void;
+  setCompanyAddressCity?: (city: string) => void;
+  setCompanyAddressState?: (state: string) => void;
+  setCompanyAddressZip?: (zip: string) => void;
+  setCompanyAddressCountry?: (country: string) => void;
+  setCompanyIndustrySector?: (sector: string) => void;
+  setShowCompanyDetailsModal?: (show: boolean) => void;
 }
 
 export default function ProfileTab({
@@ -26,7 +34,15 @@ export default function ProfileTab({
   monthly,
   trendData,
   isLoading,
-  setIsLoading
+  setIsLoading,
+  setEditingCompanyId,
+  setCompanyAddressStreet,
+  setCompanyAddressCity,
+  setCompanyAddressState,
+  setCompanyAddressZip,
+  setCompanyAddressCountry,
+  setCompanyIndustrySector,
+  setShowCompanyDetailsModal
 }: ProfileTabProps) {
   // State for LOB management
   const [linesOfBusiness, setLinesOfBusiness] = React.useState<string[]>(['', '', '', '', '']);
@@ -193,6 +209,16 @@ export default function ProfileTab({
           .print-page-header {
             display: block !important;
           }
+          
+          /* Grid layout for print */
+          .profile-grid {
+            display: block !important;
+          }
+          
+          .profile-grid > div {
+            page-break-inside: avoid;
+            margin-bottom: 20px !important;
+          }
         }
         
         .print-page-header {
@@ -200,81 +226,212 @@ export default function ProfileTab({
         }
       `}</style>
       
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ marginBottom: '8px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Company Profile</h1>
-          </div>
-        </div>
-        <button
-          onClick={() => window.print()}
-          style={{ 
-            padding: '12px 24px', 
-            background: '#667eea', 
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '8px', 
-            fontSize: '14px', 
-            fontWeight: '600', 
-            cursor: 'pointer',
-            boxShadow: '0 2px 6px rgba(102, 126, 234, 0.3)'
-          }}
-        >
-          🖨️ Print Profile
-        </button>
-      </div>
 
-      {/* Section 1: Business Profile */}
-      <div id="first-profile-section" className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <div className="print-page-header">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
-            <div style={{ fontSize: '13px', color: '#64748b' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+      {/* 2-Column Layout */}
+      <div className="profile-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '12px' }}>
+        
+        {/* Container 1: Company Profile */}
+        <div id="first-profile-section" className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+              Company Profile
+            </h2>
+            <button
+              className="no-print"
+              onClick={() => window.print()}
+              style={{ 
+                padding: '8px 16px', 
+                background: '#667eea', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '6px', 
+                fontSize: '13px', 
+                fontWeight: '600', 
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              🖨️ Print
+            </button>
+          </div>
+        
+        {/* Company Header Info */}
+        <div style={{ marginBottom: '24px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '2px solid #667eea' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{company?.name}</h3>
+              <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>✓ Active Company</div>
+            </div>
+            {setEditingCompanyId && setShowCompanyDetailsModal && (
+              <button
+                onClick={() => {
+                  if (company && setEditingCompanyId && setCompanyAddressStreet && setCompanyAddressCity && 
+                      setCompanyAddressState && setCompanyAddressZip && setCompanyAddressCountry && 
+                      setCompanyIndustrySector && setShowCompanyDetailsModal) {
+                    setEditingCompanyId(company.id);
+                    setCompanyAddressStreet(company.addressStreet || '');
+                    setCompanyAddressCity(company.addressCity || '');
+                    setCompanyAddressState(company.addressState || '');
+                    setCompanyAddressZip(company.addressZip || '');
+                    setCompanyAddressCountry(company.addressCountry || 'USA');
+                    setCompanyIndustrySector(company.industrySector || '');
+                    setShowCompanyDetailsModal(true);
+                  }
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#667eea',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Edit Details
+              </button>
+            )}
+          </div>
+          <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>
+            <span style={{ fontWeight: '600', display: 'block', marginBottom: '4px' }}>Address:</span>
+            {company?.addressStreet || company?.addressCity ? (
+              <div style={{ color: '#1e293b' }}>
+                {company?.addressStreet && <div>{company.addressStreet}</div>}
+                <div>
+                  {company?.addressCity && company.addressCity}
+                  {company?.addressState && `, ${company.addressState}`}
+                  {company?.addressZip && ` ${company.addressZip}`}
+                </div>
+                {company?.addressCountry && <div>{company.addressCountry}</div>}
+              </div>
+            ) : (
+              <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Not set</span>
+            )}
+          </div>
+          <div style={{ fontSize: '13px', color: '#64748b' }}>
+            <span style={{ fontWeight: '600' }}>Industry:</span>{' '}
+            <span style={{ color: '#1e293b' }}>
+              {industry ? `${industry.id} - ${industry.name}` : 'Not set'}
+            </span>
           </div>
         </div>
-        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
-          Business Profile
-        </h2>
         
-        <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 140px 1fr', gap: '12px 16px', marginBottom: '16px' }}>
-          <div style={{ fontWeight: '600', color: '#475569' }}>COMPANY NAME</div>
-          <div style={{ color: '#1e293b', gridColumn: 'span 3' }}>{company?.name || 'N/A'}</div>
+        {/* Business Details Fields */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '24px' }}>
           
-          <div style={{ fontWeight: '600', color: '#475569' }}>LEGAL STRUCTURE</div>
-          <input 
-            type="text" 
-            value={profile.legalStructure} 
-            onChange={(e) => updateProfile({ legalStructure: e.target.value })}
-            placeholder="e.g., C Corp, S Corp, LLC"
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', maxWidth: '200px' }}
-          />
+          {/* Business Status */}
+          <div>
+            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+              BUSINESS STATUS
+            </label>
+            <select
+              value={profile.businessStatus}
+              onChange={(e) => updateProfile({ businessStatus: e.target.value })}
+              style={{ 
+                width: '100%',
+                padding: '10px 12px', 
+                borderRadius: '6px', 
+                border: '1px solid #cbd5e1', 
+                fontSize: '14px',
+                backgroundColor: 'white',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">Select status</option>
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="INACTIVE">INACTIVE</option>
+              <option value="PENDING">PENDING</option>
+            </select>
+          </div>
           
-          <div style={{ fontWeight: '600', color: '#475569' }}>BUSINESS STATUS</div>
-          <select
-            value={profile.businessStatus}
-            onChange={(e) => updateProfile({ businessStatus: e.target.value })}
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', maxWidth: '200px' }}
-          >
-            <option value="">Select status</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="INACTIVE">INACTIVE</option>
-            <option value="PENDING">PENDING</option>
-          </select>
+          {/* Legal Structure */}
+          <div>
+            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+              LEGAL STRUCTURE
+            </label>
+            <input 
+              type="text" 
+              value={profile.legalStructure} 
+              onChange={(e) => updateProfile({ legalStructure: e.target.value })}
+              placeholder="e.g., C Corp, S Corp, LLC"
+              style={{ 
+                width: '100%',
+                padding: '10px 12px', 
+                borderRadius: '6px', 
+                border: '1px solid #cbd5e1', 
+                fontSize: '14px'
+              }}
+            />
+          </div>
           
-          <div style={{ fontWeight: '600', color: '#475569' }}>OWNERSHIP</div>
-          <input 
-            type="text" 
-            value={profile.ownership} 
-            onChange={(e) => updateProfile({ ownership: e.target.value })}
-            placeholder="Owner name(s)"
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', gridColumn: 'span 3' }}
-          />
+          {/* Ownership */}
+          <div>
+            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+              OWNERSHIP
+            </label>
+            <input 
+              type="text" 
+              value={profile.ownership} 
+              onChange={(e) => updateProfile({ ownership: e.target.value })}
+              placeholder="Owner name(s)"
+              style={{ 
+                width: '100%',
+                padding: '10px 12px', 
+                borderRadius: '6px', 
+                border: '1px solid #cbd5e1', 
+                fontSize: '14px'
+              }}
+            />
+          </div>
+          
+          {/* Workforce */}
+          <div>
+            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+              WORKFORCE
+            </label>
+            <input 
+              type="text" 
+              value={profile.workforce} 
+              onChange={(e) => updateProfile({ workforce: e.target.value })}
+              placeholder="e.g., 3 FT, 1 owner"
+              style={{ 
+                width: '100%',
+                padding: '10px 12px', 
+                borderRadius: '6px', 
+                border: '1px solid #cbd5e1', 
+                fontSize: '14px'
+              }}
+            />
+          </div>
+          
+          {/* Key Advisors */}
+          <div>
+            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+              KEY ADVISORS
+            </label>
+            <input 
+              type="text" 
+              value={profile.keyAdvisors} 
+              onChange={(e) => updateProfile({ keyAdvisors: e.target.value })}
+              placeholder="Advisor names"
+              style={{ 
+                width: '100%',
+                padding: '10px 12px', 
+                borderRadius: '6px', 
+                border: '1px solid #cbd5e1', 
+                fontSize: '14px'
+              }}
+            />
+          </div>
         </div>
         
         {/* Key Employees Section */}
-        <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+        <div style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div style={{ fontWeight: '600', color: '#475569' }}>KEY EMPLOYEES</div>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>KEY EMPLOYEES</label>
             <button
               onClick={() => {
                 const newEmployees = [...(profile.keyEmployees || []), { name: '', title: '', yearEmployed: '' }];
@@ -301,61 +458,81 @@ export default function ProfileTab({
           {profile.keyEmployees && profile.keyEmployees.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {profile.keyEmployees.map((employee: any, index: number) => (
-                <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 140px 40px', gap: '12px', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                  <input
-                    type="text"
-                    value={employee.name || ''}
-                    onChange={(e) => {
-                      const newEmployees = [...profile.keyEmployees];
-                      newEmployees[index] = { ...newEmployees[index], name: e.target.value };
-                      updateProfile({ keyEmployees: newEmployees });
-                    }}
-                    placeholder="Name"
-                    style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <input
-                    type="text"
-                    value={employee.title || ''}
-                    onChange={(e) => {
-                      const newEmployees = [...profile.keyEmployees];
-                      newEmployees[index] = { ...newEmployees[index], title: e.target.value };
-                      updateProfile({ keyEmployees: newEmployees });
-                    }}
-                    placeholder="Title"
-                    style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <input
-                    type="text"
-                    value={employee.yearEmployed || ''}
-                    onChange={(e) => {
-                      const newEmployees = [...profile.keyEmployees];
-                      newEmployees[index] = { ...newEmployees[index], yearEmployed: e.target.value };
-                      updateProfile({ keyEmployees: newEmployees });
-                    }}
-                    placeholder="Year"
-                    style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                  />
-                  <button
-                    onClick={() => {
-                      const newEmployees = profile.keyEmployees.filter((_: any, i: number) => i !== index);
-                      updateProfile({ keyEmployees: newEmployees });
-                    }}
-                    style={{
-                      padding: '8px',
-                      background: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '16px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    title="Remove employee"
-                  >
-                    ×
-                  </button>
+                <div key={index} style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                      Employee {index + 1}
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newEmployees = profile.keyEmployees.filter((_: any, i: number) => i !== index);
+                        updateProfile({ keyEmployees: newEmployees });
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        background: '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        fontWeight: '600'
+                      }}
+                      title="Remove employee"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                        Name
+                      </label>
+                      <input
+                        type="text"
+                        value={employee.name || ''}
+                        onChange={(e) => {
+                          const newEmployees = [...profile.keyEmployees];
+                          newEmployees[index] = { ...newEmployees[index], name: e.target.value };
+                          updateProfile({ keyEmployees: newEmployees });
+                        }}
+                        placeholder="Full name"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                        Title
+                      </label>
+                      <input
+                        type="text"
+                        value={employee.title || ''}
+                        onChange={(e) => {
+                          const newEmployees = [...profile.keyEmployees];
+                          newEmployees[index] = { ...newEmployees[index], title: e.target.value };
+                          updateProfile({ keyEmployees: newEmployees });
+                        }}
+                        placeholder="Job title"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                        Year
+                      </label>
+                      <input
+                        type="text"
+                        value={employee.yearEmployed || ''}
+                        onChange={(e) => {
+                          const newEmployees = [...profile.keyEmployees];
+                          newEmployees[index] = { ...newEmployees[index], yearEmployed: e.target.value };
+                          updateProfile({ keyEmployees: newEmployees });
+                        }}
+                        placeholder="2020"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -365,210 +542,33 @@ export default function ProfileTab({
             </div>
           )}
         </div>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 140px 1fr', gap: '12px 16px', marginBottom: '16px' }}>
-          <div style={{ fontWeight: '600', color: '#475569' }}>ADDRESS</div>
-          <div style={{ color: '#1e293b', gridColumn: 'span 3' }}>
-            {company?.addressStreet || company?.addressCity ? (
-              <>
-                {company?.addressStreet && `${company.addressStreet}, `}
-                {company?.addressCity && company.addressCity}
-                {company?.addressState && `, ${company.addressState}`}
-                {company?.addressZip && ` ${company.addressZip}`}
-                {company?.addressCountry && `, ${company.addressCountry}`}
-              </>
-            ) : (
-              'Not set'
-            )}
-          </div>
-          
-          <div style={{ fontWeight: '600', color: '#475569' }}>INDUSTRY</div>
-          <div style={{ color: '#1e293b', gridColumn: 'span 3' }}>
-            {industry ? `${industry.id} - ${industry.name}` : 'Not set'}
-          </div>
-          
-          <div style={{ fontWeight: '600', color: '#475569' }}>WORKFORCE</div>
-          <input 
-            type="text" 
-            value={profile.workforce} 
-            onChange={(e) => updateProfile({ workforce: e.target.value })}
-            placeholder="e.g., 3 FT, 1 owner"
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', gridColumn: 'span 3' }}
-          />
-          
-          <div style={{ fontWeight: '600', color: '#475569' }}>KEY ADVISORS</div>
-          <input 
-            type="text" 
-            value={profile.keyAdvisors} 
-            onChange={(e) => updateProfile({ keyAdvisors: e.target.value })}
-            placeholder="Advisor names"
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', gridColumn: 'span 3' }}
-          />
         </div>
-        
-        <div style={{ marginTop: '24px' }}>
-          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>SPECIAL NOTES</div>
-          <textarea
-            value={profile.specialNotes}
-            onChange={(e) => updateProfile({ specialNotes: e.target.value })}
-            placeholder="Any special notes about sale, buyer requirements, financing, etc."
-            rows={4}
-            style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', fontFamily: 'inherit', resize: 'vertical' }}
-          />
-        </div>
-        
-        <div style={{ marginTop: '16px' }}>
-          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Quality of Earnings (QoE)</div>
-          <textarea
-            value={profile.qoeNotes}
-            onChange={(e) => updateProfile({ qoeNotes: e.target.value })}
-            placeholder="Notes on revenue quality, recurring vs. non-recurring, cash vs. credit, etc."
-            rows={3}
-            style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', fontFamily: 'inherit', resize: 'vertical' }}
-          />
-        </div>
-      </div>
 
-      {/* Section 2: Financial Statement Overview */}
-      <div className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <div className="print-page-header">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
-            <div style={{ fontSize: '13px', color: '#64748b' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+        {/* Container 2: Company Disclosures */}
+        <div style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+              Company Disclosures
+            </h2>
+            <button
+              className="no-print"
+              onClick={() => window.print()}
+              style={{ 
+                padding: '8px 16px', 
+                background: '#667eea', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '6px', 
+                fontSize: '13px', 
+                fontWeight: '600', 
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              🖨️ Print
+            </button>
           </div>
-        </div>
-        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
-          Financial Statement Overview
-        </h2>
-        
-        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>BALANCE SHEET</h3>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}></th>
-                <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Current</th>
-                <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Yr End 2024</th>
-                <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Yr End 2023</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>Total Assets</td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${latest ? latest.totalAssets.toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${oneYearAgo ? oneYearAgo.totalAssets.toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${twoYearsAgo ? twoYearsAgo.totalAssets.toLocaleString() : 'N/A'}
-                </td>
-              </tr>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>Total Liabilities</td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${latest ? latest.totalLiab.toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${oneYearAgo ? oneYearAgo.totalLiab.toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${twoYearsAgo ? twoYearsAgo.totalLiab.toLocaleString() : 'N/A'}
-                </td>
-              </tr>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>Total Equity</td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${latest ? latest.totalEquity.toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${oneYearAgo ? oneYearAgo.totalEquity.toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${twoYearsAgo ? twoYearsAgo.totalEquity.toLocaleString() : 'N/A'}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        
-        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#475569', marginTop: '32px', marginBottom: '16px' }}>INCOME STATEMENT</h3>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}></th>
-                <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>LTM</th>
-                <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>2024</th>
-                <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>2023</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>Revenue</td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${ltmRev.toLocaleString()}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${oneYearAgo ? monthly.slice(-24, -12).reduce((sum, m) => sum + m.revenue, 0).toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${twoYearsAgo ? monthly.slice(-36, -24).reduce((sum, m) => sum + m.revenue, 0).toLocaleString() : 'N/A'}
-                </td>
-              </tr>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>Margin %</td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  {((ltmData.reduce((sum, m) => sum + (m.revenue - m.cogsTotal), 0) / ltmRev) * 100).toFixed(2)}%
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  {oneYearAgo ? ((monthly.slice(-24, -12).reduce((sum, m) => sum + (m.revenue - m.cogsTotal), 0) / monthly.slice(-24, -12).reduce((sum, m) => sum + m.revenue, 0)) * 100).toFixed(1) + '%' : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  {twoYearsAgo ? ((monthly.slice(-36, -24).reduce((sum, m) => sum + (m.revenue - m.cogsTotal), 0) / monthly.slice(-36, -24).reduce((sum, m) => sum + m.revenue, 0)) * 100).toFixed(1) + '%' : 'N/A'}
-                </td>
-              </tr>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>Total Expenses</td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${ltmData.reduce((sum, m) => sum + m.expense, 0).toLocaleString()}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${oneYearAgo ? monthly.slice(-24, -12).reduce((sum, m) => sum + m.expense, 0).toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right' }}>
-                  ${twoYearsAgo ? monthly.slice(-36, -24).reduce((sum, m) => sum + m.expense, 0).toLocaleString() : 'N/A'}
-                </td>
-              </tr>
-              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Net Income</td>
-                <td style={{ padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>
-                  ${ltmData.reduce((sum, m) => sum + (m.revenue - m.expense), 0).toLocaleString()}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>
-                  ${oneYearAgo ? monthly.slice(-24, -12).reduce((sum, m) => sum + (m.revenue - m.expense), 0).toLocaleString() : 'N/A'}
-                </td>
-                <td style={{ padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>
-                  ${twoYearsAgo ? monthly.slice(-36, -24).reduce((sum, m) => sum + (m.revenue - m.expense), 0).toLocaleString() : 'N/A'}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Section 3: Company Disclosures */}
-      <div style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <div className="print-page-header">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{company?.name}</div>
-            <div style={{ fontSize: '13px', color: '#64748b' }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-          </div>
-        </div>
-        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
-          Company Disclosures
-        </h2>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: '12px' }}>
           <div style={{ fontWeight: '600', color: '#475569' }}>DISCLOSURE</div>
@@ -665,275 +665,8 @@ export default function ProfileTab({
             <option value="Partial">Partial</option>
           </select>
         </div>
-      </div>
-
-      {/* Line of Business Settings Section */}
-      <div className="no-print" style={{ marginBottom: '32px' }}>
-        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-          Line of Business Settings
-        </h3>
-
-        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-          <div style={{ marginBottom: '24px' }}>
-            <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-              Lines of Business
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              Define up to 5 lines of business for your company. These will be used for revenue and expense allocation.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-              {linesOfBusiness.map((lob, index) => (
-                <div key={index}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                    Line of Business {index + 1}
-                  </label>
-                  <input
-                    type="text"
-                    value={lob}
-                    onChange={(e) => {
-                      const updated = [...linesOfBusiness];
-                      updated[index] = e.target.value;
-                      setLinesOfBusiness(updated);
-                    }}
-                    placeholder={`e.g., ${index === 0 ? 'Consulting' : index === 1 ? 'Products' : index === 2 ? 'Services' : index === 3 ? 'Training' : 'Other'}`}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      color: '#1e293b'
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '24px' }}>
-            <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-              Headcount Allocation (%)
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              Define the percentage of your total headcount allocated to each line of business. This will be used for automatic expense allocation.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-              {linesOfBusiness.filter(lob => typeof lob === 'string' && lob.trim() !== '').map((lob, index) => (
-                <div key={index}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                    {lob} (%)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={headcountAllocations[lob] || ''}
-                    onChange={(e) => {
-                      const value = parseFloat(e.target.value) || 0;
-                      setHeadcountAllocations(prev => ({
-                        ...prev,
-                        [lob]: value
-                      }));
-                    }}
-                    placeholder="0.0"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      color: '#1e293b'
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-            {linesOfBusiness.filter(lob => typeof lob === 'string' && lob.trim() !== '').length > 0 && (
-              <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748b' }}>
-                Total: {Object.values(headcountAllocations).reduce((sum, pct) => sum + pct, 0).toFixed(1)}%
-                {Math.abs(Object.values(headcountAllocations).reduce((sum, pct) => sum + pct, 0) - 100) > 0.1 && (
-                  <span style={{ color: '#ef4444', marginLeft: '8px' }}>
-                    (Should total 100%)
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div style={{ marginBottom: '24px' }}>
-            <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-              User Defined Allocations
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              Create custom allocation templates that can be reused across multiple account mappings.
-            </p>
-            <div style={{ marginBottom: '16px' }}>
-              <button
-                onClick={() => {
-                  setUserDefinedAllocations(prev => [...prev, { lobName: '', percentage: 0 }]);
-                }}
-                style={{
-                  padding: '8px 16px',
-                  background: '#3b82f6',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
-                }}
-              >
-                + Add Allocation Template
-              </button>
-            </div>
-            {Array.isArray(userDefinedAllocations) && userDefinedAllocations.map((allocation, index) => (
-              <div key={index} style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 120px 40px',
-                gap: '12px',
-                alignItems: 'center',
-                marginBottom: '8px',
-                padding: '12px',
-                border: '1px solid #e2e8f0',
-                borderRadius: '6px',
-                background: '#f8fafc'
-              }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                    Line of Business
-                  </label>
-                  <select
-                    value={allocation.lobName}
-                    onChange={(e) => {
-                      const updated = Array.isArray(userDefinedAllocations) ? [...userDefinedAllocations] : [];
-                      updated[index] = { ...updated[index], lobName: e.target.value };
-                      setUserDefinedAllocations(updated);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '6px 8px',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '4px',
-                      fontSize: '13px',
-                      color: '#1e293b'
-                    }}
-                  >
-                    <option value="">Select LOB</option>
-                    {linesOfBusiness.filter(lob => typeof lob === 'string' && lob.trim() !== '').map((lob, lobIndex) => (
-                      <option key={lobIndex} value={lob}>{lob}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                    %
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={allocation.percentage}
-                    onChange={(e) => {
-                      const updated = Array.isArray(userDefinedAllocations) ? [...userDefinedAllocations] : [];
-                      updated[index] = { ...updated[index], percentage: parseFloat(e.target.value) || 0 };
-                      setUserDefinedAllocations(updated);
-                    }}
-                    placeholder="0.0"
-                    style={{
-                      width: '100%',
-                      padding: '6px 8px',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '4px',
-                      fontSize: '13px',
-                      color: '#1e293b'
-                    }}
-                  />
-                </div>
-                <div>
-                  <button
-                    onClick={() => {
-                      const updated = Array.isArray(userDefinedAllocations) ? userDefinedAllocations.filter((_, i) => i !== index) : [];
-                      setUserDefinedAllocations(updated);
-                    }}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      background: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-            ))}
-            {Array.isArray(userDefinedAllocations) && userDefinedAllocations.length === 0 && (
-              <div style={{
-                padding: '24px',
-                textAlign: 'center',
-                color: '#64748b',
-                border: '2px dashed #cbd5e1',
-                borderRadius: '6px'
-              }}>
-                No user defined allocation templates yet. Click "Add Allocation Template" to create one.
-              </div>
-            )}
-          </div>
-
-          <div style={{ textAlign: 'center' }}>
-            <button
-              onClick={async () => {
-                setIsLoading(true);
-                try {
-                  // Save LOB names and headcount allocations to company
-                  const response = await fetch('/api/companies', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      companyId: selectedCompanyId,
-                      linesOfBusiness: linesOfBusiness.filter(lob => typeof lob === 'string' && lob.trim() !== ''),
-                      headcountAllocations,
-                      userDefinedAllocations: Array.isArray(userDefinedAllocations) ? userDefinedAllocations.filter(alloc => alloc.lobName.trim() !== '' && alloc.percentage > 0) : []
-                    })
-                  });
-
-                  if (response.ok) {
-                    alert('LOB settings saved successfully!');
-                  } else {
-                    throw new Error('Failed to save LOB settings');
-                  }
-                } catch (error) {
-                  alert(error instanceof Error ? error.message : 'Failed to save LOB settings');
-                } finally {
-                  setIsLoading(false);
-                }
-              }}
-              disabled={isLoading}
-              style={{
-                padding: '10px 20px',
-                background: isLoading ? '#94a3b8' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: isLoading ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isLoading ? 'Saving...' : '💾 Save LOB Settings'}
-            </button>
-          </div>
         </div>
+      
       </div>
 
       <div className="no-print" style={{ textAlign: 'center', padding: '24px' }}>

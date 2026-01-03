@@ -71,23 +71,6 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
       {/* Sub-tab Navigation */}
       <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
         <button
-          onClick={() => props.setCompanyManagementSubTab('details')}
-          style={{
-            padding: '10px 20px',
-            background: props.companyManagementSubTab === 'details' ? '#667eea' : 'transparent',
-            color: props.companyManagementSubTab === 'details' ? 'white' : '#64748b',
-            border: 'none',
-            borderBottom: props.companyManagementSubTab === 'details' ? '3px solid #667eea' : '3px solid transparent',
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            borderRadius: '6px 6px 0 0',
-            transition: 'all 0.2s'
-          }}
-        >
-          Company Details
-        </button>
-        <button
           onClick={() => props.setCompanyManagementSubTab('profile')}
           style={{
             padding: '10px 20px',
@@ -104,9 +87,58 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
         >
           Profile
         </button>
+        <button
+          onClick={() => props.setCompanyManagementSubTab('details')}
+          style={{
+            padding: '10px 20px',
+            background: props.companyManagementSubTab === 'details' ? '#667eea' : 'transparent',
+            color: props.companyManagementSubTab === 'details' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: props.companyManagementSubTab === 'details' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '6px 6px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Manage Users
+        </button>
       </div>
       
-      {/* Company Details Sub-tab */}
+      {/* Profile Sub-tab */}
+      {props.companyManagementSubTab === 'profile' && (
+        <div id="profile-print-wrapper">
+          {!props.selectedCompanyId ? (
+            <div className="no-print" style={{ background: '#f8fafc', borderRadius: '8px', padding: '48px 24px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to view and edit company profile.</p>
+            </div>
+          ) : (
+            <ProfileTab
+              selectedCompanyId={props.selectedCompanyId}
+              currentUser={props.currentUser}
+              company={props.company}
+              companyProfiles={props.companyProfiles}
+              setCompanyProfiles={props.setCompanyProfiles}
+              monthly={monthlyData}
+              trendData={props.trendData}
+              isLoading={props.isLoading}
+              setIsLoading={props.setIsLoading}
+              setEditingCompanyId={props.setEditingCompanyId}
+              setCompanyAddressStreet={props.setCompanyAddressStreet}
+              setCompanyAddressCity={props.setCompanyAddressCity}
+              setCompanyAddressState={props.setCompanyAddressState}
+              setCompanyAddressZip={props.setCompanyAddressZip}
+              setCompanyAddressCountry={props.setCompanyAddressCountry}
+              setCompanyIndustrySector={props.setCompanyIndustrySector}
+              setShowCompanyDetailsModal={props.setShowCompanyDetailsModal}
+            />
+          )}
+        </div>
+      )}
+      
+      {/* Manage Users Sub-tab */}
       {props.companyManagementSubTab === 'details' && (
         <CompanyDetailsTab
           currentUser={props.currentUser}
@@ -150,30 +182,6 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           setNewAssessmentUserPassword={props.setNewAssessmentUserPassword}
           setSelectedCompanyId={props.setSelectedCompanyId}
         />
-      )}
-      
-      {/* Profile Sub-tab */}
-      {props.companyManagementSubTab === 'profile' && (
-        <div id="profile-print-wrapper">
-          {!props.selectedCompanyId ? (
-            <div className="no-print" style={{ background: '#f8fafc', borderRadius: '8px', padding: '48px 24px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to view and edit company profile.</p>
-            </div>
-          ) : (
-            <ProfileTab
-              selectedCompanyId={props.selectedCompanyId}
-              currentUser={props.currentUser}
-              company={props.company}
-              companyProfiles={props.companyProfiles}
-              setCompanyProfiles={props.setCompanyProfiles}
-              monthly={monthlyData}
-              trendData={props.trendData}
-              isLoading={props.isLoading}
-              setIsLoading={props.setIsLoading}
-            />
-          )}
-        </div>
       )}
     </div>
   );

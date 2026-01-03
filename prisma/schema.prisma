@@ -92,6 +92,8 @@ model User {
   companyId            String?
   consultantId         String?
   isPrimaryContact     Boolean            @default(false)
+  companyRole          String?            @default("user") // 'user' or 'admin' - for company users only
+  sidebarAccess        Json?              // Array of accessible sidebar sections
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   passwordResetExpires DateTime?

@@ -251,6 +251,8 @@ export interface User {
   consultantCompanyName?: string;
   role: 'consultant' | 'user' | 'siteadmin';
   userType?: 'company' | 'assessment'; // company = management team, assessment = fills questionnaire
+  companyRole?: 'user' | 'admin'; // admin = company admin with full access, user = restricted access
+  sidebarAccess?: string[]; // Array of sidebar sections the user can access
 }
 
 export interface FinancialDataRecord {

@@ -122,6 +122,91 @@ export default function CompanyDetailsTab({
   setNewAssessmentUserPassword,
   setSelectedCompanyId,
 }: CompanyDetailsTabProps) {
+  // State for user permissions
+  const [userPermissions, setUserPermissions] = React.useState<{
+    [userId: string]: {
+      role: "user" | "admin";
+      sidebarAccess: string[];
+    };
+  }>({});
+  const [savingUserId, setSavingUserId] = React.useState<string | null>(null);
+
+  // Initialize permissions from users
+  React.useEffect(() => {
+    const permissions: typeof userPermissions = {};
+    users
+      .filter((u) => u.companyId === selectedCompanyId && u.userType === "company")
+      .forEach((u) => {
+        permissions[u.id] = {
+          role: (u as any).companyRole || "user",
+          sidebarAccess: (u as any).sidebarAccess || [
+            "company-dashboard",
+            "valuation",
+            "financial-statements",
+            "financial-score",
+            "management-assessment",
+            "digital-presence",
+          ],
+        };
+      });
+    setUserPermissions(permissions);
+  }, [users, selectedCompanyId]);
+
+  const saveUserPermissions = async (userId: string) => {
+    setSavingUserId(userId);
+    try {
+      const response = await fetch("/api/users/permissions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          companyRole: userPermissions[userId].role,
+          sidebarAccess: userPermissions[userId].sidebarAccess,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save permissions");
+      }
+
+      alert("User permissions updated successfully!");
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to update user permissions"
+      );
+    } finally {
+      setSavingUserId(null);
+    }
+  };
+
+  const toggleSidebarAccess = (userId: string, section: string) => {
+    setUserPermissions((prev) => {
+      const current = prev[userId]?.sidebarAccess || [];
+      const updated = current.includes(section)
+        ? current.filter((s) => s !== section)
+        : [...current, section];
+
+      return {
+        ...prev,
+        [userId]: {
+          ...prev[userId],
+          sidebarAccess: updated,
+        },
+      };
+    });
+  };
+
+  const setUserRole = (userId: string, role: "user" | "admin") => {
+    setUserPermissions((prev) => ({
+      ...prev,
+      [userId]: {
+        ...prev[userId],
+        role,
+      },
+    }));
+  };
   // For business users, auto-select their company if not already selected
   React.useEffect(() => {
     if (
@@ -277,121 +362,6 @@ export default function CompanyDetailsTab({
                 border: "2px solid #667eea",
               }}
             >
-              <div style={{ marginBottom: "16px" }}>
-                <h3
-                  style={{
-                    fontSize: "20px",
-                    fontWeight: "600",
-                    color: "#1e293b",
-                    marginBottom: "4px",
-                  }}
-                >
-                  {comp.name}
-                </h3>
-                <div
-                  style={{
-                    fontSize: "13px",
-                    color: "#10b981",
-                    fontWeight: "600",
-                  }}
-                >
-                  ✓ Active Company
-                </div>
-              </div>
-
-              {/* Company Information */}
-              <div style={{ marginBottom: "16px" }}>
-                <div
-                  style={{
-                    background: "white",
-                    borderRadius: "6px",
-                    padding: "12px",
-                    border: "1px solid #cbd5e1",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "start",
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: "13px",
-                        color: "#64748b",
-                        marginBottom: "6px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontWeight: "600",
-                          display: "block",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        Address:
-                      </span>
-                      {comp.addressStreet || comp.addressCity ? (
-                        <>
-                          {comp.addressStreet && (
-                            <div
-                              style={{ color: "#1e293b", marginBottom: "2px" }}
-                            >
-                              {comp.addressStreet}
-                            </div>
-                          )}
-                          <div style={{ color: "#1e293b" }}>
-                            {comp.addressCity && comp.addressCity}
-                            {comp.addressState && `, ${comp.addressState}`}
-                            {comp.addressZip && ` ${comp.addressZip}`}
-                          </div>
-                          {comp.addressCountry && (
-                            <div style={{ color: "#1e293b" }}>
-                              {comp.addressCountry}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <span style={{ color: "#94a3b8", fontStyle: "italic" }}>
-                          Not set
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: "13px", color: "#64748b" }}>
-                      <span style={{ fontWeight: "600" }}>Industry:</span>{" "}
-                      <span style={{ color: "#1e293b" }}>
-                        {comp.industrySector
-                          ? `${comp.industrySector} - ${INDUSTRY_SECTORS.find((s) => s.id === comp.industrySector)?.name || "Unknown"}`
-                          : "Not set"}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setEditingCompanyId(comp.id);
-                      setCompanyAddressStreet(comp.addressStreet || "");
-                      setCompanyAddressCity(comp.addressCity || "");
-                      setCompanyAddressState(comp.addressState || "");
-                      setCompanyAddressZip(comp.addressZip || "");
-                      setCompanyAddressCountry(comp.addressCountry || "USA");
-                      setCompanyIndustrySector(comp.industrySector || "");
-                      setShowCompanyDetailsModal(true);
-                    }}
-                    style={{
-                      padding: "6px 12px",
-                      background: "#667eea",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "6px",
-                      fontSize: "12px",
-                      cursor: "pointer",
-                      fontWeight: "600",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Edit Details
-                  </button>
-                </div>
-              </div>
-
               {/* Users Section - Side by Side */}
               <div
                 style={{
@@ -451,97 +421,290 @@ export default function CompanyDetailsTab({
                       (u) =>
                         u.companyId === comp.id && u.userType === "company",
                     )
-                    .map((u) => (
-                      <div
-                        key={u.id}
-                        style={{
-                          background: "#f0fdf4",
-                          borderRadius: "8px",
-                          padding: "12px",
-                          marginBottom: "8px",
-                          border: "1px solid #86efac",
-                        }}
-                      >
+                    .map((u) => {
+                      const userPerm = userPermissions[u.id] || {
+                        role: "user",
+                        sidebarAccess: [
+                          "company-dashboard",
+                          "valuation",
+                          "financial-statements",
+                          "financial-score",
+                          "management-assessment",
+                          "digital-presence",
+                        ],
+                      };
+                      const isAdmin = userPerm.role === "admin";
+
+                      return (
                         <div
+                          key={u.id}
                           style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "start",
+                            background: "#f0fdf4",
+                            borderRadius: "8px",
+                            padding: "12px",
+                            marginBottom: "8px",
+                            border: "1px solid #86efac",
                           }}
                         >
-                          <div style={{ flex: 1 }}>
-                            <div
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "start",
+                              marginBottom: "12px",
+                            }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: "600",
+                                  color: "#1e293b",
+                                  marginBottom: "6px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <span>{u.name}</span>
+                                {u.title && (
+                                  <span
+                                    style={{
+                                      fontSize: "12px",
+                                      fontWeight: "500",
+                                      color: "#059669",
+                                      background: "#d1fae5",
+                                      padding: "2px 8px",
+                                      borderRadius: "4px",
+                                    }}
+                                  >
+                                    {u.title}
+                                  </span>
+                                )}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: "12px",
+                                  color: "#64748b",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "12px",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <div>
+                                  <span style={{ fontWeight: "600" }}>
+                                    Email:
+                                  </span>{" "}
+                                  {u.email}
+                                </div>
+                                {u.phone && (
+                                  <div>
+                                    <span style={{ fontWeight: "600" }}>
+                                      Phone:
+                                    </span>{" "}
+                                    {u.phone}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => deleteUser(u.id)}
                               style={{
-                                fontSize: "14px",
+                                padding: "4px 8px",
+                                background: "#ef4444",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                fontSize: "10px",
+                                cursor: "pointer",
                                 fontWeight: "600",
-                                color: "#1e293b",
-                                marginBottom: "6px",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "8px",
-                                flexWrap: "wrap",
                               }}
                             >
-                              <span>{u.name}</span>
-                              {u.title && (
-                                <span
-                                  style={{
-                                    fontSize: "12px",
-                                    fontWeight: "500",
-                                    color: "#059669",
-                                    background: "#d1fae5",
-                                    padding: "2px 8px",
-                                    borderRadius: "4px",
-                                  }}
-                                >
-                                  {u.title}
-                                </span>
-                              )}
-                            </div>
+                              Delete
+                            </button>
+                          </div>
+
+                          {/* Role Selection */}
+                          <div
+                            style={{
+                              borderTop: "1px solid #d1fae5",
+                              paddingTop: "12px",
+                            }}
+                          >
                             <div
                               style={{
                                 fontSize: "12px",
-                                color: "#64748b",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "12px",
-                                flexWrap: "wrap",
+                                fontWeight: "600",
+                                color: "#475569",
+                                marginBottom: "8px",
                               }}
                             >
-                              <div>
-                                <span style={{ fontWeight: "600" }}>
-                                  Email:
-                                </span>{" "}
-                                {u.email}
-                              </div>
-                              {u.phone && (
-                                <div>
-                                  <span style={{ fontWeight: "600" }}>
-                                    Phone:
-                                  </span>{" "}
-                                  {u.phone}
-                                </div>
-                              )}
+                              User Role:
                             </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "16px",
+                                marginBottom: "12px",
+                              }}
+                            >
+                              <label
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  cursor: "pointer",
+                                  fontSize: "12px",
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`role-${u.id}`}
+                                  checked={userPerm.role === "user"}
+                                  onChange={() => setUserRole(u.id, "user")}
+                                  style={{ cursor: "pointer" }}
+                                />
+                                <span>User</span>
+                              </label>
+                              <label
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  cursor: "pointer",
+                                  fontSize: "12px",
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`role-${u.id}`}
+                                  checked={userPerm.role === "admin"}
+                                  onChange={() => setUserRole(u.id, "admin")}
+                                  style={{ cursor: "pointer" }}
+                                />
+                                <span>Company Admin</span>
+                              </label>
+                            </div>
+
+                            {/* Sidebar Access - Only show for non-admin users */}
+                            {isAdmin ? (
+                              <div
+                                style={{
+                                  padding: "8px 12px",
+                                  background: "#d1fae5",
+                                  borderRadius: "6px",
+                                  fontSize: "12px",
+                                  color: "#059669",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                }}
+                              >
+                                <span>🔓</span>
+                                <span>
+                                  Full Access - Can access all sidebar sections
+                                </span>
+                              </div>
+                            ) : (
+                              <>
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    fontWeight: "600",
+                                    color: "#475569",
+                                    marginBottom: "6px",
+                                  }}
+                                >
+                                  Sidebar Access (check items user can access):
+                                </div>
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 1fr",
+                                    gap: "6px",
+                                    fontSize: "11px",
+                                  }}
+                                >
+                                  {[
+                                    {
+                                      id: "company-dashboard",
+                                      label: "Company Dashboard",
+                                    },
+                                    { id: "valuation", label: "Valuation" },
+                                    {
+                                      id: "financial-statements",
+                                      label: "Financial Statements",
+                                    },
+                                    {
+                                      id: "financial-score",
+                                      label: "Financial Score",
+                                    },
+                                    {
+                                      id: "management-assessment",
+                                      label: "Management Assessment",
+                                    },
+                                    {
+                                      id: "digital-presence",
+                                      label: "Digital Presence Analysis",
+                                    },
+                                  ].map((section) => (
+                                    <label
+                                      key={section.id}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "6px",
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={userPerm.sidebarAccess.includes(
+                                          section.id
+                                        )}
+                                        onChange={() =>
+                                          toggleSidebarAccess(u.id, section.id)
+                                        }
+                                        style={{ cursor: "pointer" }}
+                                      />
+                                      <span>{section.label}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+
+                            {/* Save Button */}
+                            <button
+                              onClick={() => saveUserPermissions(u.id)}
+                              disabled={savingUserId === u.id}
+                              style={{
+                                marginTop: "12px",
+                                padding: "6px 12px",
+                                background:
+                                  savingUserId === u.id ? "#94a3b8" : "#10b981",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                cursor:
+                                  savingUserId === u.id
+                                    ? "not-allowed"
+                                    : "pointer",
+                                width: "100%",
+                              }}
+                            >
+                              {savingUserId === u.id
+                                ? "Saving..."
+                                : "Save Access Rights"}
+                            </button>
                           </div>
-                          <button
-                            onClick={() => deleteUser(u.id)}
-                            style={{
-                              padding: "4px 8px",
-                              background: "#ef4444",
-                              color: "white",
-                              border: "none",
-                              borderRadius: "4px",
-                              fontSize: "10px",
-                              cursor: "pointer",
-                              fontWeight: "600",
-                            }}
-                          >
-                            Delete
-                          </button>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                   <div
                     style={{
