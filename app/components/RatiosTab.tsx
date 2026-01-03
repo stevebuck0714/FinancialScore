@@ -304,18 +304,19 @@ export default function RatiosTab({
 
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Ratios</h1>
-        {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
       </div>
       
-      {/* Benchmark Status Indicator */}
-      {benchmarks.length > 0 ? (
-        <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#065f46' }}>
-          ✓ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
-        </div>
-      ) : (
-        <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
-          ⚠️ No industry benchmarks loaded.
-        </div>
+      {/* Benchmark Status Indicator - Only show on non-priority tabs */}
+      {kpiDashboardTab !== 'priority-ratios' && (
+        benchmarks.length > 0 ? (
+          <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#065f46' }}>
+            ✓ Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
+          </div>
+        ) : (
+          <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
+            ⚠️ No industry benchmarks loaded.
+          </div>
+        )
       )}
 
       {/* Tab Navigation */}
@@ -431,84 +432,89 @@ export default function RatiosTab({
       {/* Priority Ratios Tab */}
       {kpiDashboardTab === 'priority-ratios' && (
         <div>
-          <div className="no-print" style={{ marginBottom: '12px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Customize Your Priority Ratios</h3>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              Select up to 6 ratios to track as your priority KPIs. These selections will be saved and persist across sessions.
-            </p>
-            
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-              {Object.entries(ratioCategories).map(([category, ratios]) => (
-                <div key={category} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', whiteSpace: 'nowrap' }}>
-                    {category}:
-                  </label>
-                  <select
-                    value={priorityRatios.find(ratio => ratios.includes(ratio)) || ''}
-                    onChange={(e) => {
-                      const newRatio = e.target.value;
-                      if (newRatio) {
-                        const currentRatioFromCategory = priorityRatios.find(ratio => ratios.includes(ratio));
-                        if (currentRatioFromCategory) {
-                          setPriorityRatios(prev => prev.map(ratio => 
-                            ratio === currentRatioFromCategory ? newRatio : ratio
-                          ));
-                        } else if (priorityRatios.length < 6) {
-                          setPriorityRatios(prev => [...prev, newRatio]);
-                        } else {
-                          alert('Maximum of 6 priority ratios allowed. Please remove one first.');
+          <div className="no-print" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '20px', marginBottom: '24px', alignItems: 'stretch' }}>
+            {/* Left: Customize Section */}
+            <div style={{ padding: '5px 20px 20px 20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Customize Your Priority Ratios</h3>
+              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                Select up to 10 ratios to track as your priority KPIs. These selections will be saved and persist across sessions.
+              </p>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const newRatio = e.target.value;
+                    if (newRatio && !priorityRatios.includes(newRatio)) {
+                      if (priorityRatios.length < 10) {
+                        const updated = [...priorityRatios, newRatio];
+                        setPriorityRatios(updated);
+                        // Auto-save to localStorage
+                        if (selectedCompanyId) {
+                          localStorage.setItem(`priorityRatios_${selectedCompanyId}`, JSON.stringify(updated));
                         }
+                      } else {
+                        alert('Maximum of 10 priority ratios allowed. Please remove one first.');
                       }
-                    }}
-                    style={{
-                      padding: '6px 8px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      background: 'white',
-                      minWidth: '140px'
-                    }}
-                  >
-                    <option value="">Select...</option>
-                    {ratios.map(ratio => (
-                      <option key={ratio} value={ratio}>
-                        {ratio}
-                      </option>
-                    ))}
-                  </select>
+                    }
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    background: 'white',
+                    minWidth: '240px',
+                    fontWeight: '500'
+                  }}
+                >
+                  <option value="">+ Add Ratio...</option>
+                  {Object.entries(ratioCategories).map(([category, ratios]) => (
+                    <optgroup key={category} label={category}>
+                      {ratios.map(ratio => (
+                        <option 
+                          key={ratio} 
+                          value={ratio}
+                          disabled={priorityRatios.includes(ratio)}
+                        >
+                          {ratio}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '600' }}>
+                  Selected: {priorityRatios.length}/10 ratios
                 </div>
-              ))}
+              </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>
-                Selected: {priorityRatios.length}/6 ratios
-              </div>
-              <button
-                onClick={savePriorityRatios}
-                style={{
-                  padding: '6px 12px',
-                  background: '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Save
-              </button>
+            {/* Right: Industry Benchmark Status */}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {benchmarks.length > 0 ? (
+                <div style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '5px 20px 20px 20px', fontSize: '13px', color: '#065f46', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12px', flex: 1 }}>
+                  <div style={{ fontSize: '20px' }}>✓</div>
+                  <div>
+                    <div style={{ fontWeight: '600', marginBottom: '2px' }}>Industry Benchmarks Loaded</div>
+                    <div style={{ fontSize: '12px', opacity: 0.9 }}>{benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '5px 20px 20px 20px', fontSize: '13px', color: '#991b1b', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12px', flex: 1 }}>
+                  <div style={{ fontSize: '20px' }}>⚠️</div>
+                  <div>
+                    <div style={{ fontWeight: '600', marginBottom: '2px' }}>No Industry Benchmarks</div>
+                    <div style={{ fontSize: '12px' }}>Load benchmarks for comparison</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Display Selected Priority Ratios */}
           {priorityRatios.length > 0 && (
             <div>
-              <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                  Your Priority Ratios ({priorityRatios.length}/6)
-                </h3>
+              <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '20px' }}>
                 <button
                   onClick={() => window.print()}
                   style={{
@@ -533,19 +539,51 @@ export default function RatiosTab({
                   const formatter = getFormatterForRatio(ratioName);
                   const benchmarkValue = getBenchmarkValue(benchmarks, ratioName);
 
+                  const handleDelete = () => {
+                    const updated = priorityRatios.filter(ratio => ratio !== ratioName);
+                    setPriorityRatios(updated);
+                    // Auto-save to localStorage
+                    if (selectedCompanyId) {
+                      localStorage.setItem(`priorityRatios_${selectedCompanyId}`, JSON.stringify(updated));
+                    }
+                  };
+
                   return (
-                    <LineChart
-                      key={ratioName}
-                      title={ratioName}
-                      data={trendData}
-                      valueKey={valueKey}
-                      color={color}
-                      compact
-                      benchmarkValue={benchmarkValue}
-                      formatter={formatter}
-                      showFormulaButton
-                      onFormulaClick={() => onFormulaClick(ratioName)}
-                    />
+                    <div key={ratioName} style={{ position: 'relative' }}>
+                      <button
+                        onClick={handleDelete}
+                        className="no-print"
+                        style={{
+                          position: 'absolute',
+                          top: '60px',
+                          right: '8px',
+                          background: '#ef4444',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          zIndex: 10,
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        }}
+                        title="Remove this ratio"
+                      >
+                        ✕
+                      </button>
+                      <LineChart
+                        title={ratioName}
+                        data={trendData}
+                        valueKey={valueKey}
+                        color={color}
+                        compact
+                        benchmarkValue={benchmarkValue}
+                        formatter={formatter}
+                        showFormulaButton
+                        onFormulaClick={() => onFormulaClick(ratioName)}
+                      />
+                    </div>
                   );
                 })}
               </div>
@@ -558,7 +596,7 @@ export default function RatiosTab({
                 No Priority Ratios Selected
               </div>
               <div style={{ fontSize: '14px', color: '#94a3b8' }}>
-                Select up to 6 ratios from the dropdown menus above to create your custom dashboard
+                Select up to 10 ratios from the dropdown menu above to create your custom dashboard
               </div>
             </div>
           )}

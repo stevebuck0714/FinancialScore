@@ -335,7 +335,6 @@ export default function CashFlowTab({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           {cashFlowDisplay !== 'monthly' && (
             <button 
               className="no-print"

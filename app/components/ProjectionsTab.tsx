@@ -362,7 +362,6 @@ export default function ProjectionsTab({
     <div style={{ maxWidth: '100%', padding: '32px 32px 32px 16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Projections</h1>
-        {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
       </div>
 
       <div style={{ display: 'grid', gap: '32px' }}>

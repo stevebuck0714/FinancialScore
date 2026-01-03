@@ -334,11 +334,6 @@ export default function MDAView({
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>
             Management Discussion & Analysis
           </h1>
-          {companyName && (
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>
-              {companyName}
-            </div>
-          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {onExportToWord && (

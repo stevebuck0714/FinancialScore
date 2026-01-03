@@ -28,7 +28,6 @@ export default function MAYourResultsView({
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
           {currentUser?.role === 'consultant' ? 'Assessment Results - All Participants' : 'Your Assessment Results'}
         </h1>
-        {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
       </div>
       
       {currentUser?.role === 'consultant' ? (

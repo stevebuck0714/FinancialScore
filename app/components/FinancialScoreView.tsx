@@ -199,7 +199,6 @@ export default function FinancialScoreView({
       <div className="fs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Score Trends</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           <button 
             className="no-print"
             onClick={() => window.print()} 
