@@ -142,25 +142,25 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
       <div style={{ 
         background: 'white', 
         borderBottom: '1px solid #e2e8f0',
-        padding: '16px 32px',
+        padding: '10px 24px',
         display: 'flex',
-        gap: '16px',
+        gap: '12px',
         alignItems: 'center',
         flexWrap: 'wrap'
       }}>
         {/* Frequency Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ fontSize: '14px', fontWeight: '600', color: '#475569' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
             Frequency:
           </label>
           <select
             value={frequency}
             onChange={(e) => setFrequency(e.target.value as any)}
             style={{
-              padding: '8px 12px',
+              padding: '6px 10px',
               border: '1px solid #e2e8f0',
               borderRadius: '6px',
-              fontSize: '14px',
+              fontSize: '13px',
               color: '#1e293b',
               cursor: 'pointer',
               background: 'white'
@@ -173,8 +173,8 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
         </div>
 
         {/* Date Range */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ fontSize: '14px', fontWeight: '600', color: '#475569' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
             From:
           </label>
           <input
@@ -182,17 +182,17 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
             style={{
-              padding: '8px 12px',
+              padding: '6px 10px',
               border: '1px solid #e2e8f0',
               borderRadius: '6px',
-              fontSize: '14px',
+              fontSize: '13px',
               color: '#1e293b'
             }}
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ fontSize: '14px', fontWeight: '600', color: '#475569' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
             To:
           </label>
           <input
@@ -200,10 +200,10 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
             style={{
-              padding: '8px 12px',
+              padding: '6px 10px',
               border: '1px solid #e2e8f0',
               borderRadius: '6px',
-              fontSize: '14px',
+              fontSize: '13px',
               color: '#1e293b'
             }}
           />
@@ -281,8 +281,8 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
 
   // Overview Tab
   const renderOverview = () => (
-    <div style={{ padding: '32px' }}>
-      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
+    <div style={{ padding: '16px 24px' }}>
+      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
         Operational Data Overview
       </h2>
 
@@ -309,11 +309,11 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
       )}
 
       {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
           <div style={{ 
             background: 'white', 
-            borderRadius: '12px', 
-            padding: '24px', 
+            borderRadius: '8px', 
+            padding: '16px', 
             boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             border: '1px solid #e2e8f0',
             cursor: 'pointer',
@@ -328,22 +328,22 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             e.currentTarget.style.transform = 'translateY(0)';
             e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                <Users style={{ width: '24px', height: '24px', color: '#2563eb' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ background: '#dbeafe', padding: '8px', borderRadius: '6px' }}>
+                <Users style={{ width: '20px', height: '20px', color: '#2563eb' }} />
               </div>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569' }}>Customer Sales</h3>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Customer Sales</h3>
             </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
               {summary.customerSalesRecords || 0}
             </div>
-            <p style={{ fontSize: '14px', color: '#64748b' }}>Sales records tracked</p>
+            <p style={{ fontSize: '13px', color: '#64748b' }}>Sales records tracked</p>
           </div>
 
           <div style={{ 
             background: 'white', 
-            borderRadius: '12px', 
-            padding: '24px', 
+            borderRadius: '8px', 
+            padding: '16px', 
             boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             border: '1px solid #e2e8f0',
             cursor: 'pointer',
@@ -358,22 +358,22 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             e.currentTarget.style.transform = 'translateY(0)';
             e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ background: '#dcfce7', padding: '12px', borderRadius: '8px' }}>
-                <TrendingUp style={{ width: '24px', height: '24px', color: '#16a34a' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ background: '#dcfce7', padding: '8px', borderRadius: '6px' }}>
+                <TrendingUp style={{ width: '20px', height: '20px', color: '#16a34a' }} />
               </div>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569' }}>AR Aging</h3>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>AR Aging</h3>
             </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
               {summary.arAgingRecords || 0}
             </div>
-            <p style={{ fontSize: '14px', color: '#64748b' }}>Monthly snapshots</p>
+            <p style={{ fontSize: '13px', color: '#64748b' }}>Monthly snapshots</p>
           </div>
 
           <div style={{ 
             background: 'white', 
-            borderRadius: '12px', 
-            padding: '24px', 
+            borderRadius: '8px', 
+            padding: '16px', 
             boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             border: '1px solid #e2e8f0',
             cursor: 'pointer',
@@ -388,22 +388,22 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             e.currentTarget.style.transform = 'translateY(0)';
             e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ background: '#fef3c7', padding: '12px', borderRadius: '8px' }}>
-                <DollarSign style={{ width: '24px', height: '24px', color: '#f59e0b' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ background: '#fef3c7', padding: '8px', borderRadius: '6px' }}>
+                <DollarSign style={{ width: '20px', height: '20px', color: '#f59e0b' }} />
               </div>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569' }}>AP Aging</h3>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>AP Aging</h3>
             </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
               {summary.apAgingRecords || 0}
             </div>
-            <p style={{ fontSize: '14px', color: '#64748b' }}>Monthly snapshots</p>
+            <p style={{ fontSize: '13px', color: '#64748b' }}>Monthly snapshots</p>
           </div>
 
           <div style={{ 
             background: 'white', 
-            borderRadius: '12px', 
-            padding: '24px', 
+            borderRadius: '8px', 
+            padding: '16px', 
             boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             border: '1px solid #e2e8f0',
             cursor: 'pointer',
@@ -418,22 +418,22 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             e.currentTarget.style.transform = 'translateY(0)';
             e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ background: '#fce7f3', padding: '12px', borderRadius: '8px' }}>
-                <Package style={{ width: '24px', height: '24px', color: '#ec4899' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ background: '#fce7f3', padding: '8px', borderRadius: '6px' }}>
+                <Package style={{ width: '20px', height: '20px', color: '#ec4899' }} />
               </div>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569' }}>Product Sales</h3>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Product Sales</h3>
             </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
               {summary.productSalesRecords || 0}
             </div>
-            <p style={{ fontSize: '14px', color: '#64748b' }}>Product records</p>
+            <p style={{ fontSize: '13px', color: '#64748b' }}>Product records</p>
           </div>
 
           <div style={{ 
             background: 'white', 
-            borderRadius: '12px', 
-            padding: '24px', 
+            borderRadius: '8px', 
+            padding: '16px', 
             boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             border: '1px solid #e2e8f0',
             cursor: 'pointer',
@@ -448,60 +448,60 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             e.currentTarget.style.transform = 'translateY(0)';
             e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-              <div style={{ background: '#e0e7ff', padding: '12px', borderRadius: '8px' }}>
-                <Warehouse style={{ width: '24px', height: '24px', color: '#6366f1' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ background: '#e0e7ff', padding: '8px', borderRadius: '6px' }}>
+                <Warehouse style={{ width: '20px', height: '20px', color: '#6366f1' }} />
               </div>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569' }}>Inventory</h3>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Inventory</h3>
             </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
               {summary.inventoryRecords || 0}
             </div>
-            <p style={{ fontSize: '14px', color: '#64748b' }}>Inventory records</p>
+            <p style={{ fontSize: '13px', color: '#64748b' }}>Inventory records</p>
           </div>
         </div>
       )}
 
       <div style={{ 
-        marginTop: '32px', 
+        marginTop: '20px', 
         background: '#f8fafc', 
         border: '1px solid #e2e8f0', 
-        borderRadius: '12px', 
-        padding: '24px' 
+        borderRadius: '8px', 
+        padding: '16px' 
       }}>
-        <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+        <h3 style={{ fontSize: '17px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
           About Operational Data
         </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' }}>
           <div>
-            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
               📊 Customer Analytics
             </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
               Track customer revenue trends, invoice patterns, and identify your top customers and revenue concentration.
             </p>
           </div>
           <div>
-            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
               💰 AR & AP Aging
             </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
               Monitor accounts receivable and payable aging to optimize cash flow and working capital management.
             </p>
           </div>
           <div>
-            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
               📦 Product Performance
             </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
               Analyze product sales, margins, and trends to identify your best performers and optimization opportunities.
             </p>
           </div>
           <div>
-            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
               🏭 Inventory Management
             </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
               Track inventory levels, values, and turnover to optimize stock levels and reduce carrying costs.
             </p>
           </div>
@@ -534,28 +534,28 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     const trendData = Object.values(periodTrend);
 
     return (
-      <div style={{ padding: '32px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
+      <div style={{ padding: '8px 32px 32px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Customer Sales Analytics
         </h2>
 
         {/* KPI Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total Customers</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Customers</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
               {summary.topCustomers.length}
             </div>
           </div>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total Revenue</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#16a34a' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Revenue</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
               {formatCurrency(summary.topCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0))}
             </div>
           </div>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total Invoices</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#2563eb' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Invoices</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
               {summary.topCustomers.reduce((sum: number, c: any) => sum + c.totalInvoices, 0)}
             </div>
           </div>
@@ -667,41 +667,41 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     }));
 
     return (
-      <div style={{ padding: '32px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
+      <div style={{ padding: '8px 32px 32px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Accounts Receivable Aging
         </h2>
 
         {/* KPI Cards */}
         {summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total AR</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total AR</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
                 {formatCurrency(summary.totalAR)}
               </div>
             </div>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {summary.currentPct.toFixed(1)}%
                 {summary.currentPct >= 70 ? <ArrowUp size={20} /> : <ArrowDown size={20} color="#ef4444" />}
               </div>
             </div>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Over 30 Days</div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 30 Days</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
                 {summary.over30Pct.toFixed(1)}%
               </div>
             </div>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Over 90 Days</div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 90 Days</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: summary.over90Pct > 5 ? '#ef4444' : '#64748b' }}>
                 {summary.over90Pct.toFixed(1)}%
               </div>
             </div>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>DSO (Days)</div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>DSO (Days)</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
                 {summary.dso.toFixed(0)}
               </div>
@@ -804,40 +804,40 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     }));
 
     return (
-      <div style={{ padding: '32px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
+      <div style={{ padding: '8px 32px 32px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Accounts Payable Aging
         </h2>
 
         {/* KPI Cards */}
         {summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total AP</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total AP</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
                 {formatCurrency(summary.totalAP)}
               </div>
             </div>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
                 {summary.currentPct.toFixed(1)}%
               </div>
             </div>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Over 30 Days</div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 30 Days</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
                 {summary.over30Pct.toFixed(1)}%
               </div>
             </div>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Over 90 Days</div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 90 Days</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: summary.over90Pct > 5 ? '#ef4444' : '#64748b' }}>
                 {summary.over90Pct.toFixed(1)}%
               </div>
             </div>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>DPO (Days)</div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>DPO (Days)</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
                 {summary.dpo.toFixed(0)}
               </div>
@@ -943,28 +943,28 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     const productNames = Array.from(new Set(records.map((r: any) => r.itemName)));
 
     return (
-      <div style={{ padding: '32px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
+      <div style={{ padding: '8px 32px 32px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Product Sales Performance
         </h2>
 
         {/* KPI Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total Products</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Products</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
               {summary.topProducts.length}
             </div>
           </div>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total Revenue</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#16a34a' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Revenue</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
               {formatCurrency(summary.topProducts.reduce((sum: number, p: any) => sum + p.totalRevenue, 0))}
             </div>
           </div>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Avg Margin %</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#2563eb' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Avg Margin %</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
               {(summary.topProducts.reduce((sum: number, p: any) => sum + p.grossMarginPct, 0) / summary.topProducts.length).toFixed(1)}%
             </div>
           </div>
@@ -1069,28 +1069,28 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     const trendData = Object.values(periodValue);
 
     return (
-      <div style={{ padding: '32px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
+      <div style={{ padding: '8px 32px 32px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Inventory Management
         </h2>
 
         {/* KPI Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total Items</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Items</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
               {summary.itemCount}
             </div>
           </div>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total Value</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#16a34a' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Value</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
               {formatCurrency(summary.totalValue)}
             </div>
           </div>
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>Total Units</div>
-            <div style={{ fontSize: '32px', fontWeight: '700', color: '#2563eb' }}>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Units</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
               {latestRecords.reduce((sum: number, item: any) => sum + item.qtyOnHand, 0).toLocaleString()}
             </div>
           </div>
@@ -1189,32 +1189,19 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     <div style={{ 
       maxWidth: '1600px', 
       margin: '0 auto', 
-      paddingTop: '80px',
       minHeight: '100vh',
       background: '#f8fafc'
     }}>
-      {/* Header */}
-      <div style={{ 
-        background: 'white', 
-        borderBottom: '1px solid #e2e8f0',
-        padding: '24px 32px',
-        marginBottom: '0'
-      }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-          Operations Dashboard
-        </h1>
-        <p style={{ fontSize: '16px', color: '#64748b' }}>
-          {companyName} - QuickBooks Operational Data
-        </p>
-      </div>
+      {/* Spacer for main nav */}
+      <div style={{ height: '60px' }}></div>
 
       {/* Tabs */}
       <div style={{ 
         background: 'white', 
         borderBottom: '1px solid #e2e8f0',
-        padding: '0 32px',
+        padding: '0 24px',
         display: 'flex',
-        gap: '32px'
+        gap: '20px'
       }}>
         {['overview', 'customers', 'ar', 'ap', 'products', 'inventory'].map((tab) => (
           <button
@@ -1223,8 +1210,8 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             style={{
               background: 'none',
               border: 'none',
-              padding: '16px 0',
-              fontSize: '15px',
+              padding: '10px 0',
+              fontSize: '14px',
               fontWeight: '600',
               color: activeTab === tab ? '#667eea' : '#64748b',
               cursor: 'pointer',
