@@ -1211,7 +1211,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
               background: 'none',
               border: 'none',
               padding: '10px 0',
-              fontSize: '14px',
+              fontSize: '19px',
               fontWeight: '600',
               color: activeTab === tab ? '#667eea' : '#64748b',
               cursor: 'pointer',
