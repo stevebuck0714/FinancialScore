@@ -659,3 +659,98 @@ enum CovenantStatus {
   BREACHED
   NOT_APPLICABLE
 }
+
+// ============================================================================
+// OPERATIONAL DATA MODELS (QuickBooks Snapshots)
+// ============================================================================
+
+model CustomerSalesSnapshot {
+  id             String   @id @default(cuid())
+  companyId      String
+  snapshotDate   DateTime // Changed from 'month' to support daily/weekly/monthly
+  frequency      String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  customerId     String?  // QuickBooks customer ID
+  customerName   String
+  revenue        Float
+  invoiceCount   Int
+  avgInvoiceSize Float?
+  createdAt      DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, customerId])
+}
+
+model ARAgingSnapshot {
+  id           String   @id @default(cuid())
+  companyId    String
+  snapshotDate DateTime // Changed from 'month'
+  frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  totalAR      Float
+  current      Float    // 0-30 days
+  days1to30    Float    // 31-60 days
+  days31to60   Float    // 61-90 days
+  days61to90   Float    // 91-120 days
+  days90plus   Float    // 121+ days
+  createdAt    DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@unique([companyId, snapshotDate, frequency])
+}
+
+model APAgingSnapshot {
+  id           String   @id @default(cuid())
+  companyId    String
+  snapshotDate DateTime // Changed from 'month'
+  frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  totalAP      Float
+  current      Float    // 0-30 days
+  days1to30    Float    // 31-60 days
+  days31to60   Float    // 61-90 days
+  days61to90   Float    // 91-120 days
+  days90plus   Float    // 121+ days
+  createdAt    DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@unique([companyId, snapshotDate, frequency])
+}
+
+model ProductSalesSnapshot {
+  id              String   @id @default(cuid())
+  companyId       String
+  snapshotDate    DateTime // Changed from 'month'
+  frequency       String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  itemId          String?  // QuickBooks item ID
+  itemName        String
+  sku             String?
+  quantitySold    Float
+  revenue         Float
+  cogs            Float?
+  grossMargin     Float?
+  grossMarginPct  Float?
+  createdAt       DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, itemId])
+}
+
+model InventorySnapshot {
+  id           String   @id @default(cuid())
+  companyId    String
+  snapshotDate DateTime // Changed from 'month'
+  frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  itemId       String?  // QuickBooks item ID
+  itemName     String
+  sku          String?
+  qtyOnHand    Float
+  assetValue   Float
+  avgCost      Float?
+  createdAt    DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, itemId])
+}
