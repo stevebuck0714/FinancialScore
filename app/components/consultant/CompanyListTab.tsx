@@ -32,10 +32,10 @@ export default function CompanyListTab({
   setShowDeleteConfirmation
 }: CompanyListTabProps) {
   return (
-    <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-          Your Companies ({companies.length})
+    <div style={{ background: 'white', borderRadius: '12px', padding: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+          Your Companies ({companies.length}) - <span style={{ fontWeight: '400', color: '#64748b' }}>Select a Company to Get Started</span>
         </h2>
         <button
           onClick={() => {
@@ -45,48 +45,50 @@ export default function CompanyListTab({
             setCompanyManagementSubTab('details');
           }}
           style={{
-            padding: '10px 20px',
+            padding: '6px 12px',
             background: '#10b981',
             color: 'white',
             border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
+            borderRadius: '6px',
+            fontSize: '13px',
             fontWeight: '600',
             cursor: 'pointer',
             transition: 'all 0.2s',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            gap: '6px'
           }}
           onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
           onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
         >
-          <span style={{ fontSize: '18px', fontWeight: '700' }}>+</span> Add Company
+          <span style={{ fontSize: '16px', fontWeight: '700' }}>+</span> Add Company
         </button>
       </div>
       
       {!Array.isArray(companies) || companies.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
-          <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>No companies yet</div>
-          <div style={{ fontSize: '14px' }}>Companies will appear here once they are added to your account.</div>
+        <div style={{ textAlign: 'center', padding: '20px 12px', color: '#94a3b8' }}>
+          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>No companies yet</div>
+          <div style={{ fontSize: '12px' }}>Companies will appear here once they are added to your account.</div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: '16px' }}>
+        <div>
           {(Array.isArray(companies) ? [...companies] : [])
             .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-            .map((company) => (
-              <div
-                key={company.id}
-                style={{
-                  background: '#f8fafc',
-                  border: '2px solid #e2e8f0',
-                  borderRadius: '8px',
-                  padding: '10px',
-                  transition: 'all 0.2s',
-                  position: 'relative'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px' }}>
+            .map((company, index) => (
+              <div key={company.id}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '4px 2px',
+                    transition: 'background 0.15s',
+                    borderRadius: '2px'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
                   <div 
                     style={{ flex: 1, cursor: 'pointer' }}
                     onClick={() => {
@@ -96,29 +98,27 @@ export default function CompanyListTab({
                       setCompanyManagementSubTab('details');
                     }}
                   >
-                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0, lineHeight: '1.2' }}>
                       {company.name}
                     </h3>
-                    {company.industry && (
-                      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>
-                        Industry: {company.industry}
-                      </div>
-                    )}
-                    {company.city && company.state && (
-                      <div style={{ fontSize: '13px', color: '#64748b' }}>
-                        Location: {company.city}, {company.state}
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: '#64748b', lineHeight: '1.2' }}>
+                      {company.industry && (
+                        <span>{company.industry}</span>
+                      )}
+                      {company.city && company.state && (
+                        <span>{company.city}, {company.state}</span>
+                      )}
+                    </div>
                   </div>
                   
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                     {company.subscriptionStatus === 'cancelled' && (
                       <div style={{
-                        padding: '4px 12px',
+                        padding: '2px 6px',
                         background: '#ef4444',
                         color: 'white',
-                        borderRadius: '6px',
-                        fontSize: '11px',
+                        borderRadius: '2px',
+                        fontSize: '9px',
                         fontWeight: '600',
                         textTransform: 'uppercase'
                       }}>
@@ -137,23 +137,32 @@ export default function CompanyListTab({
                         setShowDeleteConfirmation(true);
                       }}
                       style={{
-                        padding: '8px 16px',
-                        background: '#ef4444',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '13px',
+                        padding: '3px 8px',
+                        background: 'transparent',
+                        color: '#ef4444',
+                        border: '1px solid #ef4444',
+                        borderRadius: '3px',
+                        fontSize: '11px',
                         fontWeight: '600',
                         cursor: 'pointer',
-                        transition: 'background 0.2s'
+                        transition: 'all 0.2s'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#ef4444';
+                        e.currentTarget.style.color = 'white';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = '#ef4444';
+                      }}
                     >
                       Delete
                     </button>
                   </div>
                 </div>
+                {index < companies.length - 1 && (
+                  <div style={{ height: '1px', background: '#e2e8f0' }}></div>
+                )}
               </div>
             ))}
         </div>

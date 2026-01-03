@@ -68,6 +68,23 @@ export default function ConsultantDashboard({
 
       {/* Tab Navigation */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
+        <button
+          onClick={() => setConsultantDashboardTab('company-list')}
+          style={{
+            padding: '12px 24px',
+            background: consultantDashboardTab === 'company-list' ? '#667eea' : 'transparent',
+            color: consultantDashboardTab === 'company-list' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: consultantDashboardTab === 'company-list' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '8px 8px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Company List
+        </button>
         {currentUser?.isPrimaryContact && (
           <button
             onClick={() => setConsultantDashboardTab('team-management')}
@@ -87,24 +104,20 @@ export default function ConsultantDashboard({
             Team Management
           </button>
         )}
-        <button
-          onClick={() => setConsultantDashboardTab('company-list')}
-          style={{
-            padding: '12px 24px',
-            background: consultantDashboardTab === 'company-list' ? '#667eea' : 'transparent',
-            color: consultantDashboardTab === 'company-list' ? 'white' : '#64748b',
-            border: 'none',
-            borderBottom: consultantDashboardTab === 'company-list' ? '3px solid #667eea' : '3px solid transparent',
-            fontSize: '16px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
-            transition: 'all 0.2s'
-          }}
-        >
-          Company List
-        </button>
       </div>
+
+      {/* Company List Tab */}
+      {consultantDashboardTab === 'company-list' && (
+        <CompanyListTab
+          companies={companies}
+          setCurrentView={setCurrentView}
+          setSelectedCompanyId={setSelectedCompanyId}
+          setAdminDashboardTab={setAdminDashboardTab}
+          setCompanyManagementSubTab={setCompanyManagementSubTab}
+          setCompanyToDelete={setCompanyToDelete}
+          setShowDeleteConfirmation={setShowDeleteConfirmation}
+        />
+      )}
 
       {/* Team Management Tab */}
       {consultantDashboardTab === 'team-management' && currentUser?.isPrimaryContact && (
@@ -117,19 +130,6 @@ export default function ConsultantDashboard({
           addTeamMember={addTeamMember}
           removeTeamMember={removeTeamMember}
           isLoading={isLoading}
-        />
-      )}
-
-      {/* Company List Tab */}
-      {consultantDashboardTab === 'company-list' && (
-        <CompanyListTab
-          companies={companies}
-          setCurrentView={setCurrentView}
-          setSelectedCompanyId={setSelectedCompanyId}
-          setAdminDashboardTab={setAdminDashboardTab}
-          setCompanyManagementSubTab={setCompanyManagementSubTab}
-          setCompanyToDelete={setCompanyToDelete}
-          setShowDeleteConfirmation={setShowDeleteConfirmation}
         />
       )}
 

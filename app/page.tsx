@@ -457,8 +457,8 @@ function FinancialScorePage() {
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
-  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'covenants'>('details');
-  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('team-management');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
+  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -4412,7 +4412,7 @@ function FinancialScorePage() {
                 }}
               >
                 <div style={{ fontSize: '11px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Company</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e40af' }}>
+                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e40af' }}>
                   {companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || 'Loading...' : '')}
                 </div>
                 {/* Show Advisor Name for Company Users */}
@@ -4818,80 +4818,52 @@ function FinancialScorePage() {
               </div>
             )}
 
-            {/* Consultant Dashboard Section - For Consultants */}
-            {currentUser?.role === 'consultant' && (
-              <div style={{ marginBottom: '12px' }}>
-                <h3 
-                  onClick={() => currentUser.role === 'consultant' ? setCurrentView('consultant-dashboard') : setCurrentView('admin')}
-                  style={{ 
-                    fontSize: '14px', 
-                    fontWeight: '700', 
-                    color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b',
-                    textTransform: 'uppercase', 
-                    letterSpacing: '0.5px',
-                    padding: '8px 24px',
-                    marginBottom: '8px',
-                    cursor: 'pointer',
-                    transition: 'color 0.2s',
-                    borderLeft: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '4px solid #667eea' : '4px solid transparent'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#667eea';
-                    e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                  }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b'}
-                >
-                  {(() => {
-                    if (currentUser.consultantType === 'business') {
-                      return 'Business Dashboard';
-                    }
-                    // For consultants, show company name or default
-                    return currentUser.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard';
-                  })()}
-                </h3>
-                
-                {/* Selected Company Name Display for Business Users */}
-                {currentUser.consultantType === 'business' && selectedCompanyId && Array.isArray(companies) && companies.find(c => c.id === selectedCompanyId) && (
-                  <div style={{ 
-                    paddingLeft: '28px', 
-                    marginBottom: '12px',
-                    paddingBottom: '12px',
-                    borderBottom: '2px solid #e2e8f0'
-                  }}>
-                    <div 
-                      onClick={() => {
-                        setCurrentView('admin');
-                        setAdminDashboardTab('company-management');
-                      }}
-                      style={{ 
-                        fontSize: '16px', 
-                        fontWeight: '600', 
-                        color: '#667eea',
-                        padding: '8px 12px',
-                        background: '#f0f9ff',
-                        borderRadius: '8px',
-                        border: '2px solid #bfdbfe',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#e0f2fe';
-                        e.currentTarget.style.border = '2px solid #7dd3fc';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#f0f9ff';
-                        e.currentTarget.style.border = '2px solid #bfdbfe';
-                      }}
-                    >
-                      {Array.isArray(companies) && companies.find(c => c.id === selectedCompanyId)?.name}
-                    </div>
-                  </div>
-                )}
+            {/* User/Consultant Name Display - Now acts as dashboard link */}
+            <div 
+              onClick={() => {
+                if (currentUser?.role === 'consultant') {
+                  setCurrentView('consultant-dashboard');
+                } else if (currentUser?.userType === 'company') {
+                  setCurrentView('admin');
+                }
+              }}
+              style={{ 
+                marginTop: 'auto', 
+                paddingTop: '16px', 
+                paddingBottom: '8px', 
+                borderTop: '1px solid #e2e8f0', 
+                paddingLeft: '24px', 
+                paddingRight: '24px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                borderRadius: '6px',
+                marginLeft: '0',
+                marginRight: '0',
+                marginBottom: '0'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f0f9ff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px', paddingLeft: '24px' }}>
+                {currentUser?.role === 'consultant' ? 'Consultant' : 'User'}
               </div>
-            )}
+              <div style={{ 
+                fontSize: '14px', 
+                fontWeight: '600', 
+                color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b',
+                paddingLeft: '24px',
+                transition: 'color 0.2s'
+              }}>
+                {currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
+              </div>
+            </div>
 
             {/* Support Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: 'none' }}>
               <a
                 href="/support"
                 target="_blank"
@@ -5085,8 +5057,18 @@ function FinancialScorePage() {
               </h3>
             </div>
 
+            {/* User/Consultant Name Display */}
+            <div style={{ marginTop: 'auto', paddingTop: '16px', paddingBottom: '8px', borderTop: '1px solid #e2e8f0', paddingLeft: '24px', paddingRight: '24px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {currentUser?.role === 'consultant' ? 'Consultant' : 'User'}
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                {currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
+              </div>
+            </div>
+
             {/* Support Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
+            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: 'none' }}>
               <a
                 href="/support"
                 target="_blank"
@@ -7409,9 +7391,9 @@ function FinancialScorePage() {
       {!selectedCompanyId && currentView !== 'admin' && currentView !== 'consultant-dashboard' && currentView !== 'siteadmin' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
-          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'} to continue.</p>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the Consultant Dashboard to continue.</p>
           {currentUser?.role === 'consultant' && (
-            <button onClick={() => setCurrentView('consultant-dashboard')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'}</button>
+            <button onClick={() => setCurrentView('consultant-dashboard')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to Consultant Dashboard</button>
           )}
         </div>
       )}
