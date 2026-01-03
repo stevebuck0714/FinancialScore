@@ -10,25 +10,22 @@ This application uses two separate databases that must **NEVER** interact with e
 ## Critical Rules
 
 1. **Production (orange-poetry)**:
-   - ✅ ONLY accessible in `VERCEL_ENV=production` or `NODE_ENV=production`
-   - ❌ NEVER accessible in development, preview, or staging environments
+   - ✅ ONLY accessible on **Vercel production runtime**: `VERCEL=1` and `VERCEL_ENV=production`
+   - ❌ NEVER accessible from local dev, preview, or any non-Vercel runtime (even if `NODE_ENV=production`)
    - ❌ NEVER reads from or writes to `cold-frost`
 
 2. **Staging (cold-frost)**:
-   - ✅ ONLY accessible in `VERCEL_ENV=preview`, `VERCEL_ENV=staging`, or `NODE_ENV=development`
-   - ❌ NEVER accessible in production environment
+   - ✅ Accessible in local dev and in Vercel preview/development (and may be used by non-prod projects even on a Vercel production deployment)
    - ❌ NEVER reads from or writes to `orange-poetry`
 
 ## Security Safeguards
 
 ### 1. Server Startup (`server.js`)
 - Validates `DATABASE_URL` on server startup
-- **ABORTS** if production database detected in non-production environment
-- **ABORTS** if staging database detected in production environment
+- **ABORTS** if production database (`orange-poetry`) is detected outside Vercel production runtime
 
 ### 2. Prisma Client (`lib/prisma.ts`)
 - Validates database connection when Prisma client is created
-- Validates on every raw SQL query (`$queryRaw`, `$executeRaw`, `$executeRawUnsafe`)
 - **THROWS ERROR** if database connection violates security rules
 
 ### 3. Database Security Utility (`lib/db-security.ts`)
@@ -61,14 +58,14 @@ To verify safeguards are working:
 
 1. **Test Production in Dev** (should fail):
    ```bash
-   DATABASE_URL="...orange-poetry..." NODE_ENV=development npm run dev
+   DATABASE_URL="...orange-poetry..." npm run dev
    # Should exit with security error
    ```
 
-2. **Test Staging in Production** (should fail):
+2. **Test Production allowed on Vercel production runtime** (should pass ONLY on Vercel):
    ```bash
-   DATABASE_URL="...cold-frost..." VERCEL_ENV=production npm run build
-   # Should exit with security error
+   # On Vercel only:
+   # VERCEL=1 VERCEL_ENV=production DATABASE_URL="...orange-poetry..." npm run build
    ```
 
 ## Maintenance

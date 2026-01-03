@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(10);
@@ -9,8 +10,15 @@ export async function verifyPassword(password: string, hashedPassword: string): 
   return bcrypt.compare(password, hashedPassword);
 }
 
+/**
+ * Generate a cryptographically secure random token
+ * Used for password resets, email verification, etc.
+ * 
+ * SECURITY: Uses crypto.randomBytes instead of Math.random()
+ * for cryptographic security
+ */
 export function generateSecureToken(): string {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  return crypto.randomBytes(32).toString('hex');
 }
 
 

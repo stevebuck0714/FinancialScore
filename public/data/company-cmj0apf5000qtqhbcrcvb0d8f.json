@@ -1,0 +1,6926 @@
+[
+  {
+    "monthDate": "2023-01-31T07:00:00.000Z",
+    "date": "2023-01-31T07:00:00.000Z",
+    "month": "2023-01",
+    "revenue": 112944,
+    "cogsPayroll": 9801,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 14211,
+    "cogsCommissions": 0,
+    "cogsOther": 1520,
+    "cogsTotal": 26978,
+    "payroll": 28673,
+    "ownerBasePay": 0,
+    "benefits": 1104,
+    "insurance": 362,
+    "professionalFees": 507,
+    "subcontractors": 0,
+    "rent": 3618,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 7271,
+    "federalIncomeTaxes": 10185,
+    "phoneComm": 1024,
+    "infrastructure": 4174,
+    "autoTravel": 1004,
+    "salesExpense": 2449,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 1819,
+    "interestExpense": 144,
+    "depreciationAmortization": 0,
+    "otherExpense": 3694,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 276316,
+    "ar": 78950,
+    "inventory": 2297,
+    "otherCA": 3941,
+    "tca": 361504,
+    "fixedAssets": 37652,
+    "otherAssets": 4522,
+    "totalAssets": 403678,
+    "ap": 6680,
+    "otherCL": 17436,
+    "tcl": 24116,
+    "ltd": 168612,
+    "totalLiab": 192728,
+    "ownersCapital": 0,
+    "ownersDraw": -189961,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 283609,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 590872,
+    "totalLAndE": 783600,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 138158,
+        "Consulting": 138158
+      },
+      "ar": {
+        "Products": 39475,
+        "Consulting": 39475
+      },
+      "inventory": {
+        "Products": 1148.5,
+        "Consulting": 1148.5
+      },
+      "otherCA": {
+        "Products": 1970.5,
+        "Consulting": 1970.5
+      },
+      "fixedAssets": {
+        "Products": 68330,
+        "Consulting": 68330
+      },
+      "ap": {
+        "Products": 3340,
+        "Consulting": 3340
+      },
+      "otherCL": {
+        "Products": 8718,
+        "Consulting": 8718
+      },
+      "ltd": {
+        "Products": 84306,
+        "Consulting": 84306
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -151968.8,
+        "Consulting": -37992.2
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 226887.2,
+        "Consulting": 56721.8
+      },
+      "revenue": {
+        "Products": 78030.40000000001,
+        "Consulting": 19507.600000000002
+      },
+      "cogsMaterials": {
+        "Products": 11368.800000000001,
+        "Consulting": 2842.2000000000003
+      },
+      "cogsOther": {
+        "Products": 1216,
+        "Consulting": 304
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7840.799999999999,
+        "Consulting": 1960.1999999999998
+      },
+      "insurance": {
+        "Products": 217.2,
+        "Consulting": 144.8
+      },
+      "autoTravel": {
+        "Products": 602.4,
+        "Consulting": 401.59999999999997
+      },
+      "infrastructure": {
+        "Products": 2504.4,
+        "Consulting": 1669.6
+      },
+      "otherExpense": {
+        "Products": 2216.4,
+        "Consulting": 1477.6000000000001
+      },
+      "payroll": {
+        "Products": 17203.8,
+        "Consulting": 11469.2
+      },
+      "benefits": {
+        "Products": 662.4,
+        "Consulting": 441.6
+      },
+      "interestExpense": {
+        "Products": 86.4,
+        "Consulting": 57.6
+      },
+      "salesExpense": {
+        "Products": 1469.4,
+        "Consulting": 979.6
+      },
+      "professionalFees": {
+        "Products": 304.20000000000005,
+        "Consulting": 202.8
+      },
+      "rent": {
+        "Products": 2170.8,
+        "Consulting": 1447.2
+      },
+      "stateIncomeTaxes": {
+        "Products": 4362.6,
+        "Consulting": 2908.4
+      },
+      "phoneComm": {
+        "Products": 614.4000000000001,
+        "Consulting": 409.59999999999997
+      },
+      "mealsEntertainment": {
+        "Products": 1091.4,
+        "Consulting": 727.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 6111,
+        "Consulting": 4074
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 78030.40000000001,
+      "Consulting": 19507.600000000002
+    },
+    "expenseBreakdown": {
+      "Products": 29143.200000000004,
+      "Consulting": 19428.8
+    },
+    "cogsBreakdown": {
+      "Products": 21582.4,
+      "Consulting": 5395.6
+    }
+  },
+  {
+    "monthDate": "2023-02-28T07:00:00.000Z",
+    "date": "2023-02-28T07:00:00.000Z",
+    "month": "2023-02",
+    "revenue": 139013,
+    "cogsPayroll": 10060,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 34046,
+    "cogsCommissions": 0,
+    "cogsOther": 1520,
+    "cogsTotal": 47072,
+    "payroll": 27927,
+    "ownerBasePay": 0,
+    "benefits": 502,
+    "insurance": 588,
+    "professionalFees": 1419,
+    "subcontractors": 763,
+    "rent": 3618,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 10185,
+    "phoneComm": 2451,
+    "infrastructure": 524,
+    "autoTravel": 1666,
+    "salesExpense": 2055,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3339,
+    "interestExpense": 140,
+    "depreciationAmortization": 0,
+    "otherExpense": 2264,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 314791,
+    "ar": 78949,
+    "inventory": 2341,
+    "otherCA": 3463,
+    "tca": 399544,
+    "fixedAssets": 36745,
+    "otherAssets": 4522,
+    "totalAssets": 440811,
+    "ap": 15043,
+    "otherCL": 18025,
+    "tcl": 33068,
+    "ltd": 166835,
+    "totalLiab": 199903,
+    "ownersCapital": 0,
+    "ownersDraw": -198463,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 322070,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 637835,
+    "totalLAndE": 837738,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 157395.5,
+        "Consulting": 157395.5
+      },
+      "ar": {
+        "Products": 39474.5,
+        "Consulting": 39474.5
+      },
+      "inventory": {
+        "Products": 1170.5,
+        "Consulting": 1170.5
+      },
+      "otherCA": {
+        "Products": 1731.5,
+        "Consulting": 1731.5
+      },
+      "fixedAssets": {
+        "Products": 68836.5,
+        "Consulting": 68836.5
+      },
+      "ap": {
+        "Products": 7521.5,
+        "Consulting": 7521.5
+      },
+      "otherCL": {
+        "Products": 9012.5,
+        "Consulting": 9012.5
+      },
+      "ltd": {
+        "Products": 83417.5,
+        "Consulting": 83417.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -158770.4,
+        "Consulting": -39692.6
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 257656,
+        "Consulting": 64414
+      },
+      "revenue": {
+        "Products": 101512,
+        "Consulting": 25378
+      },
+      "cogsMaterials": {
+        "Products": 27236.8,
+        "Consulting": 6809.2
+      },
+      "cogsOther": {
+        "Products": 1216,
+        "Consulting": 304
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 8048,
+        "Consulting": 2012
+      },
+      "insurance": {
+        "Products": 352.8,
+        "Consulting": 235.2
+      },
+      "autoTravel": {
+        "Products": 999.5999999999999,
+        "Consulting": 666.4
+      },
+      "otherExpense": {
+        "Products": 1358.3999999999999,
+        "Consulting": 905.6
+      },
+      "subcontractors": {
+        "Products": 457.8,
+        "Consulting": 305.2
+      },
+      "payroll": {
+        "Products": 16756.2,
+        "Consulting": 11170.8
+      },
+      "benefits": {
+        "Products": 301.2,
+        "Consulting": 200.8
+      },
+      "interestExpense": {
+        "Products": 84,
+        "Consulting": 56
+      },
+      "salesExpense": {
+        "Products": 1233,
+        "Consulting": 822
+      },
+      "infrastructure": {
+        "Products": 314.40000000000003,
+        "Consulting": 209.6
+      },
+      "professionalFees": {
+        "Products": 851.4,
+        "Consulting": 567.6
+      },
+      "rent": {
+        "Products": 2170.8,
+        "Consulting": 1447.2
+      },
+      "phoneComm": {
+        "Products": 1470.6,
+        "Consulting": 980.4000000000001
+      },
+      "mealsEntertainment": {
+        "Products": 2003.4,
+        "Consulting": 1335.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 6111,
+        "Consulting": 4074
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 101512,
+      "Consulting": 25378
+    },
+    "expenseBreakdown": {
+      "Products": 28353.600000000002,
+      "Consulting": 18902.399999999998
+    },
+    "cogsBreakdown": {
+      "Products": 37657.6,
+      "Consulting": 9414.4
+    }
+  },
+  {
+    "monthDate": "2023-03-31T07:00:00.000Z",
+    "date": "2023-03-31T07:00:00.000Z",
+    "month": "2023-03",
+    "revenue": 141733,
+    "cogsPayroll": 9588,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 23178,
+    "cogsCommissions": 0,
+    "cogsOther": 1520,
+    "cogsTotal": 35732,
+    "payroll": 27773,
+    "ownerBasePay": 0,
+    "benefits": 2294,
+    "insurance": 588,
+    "professionalFees": 1027,
+    "subcontractors": 1258,
+    "rent": 3618,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 11300,
+    "phoneComm": 1683,
+    "infrastructure": 519,
+    "autoTravel": 2334,
+    "salesExpense": 1929,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 1360,
+    "interestExpense": 136,
+    "depreciationAmortization": 0,
+    "otherExpense": 1818,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 186054,
+    "ar": 94688,
+    "inventory": 2341,
+    "otherCA": 2987,
+    "tca": 286070,
+    "fixedAssets": 34767,
+    "otherAssets": 4522,
+    "totalAssets": 325359,
+    "ap": 27551,
+    "otherCL": 21934,
+    "tcl": 49485,
+    "ltd": 165053,
+    "totalLiab": 214538,
+    "ownersCapital": 0,
+    "ownersDraw": -368536,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 362054,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 847892,
+    "totalLAndE": 1062430,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 93027,
+        "Consulting": 93027
+      },
+      "ar": {
+        "Products": 47344,
+        "Consulting": 47344
+      },
+      "inventory": {
+        "Products": 1170.5,
+        "Consulting": 1170.5
+      },
+      "otherCA": {
+        "Products": 1493.5,
+        "Consulting": 1493.5
+      },
+      "fixedAssets": {
+        "Products": 68807,
+        "Consulting": 68807
+      },
+      "ap": {
+        "Products": 13775.5,
+        "Consulting": 13775.5
+      },
+      "otherCL": {
+        "Products": 10967,
+        "Consulting": 10967
+      },
+      "ltd": {
+        "Products": 82526.5,
+        "Consulting": 82526.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -294828.8,
+        "Consulting": -73707.2
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 289643.2,
+        "Consulting": 72410.8
+      },
+      "revenue": {
+        "Products": 97931.20000000001,
+        "Consulting": 24482.800000000003
+      },
+      "cogsMaterials": {
+        "Products": 18542.4,
+        "Consulting": 4635.6
+      },
+      "cogsOther": {
+        "Products": 1216,
+        "Consulting": 304
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7670.4,
+        "Consulting": 1917.6
+      },
+      "insurance": {
+        "Products": 352.8,
+        "Consulting": 235.2
+      },
+      "autoTravel": {
+        "Products": 1400.4,
+        "Consulting": 933.6
+      },
+      "otherExpense": {
+        "Products": 1090.8,
+        "Consulting": 727.2
+      },
+      "subcontractors": {
+        "Products": 754.8,
+        "Consulting": 503.2
+      },
+      "payroll": {
+        "Products": 16663.8,
+        "Consulting": 11109.2
+      },
+      "benefits": {
+        "Products": 1376.4,
+        "Consulting": 917.6
+      },
+      "interestExpense": {
+        "Products": 81.6,
+        "Consulting": 54.4
+      },
+      "salesExpense": {
+        "Products": 1157.4,
+        "Consulting": 771.6
+      },
+      "infrastructure": {
+        "Products": 311.4,
+        "Consulting": 207.6
+      },
+      "professionalFees": {
+        "Products": 616.2,
+        "Consulting": 410.79999999999995
+      },
+      "rent": {
+        "Products": 2170.8,
+        "Consulting": 1447.2
+      },
+      "phoneComm": {
+        "Products": 1009.8000000000001,
+        "Consulting": 673.2
+      },
+      "mealsEntertainment": {
+        "Products": 816,
+        "Consulting": 544
+      },
+      "federalIncomeTaxes": {
+        "Products": 6780,
+        "Consulting": 4520
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 97931.20000000001,
+      "Consulting": 24482.800000000003
+    },
+    "expenseBreakdown": {
+      "Products": 27802.2,
+      "Consulting": 18534.800000000003
+    },
+    "cogsBreakdown": {
+      "Products": 28585.6,
+      "Consulting": 7146.4
+    }
+  },
+  {
+    "monthDate": "2023-04-30T07:00:00.000Z",
+    "date": "2023-04-30T07:00:00.000Z",
+    "month": "2023-04",
+    "revenue": 154640,
+    "cogsPayroll": 9579,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 39303,
+    "cogsCommissions": 0,
+    "cogsOther": 3372,
+    "cogsTotal": 53700,
+    "payroll": 27574,
+    "ownerBasePay": 0,
+    "benefits": 1094,
+    "insurance": 588,
+    "professionalFees": 567,
+    "subcontractors": 763,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 10400,
+    "phoneComm": 1683,
+    "infrastructure": 580,
+    "autoTravel": 2415,
+    "salesExpense": 1929,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 1994,
+    "interestExpense": 132,
+    "depreciationAmortization": 0,
+    "otherExpense": 3760,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 153952,
+    "ar": 117122,
+    "inventory": 2466,
+    "otherCA": 2510,
+    "tca": 276050,
+    "fixedAssets": 32786,
+    "otherAssets": 4522,
+    "totalAssets": 313358,
+    "ap": 16127,
+    "otherCL": 25565,
+    "tcl": 41692,
+    "ltd": 163268,
+    "totalLiab": 204960,
+    "ownersCapital": 0,
+    "ownersDraw": -373528,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 364626,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 855456,
+    "totalLAndE": 1060416,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 76976,
+        "Consulting": 76976
+      },
+      "ar": {
+        "Products": 58561,
+        "Consulting": 58561
+      },
+      "inventory": {
+        "Products": 1233,
+        "Consulting": 1233
+      },
+      "otherCA": {
+        "Products": 1255,
+        "Consulting": 1255
+      },
+      "fixedAssets": {
+        "Products": 68777,
+        "Consulting": 68777
+      },
+      "ap": {
+        "Products": 8063.5,
+        "Consulting": 8063.5
+      },
+      "otherCL": {
+        "Products": 12782.5,
+        "Consulting": 12782.5
+      },
+      "ltd": {
+        "Products": 81634,
+        "Consulting": 81634
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -298822.4,
+        "Consulting": -74705.6
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 291700.8,
+        "Consulting": 72925.2
+      },
+      "revenue": {
+        "Products": 112584.80000000002,
+        "Consulting": 28146.200000000004
+      },
+      "cogsMaterials": {
+        "Products": 31442.399999999998,
+        "Consulting": 7860.599999999999
+      },
+      "cogsOther": {
+        "Products": 2697.6,
+        "Consulting": 674.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7663.200000000001,
+        "Consulting": 1915.8000000000002
+      },
+      "insurance": {
+        "Products": 352.8,
+        "Consulting": 235.2
+      },
+      "autoTravel": {
+        "Products": 1449,
+        "Consulting": 966
+      },
+      "otherExpense": {
+        "Products": 2256,
+        "Consulting": 1504
+      },
+      "subcontractors": {
+        "Products": 457.8,
+        "Consulting": 305.2
+      },
+      "payroll": {
+        "Products": 16544.4,
+        "Consulting": 11029.6
+      },
+      "benefits": {
+        "Products": 656.4,
+        "Consulting": 437.6
+      },
+      "interestExpense": {
+        "Products": 79.2,
+        "Consulting": 52.8
+      },
+      "salesExpense": {
+        "Products": 1157.4,
+        "Consulting": 771.6
+      },
+      "infrastructure": {
+        "Products": 348,
+        "Consulting": 232
+      },
+      "professionalFees": {
+        "Products": 340.20000000000005,
+        "Consulting": 226.79999999999998
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 1009.8,
+        "Consulting": 673.2
+      },
+      "mealsEntertainment": {
+        "Products": 1196.4,
+        "Consulting": 797.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 6240,
+        "Consulting": 4160
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 112584.80000000002,
+      "Consulting": 28146.200000000004
+    },
+    "expenseBreakdown": {
+      "Products": 28083.000000000004,
+      "Consulting": 18722
+    },
+    "cogsBreakdown": {
+      "Products": 42960,
+      "Consulting": 10740
+    }
+  },
+  {
+    "monthDate": "2023-05-31T07:00:00.000Z",
+    "date": "2023-05-31T07:00:00.000Z",
+    "month": "2023-05",
+    "revenue": 136057,
+    "cogsPayroll": 9449,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 32621,
+    "cogsCommissions": 0,
+    "cogsOther": 2002,
+    "cogsTotal": 45518,
+    "payroll": 27882,
+    "ownerBasePay": 0,
+    "benefits": 965,
+    "insurance": 359,
+    "professionalFees": 857,
+    "subcontractors": 763,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 3610,
+    "federalIncomeTaxes": 11340,
+    "phoneComm": 1854,
+    "infrastructure": 3359,
+    "autoTravel": 1328,
+    "salesExpense": 1577,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 1603,
+    "interestExpense": 127,
+    "depreciationAmortization": 0,
+    "otherExpense": 2353,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 175919,
+    "ar": 125702,
+    "inventory": 6662,
+    "otherCA": 2032,
+    "tca": 310315,
+    "fixedAssets": 30808,
+    "otherAssets": 4522,
+    "totalAssets": 345645,
+    "ap": 25610,
+    "otherCL": 33210,
+    "tcl": 58820,
+    "ltd": 161478,
+    "totalLiab": 220298,
+    "ownersCapital": 0,
+    "ownersDraw": -382116,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 390163,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 889581,
+    "totalLAndE": 1109879,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 87959.5,
+        "Consulting": 87959.5
+      },
+      "ar": {
+        "Products": 62851,
+        "Consulting": 62851
+      },
+      "inventory": {
+        "Products": 3331,
+        "Consulting": 3331
+      },
+      "otherCA": {
+        "Products": 1016,
+        "Consulting": 1016
+      },
+      "fixedAssets": {
+        "Products": 68747.5,
+        "Consulting": 68747.5
+      },
+      "ap": {
+        "Products": 12805,
+        "Consulting": 12805
+      },
+      "otherCL": {
+        "Products": 16605,
+        "Consulting": 16605
+      },
+      "ltd": {
+        "Products": 80739,
+        "Consulting": 80739
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -305692.8,
+        "Consulting": -76423.2
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 312130.4,
+        "Consulting": 78032.6
+      },
+      "revenue": {
+        "Products": 96548.80000000002,
+        "Consulting": 24137.200000000004
+      },
+      "cogsMaterials": {
+        "Products": 26096.8,
+        "Consulting": 6524.2
+      },
+      "cogsOther": {
+        "Products": 1601.6,
+        "Consulting": 400.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7559.199999999999,
+        "Consulting": 1889.7999999999997
+      },
+      "autoTravel": {
+        "Products": 796.8,
+        "Consulting": 531.2
+      },
+      "otherExpense": {
+        "Products": 1411.7999999999997,
+        "Consulting": 941.2
+      },
+      "subcontractors": {
+        "Products": 457.8,
+        "Consulting": 305.2
+      },
+      "payroll": {
+        "Products": 16729.2,
+        "Consulting": 11152.800000000001
+      },
+      "insurance": {
+        "Products": 215.4,
+        "Consulting": 143.6
+      },
+      "benefits": {
+        "Products": 579,
+        "Consulting": 386
+      },
+      "interestExpense": {
+        "Products": 76.2,
+        "Consulting": 50.8
+      },
+      "salesExpense": {
+        "Products": 946.2,
+        "Consulting": 630.8
+      },
+      "infrastructure": {
+        "Products": 2015.3999999999999,
+        "Consulting": 1343.6000000000001
+      },
+      "professionalFees": {
+        "Products": 514.1999999999999,
+        "Consulting": 342.8
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 1112.4,
+        "Consulting": 741.6
+      },
+      "mealsEntertainment": {
+        "Products": 961.8,
+        "Consulting": 641.2
+      },
+      "federalIncomeTaxes": {
+        "Products": 6804,
+        "Consulting": 4536
+      },
+      "stateIncomeTaxes": {
+        "Products": 2166,
+        "Consulting": 1444
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 96548.80000000002,
+      "Consulting": 24137.200000000004
+    },
+    "expenseBreakdown": {
+      "Products": 28051.800000000003,
+      "Consulting": 18701.2
+    },
+    "cogsBreakdown": {
+      "Products": 36414.399999999994,
+      "Consulting": 9103.599999999999
+    }
+  },
+  {
+    "monthDate": "2023-06-30T07:00:00.000Z",
+    "date": "2023-06-30T07:00:00.000Z",
+    "month": "2023-06",
+    "revenue": 136068,
+    "cogsPayroll": 9567,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 37009,
+    "cogsCommissions": 0,
+    "cogsOther": 1764,
+    "cogsTotal": 49786,
+    "payroll": 27773,
+    "ownerBasePay": 0,
+    "benefits": 965,
+    "insurance": 377,
+    "professionalFees": 717,
+    "subcontractors": 763,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 3610,
+    "federalIncomeTaxes": 11340,
+    "phoneComm": 1561,
+    "infrastructure": 752,
+    "autoTravel": 1174,
+    "salesExpense": 2805,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2659,
+    "interestExpense": 123,
+    "depreciationAmortization": 0,
+    "otherExpense": 2753,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 211239,
+    "ar": 119387,
+    "inventory": 6662,
+    "otherCA": 1673,
+    "tca": 338961,
+    "fixedAssets": 28828,
+    "otherAssets": 4522,
+    "totalAssets": 372311,
+    "ap": 46527,
+    "otherCL": 28241,
+    "tcl": 74768,
+    "ltd": 159684,
+    "totalLiab": 234452,
+    "ownersCapital": 0,
+    "ownersDraw": -388249,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 408808,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 914359,
+    "totalLAndE": 1148811,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 105619.5,
+        "Consulting": 105619.5
+      },
+      "ar": {
+        "Products": 59693.5,
+        "Consulting": 59693.5
+      },
+      "inventory": {
+        "Products": 3331,
+        "Consulting": 3331
+      },
+      "otherCA": {
+        "Products": 836.5,
+        "Consulting": 836.5
+      },
+      "fixedAssets": {
+        "Products": 68717.5,
+        "Consulting": 68717.5
+      },
+      "ap": {
+        "Products": 23263.5,
+        "Consulting": 23263.5
+      },
+      "otherCL": {
+        "Products": 14120.5,
+        "Consulting": 14120.5
+      },
+      "ltd": {
+        "Products": 79842,
+        "Consulting": 79842
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -310599.2,
+        "Consulting": -77649.8
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 327046.4,
+        "Consulting": 81761.6
+      },
+      "revenue": {
+        "Products": 96431.2,
+        "Consulting": 24107.8
+      },
+      "cogsMaterials": {
+        "Products": 29607.199999999997,
+        "Consulting": 7401.799999999999
+      },
+      "cogsOther": {
+        "Products": 1411.2,
+        "Consulting": 352.8
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7653.6,
+        "Consulting": 1913.4
+      },
+      "insurance": {
+        "Products": 226.20000000000002,
+        "Consulting": 150.8
+      },
+      "autoTravel": {
+        "Products": 704.4000000000001,
+        "Consulting": 469.6
+      },
+      "infrastructure": {
+        "Products": 451.2,
+        "Consulting": 300.8
+      },
+      "otherExpense": {
+        "Products": 1651.7999999999997,
+        "Consulting": 1101.2000000000003
+      },
+      "subcontractors": {
+        "Products": 457.8,
+        "Consulting": 305.2
+      },
+      "payroll": {
+        "Products": 16663.8,
+        "Consulting": 11109.2
+      },
+      "benefits": {
+        "Products": 579,
+        "Consulting": 386
+      },
+      "interestExpense": {
+        "Products": 73.8,
+        "Consulting": 49.2
+      },
+      "salesExpense": {
+        "Products": 1683,
+        "Consulting": 1122
+      },
+      "professionalFees": {
+        "Products": 430.20000000000005,
+        "Consulting": 286.79999999999995
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 936.6,
+        "Consulting": 624.4000000000001
+      },
+      "mealsEntertainment": {
+        "Products": 1595.4,
+        "Consulting": 1063.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 6804,
+        "Consulting": 4536
+      },
+      "stateIncomeTaxes": {
+        "Products": 2166,
+        "Consulting": 1444
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 96431.2,
+      "Consulting": 24107.8
+    },
+    "expenseBreakdown": {
+      "Products": 27688.8,
+      "Consulting": 18459.2
+    },
+    "cogsBreakdown": {
+      "Products": 39828.799999999996,
+      "Consulting": 9957.199999999999
+    }
+  },
+  {
+    "monthDate": "2023-07-31T07:00:00.000Z",
+    "date": "2023-07-31T07:00:00.000Z",
+    "month": "2023-07",
+    "revenue": 127591,
+    "cogsPayroll": -14138,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 37326,
+    "cogsCommissions": 0,
+    "cogsOther": 1742,
+    "cogsTotal": 26376,
+    "payroll": 29060,
+    "ownerBasePay": 0,
+    "benefits": 965,
+    "insurance": 488,
+    "professionalFees": 589,
+    "subcontractors": 763,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": -691,
+    "federalIncomeTaxes": 11340,
+    "phoneComm": 1391,
+    "infrastructure": 3775,
+    "autoTravel": 878,
+    "salesExpense": 1354,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 1710,
+    "interestExpense": 119,
+    "depreciationAmortization": 0,
+    "otherExpense": 2498,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 203026,
+    "ar": 100868,
+    "inventory": 6893,
+    "otherCA": 1434,
+    "tca": 312221,
+    "fixedAssets": 37105,
+    "otherAssets": 4522,
+    "totalAssets": 353848,
+    "ap": 40050,
+    "otherCL": 7483,
+    "tcl": 47533,
+    "ltd": 157886,
+    "totalLiab": 205419,
+    "ownersCapital": 0,
+    "ownersDraw": -540708,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 571804,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1229814,
+    "totalLAndE": 1435233,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 101513,
+        "Consulting": 101513
+      },
+      "ar": {
+        "Products": 50434,
+        "Consulting": 50434
+      },
+      "inventory": {
+        "Products": 3446.5,
+        "Consulting": 3446.5
+      },
+      "otherCA": {
+        "Products": 717,
+        "Consulting": 717
+      },
+      "fixedAssets": {
+        "Products": 65432.8,
+        "Consulting": 65426.2
+      },
+      "ap": {
+        "Products": 20025,
+        "Consulting": 20025
+      },
+      "otherCL": {
+        "Products": 3741.5,
+        "Consulting": 3741.5
+      },
+      "ltd": {
+        "Products": 78943,
+        "Consulting": 78943
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -432566.4,
+        "Consulting": -108141.6
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 457443.2,
+        "Consulting": 114360.8
+      },
+      "revenue": {
+        "Products": 90861.6,
+        "Consulting": 22715.4
+      },
+      "cogsMaterials": {
+        "Products": 29860.8,
+        "Consulting": 7465.2
+      },
+      "cogsOther": {
+        "Products": 1393.6,
+        "Consulting": 348.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": -11310.4,
+        "Consulting": -2827.6
+      },
+      "insurance": {
+        "Products": 292.8,
+        "Consulting": 195.2
+      },
+      "autoTravel": {
+        "Products": 526.8000000000001,
+        "Consulting": 351.2
+      },
+      "infrastructure": {
+        "Products": 2265,
+        "Consulting": 1510
+      },
+      "otherExpense": {
+        "Products": 1498.8000000000002,
+        "Consulting": 999.1999999999999
+      },
+      "subcontractors": {
+        "Products": 457.8,
+        "Consulting": 305.2
+      },
+      "payroll": {
+        "Products": 17436,
+        "Consulting": 11624
+      },
+      "benefits": {
+        "Products": 579,
+        "Consulting": 386
+      },
+      "interestExpense": {
+        "Products": 71.4,
+        "Consulting": 47.6
+      },
+      "salesExpense": {
+        "Products": 812.4,
+        "Consulting": 541.6
+      },
+      "professionalFees": {
+        "Products": 353.4,
+        "Consulting": 235.6
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "stateIncomeTaxes": {
+        "Products": -414.5999999999999,
+        "Consulting": -276.4000000000001
+      },
+      "phoneComm": {
+        "Products": 834.5999999999999,
+        "Consulting": 556.4000000000001
+      },
+      "mealsEntertainment": {
+        "Products": 1026,
+        "Consulting": 684
+      },
+      "federalIncomeTaxes": {
+        "Products": 6804,
+        "Consulting": 4536
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 90861.6,
+      "Consulting": 22715.4
+    },
+    "expenseBreakdown": {
+      "Products": 28389.600000000002,
+      "Consulting": 18926.4
+    },
+    "cogsBreakdown": {
+      "Products": 21100.799999999996,
+      "Consulting": 5275.199999999999
+    }
+  },
+  {
+    "monthDate": "2023-08-31T07:00:00.000Z",
+    "date": "2023-08-31T07:00:00.000Z",
+    "month": "2023-08",
+    "revenue": 113833,
+    "cogsPayroll": 11493,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1886,
+    "cogsMaterials": 23321,
+    "cogsCommissions": 0,
+    "cogsOther": 1751,
+    "cogsTotal": 38451,
+    "payroll": 30561,
+    "ownerBasePay": 0,
+    "benefits": 965,
+    "insurance": 482,
+    "professionalFees": 9784,
+    "subcontractors": 763,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 0,
+    "phoneComm": 1514,
+    "infrastructure": 1229,
+    "autoTravel": 2163,
+    "salesExpense": 1430,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 1631,
+    "interestExpense": 115,
+    "depreciationAmortization": 0,
+    "otherExpense": 3695,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 137433,
+    "ar": 109950,
+    "inventory": 6373,
+    "otherCA": 3213,
+    "tca": 256969,
+    "fixedAssets": 35698,
+    "otherAssets": 4522,
+    "totalAssets": 297189,
+    "ap": 12973,
+    "otherCL": 6867,
+    "tcl": 19840,
+    "ltd": 156083,
+    "totalLiab": 175923,
+    "ownersCapital": 0,
+    "ownersDraw": -587550,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 591514,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1296366,
+    "totalLAndE": 1472289,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 68716.5,
+        "Consulting": 68716.5
+      },
+      "ar": {
+        "Products": 54975,
+        "Consulting": 54975
+      },
+      "inventory": {
+        "Products": 3186.5,
+        "Consulting": 3186.5
+      },
+      "otherCA": {
+        "Products": 1606.5,
+        "Consulting": 1606.5
+      },
+      "fixedAssets": {
+        "Products": 65398,
+        "Consulting": 65398
+      },
+      "ap": {
+        "Products": 6486.5,
+        "Consulting": 6486.5
+      },
+      "otherCL": {
+        "Products": 3433.5,
+        "Consulting": 3433.5
+      },
+      "ltd": {
+        "Products": 78041.5,
+        "Consulting": 78041.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -470040,
+        "Consulting": -117510
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 473211.2,
+        "Consulting": 118302.8
+      },
+      "revenue": {
+        "Products": 79901.6,
+        "Consulting": 19975.4
+      },
+      "cogsMaterials": {
+        "Products": 18656.8,
+        "Consulting": 4664.2
+      },
+      "cogsOther": {
+        "Products": 1400.8,
+        "Consulting": 350.2
+      },
+      "cogsContractors": {
+        "Products": 1508.8,
+        "Consulting": 377.2
+      },
+      "cogsPayroll": {
+        "Products": 9194.4,
+        "Consulting": 2298.6
+      },
+      "insurance": {
+        "Products": 289.2,
+        "Consulting": 192.8
+      },
+      "autoTravel": {
+        "Products": 1297.8000000000002,
+        "Consulting": 865.2
+      },
+      "otherExpense": {
+        "Products": 2217,
+        "Consulting": 1478
+      },
+      "subcontractors": {
+        "Products": 457.8,
+        "Consulting": 305.2
+      },
+      "payroll": {
+        "Products": 18336.6,
+        "Consulting": 12224.4
+      },
+      "benefits": {
+        "Products": 579,
+        "Consulting": 386
+      },
+      "interestExpense": {
+        "Products": 69,
+        "Consulting": 46
+      },
+      "salesExpense": {
+        "Products": 858,
+        "Consulting": 572
+      },
+      "infrastructure": {
+        "Products": 737.4,
+        "Consulting": 491.6
+      },
+      "professionalFees": {
+        "Products": 5870.4,
+        "Consulting": 3913.6
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 908.4000000000001,
+        "Consulting": 605.5999999999999
+      },
+      "mealsEntertainment": {
+        "Products": 978.6,
+        "Consulting": 652.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 79901.6,
+      "Consulting": 19975.4
+    },
+    "expenseBreakdown": {
+      "Products": 34834.799999999996,
+      "Consulting": 23223.199999999997
+    },
+    "cogsBreakdown": {
+      "Products": 30760.799999999996,
+      "Consulting": 7690.199999999999
+    }
+  },
+  {
+    "monthDate": "2023-09-30T07:00:00.000Z",
+    "date": "2023-09-30T07:00:00.000Z",
+    "month": "2023-09",
+    "revenue": 115410,
+    "cogsPayroll": 10430,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 21157,
+    "cogsCommissions": 0,
+    "cogsOther": 1751,
+    "cogsTotal": 34784,
+    "payroll": 29236,
+    "ownerBasePay": 0,
+    "benefits": 965,
+    "insurance": 600,
+    "professionalFees": 999,
+    "subcontractors": 633,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 0,
+    "phoneComm": 1516,
+    "infrastructure": 390,
+    "autoTravel": 1101,
+    "salesExpense": 3378,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 4601,
+    "interestExpense": 111,
+    "depreciationAmortization": 0,
+    "otherExpense": 2909,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 182022,
+    "ar": 113801,
+    "inventory": 6817,
+    "otherCA": 2783,
+    "tca": 305423,
+    "fixedAssets": 34327,
+    "otherAssets": 4522,
+    "totalAssets": 344272,
+    "ap": 34413,
+    "otherCL": 9576,
+    "tcl": 43989,
+    "ltd": 154277,
+    "totalLiab": 198266,
+    "ownersCapital": 0,
+    "ownersDraw": -589292,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 617994,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1324588,
+    "totalLAndE": 1522854,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 91011,
+        "Consulting": 91011
+      },
+      "ar": {
+        "Products": 56900.5,
+        "Consulting": 56900.5
+      },
+      "inventory": {
+        "Products": 3408.5,
+        "Consulting": 3408.5
+      },
+      "otherCA": {
+        "Products": 1391.5,
+        "Consulting": 1391.5
+      },
+      "fixedAssets": {
+        "Products": 65383.5,
+        "Consulting": 65383.5
+      },
+      "ap": {
+        "Products": 17206.5,
+        "Consulting": 17206.5
+      },
+      "otherCL": {
+        "Products": 4788,
+        "Consulting": 4788
+      },
+      "ltd": {
+        "Products": 77138.5,
+        "Consulting": 77138.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -471433.6,
+        "Consulting": -117858.4
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 494395.2,
+        "Consulting": 123598.8
+      },
+      "revenue": {
+        "Products": 76960.79999999999,
+        "Consulting": 19240.199999999997
+      },
+      "cogsMaterials": {
+        "Products": 16925.6,
+        "Consulting": 4231.4
+      },
+      "cogsOther": {
+        "Products": 1400.8,
+        "Consulting": 350.2
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 8344,
+        "Consulting": 2086
+      },
+      "insurance": {
+        "Products": 360,
+        "Consulting": 240
+      },
+      "autoTravel": {
+        "Products": 660.6,
+        "Consulting": 440.4
+      },
+      "otherExpense": {
+        "Products": 1745.4,
+        "Consulting": 1163.6
+      },
+      "subcontractors": {
+        "Products": 379.8,
+        "Consulting": 253.2
+      },
+      "payroll": {
+        "Products": 17541.600000000002,
+        "Consulting": 11694.4
+      },
+      "benefits": {
+        "Products": 579,
+        "Consulting": 386
+      },
+      "interestExpense": {
+        "Products": 66.6,
+        "Consulting": 44.4
+      },
+      "salesExpense": {
+        "Products": 2026.8,
+        "Consulting": 1351.2
+      },
+      "infrastructure": {
+        "Products": 234,
+        "Consulting": 156
+      },
+      "professionalFees": {
+        "Products": 599.4,
+        "Consulting": 399.6
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 909.6,
+        "Consulting": 606.4000000000001
+      },
+      "mealsEntertainment": {
+        "Products": 2760.6,
+        "Consulting": 1840.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 76960.79999999999,
+      "Consulting": 19240.199999999997
+    },
+    "expenseBreakdown": {
+      "Products": 30098.999999999996,
+      "Consulting": 20066.000000000004
+    },
+    "cogsBreakdown": {
+      "Products": 27827.199999999997,
+      "Consulting": 6956.799999999999
+    }
+  },
+  {
+    "monthDate": "2023-10-31T07:00:00.000Z",
+    "date": "2023-10-31T07:00:00.000Z",
+    "month": "2023-10",
+    "revenue": 133241,
+    "cogsPayroll": 9727,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 32088,
+    "cogsCommissions": 0,
+    "cogsOther": 1742,
+    "cogsTotal": 45003,
+    "payroll": 29074,
+    "ownerBasePay": 0,
+    "benefits": 1983,
+    "insurance": 549,
+    "professionalFees": 649,
+    "subcontractors": 633,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 2741,
+    "federalIncomeTaxes": 4637,
+    "phoneComm": 1634,
+    "infrastructure": 2208,
+    "autoTravel": 4083,
+    "salesExpense": 2448,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3321,
+    "interestExpense": 106,
+    "depreciationAmortization": 0,
+    "otherExpense": 1692,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 154544,
+    "ar": 127079,
+    "inventory": 6817,
+    "otherCA": 2353,
+    "tca": 290793,
+    "fixedAssets": 32967,
+    "otherAssets": 4522,
+    "totalAssets": 328282,
+    "ap": 5129,
+    "otherCL": 15462,
+    "tcl": 20591,
+    "ltd": 152466,
+    "totalLiab": 173057,
+    "ownersCapital": 0,
+    "ownersDraw": -614567,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 652490,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1384359,
+    "totalLAndE": 1557416,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 77272,
+        "Consulting": 77272
+      },
+      "ar": {
+        "Products": 63539.5,
+        "Consulting": 63539.5
+      },
+      "inventory": {
+        "Products": 3408.5,
+        "Consulting": 3408.5
+      },
+      "otherCA": {
+        "Products": 1176.5,
+        "Consulting": 1176.5
+      },
+      "fixedAssets": {
+        "Products": 65383.5,
+        "Consulting": 65383.5
+      },
+      "ap": {
+        "Products": 2564.5,
+        "Consulting": 2564.5
+      },
+      "otherCL": {
+        "Products": 7731,
+        "Consulting": 7731
+      },
+      "ltd": {
+        "Products": 76233,
+        "Consulting": 76233
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -491653.6,
+        "Consulting": -122913.4
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 521992,
+        "Consulting": 130498
+      },
+      "revenue": {
+        "Products": 89933.59999999999,
+        "Consulting": 22483.399999999998
+      },
+      "cogsMaterials": {
+        "Products": 25670.4,
+        "Consulting": 6417.6
+      },
+      "cogsOther": {
+        "Products": 1393.6,
+        "Consulting": 348.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7781.6,
+        "Consulting": 1945.4
+      },
+      "insurance": {
+        "Products": 329.4,
+        "Consulting": 219.60000000000002
+      },
+      "autoTravel": {
+        "Products": 2449.8,
+        "Consulting": 1633.1999999999998
+      },
+      "infrastructure": {
+        "Products": 1324.8,
+        "Consulting": 883.1999999999999
+      },
+      "otherExpense": {
+        "Products": 1015.2,
+        "Consulting": 676.8
+      },
+      "subcontractors": {
+        "Products": 379.8,
+        "Consulting": 253.2
+      },
+      "payroll": {
+        "Products": 17444.4,
+        "Consulting": 11629.599999999999
+      },
+      "benefits": {
+        "Products": 1189.8,
+        "Consulting": 793.2
+      },
+      "interestExpense": {
+        "Products": 63.6,
+        "Consulting": 42.4
+      },
+      "salesExpense": {
+        "Products": 1468.8000000000002,
+        "Consulting": 979.1999999999999
+      },
+      "professionalFees": {
+        "Products": 389.4,
+        "Consulting": 259.6
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 980.4,
+        "Consulting": 653.6
+      },
+      "mealsEntertainment": {
+        "Products": 1992.6000000000001,
+        "Consulting": 1328.4
+      },
+      "federalIncomeTaxes": {
+        "Products": 2782.2,
+        "Consulting": 1854.8
+      },
+      "stateIncomeTaxes": {
+        "Products": 1644.6,
+        "Consulting": 1096.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 89933.59999999999,
+      "Consulting": 22483.399999999998
+    },
+    "expenseBreakdown": {
+      "Products": 31263.6,
+      "Consulting": 20842.399999999998
+    },
+    "cogsBreakdown": {
+      "Products": 36002.4,
+      "Consulting": 9000.6
+    }
+  },
+  {
+    "monthDate": "2023-11-30T07:00:00.000Z",
+    "date": "2023-11-30T07:00:00.000Z",
+    "month": "2023-11",
+    "revenue": 145509,
+    "cogsPayroll": 10145,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 43618,
+    "cogsCommissions": 0,
+    "cogsOther": 3496,
+    "cogsTotal": 58705,
+    "payroll": 29253,
+    "ownerBasePay": 0,
+    "benefits": 2147,
+    "insurance": 351,
+    "professionalFees": 649,
+    "subcontractors": 633,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 5158,
+    "federalIncomeTaxes": 10310,
+    "phoneComm": 1481,
+    "infrastructure": 361,
+    "autoTravel": 3454,
+    "salesExpense": 3907,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2390,
+    "interestExpense": 102,
+    "depreciationAmortization": 0,
+    "otherExpense": 2553,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 233354,
+    "ar": 68603,
+    "inventory": 6817,
+    "otherCA": 1923,
+    "tca": 310697,
+    "fixedAssets": 31641,
+    "otherAssets": 4522,
+    "totalAssets": 346860,
+    "ap": 5259,
+    "otherCL": 21689,
+    "tcl": 26948,
+    "ltd": 150652,
+    "totalLiab": 177600,
+    "ownersCapital": 0,
+    "ownersDraw": -635235,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 687160,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1439697,
+    "totalLAndE": 1617297,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 116677,
+        "Consulting": 116677
+      },
+      "ar": {
+        "Products": 34301.5,
+        "Consulting": 34301.5
+      },
+      "inventory": {
+        "Products": 3408.5,
+        "Consulting": 3408.5
+      },
+      "otherCA": {
+        "Products": 961.5,
+        "Consulting": 961.5
+      },
+      "fixedAssets": {
+        "Products": 65403.3,
+        "Consulting": 65396.7
+      },
+      "ap": {
+        "Products": 2629.5,
+        "Consulting": 2629.5
+      },
+      "otherCL": {
+        "Products": 10844.5,
+        "Consulting": 10844.5
+      },
+      "ltd": {
+        "Products": 75326,
+        "Consulting": 75326
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -508188,
+        "Consulting": -127047
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 549728,
+        "Consulting": 137432
+      },
+      "revenue": {
+        "Products": 107675.2,
+        "Consulting": 26918.8
+      },
+      "cogsMaterials": {
+        "Products": 34894.4,
+        "Consulting": 8723.6
+      },
+      "cogsOther": {
+        "Products": 2796.8,
+        "Consulting": 699.2
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 8116,
+        "Consulting": 2029
+      },
+      "autoTravel": {
+        "Products": 2072.4,
+        "Consulting": 1381.6
+      },
+      "otherExpense": {
+        "Products": 1531.8,
+        "Consulting": 1021.1999999999999
+      },
+      "subcontractors": {
+        "Products": 379.8,
+        "Consulting": 253.2
+      },
+      "payroll": {
+        "Products": 17551.8,
+        "Consulting": 11701.199999999999
+      },
+      "insurance": {
+        "Products": 210.60000000000002,
+        "Consulting": 140.39999999999998
+      },
+      "benefits": {
+        "Products": 1288.2,
+        "Consulting": 858.8
+      },
+      "interestExpense": {
+        "Products": 61.2,
+        "Consulting": 40.8
+      },
+      "salesExpense": {
+        "Products": 2344.2000000000003,
+        "Consulting": 1562.8
+      },
+      "infrastructure": {
+        "Products": 216.6,
+        "Consulting": 144.4
+      },
+      "professionalFees": {
+        "Products": 389.4,
+        "Consulting": 259.6
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "stateIncomeTaxes": {
+        "Products": 3094.8,
+        "Consulting": 2063.2
+      },
+      "phoneComm": {
+        "Products": 888.5999999999999,
+        "Consulting": 592.4000000000001
+      },
+      "mealsEntertainment": {
+        "Products": 1434,
+        "Consulting": 956
+      },
+      "federalIncomeTaxes": {
+        "Products": 6186,
+        "Consulting": 4124
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 107675.2,
+      "Consulting": 26918.8
+    },
+    "expenseBreakdown": {
+      "Products": 30604.199999999997,
+      "Consulting": 20402.8
+    },
+    "cogsBreakdown": {
+      "Products": 46964.00000000001,
+      "Consulting": 11741.000000000002
+    }
+  },
+  {
+    "monthDate": "2023-12-31T07:00:00.000Z",
+    "date": "2023-12-31T07:00:00.000Z",
+    "month": "2023-12",
+    "revenue": 134013,
+    "cogsPayroll": 10073,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 36953,
+    "cogsCommissions": 0,
+    "cogsOther": 2264,
+    "cogsTotal": 50736,
+    "payroll": 29407,
+    "ownerBasePay": 0,
+    "benefits": 2528,
+    "insurance": 351,
+    "professionalFees": 3367,
+    "subcontractors": 633,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 3984,
+    "federalIncomeTaxes": 8897,
+    "phoneComm": 1676,
+    "infrastructure": 1042,
+    "autoTravel": 1672,
+    "salesExpense": 3061,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3118,
+    "interestExpense": 98,
+    "depreciationAmortization": 0,
+    "otherExpense": 5294,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 226880,
+    "ar": 98981,
+    "inventory": 6817,
+    "otherCA": 1495,
+    "tca": 334173,
+    "fixedAssets": 31325,
+    "otherAssets": 4522,
+    "totalAssets": 370020,
+    "ap": 34161,
+    "otherCL": 18691,
+    "tcl": 52852,
+    "ltd": 148833,
+    "totalLiab": 201685,
+    "ownersCapital": 0,
+    "ownersDraw": -637695,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 688728,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1443725,
+    "totalLAndE": 1645410,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 113440,
+        "Consulting": 113440
+      },
+      "ar": {
+        "Products": 49490.5,
+        "Consulting": 49490.5
+      },
+      "inventory": {
+        "Products": 3408.5,
+        "Consulting": 3408.5
+      },
+      "otherCA": {
+        "Products": 747.5,
+        "Consulting": 747.5
+      },
+      "fixedAssets": {
+        "Products": 65921.5,
+        "Consulting": 65921.5
+      },
+      "ap": {
+        "Products": 17080.5,
+        "Consulting": 17080.5
+      },
+      "otherCL": {
+        "Products": 9345.5,
+        "Consulting": 9345.5
+      },
+      "ltd": {
+        "Products": 74416.5,
+        "Consulting": 74416.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -510156,
+        "Consulting": -127539
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 550982.4,
+        "Consulting": 137745.6
+      },
+      "revenue": {
+        "Products": 103970.39999999998,
+        "Consulting": 25992.599999999995
+      },
+      "cogsMaterials": {
+        "Products": 29562.4,
+        "Consulting": 7390.6
+      },
+      "cogsOther": {
+        "Products": 1811.2,
+        "Consulting": 452.8
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 8058.4,
+        "Consulting": 2014.6
+      },
+      "autoTravel": {
+        "Products": 1003.1999999999999,
+        "Consulting": 668.8
+      },
+      "infrastructure": {
+        "Products": 625.2,
+        "Consulting": 416.79999999999995
+      },
+      "otherExpense": {
+        "Products": 3176.4,
+        "Consulting": 2117.6
+      },
+      "subcontractors": {
+        "Products": 379.8,
+        "Consulting": 253.2
+      },
+      "payroll": {
+        "Products": 17644.2,
+        "Consulting": 11762.8
+      },
+      "insurance": {
+        "Products": 210.60000000000002,
+        "Consulting": 140.39999999999998
+      },
+      "benefits": {
+        "Products": 1516.8,
+        "Consulting": 1011.2
+      },
+      "interestExpense": {
+        "Products": 58.8,
+        "Consulting": 39.2
+      },
+      "salesExpense": {
+        "Products": 1836.6,
+        "Consulting": 1224.4
+      },
+      "professionalFees": {
+        "Products": 2020.2,
+        "Consulting": 1346.8
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 1005.6,
+        "Consulting": 670.4
+      },
+      "mealsEntertainment": {
+        "Products": 1870.8,
+        "Consulting": 1247.2
+      },
+      "federalIncomeTaxes": {
+        "Products": 5338.2,
+        "Consulting": 3558.8
+      },
+      "stateIncomeTaxes": {
+        "Products": 2390.4,
+        "Consulting": 1593.6
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 103970.39999999998,
+      "Consulting": 25992.599999999995
+    },
+    "expenseBreakdown": {
+      "Products": 33583.799999999996,
+      "Consulting": 22389.200000000004
+    },
+    "cogsBreakdown": {
+      "Products": 40588.8,
+      "Consulting": 10147.2
+    }
+  },
+  {
+    "monthDate": "2024-01-31T07:00:00.000Z",
+    "date": "2024-01-31T07:00:00.000Z",
+    "month": "2024-01",
+    "revenue": 210365,
+    "cogsPayroll": 10037,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 111315,
+    "cogsCommissions": 0,
+    "cogsOther": 2570,
+    "cogsTotal": 125368,
+    "payroll": 28492,
+    "ownerBasePay": 0,
+    "benefits": 2522,
+    "insurance": 600,
+    "professionalFees": 709,
+    "subcontractors": 633,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 6236,
+    "federalIncomeTaxes": 8897,
+    "phoneComm": 1632,
+    "infrastructure": 533,
+    "autoTravel": 1167,
+    "salesExpense": 3968,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 12096,
+    "interestExpense": 94,
+    "depreciationAmortization": 0,
+    "otherExpense": 4309,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 195800,
+    "ar": 155660,
+    "inventory": 7198,
+    "otherCA": 4056,
+    "tca": 362714,
+    "fixedAssets": 32781,
+    "otherAssets": 4522,
+    "totalAssets": 400017,
+    "ap": 30653,
+    "otherCL": 23253,
+    "tcl": 53906,
+    "ltd": 147009,
+    "totalLiab": 200915,
+    "ownersCapital": 0,
+    "ownersDraw": -651350,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 731069,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1499721,
+    "totalLAndE": 1700636,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 97900,
+        "Consulting": 97900
+      },
+      "ar": {
+        "Products": 77830,
+        "Consulting": 77830
+      },
+      "inventory": {
+        "Products": 3599,
+        "Consulting": 3599
+      },
+      "otherCA": {
+        "Products": 2028,
+        "Consulting": 2028
+      },
+      "fixedAssets": {
+        "Products": 67537,
+        "Consulting": 67121
+      },
+      "ap": {
+        "Products": 15326.5,
+        "Consulting": 15326.5
+      },
+      "otherCL": {
+        "Products": 11626.5,
+        "Consulting": 11626.5
+      },
+      "ltd": {
+        "Products": 73504.5,
+        "Consulting": 73504.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -521080,
+        "Consulting": -130270
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 584855.2,
+        "Consulting": 146213.8
+      },
+      "revenue": {
+        "Products": 165052,
+        "Consulting": 41263
+      },
+      "cogsMaterials": {
+        "Products": 89052,
+        "Consulting": 22263
+      },
+      "cogsOther": {
+        "Products": 2056,
+        "Consulting": 514
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 8029.6,
+        "Consulting": 2007.4
+      },
+      "insurance": {
+        "Products": 360,
+        "Consulting": 240
+      },
+      "autoTravel": {
+        "Products": 700.2,
+        "Consulting": 466.8
+      },
+      "otherExpense": {
+        "Products": 2585.4000000000005,
+        "Consulting": 1723.6000000000001
+      },
+      "subcontractors": {
+        "Products": 379.8,
+        "Consulting": 253.2
+      },
+      "payroll": {
+        "Products": 17095.2,
+        "Consulting": 11396.8
+      },
+      "benefits": {
+        "Products": 1513.2,
+        "Consulting": 1008.8
+      },
+      "interestExpense": {
+        "Products": 56.4,
+        "Consulting": 37.6
+      },
+      "salesExpense": {
+        "Products": 2380.8,
+        "Consulting": 1587.1999999999998
+      },
+      "infrastructure": {
+        "Products": 319.8,
+        "Consulting": 213.2
+      },
+      "professionalFees": {
+        "Products": 425.4,
+        "Consulting": 283.6
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "stateIncomeTaxes": {
+        "Products": 3741.6000000000004,
+        "Consulting": 2494.3999999999996
+      },
+      "phoneComm": {
+        "Products": 979.2,
+        "Consulting": 652.8
+      },
+      "mealsEntertainment": {
+        "Products": 7257.599999999999,
+        "Consulting": 4838.4
+      },
+      "federalIncomeTaxes": {
+        "Products": 5338.2,
+        "Consulting": 3558.8
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 165052,
+      "Consulting": 41263
+    },
+    "expenseBreakdown": {
+      "Products": 36288.600000000006,
+      "Consulting": 24192.4
+    },
+    "cogsBreakdown": {
+      "Products": 100294.40000000001,
+      "Consulting": 25073.600000000002
+    }
+  },
+  {
+    "monthDate": "2024-02-29T07:00:00.000Z",
+    "date": "2024-02-29T07:00:00.000Z",
+    "month": "2024-02",
+    "revenue": 127814,
+    "cogsPayroll": 9435,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 29809,
+    "cogsCommissions": 0,
+    "cogsOther": 2367,
+    "cogsTotal": 43057,
+    "payroll": 28215,
+    "ownerBasePay": 0,
+    "benefits": 2499,
+    "insurance": 444,
+    "professionalFees": 732,
+    "subcontractors": 3474,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 9998,
+    "phoneComm": 1483,
+    "infrastructure": 652,
+    "autoTravel": 1387,
+    "salesExpense": 4090,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3161,
+    "interestExpense": 89,
+    "depreciationAmortization": 0,
+    "otherExpense": 2519,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 151409,
+    "ar": 173158,
+    "inventory": 7198,
+    "otherCA": 3616,
+    "tca": 335381,
+    "fixedAssets": 42841,
+    "otherAssets": 4522,
+    "totalAssets": 382744,
+    "ap": 31591,
+    "otherCL": 21649,
+    "tcl": 53240,
+    "ltd": 145181,
+    "totalLiab": 198421,
+    "ownersCapital": 0,
+    "ownersDraw": -660719,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 727741,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1505762,
+    "totalLAndE": 1704183,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 75704.5,
+        "Consulting": 75704.5
+      },
+      "ar": {
+        "Products": 86579,
+        "Consulting": 86579
+      },
+      "inventory": {
+        "Products": 3599,
+        "Consulting": 3599
+      },
+      "otherCA": {
+        "Products": 1808,
+        "Consulting": 1808
+      },
+      "fixedAssets": {
+        "Products": 73039,
+        "Consulting": 73039
+      },
+      "ap": {
+        "Products": 15795.5,
+        "Consulting": 15795.5
+      },
+      "otherCL": {
+        "Products": 10824.5,
+        "Consulting": 10824.5
+      },
+      "ltd": {
+        "Products": 72590.5,
+        "Consulting": 72590.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -528575.2,
+        "Consulting": -132143.8
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 582192.8,
+        "Consulting": 145548.2
+      },
+      "revenue": {
+        "Products": 99011.20000000001,
+        "Consulting": 24752.800000000003
+      },
+      "cogsMaterials": {
+        "Products": 23847.2,
+        "Consulting": 5961.8
+      },
+      "cogsOther": {
+        "Products": 1893.6,
+        "Consulting": 473.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7548,
+        "Consulting": 1887
+      },
+      "insurance": {
+        "Products": 266.4,
+        "Consulting": 177.60000000000002
+      },
+      "autoTravel": {
+        "Products": 832.1999999999999,
+        "Consulting": 554.8
+      },
+      "otherExpense": {
+        "Products": 1511.4,
+        "Consulting": 1007.6
+      },
+      "subcontractors": {
+        "Products": 2084.4,
+        "Consulting": 1389.6000000000001
+      },
+      "payroll": {
+        "Products": 16929,
+        "Consulting": 11286
+      },
+      "benefits": {
+        "Products": 1499.4,
+        "Consulting": 999.6
+      },
+      "interestExpense": {
+        "Products": 53.4,
+        "Consulting": 35.6
+      },
+      "salesExpense": {
+        "Products": 2454.0000000000005,
+        "Consulting": 1636
+      },
+      "infrastructure": {
+        "Products": 391.2,
+        "Consulting": 260.8
+      },
+      "professionalFees": {
+        "Products": 439.20000000000005,
+        "Consulting": 292.79999999999995
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 889.8,
+        "Consulting": 593.2
+      },
+      "mealsEntertainment": {
+        "Products": 1896.6000000000001,
+        "Consulting": 1264.4
+      },
+      "federalIncomeTaxes": {
+        "Products": 5998.8,
+        "Consulting": 3999.2
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 99011.20000000001,
+      "Consulting": 24752.800000000003
+    },
+    "expenseBreakdown": {
+      "Products": 31482.600000000002,
+      "Consulting": 20988.400000000005
+    },
+    "cogsBreakdown": {
+      "Products": 34445.6,
+      "Consulting": 8611.4
+    }
+  },
+  {
+    "monthDate": "2024-03-31T07:00:00.000Z",
+    "date": "2024-03-31T07:00:00.000Z",
+    "month": "2024-03",
+    "revenue": 123718,
+    "cogsPayroll": 9509,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 31057,
+    "cogsCommissions": 0,
+    "cogsOther": 2647,
+    "cogsTotal": 44659,
+    "payroll": 28290,
+    "ownerBasePay": 0,
+    "benefits": 2502,
+    "insurance": 527,
+    "professionalFees": 867,
+    "subcontractors": 2163,
+    "rent": 3726,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 9358,
+    "phoneComm": 1504,
+    "infrastructure": 733,
+    "autoTravel": 1433,
+    "salesExpense": 1446,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 4190,
+    "interestExpense": 85,
+    "depreciationAmortization": 0,
+    "otherExpense": 3394,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 230872,
+    "ar": 109506,
+    "inventory": 7198,
+    "otherCA": 3175,
+    "tca": 350751,
+    "fixedAssets": 41483,
+    "otherAssets": 4522,
+    "totalAssets": 396756,
+    "ap": 14737,
+    "otherCL": 26854,
+    "tcl": 41591,
+    "ltd": 143349,
+    "totalLiab": 184940,
+    "ownersCapital": 0,
+    "ownersDraw": -670751,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 765266,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1553319,
+    "totalLAndE": 1738259,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 115436,
+        "Consulting": 115436
+      },
+      "ar": {
+        "Products": 54753,
+        "Consulting": 54753
+      },
+      "inventory": {
+        "Products": 3599,
+        "Consulting": 3599
+      },
+      "otherCA": {
+        "Products": 1587.5,
+        "Consulting": 1587.5
+      },
+      "fixedAssets": {
+        "Products": 73039,
+        "Consulting": 73039
+      },
+      "ap": {
+        "Products": 7368.5,
+        "Consulting": 7368.5
+      },
+      "otherCL": {
+        "Products": 13427,
+        "Consulting": 13427
+      },
+      "ltd": {
+        "Products": 71674.5,
+        "Consulting": 71674.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -536600.8,
+        "Consulting": -134150.2
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 612212.8,
+        "Consulting": 153053.2
+      },
+      "revenue": {
+        "Products": 95734.40000000001,
+        "Consulting": 23933.600000000002
+      },
+      "cogsMaterials": {
+        "Products": 24845.6,
+        "Consulting": 6211.4
+      },
+      "cogsOther": {
+        "Products": 2117.6,
+        "Consulting": 529.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7607.200000000001,
+        "Consulting": 1901.8000000000002
+      },
+      "insurance": {
+        "Products": 316.2,
+        "Consulting": 210.8
+      },
+      "autoTravel": {
+        "Products": 859.8,
+        "Consulting": 573.2
+      },
+      "otherExpense": {
+        "Products": 2036.4,
+        "Consulting": 1357.6
+      },
+      "subcontractors": {
+        "Products": 1297.8,
+        "Consulting": 865.2
+      },
+      "payroll": {
+        "Products": 16974,
+        "Consulting": 11316
+      },
+      "benefits": {
+        "Products": 1501.2,
+        "Consulting": 1000.8
+      },
+      "interestExpense": {
+        "Products": 51,
+        "Consulting": 34
+      },
+      "salesExpense": {
+        "Products": 867.6,
+        "Consulting": 578.4
+      },
+      "infrastructure": {
+        "Products": 439.8,
+        "Consulting": 293.2
+      },
+      "professionalFees": {
+        "Products": 520.2,
+        "Consulting": 346.79999999999995
+      },
+      "rent": {
+        "Products": 2235.6,
+        "Consulting": 1490.4
+      },
+      "phoneComm": {
+        "Products": 902.4000000000001,
+        "Consulting": 601.5999999999999
+      },
+      "mealsEntertainment": {
+        "Products": 2514,
+        "Consulting": 1676
+      },
+      "federalIncomeTaxes": {
+        "Products": 5614.8,
+        "Consulting": 3743.2
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 95734.40000000001,
+      "Consulting": 23933.600000000002
+    },
+    "expenseBreakdown": {
+      "Products": 30516,
+      "Consulting": 20344
+    },
+    "cogsBreakdown": {
+      "Products": 35727.2,
+      "Consulting": 8931.8
+    }
+  },
+  {
+    "monthDate": "2024-04-30T07:00:00.000Z",
+    "date": "2024-04-30T07:00:00.000Z",
+    "month": "2024-04",
+    "revenue": 123022,
+    "cogsPayroll": 9598,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 30004,
+    "cogsCommissions": 0,
+    "cogsOther": 2817,
+    "cogsTotal": 43865,
+    "payroll": 28114,
+    "ownerBasePay": 0,
+    "benefits": 2496,
+    "insurance": 351,
+    "professionalFees": 732,
+    "subcontractors": 912,
+    "rent": 112,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 8897,
+    "phoneComm": 1669,
+    "infrastructure": 1088,
+    "autoTravel": 1175,
+    "salesExpense": 2738,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 4139,
+    "interestExpense": 81,
+    "depreciationAmortization": 0,
+    "otherExpense": 4226,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 272433,
+    "ar": 102925,
+    "inventory": 7198,
+    "otherCA": 2746,
+    "tca": 385302,
+    "fixedAssets": 40533,
+    "otherAssets": 4522,
+    "totalAssets": 430357,
+    "ap": 22373,
+    "otherCL": 30303,
+    "tcl": 52676,
+    "ltd": 141512,
+    "totalLiab": 194188,
+    "ownersCapital": 0,
+    "ownersDraw": -671194,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 790059,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1578555,
+    "totalLAndE": 1772743,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 136216.5,
+        "Consulting": 136216.5
+      },
+      "ar": {
+        "Products": 51462.5,
+        "Consulting": 51462.5
+      },
+      "inventory": {
+        "Products": 3599,
+        "Consulting": 3599
+      },
+      "otherCA": {
+        "Products": 1373,
+        "Consulting": 1373
+      },
+      "fixedAssets": {
+        "Products": 73243.5,
+        "Consulting": 73243.5
+      },
+      "ap": {
+        "Products": 11186.5,
+        "Consulting": 11186.5
+      },
+      "otherCL": {
+        "Products": 15151.5,
+        "Consulting": 15151.5
+      },
+      "ltd": {
+        "Products": 70756,
+        "Consulting": 70756
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -536955.2,
+        "Consulting": -134238.8
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 632047.2,
+        "Consulting": 158011.8
+      },
+      "revenue": {
+        "Products": 95177.60000000002,
+        "Consulting": 23794.400000000005
+      },
+      "cogsMaterials": {
+        "Products": 24003.199999999997,
+        "Consulting": 6000.799999999999
+      },
+      "cogsOther": {
+        "Products": 2253.6,
+        "Consulting": 563.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7678.4,
+        "Consulting": 1919.6
+      },
+      "autoTravel": {
+        "Products": 705,
+        "Consulting": 470
+      },
+      "otherExpense": {
+        "Products": 2535.6,
+        "Consulting": 1690.4
+      },
+      "subcontractors": {
+        "Products": 547.2,
+        "Consulting": 364.8
+      },
+      "payroll": {
+        "Products": 16868.4,
+        "Consulting": 11245.6
+      },
+      "insurance": {
+        "Products": 210.60000000000002,
+        "Consulting": 140.39999999999998
+      },
+      "benefits": {
+        "Products": 1497.6,
+        "Consulting": 998.4
+      },
+      "interestExpense": {
+        "Products": 48.6,
+        "Consulting": 32.4
+      },
+      "salesExpense": {
+        "Products": 1642.8000000000002,
+        "Consulting": 1095.2
+      },
+      "infrastructure": {
+        "Products": 652.8,
+        "Consulting": 435.20000000000005
+      },
+      "professionalFees": {
+        "Products": 439.20000000000005,
+        "Consulting": 292.79999999999995
+      },
+      "rent": {
+        "Products": 67.2,
+        "Consulting": 44.8
+      },
+      "phoneComm": {
+        "Products": 1001.4,
+        "Consulting": 667.6
+      },
+      "mealsEntertainment": {
+        "Products": 2483.4,
+        "Consulting": 1655.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 5338.2,
+        "Consulting": 3558.8
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 95177.60000000002,
+      "Consulting": 23794.400000000005
+    },
+    "expenseBreakdown": {
+      "Products": 28699.8,
+      "Consulting": 19133.199999999997
+    },
+    "cogsBreakdown": {
+      "Products": 35091.99999999999,
+      "Consulting": 8772.999999999998
+    }
+  },
+  {
+    "monthDate": "2024-05-31T07:00:00.000Z",
+    "date": "2024-05-31T07:00:00.000Z",
+    "month": "2024-05",
+    "revenue": 117839,
+    "cogsPayroll": 9021,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 21656,
+    "cogsCommissions": 0,
+    "cogsOther": 2827,
+    "cogsTotal": 34950,
+    "payroll": 28116,
+    "ownerBasePay": 0,
+    "benefits": 2747,
+    "insurance": 683,
+    "professionalFees": 1229,
+    "subcontractors": 3601,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 2988,
+    "federalIncomeTaxes": 9998,
+    "phoneComm": 2181,
+    "infrastructure": 834,
+    "autoTravel": 2763,
+    "salesExpense": 1988,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2563,
+    "interestExpense": 76,
+    "depreciationAmortization": 0,
+    "otherExpense": 3165,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 315509,
+    "ar": 75102,
+    "inventory": 7198,
+    "otherCA": 2317,
+    "tca": 400126,
+    "fixedAssets": 39173,
+    "otherAssets": 4522,
+    "totalAssets": 443821,
+    "ap": 30574,
+    "otherCL": 26585,
+    "tcl": 57159,
+    "ltd": 139672,
+    "totalLiab": 196831,
+    "ownersCapital": 0,
+    "ownersDraw": -673450,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 803138,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1593890,
+    "totalLAndE": 1790721,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 157754.5,
+        "Consulting": 157754.5
+      },
+      "ar": {
+        "Products": 37551,
+        "Consulting": 37551
+      },
+      "inventory": {
+        "Products": 3599,
+        "Consulting": 3599
+      },
+      "otherCA": {
+        "Products": 1158.5,
+        "Consulting": 1158.5
+      },
+      "fixedAssets": {
+        "Products": 73243.5,
+        "Consulting": 73243.5
+      },
+      "ap": {
+        "Products": 15287,
+        "Consulting": 15287
+      },
+      "otherCL": {
+        "Products": 13292.5,
+        "Consulting": 13292.5
+      },
+      "ltd": {
+        "Products": 69836,
+        "Consulting": 69836
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -538760,
+        "Consulting": -134690
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 642510.4,
+        "Consulting": 160627.6
+      },
+      "revenue": {
+        "Products": 87031.2,
+        "Consulting": 21757.8
+      },
+      "cogsMaterials": {
+        "Products": 17324.8,
+        "Consulting": 4331.2
+      },
+      "cogsOther": {
+        "Products": 2261.6,
+        "Consulting": 565.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 7216.799999999999,
+        "Consulting": 1804.1999999999998
+      },
+      "insurance": {
+        "Products": 409.8,
+        "Consulting": 273.2
+      },
+      "autoTravel": {
+        "Products": 1657.8000000000002,
+        "Consulting": 1105.2
+      },
+      "infrastructure": {
+        "Products": 500.4,
+        "Consulting": 333.6
+      },
+      "otherExpense": {
+        "Products": 1899,
+        "Consulting": 1266
+      },
+      "subcontractors": {
+        "Products": 2160.6,
+        "Consulting": 1440.3999999999999
+      },
+      "payroll": {
+        "Products": 16869.600000000002,
+        "Consulting": 11246.4
+      },
+      "benefits": {
+        "Products": 1648.2,
+        "Consulting": 1098.8
+      },
+      "interestExpense": {
+        "Products": 45.6,
+        "Consulting": 30.4
+      },
+      "salesExpense": {
+        "Products": 1192.8,
+        "Consulting": 795.2
+      },
+      "professionalFees": {
+        "Products": 737.4,
+        "Consulting": 491.6
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "phoneComm": {
+        "Products": 1308.6,
+        "Consulting": 872.4000000000001
+      },
+      "mealsEntertainment": {
+        "Products": 1537.8,
+        "Consulting": 1025.2
+      },
+      "federalIncomeTaxes": {
+        "Products": 5998.8,
+        "Consulting": 3999.2
+      },
+      "stateIncomeTaxes": {
+        "Products": 1792.8,
+        "Consulting": 1195.2
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 87031.2,
+      "Consulting": 21757.8
+    },
+    "expenseBreakdown": {
+      "Products": 32270.4,
+      "Consulting": 21513.600000000002
+    },
+    "cogsBreakdown": {
+      "Products": 27959.999999999996,
+      "Consulting": 6989.999999999999
+    }
+  },
+  {
+    "monthDate": "2024-06-30T07:00:00.000Z",
+    "date": "2024-06-30T07:00:00.000Z",
+    "month": "2024-06",
+    "revenue": 130296,
+    "cogsPayroll": 8580,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 27330,
+    "cogsCommissions": 0,
+    "cogsOther": 2482,
+    "cogsTotal": 39838,
+    "payroll": 28570,
+    "ownerBasePay": 0,
+    "benefits": 2170,
+    "insurance": 713,
+    "professionalFees": 747,
+    "subcontractors": 4362,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 2988,
+    "federalIncomeTaxes": 10435,
+    "phoneComm": 2060,
+    "infrastructure": 828,
+    "autoTravel": 3245,
+    "salesExpense": 2014,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2793,
+    "interestExpense": 72,
+    "depreciationAmortization": 0,
+    "otherExpense": 3767,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 379625,
+    "ar": 61753,
+    "inventory": 7421,
+    "otherCA": 1887,
+    "tca": 450686,
+    "fixedAssets": 38304,
+    "otherAssets": 4522,
+    "totalAssets": 493512,
+    "ap": 27166,
+    "otherCL": 30006,
+    "tcl": 57172,
+    "ltd": 137826,
+    "totalLiab": 194998,
+    "ownersCapital": 0,
+    "ownersDraw": -679052,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 860262,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1656616,
+    "totalLAndE": 1851614,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 189812.5,
+        "Consulting": 189812.5
+      },
+      "ar": {
+        "Products": 30876.5,
+        "Consulting": 30876.5
+      },
+      "inventory": {
+        "Products": 3710.5,
+        "Consulting": 3710.5
+      },
+      "otherCA": {
+        "Products": 943.5,
+        "Consulting": 943.5
+      },
+      "fixedAssets": {
+        "Products": 73491.5,
+        "Consulting": 73491.5
+      },
+      "ap": {
+        "Products": 13583,
+        "Consulting": 13583
+      },
+      "otherCL": {
+        "Products": 15003,
+        "Consulting": 15003
+      },
+      "ltd": {
+        "Products": 68913,
+        "Consulting": 68913
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -543241.6,
+        "Consulting": -135810.4
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 688209.6,
+        "Consulting": 172052.4
+      },
+      "revenue": {
+        "Products": 100996.79999999997,
+        "Consulting": 25249.199999999993
+      },
+      "cogsMaterials": {
+        "Products": 21864,
+        "Consulting": 5466
+      },
+      "cogsOther": {
+        "Products": 1985.6,
+        "Consulting": 496.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 6864,
+        "Consulting": 1716
+      },
+      "insurance": {
+        "Products": 427.8,
+        "Consulting": 285.2
+      },
+      "autoTravel": {
+        "Products": 1947,
+        "Consulting": 1298
+      },
+      "otherExpense": {
+        "Products": 2260.2000000000003,
+        "Consulting": 1506.8
+      },
+      "subcontractors": {
+        "Products": 2617.2,
+        "Consulting": 1744.8
+      },
+      "payroll": {
+        "Products": 17142,
+        "Consulting": 11428
+      },
+      "benefits": {
+        "Products": 1302,
+        "Consulting": 868
+      },
+      "interestExpense": {
+        "Products": 43.2,
+        "Consulting": 28.8
+      },
+      "salesExpense": {
+        "Products": 1208.4,
+        "Consulting": 805.6
+      },
+      "infrastructure": {
+        "Products": 496.8,
+        "Consulting": 331.2
+      },
+      "professionalFees": {
+        "Products": 448.20000000000005,
+        "Consulting": 298.79999999999995
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "phoneComm": {
+        "Products": 1236,
+        "Consulting": 824
+      },
+      "mealsEntertainment": {
+        "Products": 1675.8,
+        "Consulting": 1117.2
+      },
+      "federalIncomeTaxes": {
+        "Products": 6261,
+        "Consulting": 4174
+      },
+      "stateIncomeTaxes": {
+        "Products": 1792.8,
+        "Consulting": 1195.2
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 100996.79999999997,
+      "Consulting": 25249.199999999993
+    },
+    "expenseBreakdown": {
+      "Products": 33107.4,
+      "Consulting": 22071.6
+    },
+    "cogsBreakdown": {
+      "Products": 31870.399999999998,
+      "Consulting": 7967.599999999999
+    }
+  },
+  {
+    "monthDate": "2024-07-31T07:00:00.000Z",
+    "date": "2024-07-31T07:00:00.000Z",
+    "month": "2024-07",
+    "revenue": 139522,
+    "cogsPayroll": -15044,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 26582,
+    "cogsCommissions": 0,
+    "cogsOther": 2482,
+    "cogsTotal": 15466,
+    "payroll": 46081,
+    "ownerBasePay": 0,
+    "benefits": 9506,
+    "insurance": 351,
+    "professionalFees": 664,
+    "subcontractors": 5118,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 6020,
+    "federalIncomeTaxes": 10435,
+    "phoneComm": 1970,
+    "infrastructure": 1417,
+    "autoTravel": 1570,
+    "salesExpense": 919,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 4329,
+    "interestExpense": 68,
+    "depreciationAmortization": 0,
+    "otherExpense": 12794,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 374987,
+    "ar": 80918,
+    "inventory": 7421,
+    "otherCA": 3772,
+    "tca": 467098,
+    "fixedAssets": 34270,
+    "otherAssets": 4522,
+    "totalAssets": 505890,
+    "ap": 45329,
+    "otherCL": 43167,
+    "tcl": 88496,
+    "ltd": 135977,
+    "totalLiab": 224473,
+    "ownersCapital": 0,
+    "ownersDraw": -245269,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 409350,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 771921,
+    "totalLAndE": 996394,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 187493.5,
+        "Consulting": 187493.5
+      },
+      "ar": {
+        "Products": 40459,
+        "Consulting": 40459
+      },
+      "inventory": {
+        "Products": 3710.5,
+        "Consulting": 3710.5
+      },
+      "otherCA": {
+        "Products": 1886,
+        "Consulting": 1886
+      },
+      "fixedAssets": {
+        "Products": 65699.8,
+        "Consulting": 65693.2
+      },
+      "ap": {
+        "Products": 22664.5,
+        "Consulting": 22664.5
+      },
+      "otherCL": {
+        "Products": 21583.5,
+        "Consulting": 21583.5
+      },
+      "ltd": {
+        "Products": 67988.5,
+        "Consulting": 67988.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -196215.2,
+        "Consulting": -49053.8
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 327480,
+        "Consulting": 81870
+      },
+      "revenue": {
+        "Products": 108377.59999999999,
+        "Consulting": 27094.399999999998
+      },
+      "cogsMaterials": {
+        "Products": 21265.6,
+        "Consulting": 5316.4
+      },
+      "cogsOther": {
+        "Products": 1985.6,
+        "Consulting": 496.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": -12035.199999999999,
+        "Consulting": -3008.7999999999997
+      },
+      "autoTravel": {
+        "Products": 942.0000000000001,
+        "Consulting": 628
+      },
+      "infrastructure": {
+        "Products": 850.2,
+        "Consulting": 566.8
+      },
+      "otherExpense": {
+        "Products": 7676.400000000001,
+        "Consulting": 5117.6
+      },
+      "subcontractors": {
+        "Products": 3070.7999999999997,
+        "Consulting": 2047.2
+      },
+      "payroll": {
+        "Products": 27648.6,
+        "Consulting": 18432.4
+      },
+      "insurance": {
+        "Products": 210.60000000000002,
+        "Consulting": 140.39999999999998
+      },
+      "benefits": {
+        "Products": 5703.6,
+        "Consulting": 3802.4
+      },
+      "interestExpense": {
+        "Products": 40.8,
+        "Consulting": 27.2
+      },
+      "salesExpense": {
+        "Products": 551.4000000000001,
+        "Consulting": 367.59999999999997
+      },
+      "professionalFees": {
+        "Products": 398.4,
+        "Consulting": 265.6
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "stateIncomeTaxes": {
+        "Products": 3612,
+        "Consulting": 2408
+      },
+      "phoneComm": {
+        "Products": 1182,
+        "Consulting": 788
+      },
+      "mealsEntertainment": {
+        "Products": 2597.4,
+        "Consulting": 1731.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 6261,
+        "Consulting": 4174
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 108377.59999999999,
+      "Consulting": 27094.399999999998
+    },
+    "expenseBreakdown": {
+      "Products": 53175.00000000001,
+      "Consulting": 35450
+    },
+    "cogsBreakdown": {
+      "Products": 12372.799999999997,
+      "Consulting": 3093.1999999999994
+    }
+  },
+  {
+    "monthDate": "2024-08-31T07:00:00.000Z",
+    "date": "2024-08-31T07:00:00.000Z",
+    "month": "2024-08",
+    "revenue": 136967,
+    "cogsPayroll": 10716,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 41912,
+    "cogsCommissions": 0,
+    "cogsOther": 2482,
+    "cogsTotal": 56556,
+    "payroll": 32744,
+    "ownerBasePay": 0,
+    "benefits": 3002,
+    "insurance": 504,
+    "professionalFees": 1064,
+    "subcontractors": 5650,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 4156,
+    "federalIncomeTaxes": 12139,
+    "phoneComm": 2008,
+    "infrastructure": 879,
+    "autoTravel": 1211,
+    "salesExpense": 2724,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 4074,
+    "interestExpense": 63,
+    "depreciationAmortization": 0,
+    "otherExpense": 2564,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 342513,
+    "ar": 89812,
+    "inventory": 7643,
+    "otherCA": 3261,
+    "tca": 443229,
+    "fixedAssets": 32833,
+    "otherAssets": 4522,
+    "totalAssets": 480584,
+    "ap": 57971,
+    "otherCL": 11963,
+    "tcl": 69934,
+    "ltd": 134124,
+    "totalLiab": 204058,
+    "ownersCapital": 0,
+    "ownersDraw": -3217,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 162442,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 282961,
+    "totalLAndE": 487019,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 171256.5,
+        "Consulting": 171256.5
+      },
+      "ar": {
+        "Products": 44906,
+        "Consulting": 44906
+      },
+      "inventory": {
+        "Products": 3821.5,
+        "Consulting": 3821.5
+      },
+      "otherCA": {
+        "Products": 1630.5,
+        "Consulting": 1630.5
+      },
+      "fixedAssets": {
+        "Products": 65661,
+        "Consulting": 65661
+      },
+      "ap": {
+        "Products": 28985.5,
+        "Consulting": 28985.5
+      },
+      "otherCL": {
+        "Products": 5981.5,
+        "Consulting": 5981.5
+      },
+      "ltd": {
+        "Products": 67062,
+        "Consulting": 67062
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -2573.6,
+        "Consulting": -643.4
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 129953.6,
+        "Consulting": 32488.4
+      },
+      "revenue": {
+        "Products": 107293.6,
+        "Consulting": 26823.4
+      },
+      "cogsMaterials": {
+        "Products": 33529.6,
+        "Consulting": 8382.4
+      },
+      "cogsOther": {
+        "Products": 1985.6,
+        "Consulting": 496.4
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 8572.8,
+        "Consulting": 2143.2
+      },
+      "insurance": {
+        "Products": 302.4,
+        "Consulting": 201.60000000000002
+      },
+      "autoTravel": {
+        "Products": 726.5999999999999,
+        "Consulting": 484.4
+      },
+      "otherExpense": {
+        "Products": 1538.3999999999999,
+        "Consulting": 1025.6000000000001
+      },
+      "subcontractors": {
+        "Products": 3390,
+        "Consulting": 2260
+      },
+      "payroll": {
+        "Products": 19646.399999999998,
+        "Consulting": 13097.6
+      },
+      "benefits": {
+        "Products": 1801.1999999999998,
+        "Consulting": 1200.8000000000002
+      },
+      "interestExpense": {
+        "Products": 37.8,
+        "Consulting": 25.2
+      },
+      "salesExpense": {
+        "Products": 1634.3999999999999,
+        "Consulting": 1089.6
+      },
+      "infrastructure": {
+        "Products": 527.4,
+        "Consulting": 351.6
+      },
+      "professionalFees": {
+        "Products": 638.4,
+        "Consulting": 425.6
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "phoneComm": {
+        "Products": 1204.8,
+        "Consulting": 803.2
+      },
+      "mealsEntertainment": {
+        "Products": 2444.3999999999996,
+        "Consulting": 1629.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 7283.4,
+        "Consulting": 4855.6
+      },
+      "stateIncomeTaxes": {
+        "Products": 2493.6,
+        "Consulting": 1662.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 107293.6,
+      "Consulting": 26823.4
+    },
+    "expenseBreakdown": {
+      "Products": 36195,
+      "Consulting": 24129.999999999996
+    },
+    "cogsBreakdown": {
+      "Products": 45244.8,
+      "Consulting": 11311.2
+    }
+  },
+  {
+    "monthDate": "2024-09-30T07:00:00.000Z",
+    "date": "2024-09-30T07:00:00.000Z",
+    "month": "2024-09",
+    "revenue": 172367,
+    "cogsPayroll": 10258,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 35086,
+    "cogsCommissions": 0,
+    "cogsOther": 2585,
+    "cogsTotal": 49375,
+    "payroll": 33947,
+    "ownerBasePay": 0,
+    "benefits": 3094,
+    "insurance": 504,
+    "professionalFees": 2147,
+    "subcontractors": 2625,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 4156,
+    "federalIncomeTaxes": 12139,
+    "phoneComm": 1768,
+    "infrastructure": 922,
+    "autoTravel": 2710,
+    "salesExpense": 1590,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 8780,
+    "interestExpense": 59,
+    "depreciationAmortization": 0,
+    "otherExpense": 5485,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 405215,
+    "ar": 72292,
+    "inventory": 7726,
+    "otherCA": 2829,
+    "tca": 488062,
+    "fixedAssets": 32220,
+    "otherAssets": 4522,
+    "totalAssets": 524804,
+    "ap": 63346,
+    "otherCL": 10819,
+    "tcl": 74165,
+    "ltd": 132265,
+    "totalLiab": 206430,
+    "ownersCapital": 0,
+    "ownersDraw": -11756,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 212827,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 341885,
+    "totalLAndE": 548315,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 202607.5,
+        "Consulting": 202607.5
+      },
+      "ar": {
+        "Products": 36146,
+        "Consulting": 36146
+      },
+      "inventory": {
+        "Products": 3863,
+        "Consulting": 3863
+      },
+      "otherCA": {
+        "Products": 1414.5,
+        "Consulting": 1414.5
+      },
+      "fixedAssets": {
+        "Products": 66036.5,
+        "Consulting": 66036.5
+      },
+      "ap": {
+        "Products": 31673,
+        "Consulting": 31673
+      },
+      "otherCL": {
+        "Products": 5409.5,
+        "Consulting": 5409.5
+      },
+      "ltd": {
+        "Products": 66132.5,
+        "Consulting": 66132.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -9404.8,
+        "Consulting": -2351.2
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 170261.6,
+        "Consulting": 42565.4
+      },
+      "revenue": {
+        "Products": 124692.79999999999,
+        "Consulting": 31173.199999999997
+      },
+      "cogsMaterials": {
+        "Products": 28068.800000000003,
+        "Consulting": 7017.200000000001
+      },
+      "cogsOther": {
+        "Products": 2068,
+        "Consulting": 517
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 8206.4,
+        "Consulting": 2051.6
+      },
+      "insurance": {
+        "Products": 302.4,
+        "Consulting": 201.60000000000002
+      },
+      "autoTravel": {
+        "Products": 1626,
+        "Consulting": 1084
+      },
+      "infrastructure": {
+        "Products": 553.2,
+        "Consulting": 368.79999999999995
+      },
+      "otherExpense": {
+        "Products": 3291,
+        "Consulting": 2194
+      },
+      "subcontractors": {
+        "Products": 1575,
+        "Consulting": 1050
+      },
+      "payroll": {
+        "Products": 20368.2,
+        "Consulting": 13578.8
+      },
+      "benefits": {
+        "Products": 1856.4,
+        "Consulting": 1237.6
+      },
+      "interestExpense": {
+        "Products": 35.4,
+        "Consulting": 23.6
+      },
+      "salesExpense": {
+        "Products": 954,
+        "Consulting": 636
+      },
+      "professionalFees": {
+        "Products": 1288.2,
+        "Consulting": 858.8
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "phoneComm": {
+        "Products": 1060.8000000000002,
+        "Consulting": 707.1999999999999
+      },
+      "mealsEntertainment": {
+        "Products": 5268.000000000001,
+        "Consulting": 3512
+      },
+      "federalIncomeTaxes": {
+        "Products": 7283.4,
+        "Consulting": 4855.6
+      },
+      "stateIncomeTaxes": {
+        "Products": 2493.6,
+        "Consulting": 1662.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 124692.79999999999,
+      "Consulting": 31173.199999999997
+    },
+    "expenseBreakdown": {
+      "Products": 40481.40000000001,
+      "Consulting": 26987.599999999995
+    },
+    "cogsBreakdown": {
+      "Products": 39500,
+      "Consulting": 9875
+    }
+  },
+  {
+    "monthDate": "2024-10-31T07:00:00.000Z",
+    "date": "2024-10-31T07:00:00.000Z",
+    "month": "2024-10",
+    "revenue": 180774,
+    "cogsPayroll": 11424,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 1446,
+    "cogsMaterials": 47248,
+    "cogsCommissions": 0,
+    "cogsOther": 2585,
+    "cogsTotal": 62703,
+    "payroll": 33267,
+    "ownerBasePay": 0,
+    "benefits": 2012,
+    "insurance": 478,
+    "professionalFees": 995,
+    "subcontractors": 801,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 4156,
+    "federalIncomeTaxes": 12139,
+    "phoneComm": 1480,
+    "infrastructure": 870,
+    "autoTravel": 980,
+    "salesExpense": 1074,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2779,
+    "interestExpense": 55,
+    "depreciationAmortization": 0,
+    "otherExpense": 2627,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 378408,
+    "ar": 38922,
+    "inventory": 7761,
+    "otherCA": 2396,
+    "tca": 427487,
+    "fixedAssets": 30816,
+    "otherAssets": 4522,
+    "totalAssets": 462825,
+    "ap": 39849,
+    "otherCL": 16878,
+    "tcl": 56727,
+    "ltd": 130403,
+    "totalLiab": 187130,
+    "ownersCapital": 0,
+    "ownersDraw": -13850,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 172244,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 303396,
+    "totalLAndE": 490526,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 189204,
+        "Consulting": 189204
+      },
+      "ar": {
+        "Products": 19461,
+        "Consulting": 19461
+      },
+      "inventory": {
+        "Products": 3880.5,
+        "Consulting": 3880.5
+      },
+      "otherCA": {
+        "Products": 1198,
+        "Consulting": 1198
+      },
+      "fixedAssets": {
+        "Products": 66017.5,
+        "Consulting": 66017.5
+      },
+      "ap": {
+        "Products": 19924.5,
+        "Consulting": 19924.5
+      },
+      "otherCL": {
+        "Products": 8439,
+        "Consulting": 8439
+      },
+      "ltd": {
+        "Products": 65201.5,
+        "Consulting": 65201.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -11080,
+        "Consulting": -2770
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 137795.2,
+        "Consulting": 34448.8
+      },
+      "revenue": {
+        "Products": 135009.6,
+        "Consulting": 33752.4
+      },
+      "cogsMaterials": {
+        "Products": 37798.4,
+        "Consulting": 9449.6
+      },
+      "cogsOther": {
+        "Products": 2068,
+        "Consulting": 517
+      },
+      "cogsContractors": {
+        "Products": 1156.8,
+        "Consulting": 289.2
+      },
+      "cogsPayroll": {
+        "Products": 9139.2,
+        "Consulting": 2284.8
+      },
+      "insurance": {
+        "Products": 286.8,
+        "Consulting": 191.2
+      },
+      "autoTravel": {
+        "Products": 588,
+        "Consulting": 392
+      },
+      "infrastructure": {
+        "Products": 522,
+        "Consulting": 348
+      },
+      "otherExpense": {
+        "Products": 1576.2,
+        "Consulting": 1050.8
+      },
+      "subcontractors": {
+        "Products": 480.6,
+        "Consulting": 320.4
+      },
+      "payroll": {
+        "Products": 19960.2,
+        "Consulting": 13306.800000000001
+      },
+      "benefits": {
+        "Products": 1207.2,
+        "Consulting": 804.8
+      },
+      "interestExpense": {
+        "Products": 33,
+        "Consulting": 22
+      },
+      "salesExpense": {
+        "Products": 644.4000000000001,
+        "Consulting": 429.6
+      },
+      "professionalFees": {
+        "Products": 597,
+        "Consulting": 398
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "phoneComm": {
+        "Products": 888,
+        "Consulting": 592
+      },
+      "mealsEntertainment": {
+        "Products": 1667.4,
+        "Consulting": 1111.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 7283.4,
+        "Consulting": 4855.6
+      },
+      "stateIncomeTaxes": {
+        "Products": 2493.6,
+        "Consulting": 1662.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 135009.6,
+      "Consulting": 33752.4
+    },
+    "expenseBreakdown": {
+      "Products": 30753.600000000002,
+      "Consulting": 20502.399999999998
+    },
+    "cogsBreakdown": {
+      "Products": 50162.40000000001,
+      "Consulting": 12540.600000000002
+    }
+  },
+  {
+    "monthDate": "2024-11-30T07:00:00.000Z",
+    "date": "2024-11-30T07:00:00.000Z",
+    "month": "2024-11",
+    "revenue": 159572,
+    "cogsPayroll": 11786,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 2176,
+    "cogsMaterials": 36925,
+    "cogsCommissions": 0,
+    "cogsOther": 2735,
+    "cogsTotal": 53622,
+    "payroll": 28517,
+    "ownerBasePay": 0,
+    "benefits": 3146,
+    "insurance": 478,
+    "professionalFees": 1134,
+    "subcontractors": 801,
+    "rent": 4505,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 8307,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1421,
+    "infrastructure": 1647,
+    "autoTravel": 2623,
+    "salesExpense": 1405,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2310,
+    "interestExpense": 50,
+    "depreciationAmortization": 0,
+    "otherExpense": 6090,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 288576,
+    "ar": 81250,
+    "inventory": 7815,
+    "otherCA": 5166,
+    "tca": 382807,
+    "fixedAssets": 29446,
+    "otherAssets": 4522,
+    "totalAssets": 416775,
+    "ap": 36710,
+    "otherCL": 14756,
+    "tcl": 51466,
+    "ltd": 128537,
+    "totalLiab": 180003,
+    "ownersCapital": 0,
+    "ownersDraw": -47493,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 166932,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 331727,
+    "totalLAndE": 511730,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 144288,
+        "Consulting": 144288
+      },
+      "ar": {
+        "Products": 40625,
+        "Consulting": 40625
+      },
+      "inventory": {
+        "Products": 3907.5,
+        "Consulting": 3907.5
+      },
+      "otherCA": {
+        "Products": 2583,
+        "Consulting": 2583
+      },
+      "fixedAssets": {
+        "Products": 66018.8,
+        "Consulting": 66012.2
+      },
+      "ap": {
+        "Products": 18355,
+        "Consulting": 18355
+      },
+      "otherCL": {
+        "Products": 7378,
+        "Consulting": 7378
+      },
+      "ltd": {
+        "Products": 64268.5,
+        "Consulting": 64268.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -37994.4,
+        "Consulting": -9498.6
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 133545.59999999998,
+        "Consulting": 33386.399999999994
+      },
+      "revenue": {
+        "Products": 110472,
+        "Consulting": 27618
+      },
+      "cogsMaterials": {
+        "Products": 29540,
+        "Consulting": 7385
+      },
+      "cogsOther": {
+        "Products": 2188,
+        "Consulting": 547
+      },
+      "cogsContractors": {
+        "Products": 1740.8,
+        "Consulting": 435.2
+      },
+      "cogsPayroll": {
+        "Products": 9428.8,
+        "Consulting": 2357.2
+      },
+      "insurance": {
+        "Products": 286.8,
+        "Consulting": 191.2
+      },
+      "autoTravel": {
+        "Products": 1573.8,
+        "Consulting": 1049.2
+      },
+      "infrastructure": {
+        "Products": 988.1999999999999,
+        "Consulting": 658.8
+      },
+      "otherExpense": {
+        "Products": 3654,
+        "Consulting": 2436
+      },
+      "subcontractors": {
+        "Products": 480.6,
+        "Consulting": 320.4
+      },
+      "payroll": {
+        "Products": 17110.2,
+        "Consulting": 11406.800000000001
+      },
+      "benefits": {
+        "Products": 1887.6,
+        "Consulting": 1258.4
+      },
+      "interestExpense": {
+        "Products": 30,
+        "Consulting": 20
+      },
+      "salesExpense": {
+        "Products": 843,
+        "Consulting": 562
+      },
+      "professionalFees": {
+        "Products": 680.4,
+        "Consulting": 453.6
+      },
+      "rent": {
+        "Products": 2703,
+        "Consulting": 1802
+      },
+      "stateIncomeTaxes": {
+        "Products": 4984.2,
+        "Consulting": 3322.8
+      },
+      "phoneComm": {
+        "Products": 852.6,
+        "Consulting": 568.4
+      },
+      "mealsEntertainment": {
+        "Products": 1386,
+        "Consulting": 924
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 110472,
+      "Consulting": 27618
+    },
+    "expenseBreakdown": {
+      "Products": 32476.199999999997,
+      "Consulting": 21650.800000000003
+    },
+    "cogsBreakdown": {
+      "Products": 42897.600000000006,
+      "Consulting": 10724.400000000001
+    }
+  },
+  {
+    "monthDate": "2024-12-31T07:00:00.000Z",
+    "date": "2024-12-31T07:00:00.000Z",
+    "month": "2024-12",
+    "revenue": 173396,
+    "cogsPayroll": 12212,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 46734,
+    "cogsCommissions": 0,
+    "cogsOther": 2585,
+    "cogsTotal": 62262,
+    "payroll": 25125,
+    "ownerBasePay": 0,
+    "benefits": 2233,
+    "insurance": 478,
+    "professionalFees": 3834,
+    "subcontractors": 2535,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 5541,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1755,
+    "infrastructure": 476,
+    "autoTravel": 1311,
+    "salesExpense": 1084,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3428,
+    "interestExpense": 46,
+    "depreciationAmortization": 0,
+    "otherExpense": 2429,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 364185,
+    "ar": 49466,
+    "inventory": 11036,
+    "otherCA": 4444,
+    "tca": 429131,
+    "fixedAssets": 38668,
+    "otherAssets": 4522,
+    "totalAssets": 472321,
+    "ap": 28844,
+    "otherCL": 18446,
+    "tcl": 47290,
+    "ltd": 126665,
+    "totalLiab": 173955,
+    "ownersCapital": 0,
+    "ownersDraw": -48133,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 226186,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 391621,
+    "totalLAndE": 565576,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 182092.5,
+        "Consulting": 182092.5
+      },
+      "ar": {
+        "Products": 24733,
+        "Consulting": 24733
+      },
+      "inventory": {
+        "Products": 5518,
+        "Consulting": 5518
+      },
+      "otherCA": {
+        "Products": 2222,
+        "Consulting": 2222
+      },
+      "fixedAssets": {
+        "Products": 71610.1,
+        "Consulting": 71007.9
+      },
+      "ap": {
+        "Products": 14422,
+        "Consulting": 14422
+      },
+      "otherCL": {
+        "Products": 9223,
+        "Consulting": 9223
+      },
+      "ltd": {
+        "Products": 63332.5,
+        "Consulting": 63332.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -38506.4,
+        "Consulting": -9626.6
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 180948.8,
+        "Consulting": 45237.2
+      },
+      "revenue": {
+        "Products": 124413.6,
+        "Consulting": 31103.4
+      },
+      "cogsMaterials": {
+        "Products": 37387.2,
+        "Consulting": 9346.8
+      },
+      "cogsOther": {
+        "Products": 2068,
+        "Consulting": 517
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 9769.599999999999,
+        "Consulting": 2442.3999999999996
+      },
+      "insurance": {
+        "Products": 286.8,
+        "Consulting": 191.2
+      },
+      "autoTravel": {
+        "Products": 786.6000000000001,
+        "Consulting": 524.4
+      },
+      "otherExpense": {
+        "Products": 1457.3999999999999,
+        "Consulting": 971.6
+      },
+      "subcontractors": {
+        "Products": 1521,
+        "Consulting": 1014
+      },
+      "payroll": {
+        "Products": 15075,
+        "Consulting": 10050
+      },
+      "benefits": {
+        "Products": 1339.8,
+        "Consulting": 893.2
+      },
+      "interestExpense": {
+        "Products": 27.6,
+        "Consulting": 18.4
+      },
+      "salesExpense": {
+        "Products": 650.4000000000001,
+        "Consulting": 433.6
+      },
+      "infrastructure": {
+        "Products": 285.6,
+        "Consulting": 190.39999999999998
+      },
+      "professionalFees": {
+        "Products": 2300.4,
+        "Consulting": 1533.6
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "phoneComm": {
+        "Products": 1053,
+        "Consulting": 702
+      },
+      "mealsEntertainment": {
+        "Products": 2056.8,
+        "Consulting": 1371.2
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      },
+      "stateIncomeTaxes": {
+        "Products": 3324.6,
+        "Consulting": 2216.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 124413.6,
+      "Consulting": 31103.4
+    },
+    "expenseBreakdown": {
+      "Products": 29143.199999999997,
+      "Consulting": 19428.800000000003
+    },
+    "cogsBreakdown": {
+      "Products": 49809.6,
+      "Consulting": 12452.4
+    }
+  },
+  {
+    "monthDate": "2025-01-31T07:00:00.000Z",
+    "date": "2025-01-31T07:00:00.000Z",
+    "month": "2025-01",
+    "revenue": 166817,
+    "cogsPayroll": 9386,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 44505,
+    "cogsCommissions": 0,
+    "cogsOther": 2585,
+    "cogsTotal": 57207,
+    "payroll": 21498,
+    "ownerBasePay": 0,
+    "benefits": 2580,
+    "insurance": 478,
+    "professionalFees": 912,
+    "subcontractors": 4070,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 8125,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1635,
+    "infrastructure": 619,
+    "autoTravel": 2582,
+    "salesExpense": 1112,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2377,
+    "interestExpense": 41,
+    "depreciationAmortization": 0,
+    "otherExpense": 4676,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 328866,
+    "ar": 84107,
+    "inventory": 9682,
+    "otherCA": 6849,
+    "tca": 429504,
+    "fixedAssets": 36464,
+    "otherAssets": 4522,
+    "totalAssets": 470490,
+    "ap": 28179,
+    "otherCL": 16245,
+    "tcl": 44424,
+    "ltd": 124789,
+    "totalLiab": 169213,
+    "ownersCapital": 0,
+    "ownersDraw": -55046,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 239019,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 411367,
+    "totalLAndE": 580580,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 164433,
+        "Consulting": 164433
+      },
+      "ar": {
+        "Products": 42053.5,
+        "Consulting": 42053.5
+      },
+      "inventory": {
+        "Products": 4841,
+        "Consulting": 4841
+      },
+      "otherCA": {
+        "Products": 3424.5,
+        "Consulting": 3424.5
+      },
+      "fixedAssets": {
+        "Products": 70889.5,
+        "Consulting": 70889.5
+      },
+      "ap": {
+        "Products": 14089.5,
+        "Consulting": 14089.5
+      },
+      "otherCL": {
+        "Products": 8122.5,
+        "Consulting": 8122.5
+      },
+      "ltd": {
+        "Products": 62394.5,
+        "Consulting": 62394.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -44036.8,
+        "Consulting": -11009.2
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 191215.2,
+        "Consulting": 47803.8
+      },
+      "revenue": {
+        "Products": 124668.8,
+        "Consulting": 31167.2
+      },
+      "cogsMaterials": {
+        "Products": 35604,
+        "Consulting": 8901
+      },
+      "cogsOther": {
+        "Products": 2068,
+        "Consulting": 517
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 7508.8,
+        "Consulting": 1877.2
+      },
+      "insurance": {
+        "Products": 286.8,
+        "Consulting": 191.2
+      },
+      "autoTravel": {
+        "Products": 1549.2,
+        "Consulting": 1032.8
+      },
+      "otherExpense": {
+        "Products": 2805.6,
+        "Consulting": 1870.3999999999999
+      },
+      "subcontractors": {
+        "Products": 2442,
+        "Consulting": 1628
+      },
+      "payroll": {
+        "Products": 12898.800000000001,
+        "Consulting": 8599.2
+      },
+      "benefits": {
+        "Products": 1548,
+        "Consulting": 1032
+      },
+      "interestExpense": {
+        "Products": 24.6,
+        "Consulting": 16.4
+      },
+      "salesExpense": {
+        "Products": 667.2,
+        "Consulting": 444.79999999999995
+      },
+      "infrastructure": {
+        "Products": 371.4,
+        "Consulting": 247.60000000000002
+      },
+      "professionalFees": {
+        "Products": 547.2,
+        "Consulting": 364.79999999999995
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "stateIncomeTaxes": {
+        "Products": 4875,
+        "Consulting": 3250
+      },
+      "phoneComm": {
+        "Products": 981,
+        "Consulting": 654
+      },
+      "mealsEntertainment": {
+        "Products": 1426.2,
+        "Consulting": 950.8
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 124668.8,
+      "Consulting": 31167.2
+    },
+    "expenseBreakdown": {
+      "Products": 27850.800000000003,
+      "Consulting": 18567.199999999997
+    },
+    "cogsBreakdown": {
+      "Products": 45765.600000000006,
+      "Consulting": 11441.400000000001
+    }
+  },
+  {
+    "monthDate": "2025-02-28T07:00:00.000Z",
+    "date": "2025-02-28T07:00:00.000Z",
+    "month": "2025-02",
+    "revenue": 157308,
+    "cogsPayroll": 9287,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 501,
+    "cogsMaterials": 24993,
+    "cogsCommissions": 0,
+    "cogsOther": 2635,
+    "cogsTotal": 37416,
+    "payroll": 20606,
+    "ownerBasePay": 0,
+    "benefits": 2480,
+    "insurance": 521,
+    "professionalFees": 2029,
+    "subcontractors": 4082,
+    "rent": 3838,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1616,
+    "infrastructure": 726,
+    "autoTravel": 1892,
+    "salesExpense": 1369,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2581,
+    "interestExpense": 37,
+    "depreciationAmortization": 0,
+    "otherExpense": 4871,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 401739,
+    "ar": 74992,
+    "inventory": 9679,
+    "otherCA": 6125,
+    "tca": 492535,
+    "fixedAssets": 36456,
+    "otherAssets": 4522,
+    "totalAssets": 533513,
+    "ap": 35876,
+    "otherCL": 14034,
+    "tcl": 49910,
+    "ltd": 122909,
+    "totalLiab": 172819,
+    "ownersCapital": 0,
+    "ownersDraw": -58645,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 302036,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 477983,
+    "totalLAndE": 650802,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 200869.5,
+        "Consulting": 200869.5
+      },
+      "ar": {
+        "Products": 37496,
+        "Consulting": 37496
+      },
+      "inventory": {
+        "Products": 4839.5,
+        "Consulting": 4839.5
+      },
+      "otherCA": {
+        "Products": 3062.5,
+        "Consulting": 3062.5
+      },
+      "fixedAssets": {
+        "Products": 71568.5,
+        "Consulting": 71568.5
+      },
+      "ap": {
+        "Products": 17938,
+        "Consulting": 17938
+      },
+      "otherCL": {
+        "Products": 7017,
+        "Consulting": 7017
+      },
+      "ltd": {
+        "Products": 61454.5,
+        "Consulting": 61454.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -46916,
+        "Consulting": -11729
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 241628.8,
+        "Consulting": 60407.2
+      },
+      "revenue": {
+        "Products": 108347.99999999999,
+        "Consulting": 27086.999999999996
+      },
+      "cogsMaterials": {
+        "Products": 19994.399999999998,
+        "Consulting": 4998.599999999999
+      },
+      "cogsOther": {
+        "Products": 2108,
+        "Consulting": 527
+      },
+      "cogsContractors": {
+        "Products": 400.8,
+        "Consulting": 100.2
+      },
+      "cogsPayroll": {
+        "Products": 7429.599999999999,
+        "Consulting": 1857.3999999999999
+      },
+      "insurance": {
+        "Products": 312.6,
+        "Consulting": 208.39999999999998
+      },
+      "autoTravel": {
+        "Products": 1135.2,
+        "Consulting": 756.8
+      },
+      "otherExpense": {
+        "Products": 2922.6,
+        "Consulting": 1948.3999999999999
+      },
+      "subcontractors": {
+        "Products": 2449.2,
+        "Consulting": 1632.8
+      },
+      "payroll": {
+        "Products": 12363.6,
+        "Consulting": 8242.4
+      },
+      "benefits": {
+        "Products": 1488,
+        "Consulting": 992
+      },
+      "interestExpense": {
+        "Products": 22.2,
+        "Consulting": 14.8
+      },
+      "salesExpense": {
+        "Products": 821.4,
+        "Consulting": 547.6
+      },
+      "infrastructure": {
+        "Products": 435.6,
+        "Consulting": 290.4
+      },
+      "professionalFees": {
+        "Products": 1217.4,
+        "Consulting": 811.6
+      },
+      "rent": {
+        "Products": 2302.8,
+        "Consulting": 1535.2
+      },
+      "phoneComm": {
+        "Products": 969.6,
+        "Consulting": 646.4
+      },
+      "mealsEntertainment": {
+        "Products": 1548.6,
+        "Consulting": 1032.4
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 108347.99999999999,
+      "Consulting": 27086.999999999996
+    },
+    "expenseBreakdown": {
+      "Products": 27988.8,
+      "Consulting": 18659.2
+    },
+    "cogsBreakdown": {
+      "Products": 29932.799999999996,
+      "Consulting": 7483.199999999999
+    }
+  },
+  {
+    "monthDate": "2025-03-31T07:00:00.000Z",
+    "date": "2025-03-31T07:00:00.000Z",
+    "month": "2025-03",
+    "revenue": 165943,
+    "cogsPayroll": 9615,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 35455,
+    "cogsCommissions": 0,
+    "cogsOther": 2785,
+    "cogsTotal": 48586,
+    "payroll": 20611,
+    "ownerBasePay": 0,
+    "benefits": 2426,
+    "insurance": 566,
+    "professionalFees": 737,
+    "subcontractors": 2555,
+    "rent": 2500,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1886,
+    "infrastructure": 1317,
+    "autoTravel": 2874,
+    "salesExpense": 1605,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 5664,
+    "interestExpense": 33,
+    "depreciationAmortization": 0,
+    "otherExpense": 3062,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 418850,
+    "ar": 111517,
+    "inventory": 8875,
+    "otherCA": 5437,
+    "tca": 544679,
+    "fixedAssets": 37602,
+    "otherAssets": 4522,
+    "totalAssets": 586803,
+    "ap": 19986,
+    "otherCL": 24101,
+    "tcl": 44087,
+    "ltd": 121024,
+    "totalLiab": 165111,
+    "ownersCapital": 0,
+    "ownersDraw": -59929,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 364319,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 541550,
+    "totalLAndE": 706661,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 209425,
+        "Consulting": 209425
+      },
+      "ar": {
+        "Products": 55758.5,
+        "Consulting": 55758.5
+      },
+      "inventory": {
+        "Products": 4437.5,
+        "Consulting": 4437.5
+      },
+      "otherCA": {
+        "Products": 2718.5,
+        "Consulting": 2718.5
+      },
+      "fixedAssets": {
+        "Products": 72641,
+        "Consulting": 72641
+      },
+      "ap": {
+        "Products": 9993,
+        "Consulting": 9993
+      },
+      "otherCL": {
+        "Products": 7375,
+        "Consulting": 7375
+      },
+      "ltd": {
+        "Products": 60512,
+        "Consulting": 60512
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -47943.2,
+        "Consulting": -11985.8
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 291455.2,
+        "Consulting": 72863.8
+      },
+      "revenue": {
+        "Products": 115687.19999999998,
+        "Consulting": 28921.799999999996
+      },
+      "cogsMaterials": {
+        "Products": 28364,
+        "Consulting": 7091
+      },
+      "cogsOther": {
+        "Products": 2228,
+        "Consulting": 557
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 7692,
+        "Consulting": 1923
+      },
+      "insurance": {
+        "Products": 339.59999999999997,
+        "Consulting": 226.39999999999998
+      },
+      "autoTravel": {
+        "Products": 1724.4,
+        "Consulting": 1149.6
+      },
+      "rent": {
+        "Products": 1500,
+        "Consulting": 1000
+      },
+      "infrastructure": {
+        "Products": 790.2,
+        "Consulting": 526.8
+      },
+      "otherExpense": {
+        "Products": 1837.2,
+        "Consulting": 1224.8
+      },
+      "subcontractors": {
+        "Products": 1533,
+        "Consulting": 1022
+      },
+      "payroll": {
+        "Products": 12366.600000000002,
+        "Consulting": 8244.4
+      },
+      "benefits": {
+        "Products": 1455.6,
+        "Consulting": 970.4
+      },
+      "interestExpense": {
+        "Products": 19.8,
+        "Consulting": 13.2
+      },
+      "salesExpense": {
+        "Products": 963,
+        "Consulting": 642
+      },
+      "professionalFees": {
+        "Products": 442.20000000000005,
+        "Consulting": 294.79999999999995
+      },
+      "phoneComm": {
+        "Products": 1131.6,
+        "Consulting": 754.4
+      },
+      "mealsEntertainment": {
+        "Products": 3398.4,
+        "Consulting": 2265.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 115687.19999999998,
+      "Consulting": 28921.799999999996
+    },
+    "expenseBreakdown": {
+      "Products": 27501.6,
+      "Consulting": 18334.399999999998
+    },
+    "cogsBreakdown": {
+      "Products": 38868.8,
+      "Consulting": 9717.2
+    }
+  },
+  {
+    "monthDate": "2025-04-30T07:00:00.000Z",
+    "date": "2025-04-30T07:00:00.000Z",
+    "month": "2025-04",
+    "revenue": 167066,
+    "cogsPayroll": 9983,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 30188,
+    "cogsCommissions": 0,
+    "cogsOther": 2635,
+    "cogsTotal": 43537,
+    "payroll": 20609,
+    "ownerBasePay": 0,
+    "benefits": 2336,
+    "insurance": 566,
+    "professionalFees": 849,
+    "subcontractors": 888,
+    "rent": 9782,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 0,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1663,
+    "infrastructure": 2956,
+    "autoTravel": 1805,
+    "salesExpense": 1285,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3827,
+    "interestExpense": 28,
+    "depreciationAmortization": 0,
+    "otherExpense": 4850,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 507138,
+    "ar": 92304,
+    "inventory": 8875,
+    "otherCA": 4960,
+    "tca": 613277,
+    "fixedAssets": 37386,
+    "otherAssets": 4522,
+    "totalAssets": 655185,
+    "ap": 24519,
+    "otherCL": 21924,
+    "tcl": 46443,
+    "ltd": 119135,
+    "totalLiab": 165578,
+    "ownersCapital": 0,
+    "ownersDraw": -67474,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 439781,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 624557,
+    "totalLAndE": 790135,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 253569,
+        "Consulting": 253569
+      },
+      "ar": {
+        "Products": 46152,
+        "Consulting": 46152
+      },
+      "inventory": {
+        "Products": 4437.5,
+        "Consulting": 4437.5
+      },
+      "otherCA": {
+        "Products": 2480,
+        "Consulting": 2480
+      },
+      "fixedAssets": {
+        "Products": 73033,
+        "Consulting": 73033
+      },
+      "ap": {
+        "Products": 12259.5,
+        "Consulting": 12259.5
+      },
+      "otherCL": {
+        "Products": 6181,
+        "Consulting": 6181
+      },
+      "ltd": {
+        "Products": 59567.5,
+        "Consulting": 59567.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -53979.2,
+        "Consulting": -13494.8
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 351824.8,
+        "Consulting": 87956.2
+      },
+      "revenue": {
+        "Products": 109923.99999999999,
+        "Consulting": 27480.999999999996
+      },
+      "cogsMaterials": {
+        "Products": 24150.4,
+        "Consulting": 6037.6
+      },
+      "cogsOther": {
+        "Products": 2108,
+        "Consulting": 527
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 7986.400000000001,
+        "Consulting": 1996.6000000000001
+      },
+      "insurance": {
+        "Products": 339.59999999999997,
+        "Consulting": 226.39999999999998
+      },
+      "autoTravel": {
+        "Products": 1083,
+        "Consulting": 722
+      },
+      "rent": {
+        "Products": 5869.200000000001,
+        "Consulting": 3912.8
+      },
+      "infrastructure": {
+        "Products": 1773.6,
+        "Consulting": 1182.3999999999999
+      },
+      "otherExpense": {
+        "Products": 2910.0000000000005,
+        "Consulting": 1939.9999999999998
+      },
+      "subcontractors": {
+        "Products": 532.8,
+        "Consulting": 355.2
+      },
+      "payroll": {
+        "Products": 12365.400000000001,
+        "Consulting": 8243.6
+      },
+      "benefits": {
+        "Products": 1401.6,
+        "Consulting": 934.4
+      },
+      "interestExpense": {
+        "Products": 16.8,
+        "Consulting": 11.2
+      },
+      "salesExpense": {
+        "Products": 771,
+        "Consulting": 514
+      },
+      "professionalFees": {
+        "Products": 509.4,
+        "Consulting": 339.6
+      },
+      "phoneComm": {
+        "Products": 997.8000000000001,
+        "Consulting": 665.2
+      },
+      "mealsEntertainment": {
+        "Products": 2296.2,
+        "Consulting": 1530.8
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 109923.99999999999,
+      "Consulting": 27480.999999999996
+    },
+    "expenseBreakdown": {
+      "Products": 30866.4,
+      "Consulting": 20577.600000000002
+    },
+    "cogsBreakdown": {
+      "Products": 34829.6,
+      "Consulting": 8707.4
+    }
+  },
+  {
+    "monthDate": "2025-05-31T07:00:00.000Z",
+    "date": "2025-05-31T07:00:00.000Z",
+    "month": "2025-05",
+    "revenue": 165974,
+    "cogsPayroll": 10018,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 31319,
+    "cogsCommissions": 0,
+    "cogsOther": 3085,
+    "cogsTotal": 45153,
+    "payroll": 20609,
+    "ownerBasePay": 0,
+    "benefits": 2640,
+    "insurance": 674,
+    "professionalFees": 360,
+    "subcontractors": 938,
+    "rent": 5339,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 4156,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1659,
+    "infrastructure": 727,
+    "autoTravel": 1684,
+    "salesExpense": 1056,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3531,
+    "interestExpense": 24,
+    "depreciationAmortization": 0,
+    "otherExpense": 3321,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 562723,
+    "ar": 110324,
+    "inventory": 8579,
+    "otherCA": 4484,
+    "tca": 686110,
+    "fixedAssets": 40460,
+    "otherAssets": 4522,
+    "totalAssets": 731092,
+    "ap": 35410,
+    "otherCL": 23555,
+    "tcl": 58965,
+    "ltd": 117242,
+    "totalLiab": 176207,
+    "ownersCapital": 0,
+    "ownersDraw": -70548,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 508132,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 695982,
+    "totalLAndE": 872189,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 281361.5,
+        "Consulting": 281361.5
+      },
+      "ar": {
+        "Products": 55162,
+        "Consulting": 55162
+      },
+      "inventory": {
+        "Products": 4289.5,
+        "Consulting": 4289.5
+      },
+      "otherCA": {
+        "Products": 2242,
+        "Consulting": 2242
+      },
+      "fixedAssets": {
+        "Products": 75069.5,
+        "Consulting": 75069.5
+      },
+      "ap": {
+        "Products": 17705,
+        "Consulting": 17705
+      },
+      "otherCL": {
+        "Products": 7011.5,
+        "Consulting": 7011.5
+      },
+      "ltd": {
+        "Products": 58621,
+        "Consulting": 58621
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -56438.4,
+        "Consulting": -14109.6
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 406505.60000000003,
+        "Consulting": 101626.40000000001
+      },
+      "revenue": {
+        "Products": 114072,
+        "Consulting": 28518
+      },
+      "cogsMaterials": {
+        "Products": 25055.2,
+        "Consulting": 6263.8
+      },
+      "cogsOther": {
+        "Products": 2468,
+        "Consulting": 617
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 8014.400000000001,
+        "Consulting": 2003.6000000000001
+      },
+      "insurance": {
+        "Products": 404.40000000000003,
+        "Consulting": 269.6
+      },
+      "autoTravel": {
+        "Products": 1010.3999999999999,
+        "Consulting": 673.5999999999999
+      },
+      "rent": {
+        "Products": 3203.4,
+        "Consulting": 2135.6
+      },
+      "otherExpense": {
+        "Products": 1992.6,
+        "Consulting": 1328.4
+      },
+      "subcontractors": {
+        "Products": 562.8,
+        "Consulting": 375.2
+      },
+      "payroll": {
+        "Products": 12365.400000000001,
+        "Consulting": 8243.6
+      },
+      "benefits": {
+        "Products": 1584,
+        "Consulting": 1056
+      },
+      "interestExpense": {
+        "Products": 14.4,
+        "Consulting": 9.6
+      },
+      "salesExpense": {
+        "Products": 633.6,
+        "Consulting": 422.4
+      },
+      "infrastructure": {
+        "Products": 436.2,
+        "Consulting": 290.8
+      },
+      "professionalFees": {
+        "Products": 216,
+        "Consulting": 144
+      },
+      "phoneComm": {
+        "Products": 995.4000000000001,
+        "Consulting": 663.6
+      },
+      "mealsEntertainment": {
+        "Products": 2118.6000000000004,
+        "Consulting": 1412.3999999999999
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      },
+      "stateIncomeTaxes": {
+        "Products": 2493.6,
+        "Consulting": 1662.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 114072,
+      "Consulting": 28518
+    },
+    "expenseBreakdown": {
+      "Products": 25537.200000000004,
+      "Consulting": 17024.8
+    },
+    "cogsBreakdown": {
+      "Products": 36122.4,
+      "Consulting": 9030.6
+    }
+  },
+  {
+    "monthDate": "2025-06-30T07:00:00.000Z",
+    "date": "2025-06-30T07:00:00.000Z",
+    "month": "2025-06",
+    "revenue": 179269,
+    "cogsPayroll": 9867,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 43328,
+    "cogsCommissions": 0,
+    "cogsOther": 2935,
+    "cogsTotal": 56861,
+    "payroll": 20533,
+    "ownerBasePay": 0,
+    "benefits": 1953,
+    "insurance": 674,
+    "professionalFees": 2984,
+    "subcontractors": 1288,
+    "rent": 5339,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 4156,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1748,
+    "infrastructure": 1759,
+    "autoTravel": 1685,
+    "salesExpense": 912,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 4043,
+    "interestExpense": 19,
+    "depreciationAmortization": 0,
+    "otherExpense": 2866,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 526152,
+    "ar": 147259,
+    "inventory": 8579,
+    "otherCA": 4829,
+    "tca": 686819,
+    "fixedAssets": 41099,
+    "otherAssets": 4522,
+    "totalAssets": 732440,
+    "ap": 26451,
+    "otherCL": 24146,
+    "tcl": 50597,
+    "ltd": 115344,
+    "totalLiab": 165941,
+    "ownersCapital": 0,
+    "ownersDraw": -77268,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 526466,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 721036,
+    "totalLAndE": 886977,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 263076,
+        "Consulting": 263076
+      },
+      "ar": {
+        "Products": 73629.5,
+        "Consulting": 73629.5
+      },
+      "inventory": {
+        "Products": 4289.5,
+        "Consulting": 4289.5
+      },
+      "otherCA": {
+        "Products": 2414.5,
+        "Consulting": 2414.5
+      },
+      "fixedAssets": {
+        "Products": 75888.5,
+        "Consulting": 75888.5
+      },
+      "ap": {
+        "Products": 13225.5,
+        "Consulting": 13225.5
+      },
+      "otherCL": {
+        "Products": 7355,
+        "Consulting": 7355
+      },
+      "ltd": {
+        "Products": 57672,
+        "Consulting": 57672
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -61814.4,
+        "Consulting": -15453.6
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 421172.8,
+        "Consulting": 105293.2
+      },
+      "revenue": {
+        "Products": 128234.4,
+        "Consulting": 32058.6
+      },
+      "cogsMaterials": {
+        "Products": 34662.4,
+        "Consulting": 8665.6
+      },
+      "cogsOther": {
+        "Products": 2348,
+        "Consulting": 587
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 7893.599999999999,
+        "Consulting": 1973.3999999999999
+      },
+      "insurance": {
+        "Products": 404.40000000000003,
+        "Consulting": 269.6
+      },
+      "autoTravel": {
+        "Products": 1011,
+        "Consulting": 674
+      },
+      "rent": {
+        "Products": 3203.4,
+        "Consulting": 2135.6
+      },
+      "infrastructure": {
+        "Products": 1055.3999999999999,
+        "Consulting": 703.6
+      },
+      "otherExpense": {
+        "Products": 1719.6,
+        "Consulting": 1146.4
+      },
+      "subcontractors": {
+        "Products": 772.8,
+        "Consulting": 515.2
+      },
+      "payroll": {
+        "Products": 12319.800000000001,
+        "Consulting": 8213.2
+      },
+      "benefits": {
+        "Products": 1171.8,
+        "Consulting": 781.2
+      },
+      "interestExpense": {
+        "Products": 11.4,
+        "Consulting": 7.6
+      },
+      "salesExpense": {
+        "Products": 547.2,
+        "Consulting": 364.8
+      },
+      "professionalFees": {
+        "Products": 1790.4,
+        "Consulting": 1193.6
+      },
+      "phoneComm": {
+        "Products": 1048.8000000000002,
+        "Consulting": 699.2
+      },
+      "mealsEntertainment": {
+        "Products": 2425.8,
+        "Consulting": 1617.2
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      },
+      "stateIncomeTaxes": {
+        "Products": 2493.6,
+        "Consulting": 1662.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 128234.4,
+      "Consulting": 32058.6
+    },
+    "expenseBreakdown": {
+      "Products": 27481.800000000003,
+      "Consulting": 18321.2
+    },
+    "cogsBreakdown": {
+      "Products": 45488.8,
+      "Consulting": 11372.2
+    }
+  },
+  {
+    "monthDate": "2025-07-31T07:00:00.000Z",
+    "date": "2025-07-31T07:00:00.000Z",
+    "month": "2025-07",
+    "revenue": 186294,
+    "cogsPayroll": 14645,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 46065,
+    "cogsCommissions": 0,
+    "cogsOther": 3385,
+    "cogsTotal": 64826,
+    "payroll": 34227,
+    "ownerBasePay": 0,
+    "benefits": 3870,
+    "insurance": 674,
+    "professionalFees": 2597,
+    "subcontractors": 1338,
+    "rent": 5339,
+    "taxLicense": 0,
+    "stateIncomeTaxes": -1194,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1672,
+    "infrastructure": 371,
+    "autoTravel": 3365,
+    "salesExpense": 911,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3641,
+    "interestExpense": 3,
+    "depreciationAmortization": 0,
+    "otherExpense": 5209,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 569482,
+    "ar": 144402,
+    "inventory": 0,
+    "otherCA": 5051,
+    "tca": 718935,
+    "fixedAssets": 58626,
+    "otherAssets": 4522,
+    "totalAssets": 782083,
+    "ap": 53842,
+    "otherCL": 15084,
+    "tcl": 68926,
+    "ltd": 113441,
+    "totalLiab": 182367,
+    "ownersCapital": 0,
+    "ownersDraw": -284605,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 766987,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1168894,
+    "totalLAndE": 1351261,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 284741,
+        "Consulting": 284741
+      },
+      "ar": {
+        "Products": 72201,
+        "Consulting": 72201
+      },
+      "otherCA": {
+        "Products": 2525.5,
+        "Consulting": 2525.5
+      },
+      "fixedAssets": {
+        "Products": 79332.2,
+        "Consulting": 79325.8
+      },
+      "ap": {
+        "Products": 26921,
+        "Consulting": 26921
+      },
+      "otherCL": {
+        "Products": 1827.5,
+        "Consulting": 1827.5
+      },
+      "ltd": {
+        "Products": 56720.5,
+        "Consulting": 56720.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -227684,
+        "Consulting": -56921
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 613589.6,
+        "Consulting": 153397.4
+      },
+      "revenue": {
+        "Products": 134197.60000000003,
+        "Consulting": 33549.40000000001
+      },
+      "cogsMaterials": {
+        "Products": 36852,
+        "Consulting": 9213
+      },
+      "cogsOther": {
+        "Products": 2708,
+        "Consulting": 677
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 11716,
+        "Consulting": 2929
+      },
+      "insurance": {
+        "Products": 404.40000000000003,
+        "Consulting": 269.6
+      },
+      "autoTravel": {
+        "Products": 2019,
+        "Consulting": 1346
+      },
+      "rent": {
+        "Products": 3203.4,
+        "Consulting": 2135.6
+      },
+      "otherExpense": {
+        "Products": 3125.4000000000005,
+        "Consulting": 2083.5999999999995
+      },
+      "subcontractors": {
+        "Products": 802.8,
+        "Consulting": 535.2
+      },
+      "payroll": {
+        "Products": 20536.199999999997,
+        "Consulting": 13690.800000000001
+      },
+      "benefits": {
+        "Products": 2322,
+        "Consulting": 1548
+      },
+      "interestExpense": {
+        "Products": 1.8,
+        "Consulting": 1.2
+      },
+      "salesExpense": {
+        "Products": 546.6,
+        "Consulting": 364.40000000000003
+      },
+      "infrastructure": {
+        "Products": 222.6,
+        "Consulting": 148.4
+      },
+      "professionalFees": {
+        "Products": 1558.2,
+        "Consulting": 1038.8
+      },
+      "stateIncomeTaxes": {
+        "Products": -716.4000000000001,
+        "Consulting": -477.5999999999999
+      },
+      "phoneComm": {
+        "Products": 1003.2,
+        "Consulting": 668.8
+      },
+      "mealsEntertainment": {
+        "Products": 2184.6,
+        "Consulting": 1456.4
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 134197.60000000003,
+      "Consulting": 33549.40000000001
+    },
+    "expenseBreakdown": {
+      "Products": 37930.19999999999,
+      "Consulting": 25286.800000000003
+    },
+    "cogsBreakdown": {
+      "Products": 51860.8,
+      "Consulting": 12965.2
+    }
+  },
+  {
+    "monthDate": "2025-08-31T07:00:00.000Z",
+    "date": "2025-08-31T07:00:00.000Z",
+    "month": "2025-08",
+    "revenue": 182926,
+    "cogsPayroll": 15034,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 36183,
+    "cogsCommissions": 0,
+    "cogsOther": 3205,
+    "cogsTotal": 55153,
+    "payroll": 26703,
+    "ownerBasePay": 0,
+    "benefits": 2547,
+    "insurance": 694,
+    "professionalFees": 979,
+    "subcontractors": 1079,
+    "rent": 5189,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 4156,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1681,
+    "infrastructure": 407,
+    "autoTravel": 5702,
+    "salesExpense": 772,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 4754,
+    "interestExpense": 10,
+    "depreciationAmortization": 0,
+    "otherExpense": 7091,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 541559,
+    "ar": 113229,
+    "inventory": 0,
+    "otherCA": 4252,
+    "tca": 659040,
+    "fixedAssets": 58034,
+    "otherAssets": 4522,
+    "totalAssets": 721596,
+    "ap": 32985,
+    "otherCL": 13766,
+    "tcl": 46751,
+    "ltd": 112773,
+    "totalLiab": 159524,
+    "ownersCapital": 0,
+    "ownersDraw": -298985,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 743755,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1160042,
+    "totalLAndE": 1319566,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 270779.5,
+        "Consulting": 270779.5
+      },
+      "ar": {
+        "Products": 56614.5,
+        "Consulting": 56614.5
+      },
+      "otherCA": {
+        "Products": 2126,
+        "Consulting": 2126
+      },
+      "fixedAssets": {
+        "Products": 79291.5,
+        "Consulting": 79291.5
+      },
+      "ap": {
+        "Products": 16492.5,
+        "Consulting": 16492.5
+      },
+      "otherCL": {
+        "Products": 915.5,
+        "Consulting": 915.5
+      },
+      "ltd": {
+        "Products": 56386.5,
+        "Consulting": 56386.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -239188,
+        "Consulting": -59797
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 595004,
+        "Consulting": 148751
+      },
+      "revenue": {
+        "Products": 130845.60000000002,
+        "Consulting": 32711.400000000005
+      },
+      "cogsMaterials": {
+        "Products": 28946.4,
+        "Consulting": 7236.6
+      },
+      "cogsOther": {
+        "Products": 2564,
+        "Consulting": 641
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 12027.2,
+        "Consulting": 3006.8
+      },
+      "insurance": {
+        "Products": 416.40000000000003,
+        "Consulting": 277.6
+      },
+      "autoTravel": {
+        "Products": 3421.2000000000003,
+        "Consulting": 2280.8
+      },
+      "rent": {
+        "Products": 3113.4,
+        "Consulting": 2075.6
+      },
+      "otherExpense": {
+        "Products": 4254.6,
+        "Consulting": 2836.4
+      },
+      "subcontractors": {
+        "Products": 647.4,
+        "Consulting": 431.59999999999997
+      },
+      "payroll": {
+        "Products": 16021.800000000001,
+        "Consulting": 10681.2
+      },
+      "benefits": {
+        "Products": 1528.1999999999998,
+        "Consulting": 1018.8000000000001
+      },
+      "interestExpense": {
+        "Products": 6,
+        "Consulting": 4
+      },
+      "salesExpense": {
+        "Products": 463.20000000000005,
+        "Consulting": 308.8
+      },
+      "infrastructure": {
+        "Products": 244.2,
+        "Consulting": 162.8
+      },
+      "professionalFees": {
+        "Products": 587.4,
+        "Consulting": 391.6
+      },
+      "phoneComm": {
+        "Products": 1008.5999999999999,
+        "Consulting": 672.4
+      },
+      "mealsEntertainment": {
+        "Products": 2852.4,
+        "Consulting": 1901.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      },
+      "stateIncomeTaxes": {
+        "Products": 2493.6,
+        "Consulting": 1662.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 130845.60000000002,
+      "Consulting": 32711.400000000005
+    },
+    "expenseBreakdown": {
+      "Products": 34564.8,
+      "Consulting": 23043.199999999997
+    },
+    "cogsBreakdown": {
+      "Products": 44122.4,
+      "Consulting": 11030.6
+    }
+  },
+  {
+    "monthDate": "2025-09-30T07:00:00.000Z",
+    "date": "2025-09-30T07:00:00.000Z",
+    "month": "2025-09",
+    "revenue": 172198,
+    "cogsPayroll": 10835,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 27774,
+    "cogsCommissions": 0,
+    "cogsOther": 2825,
+    "cogsTotal": 42165,
+    "payroll": 26132,
+    "ownerBasePay": 0,
+    "benefits": 2951,
+    "insurance": 694,
+    "professionalFees": 399,
+    "subcontractors": 938,
+    "rent": 5189,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 4156,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1870,
+    "infrastructure": 514,
+    "autoTravel": 2996,
+    "salesExpense": 836,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3084,
+    "interestExpense": 10,
+    "depreciationAmortization": 0,
+    "otherExpense": 4270,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 552166,
+    "ar": 137820,
+    "inventory": 0,
+    "otherCA": 3452,
+    "tca": 693438,
+    "fixedAssets": 58403,
+    "otherAssets": 4522,
+    "totalAssets": 756363,
+    "ap": 39854,
+    "otherCL": 12967,
+    "tcl": 52821,
+    "ltd": 112104,
+    "totalLiab": 164925,
+    "ownersCapital": 0,
+    "ownersDraw": -302966,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 777103,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1197371,
+    "totalLAndE": 1362296,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 276083,
+        "Consulting": 276083
+      },
+      "ar": {
+        "Products": 68910,
+        "Consulting": 68910
+      },
+      "otherCA": {
+        "Products": 1726,
+        "Consulting": 1726
+      },
+      "fixedAssets": {
+        "Products": 79734.5,
+        "Consulting": 79734.5
+      },
+      "ap": {
+        "Products": 19927,
+        "Consulting": 19927
+      },
+      "otherCL": {
+        "Products": 816.5,
+        "Consulting": 816.5
+      },
+      "ltd": {
+        "Products": 56052,
+        "Consulting": 56052
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -242372.8,
+        "Consulting": -60593.2
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 621682.3999999999,
+        "Consulting": 155420.59999999998
+      },
+      "revenue": {
+        "Products": 118104.8,
+        "Consulting": 29526.2
+      },
+      "cogsMaterials": {
+        "Products": 22219.2,
+        "Consulting": 5554.8
+      },
+      "cogsOther": {
+        "Products": 2260,
+        "Consulting": 565
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 8668,
+        "Consulting": 2167
+      },
+      "insurance": {
+        "Products": 416.40000000000003,
+        "Consulting": 277.6
+      },
+      "autoTravel": {
+        "Products": 1797.6,
+        "Consulting": 1198.4
+      },
+      "rent": {
+        "Products": 3113.4,
+        "Consulting": 2075.6
+      },
+      "otherExpense": {
+        "Products": 2562,
+        "Consulting": 1708
+      },
+      "subcontractors": {
+        "Products": 562.8,
+        "Consulting": 375.2
+      },
+      "payroll": {
+        "Products": 15679.2,
+        "Consulting": 10452.8
+      },
+      "benefits": {
+        "Products": 1770.6,
+        "Consulting": 1180.4
+      },
+      "interestExpense": {
+        "Products": 6,
+        "Consulting": 4
+      },
+      "salesExpense": {
+        "Products": 501.6,
+        "Consulting": 334.4
+      },
+      "infrastructure": {
+        "Products": 308.4,
+        "Consulting": 205.6
+      },
+      "professionalFees": {
+        "Products": 239.4,
+        "Consulting": 159.6
+      },
+      "phoneComm": {
+        "Products": 1122,
+        "Consulting": 748
+      },
+      "mealsEntertainment": {
+        "Products": 1850.4,
+        "Consulting": 1233.6
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      },
+      "stateIncomeTaxes": {
+        "Products": 2493.6,
+        "Consulting": 1662.4
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 118104.8,
+      "Consulting": 29526.2
+    },
+    "expenseBreakdown": {
+      "Products": 29929.800000000003,
+      "Consulting": 19953.199999999997
+    },
+    "cogsBreakdown": {
+      "Products": 33732,
+      "Consulting": 8433
+    }
+  },
+  {
+    "monthDate": "2025-10-31T07:00:00.000Z",
+    "date": "2025-10-31T07:00:00.000Z",
+    "month": "2025-10",
+    "revenue": 192348,
+    "cogsPayroll": 3687,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 22171,
+    "cogsCommissions": 0,
+    "cogsOther": 2825,
+    "cogsTotal": 29414,
+    "payroll": 32314,
+    "ownerBasePay": 0,
+    "benefits": 4834,
+    "insurance": 694,
+    "professionalFees": 399,
+    "subcontractors": 1876,
+    "rent": 5189,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 7498,
+    "federalIncomeTaxes": 12410,
+    "phoneComm": 1740,
+    "infrastructure": 569,
+    "autoTravel": 2636,
+    "salesExpense": 753,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 2287,
+    "interestExpense": 9,
+    "depreciationAmortization": 0,
+    "otherExpense": 2125,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 527660,
+    "ar": 140497,
+    "inventory": 0,
+    "otherCA": 7143,
+    "tca": 675300,
+    "fixedAssets": 58403,
+    "otherAssets": 4522,
+    "totalAssets": 738225,
+    "ap": 31353,
+    "otherCL": 12309,
+    "tcl": 43662,
+    "ltd": 111435,
+    "totalLiab": 155097,
+    "ownersCapital": 0,
+    "ownersDraw": -309408,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 775233,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1201943,
+    "totalLAndE": 1357040,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 263830,
+        "Consulting": 263830
+      },
+      "ar": {
+        "Products": 70248.5,
+        "Consulting": 70248.5
+      },
+      "otherCA": {
+        "Products": 3571.5,
+        "Consulting": 3571.5
+      },
+      "fixedAssets": {
+        "Products": 79734.5,
+        "Consulting": 79734.5
+      },
+      "ap": {
+        "Products": 15676.5,
+        "Consulting": 15676.5
+      },
+      "otherCL": {
+        "Products": 632,
+        "Consulting": 632
+      },
+      "ltd": {
+        "Products": 55717.5,
+        "Consulting": 55717.5
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -247526.4,
+        "Consulting": -61881.6
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 620186.3999999999,
+        "Consulting": 155046.59999999998
+      },
+      "revenue": {
+        "Products": 135119.2,
+        "Consulting": 33779.8
+      },
+      "cogsMaterials": {
+        "Products": 17736.8,
+        "Consulting": 4434.2
+      },
+      "cogsOther": {
+        "Products": 2260,
+        "Consulting": 565
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 2949.6,
+        "Consulting": 737.4
+      },
+      "insurance": {
+        "Products": 416.40000000000003,
+        "Consulting": 277.6
+      },
+      "autoTravel": {
+        "Products": 1581.6,
+        "Consulting": 1054.4
+      },
+      "rent": {
+        "Products": 3113.4,
+        "Consulting": 2075.6
+      },
+      "otherExpense": {
+        "Products": 1274.9999999999998,
+        "Consulting": 850
+      },
+      "subcontractors": {
+        "Products": 1125.6,
+        "Consulting": 750.4
+      },
+      "payroll": {
+        "Products": 19388.4,
+        "Consulting": 12925.6
+      },
+      "benefits": {
+        "Products": 2900.4,
+        "Consulting": 1933.6
+      },
+      "interestExpense": {
+        "Products": 5.4,
+        "Consulting": 3.6
+      },
+      "salesExpense": {
+        "Products": 451.8,
+        "Consulting": 301.2
+      },
+      "infrastructure": {
+        "Products": 341.4,
+        "Consulting": 227.60000000000002
+      },
+      "professionalFees": {
+        "Products": 239.4,
+        "Consulting": 159.6
+      },
+      "stateIncomeTaxes": {
+        "Products": 4498.8,
+        "Consulting": 2999.2
+      },
+      "phoneComm": {
+        "Products": 1044,
+        "Consulting": 696
+      },
+      "mealsEntertainment": {
+        "Products": 1372.2,
+        "Consulting": 914.8
+      },
+      "federalIncomeTaxes": {
+        "Products": 7446,
+        "Consulting": 4964
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 135119.2,
+      "Consulting": 33779.8
+    },
+    "expenseBreakdown": {
+      "Products": 33255.00000000001,
+      "Consulting": 22169.999999999993
+    },
+    "cogsBreakdown": {
+      "Products": 23531.199999999997,
+      "Consulting": 5882.799999999999
+    }
+  },
+  {
+    "monthDate": "2025-11-30T07:00:00.000Z",
+    "date": "2025-11-30T07:00:00.000Z",
+    "month": "2025-11",
+    "revenue": 184590,
+    "cogsPayroll": 10315,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 731,
+    "cogsMaterials": 23898,
+    "cogsCommissions": 0,
+    "cogsOther": 2825,
+    "cogsTotal": 37769,
+    "payroll": 26367,
+    "ownerBasePay": 0,
+    "benefits": 3764,
+    "insurance": 694,
+    "professionalFees": 399,
+    "subcontractors": 938,
+    "rent": 5229,
+    "taxLicense": 0,
+    "stateIncomeTaxes": 12352,
+    "federalIncomeTaxes": 18932,
+    "phoneComm": 1815,
+    "infrastructure": 1391,
+    "autoTravel": 2489,
+    "salesExpense": 1066,
+    "marketing": 0,
+    "trainingCert": 0,
+    "mealsEntertainment": 3857,
+    "interestExpense": 9,
+    "depreciationAmortization": 0,
+    "otherExpense": 3899,
+    "expense": 0,
+    "nonOperatingIncome": 0,
+    "extraordinaryItems": 0,
+    "cash": 536001,
+    "ar": 147573,
+    "inventory": 0,
+    "otherCA": 6261,
+    "tca": 689835,
+    "fixedAssets": 57250,
+    "otherAssets": 4522,
+    "totalAssets": 751607,
+    "ap": 32653,
+    "otherCL": 12026,
+    "tcl": 44679,
+    "ltd": 110766,
+    "totalLiab": 155445,
+    "ownersCapital": 0,
+    "ownersDraw": -328077,
+    "commonStock": 100,
+    "preferredStock": 0,
+    "retainedEarnings": 806906,
+    "additionalPaidInCapital": 117202,
+    "treasuryStock": 0,
+    "totalEquity": 1252285,
+    "totalLAndE": 1407730,
+    "lobBreakdowns": {
+      "cash": {
+        "Products": 268000.5,
+        "Consulting": 268000.5
+      },
+      "ar": {
+        "Products": 73786.5,
+        "Consulting": 73786.5
+      },
+      "otherCA": {
+        "Products": 3130.5,
+        "Consulting": 3130.5
+      },
+      "fixedAssets": {
+        "Products": 79678.7,
+        "Consulting": 79672.3
+      },
+      "ap": {
+        "Products": 16326.5,
+        "Consulting": 16326.5
+      },
+      "otherCL": {
+        "Products": 55,
+        "Consulting": 55
+      },
+      "ltd": {
+        "Products": 55383,
+        "Consulting": 55383
+      },
+      "commonStock": {
+        "Products": 80,
+        "Consulting": 20
+      },
+      "ownersDraw": {
+        "Products": -262461.6,
+        "Consulting": -65615.4
+      },
+      "additionalPaidInCapital": {
+        "Products": 93761.6,
+        "Consulting": 23440.4
+      },
+      "retainedEarnings": {
+        "Products": 645524.7999999999,
+        "Consulting": 161381.19999999998
+      },
+      "revenue": {
+        "Products": 128346.40000000002,
+        "Consulting": 32086.600000000006
+      },
+      "cogsMaterials": {
+        "Products": 19118.399999999998,
+        "Consulting": 4779.599999999999
+      },
+      "cogsOther": {
+        "Products": 2260,
+        "Consulting": 565
+      },
+      "cogsContractors": {
+        "Products": 584.8,
+        "Consulting": 146.2
+      },
+      "cogsPayroll": {
+        "Products": 8252,
+        "Consulting": 2063
+      },
+      "insurance": {
+        "Products": 416.40000000000003,
+        "Consulting": 277.6
+      },
+      "autoTravel": {
+        "Products": 1493.4,
+        "Consulting": 995.5999999999999
+      },
+      "rent": {
+        "Products": 3137.4,
+        "Consulting": 2091.6
+      },
+      "otherExpense": {
+        "Products": 2339.4,
+        "Consulting": 1559.6
+      },
+      "subcontractors": {
+        "Products": 562.8,
+        "Consulting": 375.2
+      },
+      "payroll": {
+        "Products": 15820.2,
+        "Consulting": 10546.8
+      },
+      "benefits": {
+        "Products": 2258.4,
+        "Consulting": 1505.6
+      },
+      "interestExpense": {
+        "Products": 5.4,
+        "Consulting": 3.6
+      },
+      "salesExpense": {
+        "Products": 639.6,
+        "Consulting": 426.4
+      },
+      "infrastructure": {
+        "Products": 834.6,
+        "Consulting": 556.4000000000001
+      },
+      "professionalFees": {
+        "Products": 239.4,
+        "Consulting": 159.6
+      },
+      "stateIncomeTaxes": {
+        "Products": 7411.200000000001,
+        "Consulting": 4940.8
+      },
+      "phoneComm": {
+        "Products": 1089,
+        "Consulting": 726
+      },
+      "mealsEntertainment": {
+        "Products": 2314.2,
+        "Consulting": 1542.8
+      },
+      "federalIncomeTaxes": {
+        "Products": 11359.2,
+        "Consulting": 7572.8
+      }
+    },
+    "revenueBreakdown": {
+      "Products": 128346.40000000002,
+      "Consulting": 32086.600000000006
+    },
+    "expenseBreakdown": {
+      "Products": 31150.200000000004,
+      "Consulting": 20766.799999999996
+    },
+    "cogsBreakdown": {
+      "Products": 30215.199999999997,
+      "Consulting": 7553.799999999999
+    }
+  }
+]

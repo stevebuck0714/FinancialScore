@@ -20,3 +20,4 @@ diff-output.txt
 
 CorelyticsUpdate_.csv
 .vercel
+.env*.local

@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { requireAuth, validateCompanyAccess, validateConsultantAccess, getCompanyAccessFilter } from "@/lib/tenant-security";
+import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger";
 
 // GET all companies (optionally filtered by consultant or company ID)
 export async function GET(request: NextRequest) {
   try {
     console.log("🔍 Companies API called");
+    
+    // SECURITY: Require authentication
+    const context = await requireAuth();
+    
     const { searchParams } = new URL(request.url);
     const consultantId = searchParams.get("consultantId");
     const companyId = searchParams.get("companyId");
@@ -12,13 +18,32 @@ export async function GET(request: NextRequest) {
       ? parseInt(searchParams.get("limit")!)
       : undefined;
 
-    let where: any = {};
+    // SECURITY: Build where clause based on user access
+    let where: any = await getCompanyAccessFilter();
 
+    // SECURITY: Validate consultant access if consultantId filter is requested
     if (consultantId) {
+      const hasAccess = await validateConsultantAccess(consultantId);
+      if (!hasAccess) {
+        await auditForbiddenAccess('Company', consultantId, 'READ_BY_CONSULTANT');
+        return NextResponse.json(
+          { error: 'Forbidden: Access to this consultant denied' },
+          { status: 403 }
+        );
+      }
       where.consultantId = consultantId;
     }
 
+    // SECURITY: Validate company access if specific companyId is requested
     if (companyId) {
+      const hasAccess = await validateCompanyAccess(companyId);
+      if (!hasAccess) {
+        await auditForbiddenAccess('Company', companyId, 'READ');
+        return NextResponse.json(
+          { error: 'Forbidden: Access to this company denied' },
+          { status: 403 }
+        );
+      }
       where.id = companyId;
     }
 
@@ -52,9 +77,11 @@ export async function GET(request: NextRequest) {
       take: limit,
     });
 
-    console.log(`Retrieved ${companies.length} companies`);
-    if (companies.length > 0) {
-      console.log("First company:", companies[0]);
+    console.log(`Retrieved ${companies.length} companies for user ${context.email}`);
+
+    // AUDIT: Log company access (only log if viewing specific company)
+    if (companyId && companies.length > 0) {
+      await auditCompanyOperation('COMPANY_VIEWED', companyId);
     }
 
     return NextResponse.json({ companies });

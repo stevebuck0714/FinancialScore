@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyPassword } from '@/lib/auth';
+import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/audit-logger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       console.log('❌ No user found with email:', email);
+      await auditLoginFailed(normalizedEmail, 'User not found');
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401 }
@@ -54,6 +56,7 @@ export async function POST(request: NextRequest) {
 
     if (!isValidPassword) {
       console.log('❌ Invalid password');
+      await auditLoginFailed(normalizedEmail, 'Invalid password');
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401 }
@@ -71,6 +74,9 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('✅ Login successful');
+    
+    // AUDIT: Log successful login
+    await auditLoginSuccess(user.id, user.email);
     
     // Auto-fix: Set userType for existing business users who don't have it set
     // Business users are: role='USER', have companyId, and company has no consultantId (standalone business)
