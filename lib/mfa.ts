@@ -53,16 +53,30 @@ export async function generateQRCode(otpauthUrl: string): Promise<string> {
 // Verify TOTP token
 export function verifyTOTP(token: string, encryptedSecret: string): boolean {
   try {
+    console.log('🔓 Decrypting MFA secret...');
     const secret = decryptSecret(encryptedSecret);
+    console.log('✅ Secret decrypted, length:', secret.length);
     
-    return speakeasy.totp.verify({
+    console.log('🔐 Verifying TOTP with token:', token);
+    const result = speakeasy.totp.verify({
       secret: secret,
       encoding: 'base32',
       token: token,
       window: 2, // Allow 2 time steps before and after (about 1 minute tolerance)
     });
+    
+    console.log('✅ TOTP verify result:', result);
+    
+    // Also log what the current valid token should be for debugging
+    const currentToken = speakeasy.totp({
+      secret: secret,
+      encoding: 'base32'
+    });
+    console.log('ℹ️ Current valid token from server:', currentToken);
+    
+    return result;
   } catch (error) {
-    console.error('Error verifying TOTP:', error);
+    console.error('❌ Error verifying TOTP:', error);
     return false;
   }
 }

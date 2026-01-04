@@ -25,22 +25,34 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
 
   const enrollMFA = async () => {
     try {
+      console.log('🔐 Starting MFA enrollment for userId:', userId);
       const response = await fetch('/api/auth/mfa/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId })
       });
 
+      console.log('📡 MFA enrollment response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Failed to initiate MFA enrollment');
+        const errorData = await response.json();
+        console.error('❌ MFA enrollment failed:', errorData);
+        throw new Error(errorData.error || 'Failed to initiate MFA enrollment');
       }
 
       const data = await response.json();
+      console.log('✅ MFA enrollment data received:', {
+        hasQRCode: !!data.qrCodeDataURL,
+        hasSecret: !!data.secret,
+        backupCodeCount: data.backupCodes?.length || 0
+      });
+      
       setQrCodeDataURL(data.qrCodeDataURL);
       setSecret(data.secret);
       setBackupCodes(data.backupCodes);
       setStep('qrcode');
     } catch (err: any) {
+      console.error('❌ MFA enrollment error:', err);
       setError(err.message || 'Failed to start MFA enrollment');
       setStep('qrcode'); // Show error but allow retry
     }
@@ -60,13 +72,16 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
       const response = await fetch('/api/auth/mfa/verify-enrollment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, code: verificationCode })
+        body: JSON.stringify({ userId, token: verificationCode }) // Fixed: API expects 'token' not 'code'
       });
 
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Invalid verification code');
       }
+
+      const data = await response.json();
+      console.log('✅ MFA verification successful, user data received:', data);
 
       setStep('backup');
     } catch (err: any) {
@@ -85,7 +100,7 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
   };
 
   const downloadBackupCodes = () => {
-    const text = `Corelytics MFA Backup Codes\nAccount: ${userEmail}\n\n${backupCodes.join('\n')}\n\nStore these codes in a safe place. Each code can only be used once.`;
+    const text = `Corelytics MFA Backup Codes\nAccount: ${userEmail}\nGenerated: ${new Date().toLocaleString()}\n\n${backupCodes.join('\n')}\n\n⚠️ IMPORTANT:\n- Store these codes in a safe place\n- Each code can only be used once\n- Use these if you lose access to your authenticator app\n- Keep them secure - anyone with these codes can access your account`;
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -95,6 +110,61 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const printBackupCodes = () => {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Corelytics Backup Codes</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; }
+              h1 { color: #1e293b; font-size: 24px; margin-bottom: 8px; }
+              .meta { color: #64748b; font-size: 14px; margin-bottom: 24px; }
+              .warning { background: #fffbeb; border: 2px solid #fbbf24; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+              .warning h2 { color: #92400e; font-size: 16px; margin: 0 0 8px 0; }
+              .warning p { color: #78350f; font-size: 13px; margin: 4px 0; }
+              .codes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px; }
+              .code { background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 16px; font-weight: 600; text-align: center; }
+              @media print {
+                .no-print { display: none; }
+              }
+            </style>
+          </head>
+          <body>
+            <h1>🔐 Corelytics MFA Backup Codes</h1>
+            <div class="meta">
+              <strong>Account:</strong> ${userEmail}<br>
+              <strong>Generated:</strong> ${new Date().toLocaleString()}
+            </div>
+            <div class="warning">
+              <h2>⚠️ IMPORTANT - Keep These Safe!</h2>
+              <p>• Store these codes in a secure location</p>
+              <p>• Each code can only be used once</p>
+              <p>• Use these if you lose access to your authenticator app</p>
+              <p>• Anyone with these codes can access your account</p>
+            </div>
+            <div class="codes">
+              ${backupCodes.map(code => `<div class="code">${code}</div>`).join('')}
+            </div>
+            <button class="no-print" onclick="window.print()" style="padding: 12px 24px; background: #667eea; color: white; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; margin-right: 8px;">Print</button>
+            <button class="no-print" onclick="window.close()" style="padding: 12px 24px; background: white; color: #64748b; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 15px; cursor: pointer;">Close</button>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+  };
+
+  const copyToClipboard = () => {
+    const text = backupCodes.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      alert('✅ Backup codes copied to clipboard!\n\nPaste them into your password manager or a secure document.');
+    }).catch(() => {
+      alert('❌ Failed to copy to clipboard. Please download or print the codes instead.');
+    });
   };
 
   return (
@@ -332,21 +402,39 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
               ✅ MFA Enabled Successfully!
             </h2>
             <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px', textAlign: 'center' }}>
-              Save these backup codes in a safe place
+              Save these just in case you lose your phone
             </p>
 
             <div style={{ 
-              background: '#fffbeb', 
+              background: '#eff6ff', 
               padding: '16px', 
               borderRadius: '12px', 
-              marginBottom: '24px',
-              border: '2px solid #fbbf24'
+              marginBottom: '20px',
+              border: '2px solid #3b82f6'
             }}>
-              <p style={{ fontSize: '14px', color: '#92400e', marginBottom: '12px', fontWeight: '600' }}>
-                ⚠️ Important: Save These Backup Codes
+              <p style={{ fontSize: '14px', color: '#1e40af', marginBottom: '8px', fontWeight: '600' }}>
+                💡 Why backup codes?
               </p>
-              <p style={{ fontSize: '13px', color: '#78350f' }}>
-                If you lose access to your authenticator app, you can use these codes to sign in. Each code can only be used once.
+              <p style={{ fontSize: '13px', color: '#1e3a8a', marginBottom: '8px' }}>
+                If you lose your phone, get a new device, or delete your authenticator app, these codes will let you sign in and set up MFA again.
+              </p>
+              <p style={{ fontSize: '13px', color: '#1e3a8a', fontWeight: '600' }}>
+                Each code works only once, so keep them safe!
+              </p>
+            </div>
+
+            <div style={{ 
+              background: '#fef3c7', 
+              padding: '12px', 
+              borderRadius: '8px', 
+              marginBottom: '20px',
+              border: '1px solid #fbbf24'
+            }}>
+              <p style={{ fontSize: '12px', color: '#92400e', margin: 0, marginBottom: '6px' }}>
+                💾 <strong>Recommended:</strong> Store these in your password manager (1Password, LastPass, Bitwarden, etc.)
+              </p>
+              <p style={{ fontSize: '12px', color: '#92400e', margin: 0 }}>
+                📧 <strong>Or:</strong> Copy and email them to yourself for safekeeping
               </p>
             </div>
 
@@ -380,51 +468,107 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
               </div>
             </div>
 
-            <button
-              onClick={downloadBackupCodes}
-              style={{
-                width: '100%',
-                padding: '12px',
-                background: 'white',
-                color: '#667eea',
-                border: '2px solid #667eea',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                marginBottom: '12px',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#667eea';
-                e.currentTarget.style.color = 'white';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'white';
-                e.currentTarget.style.color = '#667eea';
-              }}
-            >
-              📥 Download Backup Codes
-            </button>
+            <p style={{ fontSize: '14px', color: '#475569', marginBottom: '12px', fontWeight: '600' }}>
+              💾 Choose how to save your codes:
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+              <button
+                onClick={downloadBackupCodes}
+                style={{
+                  padding: '12px',
+                  background: 'white',
+                  color: '#667eea',
+                  border: '2px solid #667eea',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#667eea';
+                  e.currentTarget.style.color = 'white';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'white';
+                  e.currentTarget.style.color = '#667eea';
+                }}
+              >
+                📥 Download
+              </button>
+
+              <button
+                onClick={printBackupCodes}
+                style={{
+                  padding: '12px',
+                  background: 'white',
+                  color: '#667eea',
+                  border: '2px solid #667eea',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#667eea';
+                  e.currentTarget.style.color = 'white';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'white';
+                  e.currentTarget.style.color = '#667eea';
+                }}
+              >
+                🖨️ Print
+              </button>
+
+              <button
+                onClick={copyToClipboard}
+                style={{
+                  padding: '12px',
+                  background: 'white',
+                  color: '#667eea',
+                  border: '2px solid #667eea',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  gridColumn: '1 / -1'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#667eea';
+                  e.currentTarget.style.color = 'white';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'white';
+                  e.currentTarget.style.color = '#667eea';
+                }}
+              >
+                📋 Copy to Clipboard
+              </button>
+            </div>
 
             <button
               onClick={handleBackupCodesAcknowledged}
               style={{
                 width: '100%',
-                padding: '12px',
+                padding: '14px',
                 background: '#10b981',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
-                fontSize: '15px',
+                fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s',
+                marginTop: '8px'
               }}
               onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
               onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
             >
-              I've Saved My Backup Codes →
+              ✓ I've Saved My Backup Codes
             </button>
           </div>
         )}

@@ -2468,24 +2468,25 @@ function FinancialScorePage() {
     setShowMFAEnrollment(false);
     
     // After enrollment, user is now fully authenticated
-    // Reload session and continue with login flow
+    // Get user data from session (no need to re-authenticate)
     try {
       const { getSession } = await import('next-auth/react');
       await getSession(); // Refresh session
       
-      // Get updated user data
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
+      // Get user data using session (no password required)
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
       });
       
       if (!response.ok) {
+        console.error('❌ Failed to get user data after MFA enrollment');
         setLoginError('Failed to complete login after MFA setup');
         return;
       }
       
       const { user } = await response.json();
+      console.log('✅ User data retrieved after MFA enrollment:', user);
       
       // Continue with normal login flow
       const normalizedUser = {
@@ -2544,19 +2545,20 @@ function FinancialScorePage() {
       const { getSession } = await import('next-auth/react');
       await getSession(); // Refresh session
       
-      // Get user data
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
+      // Get user data using session (no password required)
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
       });
       
       if (!response.ok) {
+        console.error('❌ Failed to get user data after MFA verification');
         setLoginError('Failed to complete login after MFA verification');
         return;
       }
       
       const { user } = await response.json();
+      console.log('✅ User data retrieved after MFA verification:', user);
       
       // Continue with normal login flow (same as above)
       const normalizedUser = {

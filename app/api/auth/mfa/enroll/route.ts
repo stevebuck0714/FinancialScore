@@ -4,9 +4,12 @@ import { generateMFASecret, generateQRCode, encryptMFASecret, generateBackupCode
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔐 MFA Enroll API called');
     const { userId } = await request.json();
+    console.log('👤 User ID:', userId);
 
     if (!userId) {
+      console.error('❌ No userId provided');
       return NextResponse.json(
         { error: 'User ID is required' },
         { status: 400 }
@@ -14,19 +17,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user
+    console.log('🔍 Looking up user...');
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
 
     if (!user) {
+      console.error('❌ User not found:', userId);
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
+    console.log('✅ User found:', user.email);
+
     // Check if MFA is already enabled
     if (user.mfaEnabled) {
+      console.error('❌ MFA already enabled for:', user.email);
       return NextResponse.json(
         { error: 'MFA is already enabled for this user' },
         { status: 400 }
@@ -34,13 +42,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate MFA secret
+    console.log('🔑 Generating MFA secret...');
     const { secret, otpauthUrl } = generateMFASecret(user.email);
 
     // Generate QR code
+    console.log('📱 Generating QR code...');
     const qrCodeDataURL = await generateQRCode(otpauthUrl!);
 
     // Generate backup codes
+    console.log('🔐 Generating backup codes...');
     const backupCodes = generateBackupCodes(10);
+    console.log('✅ Generated', backupCodes.length, 'backup codes');
 
     // Encrypt and temporarily store in database (not yet enabled)
     await prisma.user.update({
@@ -52,8 +64,9 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log('✅ Sending MFA enrollment response');
     return NextResponse.json({
-      qrCode: qrCodeDataURL,
+      qrCodeDataURL: qrCodeDataURL, // Fixed: was 'qrCode', should be 'qrCodeDataURL'
       secret: secret, // Send secret for manual entry
       backupCodes: backupCodes, // Send backup codes to user
       message: 'Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)',

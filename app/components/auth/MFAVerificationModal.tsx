@@ -30,7 +30,7 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           userId, 
-          code: verificationCode,
+          token: verificationCode, // Fixed: API expects 'token' not 'code'
           isBackupCode: showBackupCodeInput
         })
       });
