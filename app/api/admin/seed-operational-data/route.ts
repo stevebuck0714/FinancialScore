@@ -198,6 +198,136 @@ export async function POST(request: NextRequest) {
       console.log(`✅ Created ${apSnapshots.length} AP Aging snapshots`);
     }
 
+    // Generate Customer Sales snapshots
+    if (dataType === 'all' || dataType === 'customerSales') {
+      console.log('📊 Generating Customer Sales snapshots...');
+      
+      const customerSalesSnapshots = [];
+      const customers = [
+        { id: 'CUST001', name: 'Acme Corporation' },
+        { id: 'CUST002', name: 'Global Industries' },
+        { id: 'CUST003', name: 'Tech Solutions Inc' },
+        { id: 'CUST004', name: 'ABC Manufacturing' },
+        { id: 'CUST005', name: 'XYZ Services' },
+      ];
+      
+      const today = new Date();
+      for (let i = 0; i < monthsBack; i++) {
+        const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        
+        customers.forEach(customer => {
+          const revenue = 10000 + Math.random() * 40000;
+          const invoiceCount = Math.floor(2 + Math.random() * 8);
+          
+          customerSalesSnapshots.push({
+            companyId,
+            snapshotDate,
+            frequency: 'monthly',
+            customerId: customer.id,
+            customerName: customer.name,
+            revenue,
+            invoiceCount,
+            avgInvoiceSize: revenue / invoiceCount,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        });
+      }
+      
+      await prisma.customerSalesSnapshot.deleteMany({ where: { companyId } });
+      await prisma.customerSalesSnapshot.createMany({ data: customerSalesSnapshots });
+      
+      results.seeded.customerSalesSnapshots = customerSalesSnapshots.length;
+      console.log(`✅ Created ${customerSalesSnapshots.length} Customer Sales snapshots`);
+    }
+
+    // Generate Product Sales snapshots
+    if (dataType === 'all' || dataType === 'productSales') {
+      console.log('📊 Generating Product Sales snapshots...');
+      
+      const productSalesSnapshots = [];
+      const products = [
+        { id: 'PROD001', name: 'Premium Widget', sku: 'WDG-001' },
+        { id: 'PROD002', name: 'Standard Service', sku: 'SVC-100' },
+        { id: 'PROD003', name: 'Deluxe Package', sku: 'PKG-200' },
+        { id: 'PROD004', name: 'Basic License', sku: 'LIC-001' },
+      ];
+      
+      const today = new Date();
+      for (let i = 0; i < monthsBack; i++) {
+        const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        
+        products.forEach(product => {
+          const quantitySold = 10 + Math.random() * 90;
+          const revenue = quantitySold * (100 + Math.random() * 400);
+          const cogs = revenue * (0.3 + Math.random() * 0.2);
+          
+          productSalesSnapshots.push({
+            companyId,
+            snapshotDate,
+            frequency: 'monthly',
+            itemId: product.id,
+            itemName: product.name,
+            sku: product.sku,
+            quantitySold,
+            revenue,
+            cogs,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        });
+      }
+      
+      await prisma.productSalesSnapshot.deleteMany({ where: { companyId } });
+      await prisma.productSalesSnapshot.createMany({ data: productSalesSnapshots });
+      
+      results.seeded.productSalesSnapshots = productSalesSnapshots.length;
+      console.log(`✅ Created ${productSalesSnapshots.length} Product Sales snapshots`);
+    }
+
+    // Generate Inventory snapshots
+    if (dataType === 'all' || dataType === 'inventory') {
+      console.log('📦 Generating Inventory snapshots...');
+      
+      const inventorySnapshots = [];
+      const inventoryItems = [
+        { id: 'INV001', name: 'Raw Materials', sku: 'RAW-001' },
+        { id: 'INV002', name: 'Finished Goods', sku: 'FIN-001' },
+        { id: 'INV003', name: 'Components', sku: 'CMP-001' },
+      ];
+      
+      const today = new Date();
+      for (let i = 0; i < monthsBack; i++) {
+        const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        
+        inventoryItems.forEach(item => {
+          const qtyOnHand = 100 + Math.random() * 400;
+          const avgCost = 20 + Math.random() * 80;
+          const assetValue = qtyOnHand * avgCost;
+          
+          inventorySnapshots.push({
+            companyId,
+            snapshotDate,
+            frequency: 'monthly',
+            itemId: item.id,
+            itemName: item.name,
+            sku: item.sku,
+            qtyOnHand,
+            assetValue,
+            avgCost,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        });
+      }
+      
+      await prisma.inventorySnapshot.deleteMany({ where: { companyId } });
+      await prisma.inventorySnapshot.createMany({ data: inventorySnapshots });
+      
+      results.seeded.inventorySnapshots = inventorySnapshots.length;
+      console.log(`✅ Created ${inventorySnapshots.length} Inventory snapshots`);
+    }
+
     console.log('✅ Operational data seeding complete');
     return NextResponse.json({
       success: true,

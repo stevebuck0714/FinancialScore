@@ -63,25 +63,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // SECURITY: MFA is mandatory for all users
-    if (!user.mfaEnabled) {
-      console.log('🔒 MFA not enabled - enrollment required');
-      return NextResponse.json({
-        mfaEnrollmentRequired: true,
-        userId: user.id,
-        email: user.email,
-        message: 'MFA enrollment is required for your account',
-      });
-    }
+    // DEV MODE: Skip MFA in development
+    const isDev = process.env.NODE_ENV === 'development' || process.env.DISABLE_MFA_DEV === 'true';
+    if (isDev) {
+      console.log('🔓 DEV MODE: Skipping MFA check');
+      // Skip MFA checks in development
+    } else {
+      // SECURITY: MFA is mandatory for all users in production
+      if (!user.mfaEnabled) {
+        console.log('🔒 MFA not enabled - enrollment required');
+        return NextResponse.json({
+          mfaEnrollmentRequired: true,
+          userId: user.id,
+          email: user.email,
+          message: 'MFA enrollment is required for your account',
+        });
+      }
 
-    // Check if MFA is enabled (they have enrolled)
-    if (user.mfaEnabled) {
-      console.log('🔐 MFA is enabled for this user, requiring verification');
-      return NextResponse.json({
-        mfaRequired: true,
-        userId: user.id,
-        message: 'MFA verification required',
-      });
+      // Check if MFA is enabled (they have enrolled)
+      if (user.mfaEnabled) {
+        console.log('🔐 MFA is enabled for this user, requiring verification');
+        return NextResponse.json({
+          mfaRequired: true,
+          userId: user.id,
+          message: 'MFA verification required',
+        });
+      }
     }
 
     console.log('✅ Login successful');
