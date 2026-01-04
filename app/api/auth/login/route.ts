@@ -63,7 +63,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if MFA is enabled
+    // SECURITY: MFA is mandatory for all users
+    if (!user.mfaEnabled) {
+      console.log('🔒 MFA not enabled - enrollment required');
+      return NextResponse.json({
+        mfaEnrollmentRequired: true,
+        userId: user.id,
+        email: user.email,
+        message: 'MFA enrollment is required for your account',
+      });
+    }
+
+    // Check if MFA is enabled (they have enrolled)
     if (user.mfaEnabled) {
       console.log('🔐 MFA is enabled for this user, requiring verification');
       return NextResponse.json({

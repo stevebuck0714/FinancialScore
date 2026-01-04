@@ -18,6 +18,8 @@ import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
+const MFAEnrollmentModal = dynamic(() => import('./components/auth/MFAEnrollmentModal'), { ssr: false });
+const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerificationModal'), { ssr: false });
 // Dynamic chart components
 const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.LineChart), { ssr: false });
 const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
@@ -95,6 +97,12 @@ function FinancialScorePage() {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSuccess, setResetSuccess] = useState('');
+  
+  // State - MFA
+  const [showMFAEnrollment, setShowMFAEnrollment] = useState(false);
+  const [showMFAVerification, setShowMFAVerification] = useState(false);
+  const [mfaUserId, setMfaUserId] = useState('');
+  const [mfaUserEmail, setMfaUserEmail] = useState('');
   
   // State - Consultants
   const [consultants, setConsultants] = useState<Consultant[]>([]);
@@ -2309,7 +2317,42 @@ function FinancialScorePage() {
       await new Promise(resolve => setTimeout(resolve, 100));
       
       // Then get user data from our custom endpoint
-      const { user } = await authApi.login(loginEmail, loginPassword);
+      const loginResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      
+      if (!loginResponse.ok) {
+        setLoginError('Invalid email or password');
+        setIsLoading(false);
+        return;
+      }
+      
+      const loginData = await loginResponse.json();
+      
+      // Check if MFA enrollment is required (user hasn't set up MFA yet)
+      if (loginData.mfaEnrollmentRequired) {
+        console.log('🔒 MFA enrollment required');
+        setMfaUserId(loginData.userId);
+        setMfaUserEmail(loginData.email || loginEmail);
+        setShowMFAEnrollment(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Check if MFA verification is required (user has MFA enabled)
+      if (loginData.mfaRequired) {
+        console.log('🔐 MFA verification required');
+        setMfaUserId(loginData.userId);
+        setMfaUserEmail(loginEmail);
+        setShowMFAVerification(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // No MFA required (this shouldn't happen with mandatory MFA, but handle it gracefully)
+      const { user } = loginData;
       
       // Normalize role and userType to lowercase for frontend compatibility
       const normalizedUser = {
@@ -2418,6 +2461,158 @@ function FinancialScorePage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleMFAEnrollmentComplete = async () => {
+    console.log('✅ MFA enrollment completed');
+    setShowMFAEnrollment(false);
+    
+    // After enrollment, user is now fully authenticated
+    // Reload session and continue with login flow
+    try {
+      const { getSession } = await import('next-auth/react');
+      await getSession(); // Refresh session
+      
+      // Get updated user data
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      
+      if (!response.ok) {
+        setLoginError('Failed to complete login after MFA setup');
+        return;
+      }
+      
+      const { user } = await response.json();
+      
+      // Continue with normal login flow
+      const normalizedUser = {
+        ...user,
+        role: user.role.toLowerCase(),
+        userType: user.userType?.toLowerCase(),
+        consultantCompanyName: user.consultantCompanyName,
+        consultantType: user.consultantType,
+        consultantId: user.consultantId,
+        isPrimaryContact: user.isPrimaryContact
+      };
+      
+      setCurrentUser(normalizedUser);
+      setIsLoggedIn(true);
+      
+      // Clear assessment data for assessment users
+      if (normalizedUser.userType === 'assessment') {
+        localStorage.removeItem('fs_assessmentResponses');
+        localStorage.removeItem('fs_assessmentNotes');
+        setAssessmentResponses({});
+        setAssessmentNotes({});
+      }
+      
+      // Set appropriate view
+      if (normalizedUser.role === 'siteadmin') {
+        setCurrentView('siteadmin');
+      } else if (normalizedUser.role === 'consultant') {
+        setCurrentView('consultant-dashboard');
+      } else if (normalizedUser.userType === 'assessment') {
+        setCurrentView('ma-welcome');
+      } else if (normalizedUser.userType === 'company') {
+        setCurrentView('admin');
+      } else {
+        setCurrentView('upload');
+      }
+      
+      if (normalizedUser.role !== 'consultant' && normalizedUser.role !== 'siteadmin') {
+        setSelectedCompanyId(user.companyId || '');
+      }
+      
+      setLoginEmail('');
+      setLoginPassword('');
+      setLoginError('');
+    } catch (error) {
+      console.error('Error completing MFA enrollment:', error);
+      setLoginError('Failed to complete login after MFA setup');
+    }
+  };
+
+  const handleMFAVerificationComplete = async () => {
+    console.log('✅ MFA verification completed');
+    setShowMFAVerification(false);
+    
+    // After verification, continue with normal login flow
+    try {
+      const { getSession } = await import('next-auth/react');
+      await getSession(); // Refresh session
+      
+      // Get user data
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      
+      if (!response.ok) {
+        setLoginError('Failed to complete login after MFA verification');
+        return;
+      }
+      
+      const { user } = await response.json();
+      
+      // Continue with normal login flow (same as above)
+      const normalizedUser = {
+        ...user,
+        role: user.role.toLowerCase(),
+        userType: user.userType?.toLowerCase(),
+        consultantCompanyName: user.consultantCompanyName,
+        consultantType: user.consultantType,
+        consultantId: user.consultantId,
+        isPrimaryContact: user.isPrimaryContact
+      };
+      
+      setCurrentUser(normalizedUser);
+      setIsLoggedIn(true);
+      
+      // Clear assessment data for assessment users
+      if (normalizedUser.userType === 'assessment') {
+        localStorage.removeItem('fs_assessmentResponses');
+        localStorage.removeItem('fs_assessmentNotes');
+        setAssessmentResponses({});
+        setAssessmentNotes({});
+      }
+      
+      // Set appropriate view
+      if (normalizedUser.role === 'siteadmin') {
+        setCurrentView('siteadmin');
+      } else if (normalizedUser.role === 'consultant') {
+        setCurrentView('consultant-dashboard');
+      } else if (normalizedUser.userType === 'assessment') {
+        setCurrentView('ma-welcome');
+      } else if (normalizedUser.userType === 'company') {
+        setCurrentView('admin');
+      } else {
+        setCurrentView('upload');
+      }
+      
+      if (normalizedUser.role !== 'consultant' && normalizedUser.role !== 'siteadmin') {
+        setSelectedCompanyId(user.companyId || '');
+      }
+      
+      setLoginEmail('');
+      setLoginPassword('');
+      setLoginError('');
+    } catch (error) {
+      console.error('Error completing MFA verification:', error);
+      setLoginError('Failed to complete login after MFA verification');
+    }
+  };
+
+  const handleMFACancel = () => {
+    console.log('❌ MFA verification cancelled');
+    setShowMFAVerification(false);
+    setShowMFAEnrollment(false);
+    setMfaUserId('');
+    setMfaUserEmail('');
+    setLoginError('Login cancelled');
   };
 
   const handleRegisterConsultant = async () => {
@@ -4313,46 +4508,67 @@ function FinancialScorePage() {
 
   if (!isLoggedIn) {
     return (
-      <LoginView
-        loginEmail={loginEmail}
-        setLoginEmail={setLoginEmail}
-        loginPassword={loginPassword}
-        setLoginPassword={setLoginPassword}
-        loginName={loginName}
-        setLoginName={setLoginName}
-        loginPhone={loginPhone}
-        setLoginPhone={setLoginPhone}
-        loginCompanyName={loginCompanyName}
-        setLoginCompanyName={setLoginCompanyName}
-        loginCompanyAddress1={loginCompanyAddress1}
-        setLoginCompanyAddress1={setLoginCompanyAddress1}
-        loginCompanyAddress2={loginCompanyAddress2}
-        setLoginCompanyAddress2={setLoginCompanyAddress2}
-        loginCompanyCity={loginCompanyCity}
-        setLoginCompanyCity={setLoginCompanyCity}
-        loginCompanyState={loginCompanyState}
-        setLoginCompanyState={setLoginCompanyState}
-        loginCompanyZip={loginCompanyZip}
-        setLoginCompanyZip={setLoginCompanyZip}
-        loginCompanyWebsite={loginCompanyWebsite}
-        setLoginCompanyWebsite={setLoginCompanyWebsite}
-        isRegistering={isRegistering}
-        setIsRegistering={setIsRegistering}
-        loginError={loginError}
-        setLoginError={setLoginError}
-        showPassword={showPassword}
-        setShowPassword={setShowPassword}
-        showForgotPassword={showForgotPassword}
-        setShowForgotPassword={setShowForgotPassword}
-        resetEmail={resetEmail}
-        setResetEmail={setResetEmail}
-        resetSuccess={resetSuccess}
-        setResetSuccess={setResetSuccess}
-        isLoading={isLoading}
-        setIsLoading={setIsLoading}
-        handleLogin={handleLogin}
-        handleRegisterConsultant={handleRegisterConsultant}
-      />
+      <>
+        <LoginView
+          loginEmail={loginEmail}
+          setLoginEmail={setLoginEmail}
+          loginPassword={loginPassword}
+          setLoginPassword={setLoginPassword}
+          loginName={loginName}
+          setLoginName={setLoginName}
+          loginPhone={loginPhone}
+          setLoginPhone={setLoginPhone}
+          loginCompanyName={loginCompanyName}
+          setLoginCompanyName={setLoginCompanyName}
+          loginCompanyAddress1={loginCompanyAddress1}
+          setLoginCompanyAddress1={setLoginCompanyAddress1}
+          loginCompanyAddress2={loginCompanyAddress2}
+          setLoginCompanyAddress2={setLoginCompanyAddress2}
+          loginCompanyCity={loginCompanyCity}
+          setLoginCompanyCity={setLoginCompanyCity}
+          loginCompanyState={loginCompanyState}
+          setLoginCompanyState={setLoginCompanyState}
+          loginCompanyZip={loginCompanyZip}
+          setLoginCompanyZip={setLoginCompanyZip}
+          loginCompanyWebsite={loginCompanyWebsite}
+          setLoginCompanyWebsite={setLoginCompanyWebsite}
+          isRegistering={isRegistering}
+          setIsRegistering={setIsRegistering}
+          loginError={loginError}
+          setLoginError={setLoginError}
+          showPassword={showPassword}
+          setShowPassword={setShowPassword}
+          showForgotPassword={showForgotPassword}
+          setShowForgotPassword={setShowForgotPassword}
+          resetEmail={resetEmail}
+          setResetEmail={setResetEmail}
+          resetSuccess={resetSuccess}
+          setResetSuccess={setResetSuccess}
+          isLoading={isLoading}
+          setIsLoading={setIsLoading}
+          handleLogin={handleLogin}
+          handleRegisterConsultant={handleRegisterConsultant}
+        />
+        
+        {/* MFA Enrollment Modal */}
+        {showMFAEnrollment && (
+          <MFAEnrollmentModal
+            userId={mfaUserId}
+            userEmail={mfaUserEmail}
+            onComplete={handleMFAEnrollmentComplete}
+          />
+        )}
+        
+        {/* MFA Verification Modal */}
+        {showMFAVerification && (
+          <MFAVerificationModal
+            userId={mfaUserId}
+            userEmail={mfaUserEmail}
+            onSuccess={handleMFAVerificationComplete}
+            onCancel={handleMFACancel}
+          />
+        )}
+      </>
     );
   }
 

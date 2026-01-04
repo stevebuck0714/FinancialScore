@@ -54,7 +54,8 @@ export const authConfig: NextAuthConfig = {
           userType: user.userType,
           companyId: user.companyId,
           consultantId: consultantId,
-          isPrimaryContact: user.isPrimaryContact
+          isPrimaryContact: user.isPrimaryContact,
+          mfaEnabled: user.mfaEnabled // Pass MFA status to session
         };
       },
     }),
@@ -68,6 +69,7 @@ export const authConfig: NextAuthConfig = {
         token.companyId = user.companyId;
         token.consultantId = user.consultantId;
         token.isPrimaryContact = user.isPrimaryContact;
+        token.mfaEnabled = user.mfaEnabled;
       }
       return token;
     },
@@ -79,6 +81,7 @@ export const authConfig: NextAuthConfig = {
         session.user.companyId = token.companyId as string | undefined;
         session.user.consultantId = token.consultantId as string | undefined;
         session.user.isPrimaryContact = token.isPrimaryContact as boolean | undefined;
+        session.user.mfaEnabled = token.mfaEnabled as boolean | undefined;
       }
       return session;
     },
