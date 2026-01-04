@@ -104,22 +104,22 @@ export async function POST(request: NextRequest) {
       console.log(`✅ Created ${cashSnapshots.length} daily cash snapshots`);
     }
 
-    // Generate AR Aging snapshots (monthly)
+    // Generate AR Aging snapshots (monthly + daily)
     if (dataType === 'all' || dataType === 'ar') {
-      console.log('📊 Generating AR Aging snapshots...');
+      console.log('📊 Generating AR Aging snapshots (daily + monthly)...');
       
       const arSnapshots = [];
       const today = new Date();
       
+      // Monthly AR Aging
       for (let i = 0; i < monthsBack; i++) {
         const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
         
-        // Generate realistic AR aging data
-        const totalAR = 50000 + Math.random() * 100000; // $50k-$150k
-        const current = totalAR * (0.5 + Math.random() * 0.2); // 50-70%
-        const days1to30 = totalAR * (0.15 + Math.random() * 0.1); // 15-25%
-        const days31to60 = totalAR * (0.05 + Math.random() * 0.05); // 5-10%
-        const days61to90 = totalAR * (0.02 + Math.random() * 0.03); // 2-5%
+        const totalAR = 50000 + Math.random() * 100000;
+        const current = totalAR * (0.5 + Math.random() * 0.2);
+        const days1to30 = totalAR * (0.15 + Math.random() * 0.1);
+        const days31to60 = totalAR * (0.05 + Math.random() * 0.05);
+        const days61to90 = totalAR * (0.02 + Math.random() * 0.03);
         const days90plus = totalAR - current - days1to30 - days31to60 - days61to90;
         
         arSnapshots.push({
@@ -137,36 +137,59 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      // Delete existing AR snapshots
-      await prisma.aRAgingSnapshot.deleteMany({
-        where: { companyId },
-      });
+      // Daily AR Aging (last 90 days)
+      let baseAR = 80000 + Math.random() * 70000;
+      for (let i = 90; i >= 0; i--) {
+        const snapshotDate = new Date(today);
+        snapshotDate.setDate(today.getDate() - i);
+        snapshotDate.setHours(0, 0, 0, 0);
+        
+        baseAR += (Math.random() - 0.5) * 5000;
+        const totalAR = Math.max(baseAR, 40000);
+        const current = totalAR * (0.55 + Math.random() * 0.1);
+        const days1to30 = totalAR * (0.15 + Math.random() * 0.1);
+        const days31to60 = totalAR * (0.08 + Math.random() * 0.05);
+        const days61to90 = totalAR * (0.03 + Math.random() * 0.04);
+        const days90plus = totalAR - current - days1to30 - days31to60 - days61to90;
+        
+        arSnapshots.push({
+          companyId,
+          snapshotDate,
+          frequency: 'daily',
+          totalAR,
+          current,
+          days1to30,
+          days31to60,
+          days61to90,
+          days90plus: Math.max(days90plus, 0),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
       
-      // Insert new snapshots
-      await prisma.aRAgingSnapshot.createMany({
-        data: arSnapshots,
-      });
+      await prisma.aRAgingSnapshot.deleteMany({ where: { companyId } });
+      await prisma.aRAgingSnapshot.createMany({ data: arSnapshots });
       
       results.seeded.arSnapshots = arSnapshots.length;
-      console.log(`✅ Created ${arSnapshots.length} AR Aging snapshots`);
+      console.log(`✅ Created ${arSnapshots.length} AR Aging snapshots (${monthsBack} monthly + 91 daily)`);
     }
 
-    // Generate AP Aging snapshots (monthly)
+    // Generate AP Aging snapshots (monthly + daily)
     if (dataType === 'all' || dataType === 'ap') {
-      console.log('📊 Generating AP Aging snapshots...');
+      console.log('📊 Generating AP Aging snapshots (daily + monthly)...');
       
       const apSnapshots = [];
       const today = new Date();
       
+      // Monthly AP Aging
       for (let i = 0; i < monthsBack; i++) {
         const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
         
-        // Generate realistic AP aging data
-        const totalAP = 30000 + Math.random() * 70000; // $30k-$100k
-        const current = totalAP * (0.6 + Math.random() * 0.2); // 60-80%
-        const days1to30 = totalAP * (0.1 + Math.random() * 0.1); // 10-20%
-        const days31to60 = totalAP * (0.03 + Math.random() * 0.05); // 3-8%
-        const days61to90 = totalAP * (0.01 + Math.random() * 0.02); // 1-3%
+        const totalAP = 30000 + Math.random() * 70000;
+        const current = totalAP * (0.6 + Math.random() * 0.2);
+        const days1to30 = totalAP * (0.1 + Math.random() * 0.1);
+        const days31to60 = totalAP * (0.03 + Math.random() * 0.05);
+        const days61to90 = totalAP * (0.01 + Math.random() * 0.02);
         const days90plus = totalAP - current - days1to30 - days31to60 - days61to90;
         
         apSnapshots.push({
@@ -184,18 +207,41 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      // Delete existing AP snapshots
-      await prisma.aPAgingSnapshot.deleteMany({
-        where: { companyId },
-      });
+      // Daily AP Aging (last 90 days)
+      let baseAP = 50000 + Math.random() * 50000;
+      for (let i = 90; i >= 0; i--) {
+        const snapshotDate = new Date(today);
+        snapshotDate.setDate(today.getDate() - i);
+        snapshotDate.setHours(0, 0, 0, 0);
+        
+        baseAP += (Math.random() - 0.5) * 4000;
+        const totalAP = Math.max(baseAP, 30000);
+        const current = totalAP * (0.65 + Math.random() * 0.1);
+        const days1to30 = totalAP * (0.12 + Math.random() * 0.08);
+        const days31to60 = totalAP * (0.05 + Math.random() * 0.05);
+        const days61to90 = totalAP * (0.02 + Math.random() * 0.03);
+        const days90plus = totalAP - current - days1to30 - days31to60 - days61to90;
+        
+        apSnapshots.push({
+          companyId,
+          snapshotDate,
+          frequency: 'daily',
+          totalAP,
+          current,
+          days1to30,
+          days31to60,
+          days61to90,
+          days90plus: Math.max(days90plus, 0),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
       
-      // Insert new snapshots
-      await prisma.aPAgingSnapshot.createMany({
-        data: apSnapshots,
-      });
+      await prisma.aPAgingSnapshot.deleteMany({ where: { companyId } });
+      await prisma.aPAgingSnapshot.createMany({ data: apSnapshots });
       
       results.seeded.apSnapshots = apSnapshots.length;
-      console.log(`✅ Created ${apSnapshots.length} AP Aging snapshots`);
+      console.log(`✅ Created ${apSnapshots.length} AP Aging snapshots (${monthsBack} monthly + 91 daily)`);
     }
 
     // Generate Customer Sales snapshots

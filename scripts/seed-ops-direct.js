@@ -56,10 +56,11 @@ async function seedOperationalData() {
     await prisma.cashSnapshot.createMany({ data: cashSnapshots });
     console.log(`✅ Created ${cashSnapshots.length} daily cash snapshots`);
     
-    // 2. Generate AR Aging snapshots
-    console.log('📊 Generating AR Aging snapshots...');
+    // 2. Generate AR Aging snapshots (both daily and monthly)
+    console.log('📊 Generating AR Aging snapshots (daily + monthly)...');
     const arSnapshots = [];
     
+    // Monthly AR Aging
     for (let i = 0; i < monthsBack; i++) {
       const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const totalAR = 80000 + Math.random() * 70000;
@@ -82,14 +83,44 @@ async function seedOperationalData() {
       });
     }
     
+    // Daily AR Aging (last 90 days)
+    let baseAR = 80000 + Math.random() * 70000;
+    for (let i = 90; i >= 0; i--) {
+      const snapshotDate = new Date(today);
+      snapshotDate.setDate(today.getDate() - i);
+      snapshotDate.setHours(0, 0, 0, 0);
+      
+      // Vary daily AR slightly
+      baseAR += (Math.random() - 0.5) * 5000;
+      const totalAR = Math.max(baseAR, 40000);
+      const current = totalAR * (0.55 + Math.random() * 0.1);
+      const days1to30 = totalAR * (0.15 + Math.random() * 0.1);
+      const days31to60 = totalAR * (0.08 + Math.random() * 0.05);
+      const days61to90 = totalAR * (0.03 + Math.random() * 0.04);
+      const days90plus = totalAR - current - days1to30 - days31to60 - days61to90;
+      
+      arSnapshots.push({
+        companyId,
+        snapshotDate,
+        frequency: 'daily',
+        totalAR,
+        current,
+        days1to30,
+        days31to60,
+        days61to90,
+        days90plus: Math.max(days90plus, 0),
+      });
+    }
+    
     await prisma.aRAgingSnapshot.deleteMany({ where: { companyId } });
     await prisma.aRAgingSnapshot.createMany({ data: arSnapshots });
-    console.log(`✅ Created ${arSnapshots.length} AR Aging snapshots`);
+    console.log(`✅ Created ${arSnapshots.length} AR Aging snapshots (${monthsBack} monthly + 91 daily)`);
     
-    // 3. Generate AP Aging snapshots
-    console.log('📊 Generating AP Aging snapshots...');
+    // 3. Generate AP Aging snapshots (both daily and monthly)
+    console.log('📊 Generating AP Aging snapshots (daily + monthly)...');
     const apSnapshots = [];
     
+    // Monthly AP Aging
     for (let i = 0; i < monthsBack; i++) {
       const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const totalAP = 50000 + Math.random() * 50000;
@@ -112,9 +143,38 @@ async function seedOperationalData() {
       });
     }
     
+    // Daily AP Aging (last 90 days)
+    let baseAP = 50000 + Math.random() * 50000;
+    for (let i = 90; i >= 0; i--) {
+      const snapshotDate = new Date(today);
+      snapshotDate.setDate(today.getDate() - i);
+      snapshotDate.setHours(0, 0, 0, 0);
+      
+      // Vary daily AP slightly
+      baseAP += (Math.random() - 0.5) * 4000;
+      const totalAP = Math.max(baseAP, 30000);
+      const current = totalAP * (0.65 + Math.random() * 0.1);
+      const days1to30 = totalAP * (0.12 + Math.random() * 0.08);
+      const days31to60 = totalAP * (0.05 + Math.random() * 0.05);
+      const days61to90 = totalAP * (0.02 + Math.random() * 0.03);
+      const days90plus = totalAP - current - days1to30 - days31to60 - days61to90;
+      
+      apSnapshots.push({
+        companyId,
+        snapshotDate,
+        frequency: 'daily',
+        totalAP,
+        current,
+        days1to30,
+        days31to60,
+        days61to90,
+        days90plus: Math.max(days90plus, 0),
+      });
+    }
+    
     await prisma.aPAgingSnapshot.deleteMany({ where: { companyId } });
     await prisma.aPAgingSnapshot.createMany({ data: apSnapshots });
-    console.log(`✅ Created ${apSnapshots.length} AP Aging snapshots`);
+    console.log(`✅ Created ${apSnapshots.length} AP Aging snapshots (${monthsBack} monthly + 91 daily)`);
     
     // 4. Generate Customer Sales snapshots
     console.log('📊 Generating Customer Sales snapshots...');
