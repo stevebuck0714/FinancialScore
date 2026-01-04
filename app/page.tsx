@@ -735,6 +735,13 @@ function FinancialScorePage() {
   // State - QuickBooks Connection
   const [qbConnected, setQbConnected] = useState(false);
 
+  // State - Xero Connection
+  const [xeroConnected, setXeroConnected] = useState(false);
+  const [xeroStatus, setXeroStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
+  const [xeroLastSync, setXeroLastSync] = useState<Date | null>(null);
+  const [xeroSyncing, setXeroSyncing] = useState(false);
+  const [xeroError, setXeroError] = useState<string | null>(null);
+
   // State - Financial Statements
   const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent'>('income-statement');
   const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
@@ -1437,10 +1444,29 @@ function FinancialScorePage() {
       // Clean URL
       window.history.replaceState({}, '', window.location.pathname + '?view=admin');
     }
+    
+    if (success === 'xero_connected') {
+      alert('Xero connected successfully! You can now sync your financial data.');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
 
     // Show error message
     if (error === 'quickbooks_connection_failed') {
       alert('Failed to connect to QuickBooks. Please try again.');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
+    
+    if (error === 'xero_connection_failed') {
+      alert('Failed to connect to Xero. Please try again.');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
+    
+    if (error === 'xero_auth_denied') {
+      const details = searchParams.get('details');
+      alert(`Xero authorization was denied or failed${details ? ': ' + details : ''}. Please try again.`);
       // Clean URL
       window.history.replaceState({}, '', window.location.pathname + '?view=admin');
     }
@@ -1844,6 +1870,8 @@ function FinancialScorePage() {
 
         // Check QuickBooks connection status
         await checkQBStatus(selectedCompanyId);
+        // Check Xero connection status
+        await checkXeroStatus(selectedCompanyId);
       } catch (error) {
         console.error('Error loading company data:', error);
       }
@@ -3103,6 +3131,130 @@ function FinancialScorePage() {
     } catch (error: any) {
       console.error('QuickBooks disconnect error:', error);
       alert('Failed to disconnect QuickBooks: ' + (error.message || 'Unknown error'));
+    }
+  };
+
+  // Xero Functions
+  const checkXeroStatus = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/xero/status?companyId=${companyId}`);
+      const data = await response.json();
+      
+      if (data.connected) {
+        setXeroConnected(true);
+        setXeroStatus(data.status);
+        const newSyncTime = data.lastSyncAt ? new Date(data.lastSyncAt).getTime() : null;
+        const currentSyncTime = xeroLastSync ? xeroLastSync.getTime() : null;
+        if (newSyncTime !== currentSyncTime) {
+          setXeroLastSync(data.lastSyncAt ? new Date(data.lastSyncAt) : null);
+        }
+        setXeroError(data.errorMessage);
+      } else {
+        setXeroConnected(false);
+        setXeroStatus('NOT_CONNECTED');
+        if (xeroLastSync !== null) {
+          setXeroLastSync(null);
+        }
+        setXeroError(null);
+      }
+    } catch (error) {
+      console.error('Failed to check Xero status:', error);
+      setXeroError('Failed to check connection status');
+    }
+  };
+
+  const connectXero = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/xero/auth?companyId=${selectedCompanyId}`);
+      const data = await response.json();
+      
+      if (data.authUri) {
+        window.location.href = data.authUri;
+      } else {
+        throw new Error('Failed to generate authorization URL');
+      }
+    } catch (error) {
+      console.error('Failed to initiate Xero connection:', error);
+      alert('Failed to connect to Xero. Please try again.');
+    }
+  };
+
+  const syncXero = async () => {
+    if (!selectedCompanyId || !currentUser) {
+      alert('Please select a company first');
+      return;
+    }
+
+    setXeroSyncing(true);
+    setXeroError(null);
+
+    try {
+      const response = await fetch('/api/xero/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          companyId: selectedCompanyId,
+          userId: currentUser.id
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setXeroLastSync(new Date());
+        
+        if (selectedCompanyId) {
+          await checkXeroStatus(selectedCompanyId);
+        }
+        
+        alert(`Xero data synced successfully! ${data.recordsImported || 0} financial records imported.`);
+      } else {
+        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
+        throw new Error(errorMsg);
+      }
+    } catch (error: any) {
+      console.error('Xero sync error:', error);
+      const errorMessage = error.message || 'Failed to sync data';
+      setXeroError(errorMessage);
+      alert('Failed to sync Xero data:\n\n' + errorMessage);
+    } finally {
+      setXeroSyncing(false);
+    }
+  };
+
+  const disconnectXero = async () => {
+    if (!selectedCompanyId) return;
+
+    if (!confirm('Are you sure you want to disconnect Xero? You can reconnect anytime.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/xero/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setXeroConnected(false);
+        setXeroStatus('NOT_CONNECTED');
+        setXeroLastSync(null);
+        setXeroError(null);
+        alert('Xero disconnected successfully');
+      } else {
+        throw new Error(data.error || 'Disconnect failed');
+      }
+    } catch (error: any) {
+      console.error('Xero disconnect error:', error);
+      alert('Failed to disconnect Xero: ' + (error.message || 'Unknown error'));
     }
   };
 
@@ -6181,6 +6333,102 @@ function FinancialScorePage() {
                 </div>
               </div>
 
+              {/* Xero Connection */}
+              <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#13B5EA' }}>X</div>
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Xero</h3>
+                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Xero Accounting Software</p>
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ 
+                    flex: 1, 
+                    padding: '12px', 
+                    background: xeroConnected && xeroStatus === 'ACTIVE' ? '#d1fae5' : xeroStatus === 'ERROR' ? '#fee2e2' : xeroStatus === 'EXPIRED' ? '#fed7aa' : '#fef3c7', 
+                    borderRadius: '8px', 
+                    border: `1px solid ${xeroConnected && xeroStatus === 'ACTIVE' ? '#10b981' : xeroStatus === 'ERROR' ? '#ef4444' : xeroStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: xeroConnected && xeroStatus === 'ACTIVE' ? '#065f46' : xeroStatus === 'ERROR' ? '#991b1b' : xeroStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
+                      {xeroConnected && xeroStatus === 'ACTIVE' ? '✅ Connected' : xeroStatus === 'ERROR' ? '❌ Error' : xeroStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: xeroConnected && xeroStatus === 'ACTIVE' ? '#065f46' : xeroStatus === 'ERROR' ? '#991b1b' : xeroStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
+                      {xeroError || (xeroConnected && xeroStatus === 'ACTIVE' ? (xeroLastSync ? `Last synced: ${xeroLastSync.toLocaleString()}` : 'Ready to sync') : xeroStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  {!xeroConnected || xeroStatus === 'EXPIRED' || xeroStatus === 'ERROR' ? (
+                    <button
+                      onClick={connectXero}
+                      style={{
+                        padding: '12px 24px',
+                        background: '#13B5EA',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#0E8FBA'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#13B5EA'}
+                    >
+                      {xeroConnected ? 'Reconnect' : 'Connect'} to Xero
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={syncXero}
+                        disabled={xeroSyncing}
+                        style={{
+                          padding: '12px 24px',
+                          background: xeroSyncing ? '#94a3b8' : '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: xeroSyncing ? 'not-allowed' : 'pointer',
+                          transition: 'background 0.2s',
+                          opacity: xeroSyncing ? 0.7 : 1
+                        }}
+                        onMouseEnter={(e) => !xeroSyncing && (e.currentTarget.style.background = '#5568d3')}
+                        onMouseLeave={(e) => !xeroSyncing && (e.currentTarget.style.background = '#667eea')}
+                      >
+                        {xeroSyncing ? 'Syncing...' : 'Sync Data'}
+                      </button>
+                      <button
+                        onClick={disconnectXero}
+                        disabled={xeroSyncing}
+                        style={{
+                          padding: '12px 24px',
+                          background: 'white',
+                          color: '#ef4444',
+                          border: '2px solid #ef4444',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: xeroSyncing ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.2s',
+                          opacity: xeroSyncing ? 0.7 : 1
+                        }}
+                        onMouseEnter={(e) => !xeroSyncing && (e.currentTarget.style.background = '#fef2f2')}
+                        onMouseLeave={(e) => !xeroSyncing && (e.currentTarget.style.background = 'white')}
+                      >
+                        Disconnect
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
               {/* QuickBooks Data Verification */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
@@ -7149,14 +7397,14 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !csvTrialBalanceData && !qbRawData && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '32px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
-                <p style={{ fontSize: '14px', color: '#94a3b8' }}>Sync QuickBooks data or upload a Trial Balance CSV to map accounts.</p>
+                <p style={{ fontSize: '14px', color: '#94a3b8' }}>Sync QuickBooks/Xero data or upload a Trial Balance CSV to map accounts.</p>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', maxWidth: '800px', margin: '0 auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', maxWidth: '1100px', margin: '0 auto' }}>
                 {/* QuickBooks Option */}
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
                   <div style={{ fontSize: '32px', marginBottom: '12px' }}>💻</div>
@@ -7176,6 +7424,28 @@ function FinancialScorePage() {
                     }}
                   >
                     Connect QuickBooks
+                  </button>
+                </div>
+
+                {/* Xero Option */}
+                <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '24px', border: '2px solid #fed7aa', textAlign: 'center' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>☁️</div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Xero API</div>
+                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to Xero to sync your financial data automatically.</p>
+                  <button
+                    onClick={() => setAdminDashboardTab('api-connections')}
+                    style={{
+                      padding: '10px 20px',
+                      background: '#fb923c',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Connect Xero
                   </button>
                 </div>
                 
@@ -7371,6 +7641,114 @@ function FinancialScorePage() {
                 </div>
                 )}
 
+                {/* AI-Assisted Mapping Section for API synced accounts (QuickBooks/Xero) */}
+                {!hasCsvData && aiMappings.length > 0 && aiMappings.filter(m => m.targetField === 'unmapped').length > 0 && (
+                <div style={{ marginBottom: '32px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div>
+                        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                          AI-Assisted Account Mapping
+                        </h2>
+                        <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+                          Use AI to automatically suggest mappings for {aiMappings.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setIsGeneratingMappings(true);
+                          try {
+                            // Convert current accounts to format expected by AI mapping
+                            const qbAccountsWithClass = aiMappings.map(acc => ({
+                              name: acc.qbAccount,
+                              classification: acc.qbAccountClassification,
+                              accountCode: acc.qbAccountCode,
+                            }));
+
+                            console.log('🤖 API accounts to map:', qbAccountsWithClass.length);
+
+                            const response = await fetch('/api/ai-mapping/enhanced', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                qbAccountsWithClass,
+                                companyId: selectedCompanyId,
+                                targetFields: []
+                              })
+                            });
+
+                            if (!response.ok) {
+                              throw new Error('Failed to generate mappings');
+                            }
+
+                            const data = await response.json();
+                            setAiMappings(data.mappings || []);
+                            setShowMappingSection(true);
+                          } catch (error: any) {
+                            console.error('Error generating mappings:', error);
+                            alert('Failed to generate AI mappings: ' + error.message);
+                          } finally {
+                            setIsGeneratingMappings(false);
+                          }
+                        }}
+                        disabled={isGeneratingMappings}
+                        style={{
+                          padding: '12px 24px',
+                          background: isGeneratingMappings ? '#94a3b8' : '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: isGeneratingMappings ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        {isGeneratingMappings ? (
+                          <>
+                            <span>🔄</span>
+                            <span>Generating Mappings...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🤖</span>
+                            <span>Generate AI Mappings</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Account Summary by Classification */}
+                    <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Classification:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {Object.entries(
+                          aiMappings.reduce((acc: any, m) => {
+                            const type = m.qbAccountClassification || 'Other';
+                            acc[type] = (acc[type] || 0) + 1;
+                            return acc;
+                          }, {})
+                        ).map(([type, count]: [string, any]) => (
+                          <span key={type} style={{
+                            padding: '4px 12px',
+                            background: 'white',
+                            borderRadius: '16px',
+                            fontSize: '12px',
+                            color: '#065f46',
+                            border: '1px solid #86efac'
+                          }}>
+                            {type}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
                 {/* Mapping Results Section */}
                 {showMappingSection && aiMappings.length > 0 && (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '32px' }}>
@@ -7393,21 +7771,33 @@ function FinancialScorePage() {
 
                     {/* Save Mappings Section */}
                     <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+                      {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
+                        <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #93c5fd' }}>
+                          <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
+                            <span style={{ fontSize: '16px' }}>ℹ️</span>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>Xero/QuickBooks Data Detected</div>
+                              <p style={{ fontSize: '12px', color: '#1e40af', margin: 0 }}>
+                                Your financial data is imported. After saving mappings, click <strong>"Apply Mappings to Data"</strong> to create detailed expense breakdowns, then view in <strong>Data Review</strong> tab!
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
                           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
-                          <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>Save your mappings to use them for future data processing.</p>
+                          <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+                            {csvTrialBalanceData ? 'Save your mappings, then process the CSV data to create monthly records.' : 'Save your mappings to apply them to your Xero/QuickBooks data.'}
+                          </p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          {/* Only show Process button for CSV data - Xero/QB data is already processed */}
+                          {csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId && (
                           <button
                             onClick={async () => {
                               if (!aiMappings || aiMappings.length === 0) {
                                 alert('Please save account mappings first!');
-                                return;
-                              }
-
-                              if (!csvTrialBalanceData || csvTrialBalanceData._companyId !== selectedCompanyId) {
-                                alert('No CSV/Trial Balance data available!');
                                 return;
                               }
 
@@ -7496,6 +7886,65 @@ function FinancialScorePage() {
                           >
                             {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
                           </button>
+                          )}
+                          
+                          {/* Reprocess Xero Data button - only show if API-synced data exists */}
+                          {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
+                          <button
+                            onClick={async () => {
+                              if (!selectedCompanyId) {
+                                alert('No company selected');
+                                return;
+                              }
+                              
+                              const confirmed = confirm('Reprocess Xero/QuickBooks data with your account mappings?\n\nThis will fetch account-level details and apply your mappings to create detailed expense breakdowns.');
+                              if (!confirmed) return;
+                              
+                              setIsProcessingMonthlyData(true);
+                              try {
+                                console.log('🔄 Reprocessing Xero/QB data with mappings...');
+                                
+                                const response = await fetch('/api/xero/reprocess-mappings', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ companyId: selectedCompanyId })
+                                });
+                                
+                                const result = await response.json();
+                                
+                                if (result.success) {
+                                  alert(`✅ ${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
+                                  // Switch to Data Review tab
+                                  setAdminDashboardTab('data-review');
+                                  // Trigger data reload by updating qbLastSync (this triggers the useEffect)
+                                  setQbLastSync(Date.now());
+                                } else {
+                                  alert(`❌ Failed to reprocess: ${result.error}`);
+                                }
+                              } catch (error: any) {
+                                console.error('Reprocess error:', error);
+                                alert('Failed to reprocess data: ' + error.message);
+                              } finally {
+                                setIsProcessingMonthlyData(false);
+                              }
+                            }}
+                            disabled={isProcessingMonthlyData}
+                            style={{
+                              padding: '8px 16px',
+                              background: isProcessingMonthlyData ? '#9ca3af' : '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              cursor: isProcessingMonthlyData ? 'not-allowed' : 'pointer',
+                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                            }}
+                          >
+                            {isProcessingMonthlyData ? 'Processing...' : '⚙️ Apply Mappings to Data'}
+                          </button>
+                          )}
+                          
                           <button
                             onClick={async () => {
                               try {

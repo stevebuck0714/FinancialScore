@@ -1,5 +1,6 @@
 import { AccountingAdapter, AdapterConfig } from './types';
 import { QuickBooksAdapter } from './quickbooks-adapter';
+import { XeroAdapter } from './xero-adapter';
 import prisma from '@/lib/prisma';
 import { AccountingPlatform } from '@prisma/client';
 
@@ -69,8 +70,7 @@ export class AdapterFactory {
         return new QuickBooksAdapter(config);
       
       case 'XERO':
-        // TODO: Implement XeroAdapter
-        throw new Error('Xero adapter not yet implemented');
+        return new XeroAdapter(config);
       
       case 'SAGE':
         // TODO: Implement SageAdapter
@@ -80,8 +80,9 @@ export class AdapterFactory {
         // TODO: Implement NetSuiteAdapter
         throw new Error('NetSuite adapter not yet implemented');
       
-      case 'OTHER':
-        throw new Error('Generic adapter not supported');
+      case 'DYNAMICS365':
+        // TODO: Implement Dynamics365Adapter
+        throw new Error('Dynamics365 adapter not yet implemented');
       
       default:
         throw new Error(`Unsupported accounting platform: ${platform}`);

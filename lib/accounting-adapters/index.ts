@@ -6,4 +6,5 @@
 export * from './types';
 export * from './adapter-factory';
 export * from './quickbooks-adapter';
+export * from './xero-adapter';
 

@@ -73,6 +73,7 @@ model Company {
   subscription               Subscription?
   users                      User[]
   loans                      Loan[]
+  xeroTransactions           XeroTransaction[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
@@ -337,6 +338,22 @@ model AccountMapping {
   @@index([companyId])
 }
 
+// Machine Learning: Stores learned patterns from account mappings across all companies
+model LearnedMapping {
+  id                      String   @id @default(cuid())
+  accountName             String   // Normalized account name
+  accountClassification   String?  // Asset, Liability, Revenue, Expense, etc.
+  targetField             String   // Where this account should be mapped
+  useCount                Int      @default(1) // How many times this mapping has been used
+  lastUsedAt              DateTime @default(now())
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([accountName, accountClassification, targetField])
+  @@index([accountName])
+  @@index([targetField])
+}
+
 // model ExpenseGoal {  // Doesn't exist in production DB
 //   id        String   @id @default(cuid())
 //   companyId String   @unique
@@ -361,6 +378,33 @@ model AccountMapping {
 
 //   @@index([companyId])
 // }
+
+// Daily transaction data from Xero for operational reports
+model XeroTransaction {
+  id              String   @id @default(cuid())
+  companyId       String
+  transactionId   String   // Xero's invoice/bill/transaction ID
+  transactionType String   // INVOICE, BILL, BANK_TRANSACTION, PAYMENT
+  date            DateTime
+  dueDate         DateTime?
+  contact         String?  // Customer/Supplier name
+  reference       String?  // Invoice/Bill number
+  total           Float    @default(0)
+  amountPaid      Float    @default(0)
+  amountDue       Float    @default(0)
+  status          String?  // DRAFT, SUBMITTED, AUTHORISED, PAID, etc.
+  lineItems       Json?    // Array of line items with account details
+  rawData         Json?    // Full Xero transaction object
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, transactionId])
+  @@index([companyId])
+  @@index([date])
+  @@index([transactionType])
+}
 
 model SystemSettings {
   id                       String   @id @default(cuid())
@@ -554,6 +598,7 @@ enum BusinessStatus {
 
 enum AccountingPlatform {
   QUICKBOOKS
+  XERO
   SAGE
   NETSUITE
   DYNAMICS365

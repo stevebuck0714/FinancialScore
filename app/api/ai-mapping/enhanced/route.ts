@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
       targetField: string;
       confidence: string;
       reasoning: string;
-      source: 'keyword' | 'learned' | 'similar' | 'accountCode';
+      source: 'keyword' | 'learned' | 'similar' | 'accountCode' | 'none';
     }> = [];
 
     // Process each account
@@ -223,7 +223,7 @@ export async function POST(request: NextRequest) {
 
       let bestMapping = null;
       let bestConfidence = 0;
-      let source: 'keyword' | 'learned' | 'similar' | 'accountCode' = 'keyword';
+      let source: 'keyword' | 'learned' | 'similar' | 'accountCode' | 'none' = 'keyword';
 
       // 1. Try account code-based mapping first (most reliable for standard COA)
       if (accountCode) {
@@ -243,10 +243,15 @@ export async function POST(request: NextRequest) {
         source = 'keyword';
       }
 
-      // 2. Try machine learning suggestion
+      // 3. Try machine learning suggestion (only if available and valid)
       try {
         const mlSuggestion = await mappingLearner.getSuggestion(accountName, classification);
-        if (mlSuggestion && mlSuggestion.confidence > bestConfidence) {
+        // Only use ML if it has a valid targetField (not empty, not unmapped)
+        if (mlSuggestion && 
+            mlSuggestion.targetField && 
+            mlSuggestion.targetField !== 'unmapped' &&
+            mlSuggestion.targetField !== '' &&
+            mlSuggestion.confidence > bestConfidence) {
           bestMapping = {
             targetField: mlSuggestion.targetField,
             confidence: mlSuggestion.confidence >= 90 ? 'high' : mlSuggestion.confidence >= 70 ? 'medium' : 'low',
@@ -256,11 +261,11 @@ export async function POST(request: NextRequest) {
           source = mlSuggestion.source;
         }
       } catch (mlError) {
-        console.warn('[ML] Error getting suggestion:', mlError);
-        // Continue with keyword match if ML fails
+        // ML system not available - continue with keyword match
+        // This is expected if LearnedMapping table doesn't exist yet
       }
 
-      if (bestMapping) {
+      if (bestMapping && bestMapping.targetField) {
         mappings.push({
           qbAccount: accountName,
           qbAccountClassification: classification,
@@ -270,14 +275,14 @@ export async function POST(request: NextRequest) {
           source
         });
       } else {
-        // No match found
+        // No match found - mark as unmapped
         mappings.push({
           qbAccount: accountName,
           qbAccountClassification: classification,
-          targetField: '',
+          targetField: 'unmapped',
           confidence: 'low',
           reasoning: 'No keyword or learned match found - please select manually',
-          source: 'keyword'
+          source: 'none'
         });
       }
     }

@@ -51,6 +51,7 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "speakeasy": "^2.0.0",
+    "xero-node": "^13.3.0",
     "xlsx": "^0.18.5",
     "zod": "^4.3.4"
   },

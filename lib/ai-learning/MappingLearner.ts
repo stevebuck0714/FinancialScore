@@ -72,6 +72,9 @@ export class MappingLearner {
         qbAccount: {
           equals: accountName,
           mode: 'insensitive'
+        },
+        targetField: {
+          not: 'unmapped'
         }
       },
       _count: {
@@ -109,9 +112,14 @@ export class MappingLearner {
     accountName: string,
     accountClassification: string
   ): Promise<LearnedMapping | null> {
-    // Get all unique mappings
+    // Get all unique mappings (exclude unmapped accounts)
     const allMappings = await prisma.accountMapping.groupBy({
       by: ['qbAccount', 'qbAccountClassification', 'targetField'],
+      where: {
+        targetField: {
+          not: 'unmapped'
+        }
+      },
       _count: {
         id: true,
         companyId: true
