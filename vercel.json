@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/sync-operational-data",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-devices",
+      "schedule": "0 3 * * *"
     }
   ]
 }

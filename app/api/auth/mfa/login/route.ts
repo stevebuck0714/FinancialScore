@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyTOTP, verifyBackupCode, encryptBackupCodes } from '@/lib/mfa';
+import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
+import { sendTrustedDeviceNotification } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, token, isBackupCode } = await request.json();
+    const { userId, token, isBackupCode, rememberDevice } = await request.json();
 
     if (!userId || !token) {
       return NextResponse.json(
@@ -67,9 +69,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // MFA verification successful - return user data
+    // MFA verification successful
     console.log('✅ MFA verification successful, login complete');
-    return NextResponse.json({
+
+    const response = NextResponse.json({
       user: {
         id: user.id,
         email: user.email,
@@ -82,6 +85,45 @@ export async function POST(request: NextRequest) {
         consultantCompanyName: user.consultant?.companyName,
       },
     });
+
+    // Handle trusted device if requested
+    if (rememberDevice) {
+      try {
+        console.log('🔐 Creating trusted device for user:', userId);
+        const { token: deviceToken, device } = await createTrustedDevice(userId, request);
+        
+        // Set cookie with device token
+        const trustDurationDays = getTrustDurationDays();
+        response.cookies.set('mfa_device_token', deviceToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: trustDurationDays * 24 * 60 * 60, // Convert days to seconds
+          path: '/'
+        });
+
+        console.log('✅ Trusted device created:', device.deviceName);
+
+        // Send email notification (non-blocking)
+        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        sendTrustedDeviceNotification({
+          to: user.email,
+          userName: user.name,
+          deviceName: device.deviceName,
+          ipAddress: device.ipAddress || 'Unknown',
+          timestamp: device.createdAt,
+          manageDevicesLink: `${baseUrl}/settings/security`
+        }).catch(err => {
+          console.error('⚠️ Failed to send trusted device email notification:', err);
+          // Don't fail the login if email fails
+        });
+      } catch (error) {
+        console.error('⚠️ Failed to create trusted device:', error);
+        // Don't fail the login if trusted device creation fails
+      }
+    }
+
+    return response;
   } catch (error) {
     console.error('MFA login error:', error);
     return NextResponse.json(

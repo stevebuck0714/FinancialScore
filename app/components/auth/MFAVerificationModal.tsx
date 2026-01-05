@@ -14,6 +14,7 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBackupCodeInput, setShowBackupCodeInput] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(false);
 
   const verifyMFACode = async () => {
     if (!verificationCode || verificationCode.length !== 6) {
@@ -25,13 +26,14 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
     setError('');
 
     try {
-      const response = await fetch('/api/auth/mfa/verify', {
+      const response = await fetch('/api/auth/mfa/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           userId, 
-          token: verificationCode, // Fixed: API expects 'token' not 'code'
-          isBackupCode: showBackupCodeInput
+          token: verificationCode,
+          isBackupCode: showBackupCodeInput,
+          rememberDevice: rememberDevice
         })
       });
 
@@ -151,6 +153,42 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
             {error}
           </div>
         )}
+
+        {/* Remember Device Checkbox */}
+        <div style={{ 
+          marginBottom: '16px',
+          padding: '12px',
+          background: '#f8fafc',
+          borderRadius: '8px',
+          border: '1px solid #e2e8f0'
+        }}>
+          <label style={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            cursor: 'pointer',
+            fontSize: '14px',
+            color: '#475569'
+          }}>
+            <input
+              type="checkbox"
+              checked={rememberDevice}
+              onChange={(e) => setRememberDevice(e.target.checked)}
+              style={{
+                marginRight: '8px',
+                width: '16px',
+                height: '16px',
+                cursor: 'pointer'
+              }}
+            />
+            <span>
+              <strong>Remember this device for 60 days</strong>
+              <br />
+              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                Don't check this on shared or public computers
+              </span>
+            </span>
+          </label>
+        </div>
 
         <button
           onClick={verifyMFACode}

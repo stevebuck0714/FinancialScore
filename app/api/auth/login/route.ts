@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyPassword } from '@/lib/auth';
 import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/audit-logger';
+import { validateTrustedDevice } from '@/lib/trusted-device';
 
 export async function POST(request: NextRequest) {
   try {
@@ -64,11 +65,13 @@ export async function POST(request: NextRequest) {
     }
 
     // DEV MODE: Skip MFA in development
-    const isDev = process.env.NODE_ENV === 'development' || process.env.DISABLE_MFA_DEV === 'true';
-    if (isDev) {
-      console.log('🔓 DEV MODE: Skipping MFA check');
-      // Skip MFA checks in development
-    } else {
+    // TEMPORARY: Commented out to test trusted device feature
+    // const isDev = process.env.NODE_ENV === 'development' || process.env.DISABLE_MFA_DEV === 'true';
+    // if (isDev) {
+    //   console.log('🔓 DEV MODE: Skipping MFA check');
+    //   // Skip MFA checks in development
+    // } else {
+    if (true) {
       // SECURITY: MFA is mandatory for all users in production
       if (!user.mfaEnabled) {
         console.log('🔒 MFA not enabled - enrollment required');
@@ -82,14 +85,38 @@ export async function POST(request: NextRequest) {
 
       // Check if MFA is enabled (they have enrolled)
       if (user.mfaEnabled) {
-        console.log('🔐 MFA is enabled for this user, requiring verification');
-        return NextResponse.json({
-          mfaRequired: true,
-          userId: user.id,
-          message: 'MFA verification required',
-        });
+        // Check for trusted device BEFORE requiring MFA
+        const deviceToken = request.cookies.get('mfa_device_token')?.value;
+        if (deviceToken) {
+          console.log('🔍 Checking trusted device token...');
+          const validation = await validateTrustedDevice(user.id, deviceToken, request);
+          
+          if (validation.valid) {
+            console.log('✅ Trusted device validated - skipping MFA');
+            // Device is trusted, skip MFA and proceed with login
+            // Continue to login success below
+          } else {
+            console.log('⚠️ Trusted device validation failed:', validation.reason);
+            // Clear invalid cookie
+            const response = NextResponse.json({
+              mfaRequired: true,
+              userId: user.id,
+              message: 'MFA verification required',
+            });
+            response.cookies.delete('mfa_device_token');
+            return response;
+          }
+        } else {
+          // No trusted device token, require MFA
+          console.log('🔐 No trusted device found, requiring MFA verification');
+          return NextResponse.json({
+            mfaRequired: true,
+            userId: user.id,
+            message: 'MFA verification required',
+          });
+        }
       }
-    }
+    } // End of if (true) - was if (isDev) check
 
     console.log('✅ Login successful');
     

@@ -23,7 +23,8 @@
     "db:clear-users": "tsx scripts/clear-users.ts",
     "db:clear-all": "tsx scripts/clear-all-users.ts",
     "db:update-admin": "tsx scripts/update-admin-email.ts",
-    "import:benchmarks": "tsx scripts/import-benchmarks.ts"
+    "import:benchmarks": "tsx scripts/import-benchmarks.ts",
+    "cleanup:devices": "tsx scripts/cleanup-expired-devices.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

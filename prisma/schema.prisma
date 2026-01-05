@@ -107,11 +107,32 @@ model User {
   consultantFirm       Consultant?        @relation("ConsultantTeamMembers", fields: [consultantId], references: [id], onDelete: Cascade)
   financialRecords     FinancialRecord[]
   company              Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trustedDevices       TrustedDevice[]
 
   @@index([email])
   @@index([companyId])
   @@index([consultantId])
   @@index([passwordResetToken])
+}
+
+model TrustedDevice {
+  id                String   @id @default(cuid())
+  userId            String
+  deviceToken       String   @unique
+  deviceName        String
+  deviceFingerprint String?
+  ipAddress         String?
+  userAgent         String?
+  createdAt         DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+  expiresAt         DateTime
+  isActive          Boolean  @default(true)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deviceToken])
+  @@index([expiresAt])
+  @@index([isActive])
 }
 
 model FinancialRecord {
