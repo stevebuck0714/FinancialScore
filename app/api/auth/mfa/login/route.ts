@@ -124,10 +124,12 @@ export async function POST(request: NextRequest) {
     }
 
     return response;
-  } catch (error) {
-    console.error('MFA login error:', error);
+  } catch (error: any) {
+    console.error('❌ MFA login error:', error);
+    console.error('Error stack:', error?.stack);
+    console.error('Error message:', error?.message);
     return NextResponse.json(
-      { error: 'Failed to verify MFA code' },
+      { error: 'Failed to verify MFA code', details: error?.message || 'Unknown error' },
       { status: 500 }
     );
   }
