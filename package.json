@@ -7,7 +7,7 @@
     "dev": "node server.js",
     "dev:vercel": "node scripts/clean-dev-servers.js && next dev",
     "dev:clean": "node scripts/clean-dev-servers.js",
-    "build": "prisma generate && prisma migrate deploy && node scripts/check-deploy-block.js && next build",
+    "build": "prisma generate && node scripts/check-deploy-block.js && next build",
     "start": "node server.js",
     "start:vercel": "next start",
     "lint": "next lint",
