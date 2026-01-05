@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       where: { id: userId },
       include: {
         company: true,
-        consultant: true,
+        primaryConsultant: true,
       },
     });
 
@@ -80,9 +80,9 @@ export async function POST(request: NextRequest) {
         role: user.role,
         userType: user.userType,
         companyId: user.companyId,
-        consultantId: user.consultant?.id,
-        consultantType: user.consultant?.type,
-        consultantCompanyName: user.consultant?.companyName,
+        consultantId: user.primaryConsultant?.id || user.consultantId,
+        consultantType: user.primaryConsultant?.type,
+        consultantCompanyName: user.primaryConsultant?.companyName,
       },
     });
 
