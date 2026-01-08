@@ -181,7 +181,7 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
               }}
             />
             <span>
-              <strong>Remember this device for 60 days</strong>
+              <strong>Remember this device for 100 days</strong>
               <br />
               <span style={{ fontSize: '12px', color: '#64748b' }}>
                 Don't check this on shared or public computers
