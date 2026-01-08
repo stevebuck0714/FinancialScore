@@ -154,8 +154,7 @@ async function seedOperationalData() {
           days1to30: arTotal * 0.15,
           days31to60: arTotal * 0.10,
           days61to90: arTotal * 0.03,
-          days90plus: arTotal * 0.02,
-          currentPct: 70
+          days90plus: arTotal * 0.02
         }
       });
       totalRecords += 1;
@@ -172,8 +171,7 @@ async function seedOperationalData() {
           days1to30: apTotal * 0.15,
           days31to60: apTotal * 0.07,
           days61to90: apTotal * 0.02,
-          days90plus: apTotal * 0.01,
-          currentPct: 75
+          days90plus: apTotal * 0.01
         }
       });
       totalRecords += 1;
