@@ -41,7 +41,8 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
-    date.setDate(date.getDate() - 90); // Default to 90 days ago
+    // Default to 12 months ago for monthly view
+    date.setMonth(date.getMonth() - 12);
     return date.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState<string>(() => {
@@ -57,6 +58,23 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
       loadTabData(activeTab);
     }
   }, [activeTab, selectedCompanyId, frequency, startDate, endDate]);
+
+  // Auto-adjust date range when frequency changes
+  useEffect(() => {
+    const end = new Date();
+    const start = new Date();
+    
+    if (frequency === 'daily') {
+      start.setDate(start.getDate() - 90);
+    } else if (frequency === 'weekly') {
+      start.setDate(start.getDate() - (16 * 7)); // 16 weeks
+    } else {
+      start.setMonth(start.getMonth() - 12); // 12 months
+    }
+    
+    setStartDate(start.toISOString().split('T')[0]);
+    setEndDate(end.toISOString().split('T')[0]);
+  }, [frequency]);
 
   const loadSummary = async () => {
     setLoading(true);
@@ -224,69 +242,144 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
 
         {/* Quick Date Range Buttons */}
         <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-          <button
-            onClick={() => {
-              const end = new Date();
-              const start = new Date();
-              start.setDate(start.getDate() - 30);
-              setStartDate(start.toISOString().split('T')[0]);
-              setEndDate(end.toISOString().split('T')[0]);
-            }}
-            style={{
-              padding: '6px 12px',
-              background: '#f1f5f9',
-              border: '1px solid #e2e8f0',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#475569',
-              cursor: 'pointer'
-            }}
-          >
-            Last 30 Days
-          </button>
-          <button
-            onClick={() => {
-              const end = new Date();
-              const start = new Date();
-              start.setDate(start.getDate() - 90);
-              setStartDate(start.toISOString().split('T')[0]);
-              setEndDate(end.toISOString().split('T')[0]);
-            }}
-            style={{
-              padding: '6px 12px',
-              background: '#f1f5f9',
-              border: '1px solid #e2e8f0',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#475569',
-              cursor: 'pointer'
-            }}
-          >
-            Last 90 Days
-          </button>
-          <button
-            onClick={() => {
-              const end = new Date();
-              const start = new Date();
-              start.setMonth(start.getMonth() - 6);
-              setStartDate(start.toISOString().split('T')[0]);
-              setEndDate(end.toISOString().split('T')[0]);
-            }}
-            style={{
-              padding: '6px 12px',
-              background: '#f1f5f9',
-              border: '1px solid #e2e8f0',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#475569',
-              cursor: 'pointer'
-            }}
-          >
-            Last 6 Months
-          </button>
+          {frequency === 'daily' && (
+            <>
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(start.getDate() - 30);
+                  setStartDate(start.toISOString().split('T')[0]);
+                  setEndDate(end.toISOString().split('T')[0]);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                Last 30 Days
+              </button>
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(start.getDate() - 90);
+                  setStartDate(start.toISOString().split('T')[0]);
+                  setEndDate(end.toISOString().split('T')[0]);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                Last 90 Days
+              </button>
+            </>
+          )}
+          {frequency === 'weekly' && (
+            <>
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(start.getDate() - (8 * 7)); // 8 weeks
+                  setStartDate(start.toISOString().split('T')[0]);
+                  setEndDate(end.toISOString().split('T')[0]);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                Last 8 Weeks
+              </button>
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setDate(start.getDate() - (16 * 7)); // 16 weeks
+                  setStartDate(start.toISOString().split('T')[0]);
+                  setEndDate(end.toISOString().split('T')[0]);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                Last 16 Weeks
+              </button>
+            </>
+          )}
+          {frequency === 'monthly' && (
+            <>
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setMonth(start.getMonth() - 6);
+                  setStartDate(start.toISOString().split('T')[0]);
+                  setEndDate(end.toISOString().split('T')[0]);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                Last 6 Months
+              </button>
+              <button
+                onClick={() => {
+                  const end = new Date();
+                  const start = new Date();
+                  start.setMonth(start.getMonth() - 12);
+                  setStartDate(start.toISOString().split('T')[0]);
+                  setEndDate(end.toISOString().split('T')[0]);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                Last 12 Months
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
