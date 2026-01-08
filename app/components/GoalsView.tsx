@@ -10,6 +10,8 @@ interface GoalsViewProps {
   monthly: any[];
   expenseGoals: { [key: string]: number };
   setExpenseGoals: (goals: { [key: string]: number }) => void;
+  masterDataCategories?: any[];
+  setMasterDataCategories?: (categories: any[]) => void;
 }
 
 export default function GoalsView({
@@ -17,9 +19,15 @@ export default function GoalsView({
   companyName,
   monthly,
   expenseGoals,
-  setExpenseGoals
+  setExpenseGoals,
+  masterDataCategories,
+  setMasterDataCategories
 }: GoalsViewProps) {
+  const [activeTab, setActiveTab] = React.useState<'expense' | 'operational'>('expense');
   const [isSaving, setIsSaving] = React.useState(false);
+  const [operationalGoals, setOperationalGoals] = React.useState<{ [key: string]: number }>({});
+  const [operationalData, setOperationalData] = React.useState<any>(null);
+  const [loadingOperational, setLoadingOperational] = React.useState(false);
   
   // Use the master data store hook
   const { data: masterData, loading, error } = useMasterData(selectedCompanyId);
@@ -30,6 +38,69 @@ export default function GoalsView({
       masterDataStore.clearCompanyCache(selectedCompanyId);
     }
   }, [selectedCompanyId]);
+
+  // Load operational goals when component mounts or company changes
+  React.useEffect(() => {
+    if (selectedCompanyId) {
+      loadOperationalGoals();
+    }
+  }, [selectedCompanyId]);
+
+  // Load operational data when tab switches to operational
+  React.useEffect(() => {
+    if (activeTab === 'operational' && selectedCompanyId && !operationalData) {
+      loadOperationalData();
+    }
+  }, [activeTab, selectedCompanyId]);
+
+  const loadOperationalGoals = async () => {
+    try {
+      const response = await fetch(`/api/operational-goals?companyId=${selectedCompanyId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setOperationalGoals(data.goals || {});
+      }
+    } catch (error) {
+      console.error('Error loading operational goals:', error);
+    }
+  };
+
+  const loadOperationalData = async () => {
+    setLoadingOperational(true);
+    try {
+      // Get last 6 months of data
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 6);
+
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        frequency: 'monthly',
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+      });
+
+      // Fetch all operational data types
+      const [arData, apData, cashData, inventoryData] = await Promise.all([
+        fetch(`/api/operational-data?${params}&type=ar-aging`).then(r => r.json()),
+        fetch(`/api/operational-data?${params}&type=ap-aging`).then(r => r.json()),
+        fetch(`/api/operational-data?${params}&type=cash`).then(r => r.json()),
+        fetch(`/api/operational-data?${params}&type=inventory`).then(r => r.json()),
+      ]);
+
+      setOperationalData({
+        arAging: arData.records || [],
+        apAging: apData.records || [],
+        cash: cashData.records || [],
+        inventory: inventoryData.records || [],
+      });
+    } catch (error) {
+      console.error('Error loading operational data:', error);
+      toast.error('Failed to load operational data');
+    } finally {
+      setLoadingOperational(false);
+    }
+  };
 
   // Get data from master data store with fallbacks for empty table structure
   const cogsCategories = masterData?.cogsCategories || [];
@@ -105,21 +176,40 @@ export default function GoalsView({
 
     setIsSaving(true);
     try {
-      const response = await fetch('/api/expense-goals', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          goals: expenseGoals,
-        }),
-      });
+      if (activeTab === 'expense') {
+        const response = await fetch('/api/expense-goals', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            goals: expenseGoals,
+          }),
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to save goals');
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to save goals');
+        }
+      } else {
+        const response = await fetch('/api/operational-goals', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            goals: operationalGoals,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to save operational goals');
+        }
       }
 
       toast.success('Goals saved successfully!');
@@ -144,15 +234,56 @@ export default function GoalsView({
         }
       `}</style>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Expense Goals</h1>
+      {/* Tabs */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '16px', 
+        borderBottom: '2px solid #e2e8f0',
+        marginBottom: '32px'
+      }}>
+        <button
+          onClick={() => setActiveTab('expense')}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: '12px 24px',
+            fontSize: '16px',
+            fontWeight: '600',
+            color: activeTab === 'expense' ? '#667eea' : '#64748b',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'expense' ? '3px solid #667eea' : '3px solid transparent',
+            marginBottom: '-2px',
+            transition: 'all 0.2s'
+          }}
+        >
+          Expense Goals
+        </button>
+        <button
+          onClick={() => setActiveTab('operational')}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: '12px 24px',
+            fontSize: '16px',
+            fontWeight: '600',
+            color: activeTab === 'operational' ? '#667eea' : '#64748b',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'operational' ? '3px solid #667eea' : '3px solid transparent',
+            marginBottom: '-2px',
+            transition: 'all 0.2s'
+          }}
+        >
+          Operational Goals
+        </button>
       </div>
 
-      <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-              <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Expense Category</th>
+      {/* Expense Goals Tab */}
+      {activeTab === 'expense' && (
+        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Expense Category</th>
               {last6Months.map((month, i) => (
                 <th key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
                   {month.month}
@@ -164,8 +295,8 @@ export default function GoalsView({
                 6-Mo Avg<br />
                 <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
               </th>
-              <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#667eea' }}>
-                Goal %<br />
+              <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#667eea' }}>
+                <strong>Goal %</strong><br />
                 <span style={{ fontSize: '12px', fontWeight: '400' }}>of Revenue</span>
               </th>
             </tr>
@@ -197,41 +328,46 @@ export default function GoalsView({
                   {(isNaN(category.averagePercentage) ? 0 : category.averagePercentage).toFixed(1)}%
                 </td>
                 <td style={{ textAlign: 'center', padding: '12px' }}>
-                  <input
-                    type="number"
-                    className="no-spinner"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={expenseGoals[category.key] || ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setExpenseGoals(prev => {
-                        const newGoals = { ...prev };
-                        if (value === '' || value === null || value === undefined) {
-                          delete newGoals[category.key];
-                        } else {
-                          const numValue = parseFloat(value);
-                          if (!isNaN(numValue) && numValue > 0) {
-                            newGoals[category.key] = numValue;
-                          } else {
+                  <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+                    <input
+                      type="number"
+                      className="no-spinner"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={expenseGoals[category.key] || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setExpenseGoals(prev => {
+                          const newGoals = { ...prev };
+                          if (value === '' || value === null || value === undefined) {
                             delete newGoals[category.key];
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue > 0) {
+                              newGoals[category.key] = numValue;
+                            } else {
+                              delete newGoals[category.key];
+                            }
                           }
-                        }
-                        return newGoals;
-                      });
-                    }}
-                    placeholder=""
-                    style={{
-                      width: '80px',
-                      padding: '8px 12px',
-                      fontSize: '14px',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      textAlign: 'center',
-                      color: '#1e293b'
-                    }}
-                  />
+                          return newGoals;
+                        });
+                      }}
+                      placeholder=""
+                      style={{
+                        width: '80px',
+                        padding: '8px 32px 8px 12px',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        textAlign: 'center',
+                        color: '#1e293b',
+                        backgroundColor: '#fefce8'
+                      }}
+                    />
+                    <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -282,41 +418,46 @@ export default function GoalsView({
                   {(isNaN(category.averagePercentage) ? 0 : category.averagePercentage).toFixed(1)}%
                 </td>
                 <td style={{ textAlign: 'center', padding: '12px' }}>
-                  <input
-                    type="number"
-                    className="no-spinner"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={expenseGoals[category.key] || ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setExpenseGoals(prev => {
-                        const newGoals = { ...prev };
-                        if (value === '' || value === null || value === undefined) {
-                          delete newGoals[category.key];
-                        } else {
-                          const numValue = parseFloat(value);
-                          if (!isNaN(numValue) && numValue > 0) {
-                            newGoals[category.key] = numValue;
-                          } else {
+                  <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+                    <input
+                      type="number"
+                      className="no-spinner"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={expenseGoals[category.key] || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setExpenseGoals(prev => {
+                          const newGoals = { ...prev };
+                          if (value === '' || value === null || value === undefined) {
                             delete newGoals[category.key];
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue > 0) {
+                              newGoals[category.key] = numValue;
+                            } else {
+                              delete newGoals[category.key];
+                            }
                           }
-                        }
-                        return newGoals;
-                      });
-                    }}
-                    placeholder=""
-                    style={{
-                      width: '80px',
-                      padding: '8px 12px',
-                      fontSize: '14px',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      textAlign: 'center',
-                      color: '#1e293b'
-                    }}
-                  />
+                          return newGoals;
+                        });
+                      }}
+                      placeholder=""
+                      style={{
+                        width: '80px',
+                        padding: '8px 32px 8px 12px',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        textAlign: 'center',
+                        color: '#1e293b',
+                        backgroundColor: '#fefce8'
+                      }}
+                    />
+                    <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -343,38 +484,516 @@ export default function GoalsView({
           </tbody>
         </table>
 
-        {/* Save Button */}
-        <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            style={{
-              padding: '12px 32px',
-              fontSize: '16px',
-              fontWeight: '600',
-              color: 'white',
-              backgroundColor: isSaving ? '#94a3b8' : '#667eea',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: isSaving ? 'not-allowed' : 'pointer',
-              transition: 'background-color 0.2s',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-            }}
-            onMouseEnter={(e) => {
-              if (!isSaving) {
-                e.currentTarget.style.backgroundColor = '#5568d3';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isSaving) {
-                e.currentTarget.style.backgroundColor = '#667eea';
-              }
-            }}
-          >
-            {isSaving ? 'Saving...' : 'Save Goals'}
-          </button>
+          {/* Save Button */}
+          <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              style={{
+                padding: '12px 32px',
+                fontSize: '16px',
+                fontWeight: '600',
+                color: 'white',
+                backgroundColor: isSaving ? '#94a3b8' : '#667eea',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: isSaving ? 'not-allowed' : 'pointer',
+                transition: 'background-color 0.2s',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}
+              onMouseEnter={(e) => {
+                if (!isSaving) {
+                  e.currentTarget.style.backgroundColor = '#5568d3';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isSaving) {
+                  e.currentTarget.style.backgroundColor = '#667eea';
+                }
+              }}
+            >
+              {isSaving ? 'Saving...' : 'Save Goals'}
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Operational Goals Tab */}
+      {activeTab === 'operational' && (() => {
+  // Render operational goals
+
+  if (loadingOperational) {
+    return (
+      <div style={{ background: 'white', borderRadius: '12px', padding: '48px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontSize: '16px', color: '#64748b' }}>Loading operational data...</div>
       </div>
+    );
+  }
+
+  if (!operationalData) {
+    return (
+      <div style={{ background: 'white', borderRadius: '12px', padding: '48px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontSize: '16px', color: '#64748b' }}>No operational data available</div>
+      </div>
+    );
+  }
+
+  // Calculate 6-month data and averages for each metric
+  const calculateMetricData = (records: any[], metricKey: string) => {
+    const last6 = records.slice(0, 6).reverse();
+    const values = last6.map(r => r[metricKey] || 0);
+    const avg = values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
+    return { values, avg, months: last6.map(r => new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })) };
+  };
+
+  const arMetrics = [
+    { key: 'ar_current_pct', label: 'AR Current %', getValue: (r: any) => r.totalAR > 0 ? (r.current / r.totalAR) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
+    { key: 'ar_over30_pct', label: 'AR Over 30 Days %', getValue: (r: any) => r.totalAR > 0 ? ((r.days1to30 + r.days31to60 + r.days61to90 + r.days90plus) / r.totalAR) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
+    { key: 'ar_over90_pct', label: 'AR Over 90 Days %', getValue: (r: any) => r.totalAR > 0 ? (r.days90plus / r.totalAR) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
+  ];
+
+  const apMetrics = [
+    { key: 'ap_current_pct', label: 'AP Current %', getValue: (r: any) => r.totalAP > 0 ? (r.current / r.totalAP) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
+    { key: 'ap_over30_pct', label: 'AP Over 30 Days %', getValue: (r: any) => r.totalAP > 0 ? ((r.days1to30 + r.days31to60 + r.days61to90 + r.days90plus) / r.totalAP) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
+    { key: 'ap_over90_pct', label: 'AP Over 90 Days %', getValue: (r: any) => r.totalAP > 0 ? (r.days90plus / r.totalAP) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
+  ];
+
+  const cashMetrics = [
+    { key: 'total_cash', label: 'Total Cash Balance', getValue: (r: any) => r.cashBalance || 0, format: (v: number) => '$' + Math.round(v).toLocaleString(), goalType: 'currency' },
+  ];
+
+  const inventoryMetrics = [
+    { key: 'inventory_value', label: 'Inventory Value', getValue: (r: any) => r.assetValue || 0, format: (v: number) => '$' + Math.round(v).toLocaleString(), goalType: 'currency' },
+  ];
+
+  // Process data for each metric
+  const processMetrics = (metrics: any[], records: any[]) => {
+    return metrics.map(metric => {
+      const last6 = records.slice(0, 6).reverse();
+      const values = last6.map(r => metric.getValue(r));
+      const avg = values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
+      const months = last6.map(r => new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
+      return { ...metric, values, avg, months };
+    });
+  };
+
+  const arProcessed = processMetrics(arMetrics, operationalData.arAging || []);
+  const apProcessed = processMetrics(apMetrics, operationalData.apAging || []);
+  
+  // For cash and inventory, we need to aggregate by month
+  const cashByMonth = (operationalData.cash || []).reduce((acc: any, r: any) => {
+    const month = new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    if (!acc[month]) acc[month] = { snapshotDate: r.snapshotDate, cashBalance: 0 };
+    acc[month].cashBalance += r.cashBalance;
+    return acc;
+  }, {});
+  const cashRecords = Object.values(cashByMonth);
+
+  const inventoryByMonth = (operationalData.inventory || []).reduce((acc: any, r: any) => {
+    const month = new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    if (!acc[month]) acc[month] = { snapshotDate: r.snapshotDate, assetValue: 0 };
+    acc[month].assetValue += r.assetValue;
+    return acc;
+  }, {});
+  const inventoryRecords = Object.values(inventoryByMonth);
+
+  const cashProcessed = processMetrics(cashMetrics, cashRecords as any[]);
+  const inventoryProcessed = processMetrics(inventoryMetrics, inventoryRecords as any[]);
+
+  const allMetrics = [
+    ...arProcessed,
+    ...apProcessed,
+    ...cashProcessed,
+    ...inventoryProcessed,
+  ];
+
+  // Get common months (use first metric's months)
+  const months = allMetrics[0]?.months || [];
+
+  return (
+    <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+            <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Operational Metric</th>
+            {months.map((month, i) => (
+              <th key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
+                {month}
+              </th>
+            ))}
+            <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
+              6-Mo Avg
+            </th>
+            <th style={{ textAlign: 'center', padding: '12px', fontSize: '18px', fontWeight: '700', color: '#667eea' }}>
+              <strong>Goal</strong>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {/* AR Aging Section */}
+          <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+            <td colSpan={months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+              Accounts Receivable Aging
+            </td>
+          </tr>
+          {arProcessed.map((metric) => (
+            <tr key={metric.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
+                {metric.label}
+              </td>
+              {metric.values.map((value: number, i: number) => (
+                <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: '#64748b' }}>
+                  {metric.format(value)}
+                </td>
+              ))}
+              <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                {metric.format(metric.avg)}
+              </td>
+              <td style={{ textAlign: 'center', padding: '12px' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+                  {metric.goalType === 'currency' && (
+                    <span style={{ position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>$</span>
+                  )}
+                  <input
+                    type={metric.goalType === 'currency' ? 'text' : 'number'}
+                    className="no-spinner"
+                    min={metric.goalType === 'percentage' ? '0' : undefined}
+                    max={metric.goalType === 'percentage' ? '100' : undefined}
+                    step={metric.goalType === 'currency' ? undefined : '0.1'}
+                    value={metric.goalType === 'currency' && operationalGoals[metric.key] ? operationalGoals[metric.key].toLocaleString() : (operationalGoals[metric.key] || '')}
+                    onChange={(e) => {
+                      const value = metric.goalType === 'currency' ? e.target.value.replace(/,/g, '') : e.target.value;
+                      setOperationalGoals((prev: any) => {
+                        const newGoals = { ...prev };
+                        if (value === '' || value === null || value === undefined) {
+                          delete newGoals[metric.key];
+                        } else {
+                          const numValue = parseFloat(value);
+                          if (!isNaN(numValue) && numValue > 0) {
+                            newGoals[metric.key] = numValue;
+                          } else {
+                            delete newGoals[metric.key];
+                          }
+                        }
+                        return newGoals;
+                      });
+                    }}
+                    onKeyDown={metric.goalType === 'currency' ? (e) => {
+                      // Allow: backspace, delete, tab, escape, enter
+                      if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
+                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                        (e.keyCode === 65 && e.ctrlKey === true) ||
+                        (e.keyCode === 67 && e.ctrlKey === true) ||
+                        (e.keyCode === 86 && e.ctrlKey === true) ||
+                        (e.keyCode === 88 && e.ctrlKey === true) ||
+                        // Allow: home, end, left, right
+                        (e.keyCode >= 35 && e.keyCode <= 39)) {
+                        return;
+                      }
+                      // Ensure that it is a number and stop the keypress
+                      if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+                        e.preventDefault();
+                      }
+                    } : undefined}
+                    placeholder=""
+                    style={{
+                      width: metric.goalType === 'currency' ? '140px' : '80px',
+                      padding: metric.goalType === 'currency' ? '8px 12px 8px 24px' : '8px 32px 8px 12px',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      color: '#1e293b',
+                      backgroundColor: '#fefce8'
+                    }}
+                  />
+                  {metric.goalType === 'percentage' && (
+                    <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+
+          {/* AP Aging Section */}
+          <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+            <td colSpan={months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+              Accounts Payable Aging
+            </td>
+          </tr>
+          {apProcessed.map((metric) => (
+            <tr key={metric.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
+                {metric.label}
+              </td>
+              {metric.values.map((value: number, i: number) => (
+                <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: '#64748b' }}>
+                  {metric.format(value)}
+                </td>
+              ))}
+              <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                {metric.format(metric.avg)}
+              </td>
+              <td style={{ textAlign: 'center', padding: '12px' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+                  {metric.goalType === 'currency' && (
+                    <span style={{ position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>$</span>
+                  )}
+                  <input
+                    type={metric.goalType === 'currency' ? 'text' : 'number'}
+                    className="no-spinner"
+                    min={metric.goalType === 'percentage' ? '0' : undefined}
+                    max={metric.goalType === 'percentage' ? '100' : undefined}
+                    step={metric.goalType === 'currency' ? undefined : '0.1'}
+                    value={metric.goalType === 'currency' && operationalGoals[metric.key] ? operationalGoals[metric.key].toLocaleString() : (operationalGoals[metric.key] || '')}
+                    onChange={(e) => {
+                      const value = metric.goalType === 'currency' ? e.target.value.replace(/,/g, '') : e.target.value;
+                      setOperationalGoals((prev: any) => {
+                        const newGoals = { ...prev };
+                        if (value === '' || value === null || value === undefined) {
+                          delete newGoals[metric.key];
+                        } else {
+                          const numValue = parseFloat(value);
+                          if (!isNaN(numValue) && numValue > 0) {
+                            newGoals[metric.key] = numValue;
+                          } else {
+                            delete newGoals[metric.key];
+                          }
+                        }
+                        return newGoals;
+                      });
+                    }}
+                    onKeyDown={metric.goalType === 'currency' ? (e) => {
+                      // Allow: backspace, delete, tab, escape, enter
+                      if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
+                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                        (e.keyCode === 65 && e.ctrlKey === true) ||
+                        (e.keyCode === 67 && e.ctrlKey === true) ||
+                        (e.keyCode === 86 && e.ctrlKey === true) ||
+                        (e.keyCode === 88 && e.ctrlKey === true) ||
+                        // Allow: home, end, left, right
+                        (e.keyCode >= 35 && e.keyCode <= 39)) {
+                        return;
+                      }
+                      // Ensure that it is a number and stop the keypress
+                      if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+                        e.preventDefault();
+                      }
+                    } : undefined}
+                    placeholder=""
+                    style={{
+                      width: metric.goalType === 'currency' ? '140px' : '80px',
+                      padding: metric.goalType === 'currency' ? '8px 12px 8px 24px' : '8px 32px 8px 12px',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      color: '#1e293b',
+                      backgroundColor: '#fefce8'
+                    }}
+                  />
+                  {metric.goalType === 'percentage' && (
+                    <span style={{ position: 'absolute', right: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>%</span>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+
+          {/* Cash Section */}
+          <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+            <td colSpan={months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+              Cash Management
+            </td>
+          </tr>
+          {cashProcessed.map((metric) => (
+            <tr key={metric.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
+                {metric.label}
+              </td>
+              {metric.values.map((value: number, i: number) => (
+                <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: '#64748b' }}>
+                  {metric.format(value)}
+                </td>
+              ))}
+              <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                {metric.format(metric.avg)}
+              </td>
+              <td style={{ textAlign: 'center', padding: '12px' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>$</span>
+                  <input
+                    type="text"
+                    className="no-spinner"
+                    value={operationalGoals[metric.key] ? operationalGoals[metric.key].toLocaleString() : ''}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/,/g, '');
+                      setOperationalGoals((prev: any) => {
+                        const newGoals = { ...prev };
+                        if (value === '' || value === null || value === undefined) {
+                          delete newGoals[metric.key];
+                        } else {
+                          const numValue = parseFloat(value);
+                          if (!isNaN(numValue) && numValue > 0) {
+                            newGoals[metric.key] = numValue;
+                          } else {
+                            delete newGoals[metric.key];
+                          }
+                        }
+                        return newGoals;
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      // Allow: backspace, delete, tab, escape, enter
+                      if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
+                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                        (e.keyCode === 65 && e.ctrlKey === true) ||
+                        (e.keyCode === 67 && e.ctrlKey === true) ||
+                        (e.keyCode === 86 && e.ctrlKey === true) ||
+                        (e.keyCode === 88 && e.ctrlKey === true) ||
+                        // Allow: home, end, left, right
+                        (e.keyCode >= 35 && e.keyCode <= 39)) {
+                        return;
+                      }
+                      // Ensure that it is a number and stop the keypress
+                      if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+                        e.preventDefault();
+                      }
+                    }}
+                    placeholder=""
+                    style={{
+                      width: '140px',
+                      padding: '8px 12px 8px 24px',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      color: '#1e293b',
+                      backgroundColor: '#fefce8'
+                    }}
+                  />
+                </div>
+              </td>
+            </tr>
+          ))}
+
+          {/* Inventory Section */}
+          <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+            <td colSpan={months.length + 3} style={{ padding: '16px 12px 8px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
+              Inventory Management
+            </td>
+          </tr>
+          {inventoryProcessed.map((metric) => (
+            <tr key={metric.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
+                {metric.label}
+              </td>
+              {metric.values.map((value: number, i: number) => (
+                <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: '#64748b' }}>
+                  {metric.format(value)}
+                </td>
+              ))}
+              <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
+                {metric.format(metric.avg)}
+              </td>
+              <td style={{ textAlign: 'center', padding: '12px' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>$</span>
+                  <input
+                    type="text"
+                    className="no-spinner"
+                    value={operationalGoals[metric.key] ? operationalGoals[metric.key].toLocaleString() : ''}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/,/g, '');
+                      setOperationalGoals((prev: any) => {
+                        const newGoals = { ...prev };
+                        if (value === '' || value === null || value === undefined) {
+                          delete newGoals[metric.key];
+                        } else {
+                          const numValue = parseFloat(value);
+                          if (!isNaN(numValue) && numValue > 0) {
+                            newGoals[metric.key] = numValue;
+                          } else {
+                            delete newGoals[metric.key];
+                          }
+                        }
+                        return newGoals;
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      // Allow: backspace, delete, tab, escape, enter
+                      if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
+                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                        (e.keyCode === 65 && e.ctrlKey === true) ||
+                        (e.keyCode === 67 && e.ctrlKey === true) ||
+                        (e.keyCode === 86 && e.ctrlKey === true) ||
+                        (e.keyCode === 88 && e.ctrlKey === true) ||
+                        // Allow: home, end, left, right
+                        (e.keyCode >= 35 && e.keyCode <= 39)) {
+                        return;
+                      }
+                      // Ensure that it is a number and stop the keypress
+                      if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+                        e.preventDefault();
+                      }
+                    }}
+                    placeholder=""
+                    style={{
+                      width: '140px',
+                      padding: '8px 12px 8px 24px',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      color: '#1e293b',
+                      backgroundColor: '#fefce8'
+                    }}
+                  />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Save Button */}
+      <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          style={{
+            padding: '12px 32px',
+            fontSize: '16px',
+            fontWeight: '600',
+            color: 'white',
+            backgroundColor: isSaving ? '#94a3b8' : '#667eea',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: isSaving ? 'not-allowed' : 'pointer',
+            transition: 'background-color 0.2s',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+          onMouseEnter={(e) => {
+            if (!isSaving) {
+              e.currentTarget.style.backgroundColor = '#5568d3';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isSaving) {
+              e.currentTarget.style.backgroundColor = '#667eea';
+            }
+          }}
+        >
+          {isSaving ? 'Saving...' : 'Save Goals'}
+        </button>
+      </div>
+    </div>
+  );
+})()}
     </div>
   );
 }
