@@ -11,7 +11,8 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  ReferenceLine
 } from 'recharts';
 
 interface OpsDashboardProps {
@@ -38,6 +39,9 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
 
+  // Operational goals state
+  const [operationalGoals, setOperationalGoals] = useState<any>({});
+  
   // Loading states
   const [loadingCustomer, setLoadingCustomer] = useState(false);
   const [loadingAr, setLoadingAr] = useState(false);
@@ -45,6 +49,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
   const [loadingProduct, setLoadingProduct] = useState(false);
   const [loadingInventory, setLoadingInventory] = useState(false);
   const [loadingCash, setLoadingCash] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   // Helper to get date range based on frequency
   const getDateRange = (frequency: string) => {
@@ -220,6 +226,82 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
     }
   };
 
+  // Load operational goals
+  const loadOperationalGoals = async () => {
+    try {
+      const response = await fetch(`/api/operational-goals?companyId=${selectedCompanyId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setOperationalGoals(data.goals || {});
+      }
+    } catch (error) {
+      console.error('Error loading operational goals:', error);
+    }
+  };
+
+  // Load dashboard preferences
+  const loadDashboardPreferences = async () => {
+    try {
+      const response = await fetch(`/api/ops-dashboard-prefs?companyId=${selectedCompanyId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.preferences) {
+          setCustomerFreq(data.preferences.customerFreq || 'monthly');
+          setArFreq(data.preferences.arFreq || 'monthly');
+          setApFreq(data.preferences.apFreq || 'monthly');
+          setProductFreq(data.preferences.productFreq || 'monthly');
+          setInventoryFreq(data.preferences.inventoryFreq || 'monthly');
+          setCashFreq(data.preferences.cashFreq || 'monthly');
+        }
+      }
+    } catch (error) {
+      console.error('Error loading dashboard preferences:', error);
+    }
+  };
+
+  // Save dashboard preferences
+  const handleSavePreferences = async () => {
+    setSaving(true);
+    setSaveMessage(null);
+    try {
+      const preferences = {
+        customerFreq,
+        arFreq,
+        apFreq,
+        productFreq,
+        inventoryFreq,
+        cashFreq
+      };
+      
+      const response = await fetch('/api/ops-dashboard-prefs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          preferences
+        })
+      });
+
+      if (response.ok) {
+        setSaveMessage('Preferences saved successfully!');
+        setTimeout(() => setSaveMessage(null), 3000);
+      } else {
+        setSaveMessage('Failed to save preferences');
+      }
+    } catch (error) {
+      console.error('Error saving preferences:', error);
+      setSaveMessage('Error saving preferences');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Load data on mount
+  useEffect(() => {
+    loadOperationalGoals();
+    loadDashboardPreferences();
+  }, [selectedCompanyId]);
+
   // Load data on mount and when frequency changes
   useEffect(() => { loadCustomerData(); }, [selectedCompanyId, customerFreq]);
   useEffect(() => { loadArData(); }, [selectedCompanyId, arFreq]);
@@ -326,9 +408,42 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
   return (
     <div style={{ padding: '24px', background: '#f8fafc', minHeight: '100vh' }}>
       <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
-          Operations Dashboard
-        </h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+            Operations Dashboard
+          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {saveMessage && (
+              <span style={{ 
+                fontSize: '14px', 
+                color: saveMessage.includes('success') ? '#16a34a' : '#ef4444',
+                fontWeight: '500'
+              }}>
+                {saveMessage}
+              </span>
+            )}
+            <button
+              onClick={handleSavePreferences}
+              disabled={saving}
+              style={{
+                padding: '10px 24px',
+                background: saving ? '#94a3b8' : '#667eea',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: saving ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => !saving && (e.currentTarget.style.background = '#5568d3')}
+              onMouseLeave={(e) => !saving && (e.currentTarget.style.background = '#667eea')}
+            >
+              {saving ? 'Saving...' : 'Save Preferences'}
+            </button>
+          </div>
+        </div>
 
         {/* Dashboard Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '24px' }}>
@@ -352,6 +467,15 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                   <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Revenue']} />
+                  {operationalGoals.customer_revenue && (
+                    <ReferenceLine 
+                      y={operationalGoals.customer_revenue} 
+                      stroke="#ef4444" 
+                      strokeDasharray="5 5" 
+                      strokeWidth={2}
+                      label={{ value: 'Goal', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
+                    />
+                  )}
                   <Line type="monotone" dataKey="revenue" stroke="#667eea" strokeWidth={2} dot={{ fill: '#667eea', r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -377,6 +501,15 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                   <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                  {operationalGoals.total_ar && (
+                    <ReferenceLine 
+                      y={operationalGoals.total_ar} 
+                      stroke="#ef4444" 
+                      strokeDasharray="5 5" 
+                      strokeWidth={2}
+                      label={{ value: 'Goal Total AR', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
+                    />
+                  )}
                   <Bar dataKey="current" stackId="a" fill="#16a34a" name="Current" />
                   <Bar dataKey="over30" stackId="a" fill="#f59e0b" name="Over 30 Days" />
                 </BarChart>
@@ -403,6 +536,15 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                   <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                  {operationalGoals.total_ap && (
+                    <ReferenceLine 
+                      y={operationalGoals.total_ap} 
+                      stroke="#ef4444" 
+                      strokeDasharray="5 5" 
+                      strokeWidth={2}
+                      label={{ value: 'Goal Total AP', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
+                    />
+                  )}
                   <Bar dataKey="current" stackId="a" fill="#16a34a" name="Current" />
                   <Bar dataKey="over30" stackId="a" fill="#f59e0b" name="Over 30 Days" />
                 </BarChart>
@@ -429,6 +571,15 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                   <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Revenue']} />
+                  {operationalGoals.product_revenue && (
+                    <ReferenceLine 
+                      y={operationalGoals.product_revenue} 
+                      stroke="#ef4444" 
+                      strokeDasharray="5 5" 
+                      strokeWidth={2}
+                      label={{ value: 'Goal', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
+                    />
+                  )}
                   <Line type="monotone" dataKey="revenue" stroke="#ec4899" strokeWidth={2} dot={{ fill: '#ec4899', r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -454,6 +605,15 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                   <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Value']} />
+                  {operationalGoals.inventory_value && (
+                    <ReferenceLine 
+                      y={operationalGoals.inventory_value} 
+                      stroke="#ef4444" 
+                      strokeDasharray="5 5" 
+                      strokeWidth={2}
+                      label={{ value: 'Goal', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
+                    />
+                  )}
                   <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={{ fill: '#6366f1', r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -479,6 +639,15 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                   <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                   <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(value: any) => [formatCurrency(value), 'Total Cash']} />
+                  {operationalGoals.total_cash && (
+                    <ReferenceLine 
+                      y={operationalGoals.total_cash} 
+                      stroke="#ef4444" 
+                      strokeDasharray="5 5" 
+                      strokeWidth={2}
+                      label={{ value: 'Goal', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
+                    />
+                  )}
                   <Bar dataKey="totalCash" fill="#10b981" name="Total Cash" />
                 </BarChart>
               </ResponsiveContainer>
