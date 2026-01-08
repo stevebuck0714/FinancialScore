@@ -17,6 +17,7 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
+import OpsDashboard from './OpsDashboard';
 
 interface OperationsTabProps {
   selectedCompanyId: string;
@@ -26,7 +27,7 @@ interface OperationsTabProps {
 const COLORS = ['#667eea', '#2563eb', '#16a34a', '#f59e0b', '#ec4899', '#6366f1', '#8b5cf6', '#14b8a6'];
 
 export default function OperationsTab({ selectedCompanyId, companyName }: OperationsTabProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory' | 'cash'>('overview');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory' | 'cash'>('dashboard');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -167,7 +168,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   };
 
   const renderFilters = () => {
-    if (activeTab === 'overview') return null;
+    if (activeTab === 'overview' || activeTab === 'dashboard') return null;
 
     return (
       <div style={{ 
@@ -1490,7 +1491,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
         display: 'flex',
         gap: '20px'
       }}>
-        {['overview', 'customers', 'ar', 'ap', 'products', 'inventory', 'cash'].map((tab) => (
+        {['dashboard', 'overview', 'customers', 'ar', 'ap', 'products', 'inventory', 'cash'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
@@ -1507,7 +1508,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
               textTransform: 'capitalize'
             }}
           >
-            {tab === 'ar' ? 'AR Aging' : tab === 'ap' ? 'AP Aging' : tab}
+            {tab === 'dashboard' ? 'Ops Dashboard' : tab === 'ar' ? 'AR Aging' : tab === 'ap' ? 'AP Aging' : tab}
           </button>
         ))}
       </div>
@@ -1516,6 +1517,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
       {renderFilters()}
 
       {/* Content */}
+      {activeTab === 'dashboard' && <OpsDashboard selectedCompanyId={selectedCompanyId} companyName={companyName} />}
       {activeTab === 'overview' && renderOverview()}
       {activeTab === 'customers' && renderCustomers()}
       {activeTab === 'ar' && renderARaging()}
