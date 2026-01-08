@@ -669,6 +669,9 @@ export default function SiteAdminDashboard(props: any) {
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '8px' : '0' }}>
                                         <div style={{ flex: 1 }}>
                                           <h5 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>{company.name}</h5>
+                                          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>
+                                            <span style={{ fontWeight: '600' }}>ID:</span> <span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{company.id}</span>
+                                          </div>
                                           <div style={{ fontSize: '11px', color: '#64748b' }}>
                                             <span style={{ fontWeight: '600' }}>Industry:</span> {
                                               company.industrySector 
