@@ -2,6 +2,19 @@
 
 This directory contains sample data files and scripts to populate your database with realistic operational data for UI development and testing.
 
+## 🎯 Multi-Frequency Data Generation
+
+The seed script now generates data at **THREE frequencies** for comprehensive chart support:
+
+- **📅 Daily**: Last 90 days of data (fine-grained analysis)
+- **📊 Weekly**: Last 16 weeks of data (trend analysis)
+- **📈 Monthly**: Last 12 months of data (long-term patterns)
+
+This enables your Operations page to display:
+- **Daily charts** for short-term operational monitoring
+- **Weekly charts** for mid-range trend analysis
+- **Monthly charts** for strategic planning
+
 ## 📁 Sample Data Files
 
 - **`customer-sales.json`** - 20 customers with revenue, invoice counts, and average invoice sizes
@@ -9,6 +22,7 @@ This directory contains sample data files and scripts to populate your database 
 - **`ap-aging.json`** - Accounts Payable aging buckets
 - **`product-sales.json`** - 12 products/services with sales, COGS, and margins
 - **`inventory.json`** - 12 inventory items with quantities, values, and costs
+- **Cash accounts** - 4 bank accounts generated automatically (Operating, Payroll, Savings, Credit Line)
 
 ## 🚀 Quick Start
 
@@ -35,9 +49,9 @@ npx ts-node prisma/seed-operational-data.ts
 
 This will:
 - ✅ Find your first company in the database
-- ✅ Generate 12 months of historical data (with realistic month-to-month variance)
-- ✅ Populate all 5 new tables with sample data
-- ✅ Create ~500+ records total
+- ✅ Generate data at 3 frequencies: daily (90 days), weekly (16 weeks), monthly (12 months)
+- ✅ Populate all 6 operational tables with sample data
+- ✅ Create **5,000+ records** total across all frequencies
 
 ### Step 3: Verify Data
 
@@ -63,21 +77,23 @@ SELECT * FROM "ProductSalesSnapshot" LIMIT 10;
 
 ## 📊 What Data Gets Created
 
-### Customer Sales (20 customers × 12 months = 240 records)
-- Top customer: **Tech Innovations Inc** (~$125k/month)
-- Revenue range: $1,500 - $125,000 per customer
-- Total revenue: ~$617,000/month across all customers
-- Invoice counts: 2-15 per customer per month
+### Customer Sales (~2,360 records across all frequencies)
+- **20 customers** tracked across daily, weekly, and monthly periods
+- Top customer: **Tech Innovations Inc** (~$125k/month, ~$4k/day)
+- Revenue range: $50 - $125,000 depending on frequency
+- Total monthly revenue: ~$617,000 across all customers
+- Invoice counts: Adjusted by frequency (1-15 per customer per period)
 
-### AR Aging (12 monthly snapshots)
+### AR Aging (~118 snapshots across all frequencies)
 - Total AR: ~$120,000
-- Distribution:
+- Distribution maintained across all frequencies:
   - Current (0-30 days): ~46% ($55k)
   - 31-60 days: ~29% ($35k)
   - 61-90 days: ~15% ($18k)
   - 90+ days: ~10% ($12k)
+- Slight variance between periods for realistic trend analysis
 
-### AP Aging (12 monthly snapshots)
+### AP Aging (~118 snapshots across all frequencies)
 - Total AP: ~$65,000
 - Distribution:
   - Current (0-30 days): ~54% ($35k)
@@ -85,15 +101,28 @@ SELECT * FROM "ProductSalesSnapshot" LIMIT 10;
   - 61-90 days: ~12% ($8k)
   - 90+ days: ~6% ($4k)
 
-### Product Sales (12 products × 12 months = 144 records)
-- Top product: **Professional Services** (~$180k/month)
+### Product Sales (~1,416 records across all frequencies)
+- **12 products/services** tracked across all periods
+- Top product: **Professional Services** (~$180k/month, ~$6k/day)
 - Margin range: 20% - 80%
 - Mix includes: Services, software licenses, hardware, materials
+- Revenue scaled appropriately by frequency
 
-### Inventory (12 items × 12 months = 144 records)
+### Inventory (~1,416 records across all frequencies)
+- **12 inventory items** with gradual changes over time
 - Total inventory value: ~$514,700
 - Includes: Widgets, hardware devices, components, materials
 - Quantities range: 120 - 8,000 units per item
+- Lower variance than other metrics (inventory changes slowly)
+
+### Cash (~472 records across all frequencies) **NEW!**
+- **4 bank accounts** tracked:
+  - Operating Account: ~$250k
+  - Payroll Account: ~$150k
+  - Savings Account: ~$500k
+  - Credit Line: ~($50k) (negative balance)
+- Total cash position: ~$850k
+- Daily fluctuations for realistic cash flow tracking
 
 ## 🎨 Use Cases for UI Development
 
@@ -232,6 +261,9 @@ npx prisma db push
 **Ready to build!** 🎉
 
 You now have 12 months of realistic operational data to develop your dashboards and reports.
+
+
+
 
 
 
