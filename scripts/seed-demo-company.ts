@@ -187,9 +187,7 @@ async function seedOperationalData() {
           sku: 'WIDGET-001',
           quantitySold: 120 + Math.floor(Math.random() * 40),
           revenue: monthlyRevenue * 0.45,
-          cogs: monthlyRevenue * 0.45 * 0.35,
-          grossMargin: monthlyRevenue * 0.45 * 0.65,
-          grossMarginPct: 65
+          cogs: monthlyRevenue * 0.45 * 0.35
         }
       });
       await prisma.productSalesSnapshot.create({
@@ -202,9 +200,7 @@ async function seedOperationalData() {
           sku: 'WIDGET-002',
           quantitySold: 200 + Math.floor(Math.random() * 60),
           revenue: monthlyRevenue * 0.35,
-          cogs: monthlyRevenue * 0.35 * 0.40,
-          grossMargin: monthlyRevenue * 0.35 * 0.60,
-          grossMarginPct: 60
+          cogs: monthlyRevenue * 0.35 * 0.40
         }
       });
       await prisma.productSalesSnapshot.create({
@@ -217,9 +213,7 @@ async function seedOperationalData() {
           sku: 'WIDGET-003',
           quantitySold: 300 + Math.floor(Math.random() * 80),
           revenue: monthlyRevenue * 0.20,
-          cogs: monthlyRevenue * 0.20 * 0.45,
-          grossMargin: monthlyRevenue * 0.20 * 0.55,
-          grossMarginPct: 55
+          cogs: monthlyRevenue * 0.20 * 0.45
         }
       });
       totalRecords += 3;
@@ -331,13 +325,75 @@ async function seedOperationalData() {
             sku: 'ALL',
             quantitySold: 150 + Math.floor(Math.random() * 50),
             revenue: weeklyRevenue,
-            cogs: weeklyRevenue * 0.38,
-            grossMargin: weeklyRevenue * 0.62,
-            grossMarginPct: 62
+            cogs: weeklyRevenue * 0.38
           }
         });
 
-        totalRecords += 2;
+        // Weekly AR Aging
+        const weeklyArTotal = Math.round((baseARTotal / 4) * weeklyVariance);
+        await prisma.aRAgingSnapshot.create({
+          data: {
+            companyId,
+            snapshotDate: weekDate,
+            frequency: 'weekly',
+            totalAR: weeklyArTotal,
+            current: weeklyArTotal * 0.70,
+            days1to30: weeklyArTotal * 0.15,
+            days31to60: weeklyArTotal * 0.10,
+            days61to90: weeklyArTotal * 0.03,
+            days90plus: weeklyArTotal * 0.02
+          }
+        });
+
+        // Weekly AP Aging
+        const weeklyApTotal = Math.round((baseAPTotal / 4) * weeklyVariance);
+        await prisma.aPAgingSnapshot.create({
+          data: {
+            companyId,
+            snapshotDate: weekDate,
+            frequency: 'weekly',
+            totalAP: weeklyApTotal,
+            current: weeklyApTotal * 0.75,
+            days1to30: weeklyApTotal * 0.15,
+            days31to60: weeklyApTotal * 0.07,
+            days61to90: weeklyApTotal * 0.02,
+            days90plus: weeklyApTotal * 0.01
+          }
+        });
+
+        // Weekly Inventory
+        const weeklyInvValue = Math.round((baseInventoryValue / 4) * weeklyVariance);
+        await prisma.inventorySnapshot.create({
+          data: {
+            companyId,
+            snapshotDate: weekDate,
+            frequency: 'weekly',
+            itemId: 'inv-all',
+            itemName: 'All Inventory',
+            sku: 'ALL',
+            qtyOnHand: 2000 + Math.floor(Math.random() * 300),
+            assetValue: weeklyInvValue,
+            avgCost: 125
+          }
+        });
+
+        // Weekly Cash
+        const weeklyCashBalance = Math.round((baseCashBalance / 4) * weeklyVariance);
+        await prisma.cashSnapshot.create({
+          data: {
+            companyId,
+            snapshotDate: weekDate,
+            frequency: 'weekly',
+            accountId: 'cash-all',
+            accountName: 'All Accounts',
+            accountNumber: '****ALL',
+            cashBalance: weeklyCashBalance,
+            changeAmount: null,
+            changePercent: null
+          }
+        });
+
+        totalRecords += 7;
       }
 
       // Generate daily data for the last 90 days
@@ -376,13 +432,75 @@ async function seedOperationalData() {
               sku: 'ALL',
               quantitySold: 20 + Math.floor(Math.random() * 10),
               revenue: dailyRevenue,
-              cogs: dailyRevenue * 0.38,
-              grossMargin: dailyRevenue * 0.62,
-              grossMarginPct: 62
+              cogs: dailyRevenue * 0.38
             }
           });
 
-          totalRecords += 2;
+          // Daily AR Aging
+          const dailyArTotal = Math.round((baseARTotal / 30) * dailyVariance);
+          await prisma.aRAgingSnapshot.create({
+            data: {
+              companyId,
+              snapshotDate: dayDate,
+              frequency: 'daily',
+              totalAR: dailyArTotal,
+              current: dailyArTotal * 0.70,
+              days1to30: dailyArTotal * 0.15,
+              days31to60: dailyArTotal * 0.10,
+              days61to90: dailyArTotal * 0.03,
+              days90plus: dailyArTotal * 0.02
+            }
+          });
+
+          // Daily AP Aging
+          const dailyApTotal = Math.round((baseAPTotal / 30) * dailyVariance);
+          await prisma.aPAgingSnapshot.create({
+            data: {
+              companyId,
+              snapshotDate: dayDate,
+              frequency: 'daily',
+              totalAP: dailyApTotal,
+              current: dailyApTotal * 0.75,
+              days1to30: dailyApTotal * 0.15,
+              days31to60: dailyApTotal * 0.07,
+              days61to90: dailyApTotal * 0.02,
+              days90plus: dailyApTotal * 0.01
+            }
+          });
+
+          // Daily Inventory
+          const dailyInvValue = Math.round((baseInventoryValue / 30) * dailyVariance);
+          await prisma.inventorySnapshot.create({
+            data: {
+              companyId,
+              snapshotDate: dayDate,
+              frequency: 'daily',
+              itemId: 'inv-all',
+              itemName: 'All Inventory',
+              sku: 'ALL',
+              qtyOnHand: 2000 + Math.floor(Math.random() * 100),
+              assetValue: dailyInvValue,
+              avgCost: 125
+            }
+          });
+
+          // Daily Cash
+          const dailyCashBalance = Math.round((baseCashBalance / 30) * dailyVariance);
+          await prisma.cashSnapshot.create({
+            data: {
+              companyId,
+              snapshotDate: dayDate,
+              frequency: 'daily',
+              accountId: 'cash-all',
+              accountName: 'All Accounts',
+              accountNumber: '****ALL',
+              cashBalance: dailyCashBalance,
+              changeAmount: null,
+              changePercent: null
+            }
+          });
+
+          totalRecords += 7;
         }
       }
 
