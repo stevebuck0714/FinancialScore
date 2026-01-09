@@ -794,6 +794,8 @@ model ProductSalesSnapshot {
   quantitySold    Float
   revenue         Float
   cogs            Float?
+  grossMargin     Float?
+  grossMarginPct  Float?
   createdAt       DateTime @default(now())
   
   @@index([companyId, snapshotDate(sort: Desc)])
