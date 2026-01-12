@@ -1210,31 +1210,59 @@ function FinancialScorePage() {
     }
   }, [selectedCompanyId]);
 
-  // Load dashboard widgets from localStorage when company changes
+  // Load dashboard widgets from database (with localStorage fallback) when company changes
   useEffect(() => {
     if (selectedCompanyId) {
-      const storageKey = `dashboardWidgets_${selectedCompanyId}`;
-      const savedWidgets = localStorage.getItem(storageKey);
-      if (savedWidgets) {
+      const loadDashboardPrefs = async () => {
         try {
-          const widgets = JSON.parse(savedWidgets);
-          // Filter out obsolete widget names that are no longer available
-          const obsoleteWidgets = ['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'];
-          const cleanedWidgets = widgets.filter((w: string) => !obsoleteWidgets.includes(w));
-          setSelectedDashboardWidgets(cleanedWidgets);
+          // Try to load from database first
+          const response = await fetch(`/api/dashboard-prefs?companyId=${selectedCompanyId}`);
           
-          // Update localStorage if we removed any obsolete widgets
-          if (cleanedWidgets.length !== widgets.length) {
-            localStorage.setItem(storageKey, JSON.stringify(cleanedWidgets));
+          if (response.ok) {
+            const data = await response.json();
+            if (data.widgets && Array.isArray(data.widgets) && data.widgets.length > 0) {
+              // Filter out obsolete widget names
+              const obsoleteWidgets = ['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'];
+              const cleanedWidgets = data.widgets.filter((w: string) => !obsoleteWidgets.includes(w));
+              setSelectedDashboardWidgets(cleanedWidgets);
+              
+              // Also update localStorage
+              const storageKey = `dashboardWidgets_${selectedCompanyId}`;
+              localStorage.setItem(storageKey, JSON.stringify(cleanedWidgets));
+              return;
+            }
+          }
+          
+          // Fallback to localStorage if database load fails or returns empty
+          const storageKey = `dashboardWidgets_${selectedCompanyId}`;
+          const savedWidgets = localStorage.getItem(storageKey);
+          if (savedWidgets) {
+            const widgets = JSON.parse(savedWidgets);
+            const obsoleteWidgets = ['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'];
+            const cleanedWidgets = widgets.filter((w: string) => !obsoleteWidgets.includes(w));
+            setSelectedDashboardWidgets(cleanedWidgets);
+          } else {
+            setSelectedDashboardWidgets([]);
           }
         } catch (err) {
-          console.error('Error loading dashboard widgets:', err);
-          setSelectedDashboardWidgets([]);
+          console.error('Error loading dashboard preferences:', err);
+          // Fallback to localStorage on error
+          const storageKey = `dashboardWidgets_${selectedCompanyId}`;
+          const savedWidgets = localStorage.getItem(storageKey);
+          if (savedWidgets) {
+            try {
+              const widgets = JSON.parse(savedWidgets);
+              setSelectedDashboardWidgets(widgets);
+            } catch (parseErr) {
+              setSelectedDashboardWidgets([]);
+            }
+          } else {
+            setSelectedDashboardWidgets([]);
+          }
         }
-      } else {
-        // No saved widgets for this company, start fresh
-        setSelectedDashboardWidgets([]);
-      }
+      };
+      
+      loadDashboardPrefs();
     }
   }, [selectedCompanyId]);
 
@@ -1302,13 +1330,38 @@ function FinancialScorePage() {
     }
   }, [selectedCompanyId, adminDashboardTab]);
 
-  // Save dashboard widgets to localStorage whenever they change
-  useEffect(() => {
-    if (selectedCompanyId && selectedDashboardWidgets) {
+  // Save dashboard widgets to database
+  const saveDashboardPreferences = async () => {
+    if (!selectedCompanyId) {
+      toast.error('No company selected');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/dashboard-prefs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          widgets: selectedDashboardWidgets
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save dashboard preferences');
+      }
+
+      // Also save to localStorage as backup
       const storageKey = `dashboardWidgets_${selectedCompanyId}`;
       localStorage.setItem(storageKey, JSON.stringify(selectedDashboardWidgets));
+
+      toast.success('Dashboard preferences saved successfully!');
+    } catch (error) {
+      console.error('Error saving dashboard preferences:', error);
+      toast.error('Failed to save dashboard preferences');
+      throw error;
     }
-  }, [selectedCompanyId, selectedDashboardWidgets]);
+  };
 
   // Load affiliates when Affiliates tab is opened
   useEffect(() => {
@@ -4132,7 +4185,8 @@ function FinancialScorePage() {
     const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
     const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0)));
     const workingCapital = currentAssets - currentLiab;
-    const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : 0;
+    // Fix: If no current liabilities but have current assets, treat as very strong (>10.0), not 0
+    const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : (currentAssets > 0 ? 999 : 0);
     
     if (workingCapital > 0 && wcRatioMDA >= 1.5) {
       strengths.push(`Positive working capital of $${(workingCapital / 1000).toFixed(1)}K with strong WC ratio of ${wcRatioMDA.toFixed(1)} supports operational flexibility.`);
@@ -8352,6 +8406,7 @@ function FinancialScorePage() {
           growth_24mo={growth_24mo}
           benchmarks={benchmarks}
           expenseGoals={expenseGoals}
+          onSaveDashboardPrefs={saveDashboardPreferences}
         />
       )}
 

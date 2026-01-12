@@ -864,7 +864,8 @@ function ExecutiveSummaryTab({
               
               const last12Revenue = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0);
               const wcPctRevenue = last12Revenue > 0 ? (currentWC / last12Revenue) * 100 : 0;
-              const wcRatio = totalCL > 0 ? totalCA / totalCL : 0;
+              // Fix: If no current liabilities but have current assets, treat as very strong (>10.0), not 0
+              const wcRatio = totalCL > 0 ? totalCA / totalCL : (totalCA > 0 ? 999 : 0);
               
               const ccc = (trendData[trendData.length - 1]?.daysInv || 0) + (trendData[trendData.length - 1]?.daysAR || 0) - (trendData[trendData.length - 1]?.daysAP || 0);
               

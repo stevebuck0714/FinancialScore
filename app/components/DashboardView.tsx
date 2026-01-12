@@ -103,6 +103,7 @@ interface DashboardViewProps {
   growth_24mo: number;
   benchmarks: any[];
   expenseGoals: {[key: string]: number};
+  onSaveDashboardPrefs?: () => Promise<void>;
 }
 
 export default function DashboardView({
@@ -120,8 +121,23 @@ export default function DashboardView({
   dcfTerminalGrowth,
   growth_24mo,
   benchmarks,
-  expenseGoals
+  expenseGoals,
+  onSaveDashboardPrefs
 }: DashboardViewProps) {
+  const [isSaving, setIsSaving] = useState(false);
+  
+  const handleSaveDashboard = async () => {
+    if (!onSaveDashboardPrefs) return;
+    
+    setIsSaving(true);
+    try {
+      await onSaveDashboardPrefs();
+    } catch (error) {
+      console.error('Error saving dashboard preferences:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
   
   // Get master data for dynamic expense categories
   const masterData = useMasterData(selectedCompanyId);
@@ -246,6 +262,28 @@ export default function DashboardView({
               Dashboard
             </h1>
             <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                className="no-print"
+                onClick={handleSaveDashboard}
+                disabled={isSaving}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                  transition: 'all 0.3s',
+                  opacity: isSaving ? 0.6 : 1
+                }}
+                onMouseOver={(e) => !isSaving && (e.currentTarget.style.transform = 'translateY(-2px)')}
+                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                {isSaving ? '💾 Saving...' : '💾 Save Dashboard'}
+              </button>
               <button
                 className="no-print"
                 onClick={() => window.print()}

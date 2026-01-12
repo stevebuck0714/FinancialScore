@@ -251,11 +251,12 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
 
               <div>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Loan Amount
+                  Loan Amount <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="number"
                   step="0.01"
+                  required
                   value={formData.loanAmount}
                   onChange={(e) => setFormData({ ...formData, loanAmount: parseFloat(e.target.value) || 0 })}
                   style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
