@@ -71,6 +71,7 @@ export async function middleware(request: NextRequest) {
     
     if (!rateLimit.allowed) {
       const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+      console.log('⚠️ Rate limit exceeded for:', pathname);
       return NextResponse.json(
         { 
           error: 'Too many requests',
@@ -89,10 +90,7 @@ export async function middleware(request: NextRequest) {
       )
     }
     
-    // Add rate limit headers to response
-    const response = NextResponse.next()
-    response.headers.set('X-RateLimit-Remaining', rateLimit.remaining.toString())
-    response.headers.set('X-RateLimit-Reset', new Date(rateLimit.resetTime).toISOString())
+    console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining);
   }
   
   // Public API routes that don't require authentication
@@ -104,6 +102,15 @@ export async function middleware(request: NextRequest) {
   
   // Check if this is a public route
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+  
+  // Debug logging for MFA endpoints
+  if (pathname.includes('/mfa/')) {
+    console.log('🔍 MFA endpoint detected:', {
+      pathname,
+      isPublicRoute,
+      willRequireAuth: pathname.startsWith('/api') && !isPublicRoute
+    })
+  }
   
   if (pathname.startsWith('/api') && !isPublicRoute) {
     // Get the session token - try multiple cookie names for compatibility
