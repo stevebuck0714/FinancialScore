@@ -8,7 +8,8 @@ export default function RegisterBusinessWelcome() {
   const router = useRouter();
   const [isNavigating, setIsNavigating] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
+    userName: '',
+    companyName: '',
     email: '',
     password: ''
   });
@@ -88,7 +89,7 @@ export default function RegisterBusinessWelcome() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.email || !formData.password) {
+    if (!formData.userName || !formData.companyName || !formData.email || !formData.password) {
       setError('All fields are required');
       return;
     }
@@ -107,10 +108,11 @@ export default function RegisterBusinessWelcome() {
 
     try {
       const registrationData: any = {
-        name: formData.name,
+        name: formData.userName,
+        companyName: formData.companyName,
         email: formData.email,
         password: formData.password,
-        fullName: formData.name,
+        fullName: formData.userName,
         type: 'business'
       };
 
@@ -253,7 +255,37 @@ export default function RegisterBusinessWelcome() {
                 </div>
               )}
 
-              {/* Name Field */}
+              {/* User Name Field */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#1e293b',
+                  marginBottom: '8px'
+                }}>
+                  Your Name *
+                </label>
+                <input
+                  type="text"
+                  name="userName"
+                  value={formData.userName}
+                  onChange={handleInputChange}
+                  placeholder="Enter your full name"
+                  disabled={isNavigating}
+                  autoComplete="name"
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* Company Name Field */}
               <div style={{ marginBottom: '20px' }}>
                 <label style={{
                   display: 'block',
@@ -266,12 +298,12 @@ export default function RegisterBusinessWelcome() {
                 </label>
                 <input
                   type="text"
-                  name="name"
-                  value={formData.name}
+                  name="companyName"
+                  value={formData.companyName}
                   onChange={handleInputChange}
                   placeholder="Enter your business name"
                   disabled={isNavigating}
-                  autoComplete="off"
+                  autoComplete="organization"
                   style={{
                     width: '100%',
                     padding: '12px',
