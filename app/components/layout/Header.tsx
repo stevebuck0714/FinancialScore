@@ -38,6 +38,29 @@ export default function Header({
           </div>
           <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b' }}>SITE ADMINISTRATION</h2>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ fontSize: '14px', color: '#64748b' }}>
+            {currentUser?.name}
+          </div>
+          <button 
+            onClick={handleLogout} 
+            style={{ 
+              padding: '10px 20px', 
+              background: '#ef4444', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '8px', 
+              fontSize: '14px', 
+              fontWeight: '600', 
+              cursor: 'pointer',
+              transition: 'background 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+          >
+            🚪 LOGOUT
+          </button>
+        </div>
       </header>
     );
   }

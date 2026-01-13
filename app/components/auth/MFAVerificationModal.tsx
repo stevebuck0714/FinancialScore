@@ -69,7 +69,8 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 9999,
-      padding: '20px'
+      padding: '20px',
+      overflow: 'auto'
     }}>
       <div style={{
         background: 'white',
@@ -77,7 +78,10 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
         maxWidth: '450px',
         width: '100%',
         boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-        padding: '32px'
+        padding: '32px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        margin: 'auto'
       }}>
         <h2 style={{ 
           fontSize: '24px', 

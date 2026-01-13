@@ -97,12 +97,6 @@ export default function RegisterBusinessWelcome() {
     // Password validation is now handled by the backend
     // The backend will return detailed error messages for password requirements
 
-    // If affiliate is selected, code must be validated
-    if (selectedAffiliateId && !validatedAffiliate) {
-      setError('Please enter and validate your affiliate code');
-      return;
-    }
-
     setIsNavigating(true);
     setError('');
 
@@ -116,10 +110,9 @@ export default function RegisterBusinessWelcome() {
         type: 'business'
       };
 
-      // Include affiliate data if validated
-      if (validatedAffiliate && selectedAffiliateId) {
-        registrationData.affiliateId = selectedAffiliateId;
-        registrationData.affiliateCode = affiliateCode.toUpperCase();
+      // Include affiliate code if provided
+      if (affiliateCode && affiliateCode.trim()) {
+        registrationData.affiliateCode = affiliateCode.toUpperCase().trim();
       }
 
       const response = await fetch('/api/auth/register', {
@@ -346,7 +339,7 @@ export default function RegisterBusinessWelcome() {
               </div>
 
               {/* Password Field */}
-              <div style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '20px' }}>
                 <label style={{
                   display: 'block',
                   fontSize: '14px',
@@ -399,6 +392,47 @@ export default function RegisterBusinessWelcome() {
                   lineHeight: '1.5' 
                 }}>
                   Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
+                </div>
+              </div>
+
+              {/* Affiliate Code Field - Always Visible */}
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#1e293b',
+                  marginBottom: '8px'
+                }}>
+                  Affiliate Code (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={affiliateCode}
+                  onChange={(e) => {
+                    setAffiliateCode(e.target.value.toUpperCase());
+                    setValidatedAffiliate(null);
+                    setCodeError('');
+                  }}
+                  placeholder="Enter affiliate code if you have one"
+                  disabled={isNavigating}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    boxSizing: 'border-box',
+                    textTransform: 'uppercase'
+                  }}
+                />
+                <div style={{ 
+                  fontSize: '12px', 
+                  color: '#64748b', 
+                  marginTop: '6px', 
+                  lineHeight: '1.5' 
+                }}>
+                  If you were referred by a partner, enter their code here
                 </div>
               </div>
 

@@ -51,14 +51,25 @@ export async function POST(request: NextRequest) {
 
     // Get pricing - either from affiliate code or default
     let pricingToUse = null;
+    let resolvedAffiliateId = affiliateId;
     
-    if (affiliateId && affiliateCode) {
+    // Look up affiliate code if provided (with or without affiliateId)
+    if (affiliateCode) {
+      const whereClause: any = {
+        code: affiliateCode.toUpperCase(),
+        isActive: true
+      };
+      
+      // If affiliateId provided, use it for filtering
+      if (affiliateId) {
+        whereClause.affiliateId = affiliateId;
+      }
+      
       // Fetch affiliate code pricing
       const affiliateCodeRecord = await prisma.affiliateCode.findFirst({
-        where: {
-          affiliateId: affiliateId,
-          code: affiliateCode.toUpperCase(),
-          isActive: true
+        where: whereClause,
+        include: {
+          affiliate: true
         }
       });
       
@@ -68,6 +79,8 @@ export async function POST(request: NextRequest) {
           businessQuarterlyPrice: affiliateCodeRecord.quarterlyPrice,
           businessAnnualPrice: affiliateCodeRecord.annualPrice
         };
+        // Store the affiliate ID from the code record
+        resolvedAffiliateId = affiliateCodeRecord.affiliateId;
       }
     }
     
@@ -139,7 +152,7 @@ export async function POST(request: NextRequest) {
         });
 
         // Link user to their company and set userType to 'COMPANY' for business users
-        await tx.user.update({
+        const updatedUser = await tx.user.update({
           where: { id: user.id },
           data: { 
             companyId: company.id,
@@ -148,10 +161,10 @@ export async function POST(request: NextRequest) {
         });
         
         // If affiliate code was used, increment its usage counter
-        if (affiliateId && affiliateCode) {
+        if (resolvedAffiliateId && affiliateCode) {
           await tx.affiliateCode.updateMany({
             where: {
-              affiliateId: affiliateId,
+              affiliateId: resolvedAffiliateId,
               code: affiliateCode.toUpperCase()
             },
             data: {
@@ -162,7 +175,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        return { user, consultant: null, company };
+        return { user: updatedUser, consultant: null, company };
       }
 
       // Consultant registration
@@ -243,6 +256,7 @@ export async function POST(request: NextRequest) {
         email: result.user.email,
         name: result.user.name,
         role: result.user.role,
+        userType: result.user.userType || null,
         consultantId: result.consultant?.id || null,
         companyId: result.company?.id || null,
         consultantType: result.consultant?.type || null,
