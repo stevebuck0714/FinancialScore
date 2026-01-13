@@ -152,11 +152,13 @@ export async function POST(request: NextRequest) {
         });
 
         // Link user to their company and set userType to 'COMPANY' for business users
+        // Also set companyRole to 'admin' since they're creating their own company
         const updatedUser = await tx.user.update({
           where: { id: user.id },
           data: { 
             companyId: company.id,
-            userType: 'COMPANY' // Business users are company users
+            userType: 'COMPANY', // Business users are company users
+            companyRole: 'admin' // Company owner is admin
           }
         });
         
@@ -257,6 +259,7 @@ export async function POST(request: NextRequest) {
         name: result.user.name,
         role: result.user.role,
         userType: result.user.userType || null,
+        companyRole: result.user.companyRole || null,
         consultantId: result.consultant?.id || null,
         companyId: result.company?.id || null,
         consultantType: result.consultant?.type || null,

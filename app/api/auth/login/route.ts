@@ -143,6 +143,25 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Auto-fix: Set companyRole to 'admin' for business users without companyRole
+    // Business users who registered their own company should be admins
+    console.log('🔍 Checking companyRole auto-fix:', {
+      role: user.role,
+      companyId: user.companyId,
+      userType: user.userType,
+      currentCompanyRole: user.companyRole
+    });
+    
+    if (user.role === 'USER' && user.companyId && user.userType === 'COMPANY' && !user.companyRole) {
+      console.log(`🔧 Auto-fixing companyRole for business user: ${user.email}`);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { companyRole: 'admin' }
+      });
+      user.companyRole = 'admin';
+      console.log(`✅ Set companyRole to admin for ${user.email}`);
+    }
+    
     // Get consultant info - either from primaryConsultant relation or consultantFirm relation
     const consultant = user.primaryConsultant || user.consultantFirm;
     const consultantId = consultant?.id || user.consultantId;
@@ -155,6 +174,7 @@ export async function POST(request: NextRequest) {
         name: user.name,
         role: user.role,
         userType: user.userType,
+        companyRole: user.companyRole,
         companyId: user.companyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,
