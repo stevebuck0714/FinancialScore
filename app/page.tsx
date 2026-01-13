@@ -198,6 +198,24 @@ function FinancialScorePage() {
           console.log('? NextAuth session valid');
           setCurrentUser(user);
           setIsLoggedIn(true);
+          
+          // Load company data for company users
+          if (user.userType === 'company' && user.companyId) {
+            console.log('📦 Loading company data for restored session:', user.companyId);
+            try {
+              const response = await fetch(`/api/companies?companyId=${user.companyId}`);
+              const data = await response.json();
+              if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
+                safeSetCompanies(data.companies);
+                setSelectedCompanyId(user.companyId);
+                console.log('✅ Loaded company for restored session:', data.companies[0].name);
+              } else {
+                console.error('❌ No company data returned for:', user.companyId);
+              }
+            } catch (loadError) {
+              console.error('❌ Error loading company for restored session:', loadError);
+            }
+          }
         } catch (error) {
           console.error('? Failed to restore session:', error);
           localStorage.removeItem('fs_currentUser');
@@ -5374,7 +5392,7 @@ function FinancialScorePage() {
                   onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
                   onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
                 >
-                  ðŸšª LOGOUT
+                  🚪 LOGOUT
                 </button>
               </div>
             </div>
@@ -5600,7 +5618,7 @@ function FinancialScorePage() {
                   onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
                   onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
                 >
-                  ðŸšª LOGOUT
+                  🚪 LOGOUT
                 </button>
               </div>
             </div>

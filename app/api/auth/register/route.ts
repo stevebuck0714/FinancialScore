@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         // New companies get CURRENT default pricing from SystemSettings (or affiliate code pricing)
         // This pricing is permanent and can only be changed by admin
         const companyData: any = {
-          name: name, // Use the business name as company name
+          name: companyName || name, // Use company name from form, fallback to user name
           consultantId: null, // Standalone business - no consultant
           // Store pricing permanently - this is the pricing at registration time
           subscriptionMonthlyPrice: finalPricing.monthly,
