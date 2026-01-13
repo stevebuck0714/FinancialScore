@@ -162,6 +162,8 @@ export async function POST(request: NextRequest) {
           }
         });
         
+        console.log('✅ Business user registered with companyRole:', updatedUser.companyRole);
+        
         // If affiliate code was used, increment its usage counter
         if (resolvedAffiliateId && affiliateCode) {
           await tx.affiliateCode.updateMany({

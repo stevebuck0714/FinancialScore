@@ -46,12 +46,20 @@ export const authConfig: NextAuthConfig = {
         // 2. consultantId field (if they're a team member)
         const consultantId = user.primaryConsultant?.id || user.consultantId;
 
+        console.log('🔐 NextAuth authorize - User data:', {
+          email: user.email,
+          role: user.role,
+          userType: user.userType,
+          companyRole: user.companyRole
+        });
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
           userType: user.userType,
+          companyRole: user.companyRole,
           companyId: user.companyId,
           consultantId: consultantId,
           isPrimaryContact: user.isPrimaryContact,
@@ -66,6 +74,7 @@ export const authConfig: NextAuthConfig = {
         token.id = user.id;
         token.role = user.role;
         token.userType = user.userType;
+        token.companyRole = user.companyRole;
         token.companyId = user.companyId;
         token.consultantId = user.consultantId;
         token.isPrimaryContact = user.isPrimaryContact;
@@ -78,6 +87,7 @@ export const authConfig: NextAuthConfig = {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
         session.user.userType = token.userType as string | undefined;
+        session.user.companyRole = token.companyRole as string | undefined;
         session.user.companyId = token.companyId as string | undefined;
         session.user.consultantId = token.consultantId as string | undefined;
         session.user.isPrimaryContact = token.isPrimaryContact as boolean | undefined;

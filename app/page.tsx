@@ -468,6 +468,33 @@ function FinancialScorePage() {
     }
   }, []);
 
+  // Handle MFA enrollment after registration
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const pendingMFAStr = sessionStorage.getItem('pendingMFAEnrollment');
+    if (pendingMFAStr && !isLoggedIn) {
+      try {
+        const { email, password, userId, timestamp } = JSON.parse(pendingMFAStr);
+        // Only process if less than 30 seconds old
+        if (Date.now() - timestamp < 30000) {
+          console.log('📝 Processing MFA enrollment for new user:', email);
+          // Auto-login to trigger MFA enrollment
+          setLoginEmail(email);
+          setLoginPassword(password);
+          // Clear the pending data
+          sessionStorage.removeItem('pendingMFAEnrollment');
+          // Trigger login which will show MFA enrollment
+          handleLogin();
+        } else {
+          sessionStorage.removeItem('pendingMFAEnrollment');
+        }
+      } catch (error) {
+        console.error('Error processing pending MFA enrollment:', error);
+        sessionStorage.removeItem('pendingMFAEnrollment');
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (currentUser?.userType === 'assessment' && isLoggedIn && currentView !== 'login' && !isAssessmentUserViewAllowed(currentView)) {
       console.log('?? useEffect redirecting from', currentView, 'to ma-welcome');
@@ -2601,12 +2628,14 @@ function FinancialScorePage() {
       
       const { user } = await response.json();
       console.log('? User data retrieved after MFA enrollment:', user);
+      console.log('🔍 companyRole from API:', user.companyRole);
       
       // Continue with normal login flow
       const normalizedUser = {
         ...user,
         role: user.role.toLowerCase(),
         userType: user.userType?.toLowerCase(),
+        companyRole: user.companyRole, // Preserve companyRole
         consultantCompanyName: user.consultantCompanyName,
         consultantType: user.consultantType,
         consultantId: user.consultantId,
@@ -2632,7 +2661,28 @@ function FinancialScorePage() {
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
       } else if (normalizedUser.userType === 'company') {
-        setCurrentView('admin');
+        // Load company data for business users
+        if (user.companyId) {
+          try {
+            const companyResponse = await fetch(`/api/companies?companyId=${user.companyId}`);
+            const companyData = await companyResponse.json();
+            if (companyData.companies && Array.isArray(companyData.companies) && companyData.companies.length > 0) {
+              safeSetCompanies(companyData.companies);
+              setSelectedCompanyId(user.companyId);
+              console.log('✅ Loaded company after MFA enrollment:', companyData.companies[0].name);
+              // Delay setting view to allow React to complete state updates
+              setTimeout(() => {
+                setCurrentView('admin');
+                setAdminDashboardTab('company-management');
+              }, 100);
+            }
+          } catch (error) {
+            console.error('Error loading company after MFA enrollment:', error);
+            setTimeout(() => setCurrentView('admin'), 100);
+          }
+        } else {
+          setTimeout(() => setCurrentView('admin'), 100);
+        }
       } else {
         setCurrentView('upload');
       }
@@ -2704,7 +2754,28 @@ function FinancialScorePage() {
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
       } else if (normalizedUser.userType === 'company') {
-        setCurrentView('admin');
+        // Load company data for business users
+        if (user.companyId) {
+          try {
+            const companyResponse = await fetch(`/api/companies?companyId=${user.companyId}`);
+            const companyData = await companyResponse.json();
+            if (companyData.companies && Array.isArray(companyData.companies) && companyData.companies.length > 0) {
+              safeSetCompanies(companyData.companies);
+              setSelectedCompanyId(user.companyId);
+              console.log('✅ Loaded company after MFA verification:', companyData.companies[0].name);
+              // Delay setting view to allow React to complete state updates
+              setTimeout(() => {
+                setCurrentView('admin');
+                setAdminDashboardTab('company-management');
+              }, 100);
+            }
+          } catch (error) {
+            console.error('Error loading company after MFA verification:', error);
+            setTimeout(() => setCurrentView('admin'), 100);
+          }
+        } else {
+          setTimeout(() => setCurrentView('admin'), 100);
+        }
       } else {
         setCurrentView('upload');
       }

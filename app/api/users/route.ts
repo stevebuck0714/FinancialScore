@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
         email: true,
         userType: true,
         role: true,
+        companyRole: true,
         companyId: true,
         createdAt: true
       },

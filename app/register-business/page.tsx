@@ -133,31 +133,23 @@ export default function RegisterBusinessWelcome() {
         return;
       }
 
-      // Use the registration response data directly (already has user info)
-      // Clear any existing session storage
-      sessionStorage.clear();
+      // Registration successful - trigger MFA enrollment
+      setError('');
+      setIsNavigating(false);
       
-      // Store user data in sessionStorage for immediate access after redirect
-      sessionStorage.setItem('pendingLogin', JSON.stringify({
-        user: data.user,
+      // Show MFA enrollment message
+      alert('✅ Registration successful!\n\nYou will now be prompted to set up Multi-Factor Authentication (MFA) for account security.');
+      
+      // Store credentials for auto-login after MFA setup
+      sessionStorage.setItem('pendingMFAEnrollment', JSON.stringify({
+        email: formData.email,
+        password: formData.password,
+        userId: data.user.id,
         timestamp: Date.now()
       }));
       
-      // Sign in the user after successful registration
-      const signInResponse = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password
-        })
-      });
-
-      // Force logout of any existing session and redirect to main page
-      await fetch('/api/auth/logout', { method: 'POST' });
-      
-      // Redirect to main page (which will show the new Business Dashboard)
-      window.location.href = '/';
+      // Redirect to main page which will trigger MFA enrollment
+      router.push('/');
     } catch (err) {
       console.error('Registration error:', err);
       setError('An error occurred. Please try again.');

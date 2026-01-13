@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
         name: user.name,
         role: user.role,
         userType: user.userType,
+        companyRole: user.companyRole,
         companyId: user.companyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,
