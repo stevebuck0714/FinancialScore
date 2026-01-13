@@ -5333,8 +5333,39 @@ function FinancialScorePage() {
               </div>
             </div>
 
+            {/* User Info and Logout Section */}
+            <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+              <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Logged in as
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+                  {currentUser?.name}
+                </div>
+                <button 
+                  onClick={handleLogout} 
+                  style={{ 
+                    width: '100%',
+                    padding: '10px 16px', 
+                    background: '#ef4444', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '8px', 
+                    fontSize: '14px', 
+                    fontWeight: '600', 
+                    cursor: 'pointer',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                >
+                  🚪 LOGOUT
+                </button>
+              </div>
+            </div>
+
             {/* Support Section */}
-            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: 'none' }}>
+            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
               <a
                 href="/support"
                 target="_blank"
@@ -5528,18 +5559,39 @@ function FinancialScorePage() {
               </h3>
             </div>
 
-            {/* User/Consultant Name Display */}
-            <div style={{ marginTop: 'auto', paddingTop: '16px', paddingBottom: '8px', borderTop: '1px solid #e2e8f0', paddingLeft: '24px', paddingRight: '24px' }}>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {currentUser?.role === 'consultant' ? 'Consultant' : 'User'}
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
-                {currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
+            {/* User Info and Logout Section */}
+            <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+              <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Logged in as
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+                  {currentUser?.name}
+                </div>
+                <button 
+                  onClick={handleLogout} 
+                  style={{ 
+                    width: '100%',
+                    padding: '10px 16px', 
+                    background: '#ef4444', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '8px', 
+                    fontSize: '14px', 
+                    fontWeight: '600', 
+                    cursor: 'pointer',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                >
+                  🚪 LOGOUT
+                </button>
               </div>
             </div>
 
             {/* Support Section */}
-            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: 'none' }}>
+            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
               <a
                 href="/support"
                 target="_blank"
