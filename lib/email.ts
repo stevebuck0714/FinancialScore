@@ -535,3 +535,186 @@ function getBusinessRegistrationHTML({
   `.trim();
 }
 
+// Trusted Device Notification Types
+interface TrustedDeviceNotificationProps {
+  to: string;
+  userName: string;
+  deviceName: string;
+  ipAddress: string;
+  timestamp: Date;
+  manageDevicesLink: string;
+}
+
+/**
+ * Send email notification when a new trusted device is added
+ */
+export async function sendTrustedDeviceNotification({
+  to,
+  userName,
+  deviceName,
+  ipAddress,
+  timestamp,
+  manageDevicesLink
+}: TrustedDeviceNotificationProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping trusted device notification email');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: [to],
+      subject: '🔐 New Trusted Device Added - Corelytics',
+      html: getTrustedDeviceNotificationHTML({
+        userName,
+        deviceName,
+        ipAddress,
+        timestamp,
+        manageDevicesLink
+      }),
+    });
+
+    if (error) {
+      console.error('Resend error:', error);
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+
+    console.log('✅ Trusted device notification sent successfully:', data);
+    return { success: true, data };
+  } catch (error) {
+    console.error('❌ Error sending trusted device notification:', error);
+    // Don't throw - we don't want email failures to break the login flow
+    return { success: false, error };
+  }
+}
+
+// HTML email template for trusted device notification
+function getTrustedDeviceNotificationHTML({
+  userName,
+  deviceName,
+  ipAddress,
+  timestamp,
+  manageDevicesLink
+}: Omit<TrustedDeviceNotificationProps, 'to'>): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Trusted Device Added</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
+                🔐 New Trusted Device
+              </h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="margin: 0 0 20px 0; color: #1e293b; font-size: 16px; line-height: 1.6;">
+                Hi <strong>${userName}</strong>,
+              </p>
+              
+              <p style="margin: 0 0 30px 0; color: #475569; font-size: 16px; line-height: 1.6;">
+                A new device was just added to your trusted devices list. This device will not require MFA verification for the next 60 days.
+              </p>
+              
+              <!-- Device Details -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 30px;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <h3 style="margin: 0 0 20px 0; color: #1e293b; font-size: 18px; font-weight: 600;">
+                      Device Information
+                    </h3>
+                    
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <strong style="color: #475569; font-size: 14px;">Device:</strong>
+                        </td>
+                        <td style="padding: 8px 0; text-align: right;">
+                          <span style="color: #1e293b; font-size: 14px;">${deviceName}</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <strong style="color: #475569; font-size: 14px;">IP Address:</strong>
+                        </td>
+                        <td style="padding: 8px 0; text-align: right;">
+                          <span style="color: #1e293b; font-size: 14px;">${ipAddress}</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <strong style="color: #475569; font-size: 14px;">Time:</strong>
+                        </td>
+                        <td style="padding: 8px 0; text-align: right;">
+                          <span style="color: #1e293b; font-size: 14px;">${timestamp.toLocaleString('en-US', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short'
+                          })}</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Security Alert -->
+              <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 4px; margin-bottom: 30px;">
+                <p style="margin: 0; color: #92400e; font-size: 14px; line-height: 1.6;">
+                  <strong>⚠️ Was this you?</strong><br>
+                  If you don't recognize this device or didn't add it, please take action immediately to secure your account.
+                </p>
+              </div>
+              
+              <!-- CTA Button -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 20px 0;">
+                    <a href="${manageDevicesLink}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                      Manage Trusted Devices
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="margin: 30px 0 0 0; color: #64748b; font-size: 14px; line-height: 1.6;">
+                You can view all your trusted devices and revoke access to any device at any time from your security settings.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #f8fafc; border-radius: 0 0 8px 8px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.6;">
+                © ${new Date().getFullYear()} Corelytics. All rights reserved.
+              </p>
+              <p style="margin: 10px 0 0 0; color: #94a3b8; font-size: 12px; line-height: 1.6;">
+                This is a security notification email. For your protection, we recommend keeping your account secure.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+}
+

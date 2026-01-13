@@ -26,6 +26,8 @@ export type Mappings = {
   subcontractors?: string;
   benefits?: string;
   taxLicense?: string;
+  stateIncomeTaxes?: string;
+  federalIncomeTaxes?: string;
   phoneComm?: string;
   trainingCert?: string;
   mealsEntertainment?: string;
@@ -109,6 +111,8 @@ export type MonthlyDataRow = {
   subcontractors: number;
   benefits: number;
   taxLicense: number;
+  stateIncomeTaxes: number;
+  federalIncomeTaxes: number;
   phoneComm: number;
   trainingCert: number;
   mealsEntertainment: number;
@@ -247,6 +251,8 @@ export interface User {
   consultantCompanyName?: string;
   role: 'consultant' | 'user' | 'siteadmin';
   userType?: 'company' | 'assessment'; // company = management team, assessment = fills questionnaire
+  companyRole?: 'user' | 'admin'; // admin = company admin with full access, user = restricted access
+  sidebarAccess?: string[]; // Array of sidebar sections the user can access
 }
 
 export interface FinancialDataRecord {

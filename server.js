@@ -7,16 +7,40 @@ const { Server: SocketIOServer } = require('socket.io');
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config(); // Fallback to .env for any missing vars
 
-// SAFETY CHECK: Ensure dev environment never connects to prod database
-if (process.env.NODE_ENV === 'development' && !process.env.DATABASE_URL?.includes('cold-frost')) {
-  console.error('🚨 SECURITY ERROR: Dev environment is trying to connect to non-dev database!');
-  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL);
-  console.error('🚨 This is a critical security violation. Aborting startup.');
+// SAFETY CHECK: Local/dev/preview should NEVER connect to production database (orange-poetry)
+// CRITICAL: Even if NODE_ENV is "production" locally, this must be blocked.
+// The only time orange-poetry is allowed is on Vercel production runtime: VERCEL=1 and VERCEL_ENV=production.
+
+const isProductionDatabase = process.env.DATABASE_URL?.includes('orange-poetry');
+const isStagingDatabase = process.env.DATABASE_URL?.includes('cold-frost');
+const isVercelProductionRuntime = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
+
+// CRITICAL: Block production database everywhere except Vercel production runtime
+if (isProductionDatabase && !isVercelProductionRuntime) {
+  console.error('🚨 SECURITY ERROR: Staging/Dev environment is trying to connect to PRODUCTION database (orange-poetry)!');
+  console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
+  console.error(`🚨 VERCEL_ENV: ${process.env.VERCEL_ENV}  VERCEL: ${process.env.VERCEL}  NODE_ENV: ${process.env.NODE_ENV}`);
+  console.error('🚨 This is a critical security violation. Local/dev/preview must never connect to orange-poetry.');
+  console.error('🚨 Aborting startup.');
   process.exit(1);
 }
 
+// NOTE: We do not block cold-frost when VERCEL_ENV=production here because Vercel "production"
+// is per-project; some non-prod projects may deploy with --prod while correctly using cold-frost.
+
 // Log which database we're connecting to
-console.log('🔗 DATABASE:', process.env.DATABASE_URL?.includes('cold-frost') ? 'DEV (cold-frost)' : 'PROD (orange-poetry)');
+let dbLabel = 'UNKNOWN';
+if (isStagingDatabase) {
+  dbLabel = 'STAGING (cold-frost)';
+} else if (isProductionDatabase) {
+  dbLabel = 'PRODUCTION (orange-poetry) ⚠️';
+  console.warn('⚠️  WARNING: Connected to PRODUCTION database!');
+} else if (process.env.DATABASE_URL?.includes('file:')) {
+  dbLabel = 'SQLITE (file)';
+} else {
+  dbLabel = 'OTHER';
+}
+console.log('🔗 DATABASE:', dbLabel);
 
 // Force development mode for dev script
 const dev = true;

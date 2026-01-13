@@ -1,0 +1,119 @@
+[
+  {
+    "itemName": "Professional Services - Consulting",
+    "sku": "SVC-001",
+    "quantitySold": 120,
+    "revenue": 180000,
+    "cogs": 72000,
+    "grossMargin": 108000,
+    "grossMarginPct": 60
+  },
+  {
+    "itemName": "Software License - Enterprise",
+    "sku": "SFT-ENT-100",
+    "quantitySold": 45,
+    "revenue": 135000,
+    "cogs": 27000,
+    "grossMargin": 108000,
+    "grossMarginPct": 80
+  },
+  {
+    "itemName": "Widget Pro - Model A",
+    "sku": "WGT-PRO-A",
+    "quantitySold": 500,
+    "revenue": 75000,
+    "cogs": 45000,
+    "grossMargin": 30000,
+    "grossMarginPct": 40
+  },
+  {
+    "itemName": "Training Services",
+    "sku": "SVC-TRN-001",
+    "quantitySold": 80,
+    "revenue": 48000,
+    "cogs": 14400,
+    "grossMargin": 33600,
+    "grossMarginPct": 70
+  },
+  {
+    "itemName": "Hardware Device - Standard",
+    "sku": "HWR-STD-200",
+    "quantitySold": 200,
+    "revenue": 40000,
+    "cogs": 28000,
+    "grossMargin": 12000,
+    "grossMarginPct": 30
+  },
+  {
+    "itemName": "Maintenance Contract - Annual",
+    "sku": "MNT-ANN-001",
+    "quantitySold": 60,
+    "revenue": 36000,
+    "cogs": 10800,
+    "grossMargin": 25200,
+    "grossMarginPct": 70
+  },
+  {
+    "itemName": "Widget Basic - Model B",
+    "sku": "WGT-BAS-B",
+    "quantitySold": 800,
+    "revenue": 32000,
+    "cogs": 22400,
+    "grossMargin": 9600,
+    "grossMarginPct": 30
+  },
+  {
+    "itemName": "Premium Support Package",
+    "sku": "SUP-PRM-001",
+    "quantitySold": 35,
+    "revenue": 28000,
+    "cogs": 8400,
+    "grossMargin": 19600,
+    "grossMarginPct": 70
+  },
+  {
+    "itemName": "Custom Development",
+    "sku": "SVC-DEV-001",
+    "quantitySold": 25,
+    "revenue": 25000,
+    "cogs": 12500,
+    "grossMargin": 12500,
+    "grossMarginPct": 50
+  },
+  {
+    "itemName": "Materials & Supplies",
+    "sku": "MAT-GEN-001",
+    "quantitySold": 1500,
+    "revenue": 22500,
+    "cogs": 18000,
+    "grossMargin": 4500,
+    "grossMarginPct": 20
+  },
+  {
+    "itemName": "Software License - Standard",
+    "sku": "SFT-STD-100",
+    "quantitySold": 90,
+    "revenue": 18000,
+    "cogs": 3600,
+    "grossMargin": 14400,
+    "grossMarginPct": 80
+  },
+  {
+    "itemName": "Implementation Services",
+    "sku": "SVC-IMP-001",
+    "quantitySold": 15,
+    "revenue": 15000,
+    "cogs": 6000,
+    "grossMargin": 9000,
+    "grossMarginPct": 60
+  }
+]
+
+
+
+
+
+
+
+
+

@@ -72,6 +72,8 @@ model Company {
   financialRecords           FinancialRecord[]
   subscription               Subscription?
   users                      User[]
+  loans                      Loan[]
+  xeroTransactions           XeroTransaction[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
@@ -91,6 +93,8 @@ model User {
   companyId            String?
   consultantId         String?
   isPrimaryContact     Boolean            @default(false)
+  companyRole          String?            @default("user") // 'user' or 'admin' - for company users only
+  sidebarAccess        Json?              // Array of accessible sidebar sections
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   passwordResetExpires DateTime?
@@ -103,11 +107,32 @@ model User {
   consultantFirm       Consultant?        @relation("ConsultantTeamMembers", fields: [consultantId], references: [id], onDelete: Cascade)
   financialRecords     FinancialRecord[]
   company              Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trustedDevices       TrustedDevice[]
 
   @@index([email])
   @@index([companyId])
   @@index([consultantId])
   @@index([passwordResetToken])
+}
+
+model TrustedDevice {
+  id                String   @id @default(cuid())
+  userId            String
+  deviceToken       String   @unique
+  deviceName        String
+  deviceFingerprint String?
+  ipAddress         String?
+  userAgent         String?
+  createdAt         DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+  expiresAt         DateTime
+  isActive          Boolean  @default(true)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deviceToken])
+  @@index([expiresAt])
+  @@index([isActive])
 }
 
 model FinancialRecord {
@@ -153,6 +178,9 @@ model MonthlyFinancial {
   subcontractors           Float           @default(0)
   rent                     Float           @default(0)
   taxLicense               Float           @default(0)
+  // Income taxes (NOT operating expenses)
+  stateIncomeTaxes         Float           @default(0)
+  federalIncomeTaxes       Float           @default(0)
   phoneComm                Float           @default(0)
   infrastructure           Float           @default(0)
   autoTravel               Float           @default(0)
@@ -331,6 +359,22 @@ model AccountMapping {
   @@index([companyId])
 }
 
+// Machine Learning: Stores learned patterns from account mappings across all companies
+model LearnedMapping {
+  id                      String   @id @default(cuid())
+  accountName             String   // Normalized account name
+  accountClassification   String?  // Asset, Liability, Revenue, Expense, etc.
+  targetField             String   // Where this account should be mapped
+  useCount                Int      @default(1) // How many times this mapping has been used
+  lastUsedAt              DateTime @default(now())
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([accountName, accountClassification, targetField])
+  @@index([accountName])
+  @@index([targetField])
+}
+
 // model ExpenseGoal {  // Doesn't exist in production DB
 //   id        String   @id @default(cuid())
 //   companyId String   @unique
@@ -355,6 +399,33 @@ model AccountMapping {
 
 //   @@index([companyId])
 // }
+
+// Daily transaction data from Xero for operational reports
+model XeroTransaction {
+  id              String   @id @default(cuid())
+  companyId       String
+  transactionId   String   // Xero's invoice/bill/transaction ID
+  transactionType String   // INVOICE, BILL, BANK_TRANSACTION, PAYMENT
+  date            DateTime
+  dueDate         DateTime?
+  contact         String?  // Customer/Supplier name
+  reference       String?  // Invoice/Bill number
+  total           Float    @default(0)
+  amountPaid      Float    @default(0)
+  amountDue       Float    @default(0)
+  status          String?  // DRAFT, SUBMITTED, AUTHORISED, PAID, etc.
+  lineItems       Json?    // Array of line items with account details
+  rawData         Json?    // Full Xero transaction object
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, transactionId])
+  @@index([companyId])
+  @@index([date])
+  @@index([transactionType])
+}
 
 model SystemSettings {
   id                       String   @id @default(cuid())
@@ -548,6 +619,7 @@ enum BusinessStatus {
 
 enum AccountingPlatform {
   QUICKBOOKS
+  XERO
   SAGE
   NETSUITE
   DYNAMICS365
@@ -580,4 +652,189 @@ enum PaymentType {
   RECURRING
   MANUAL
   REFUND
+}
+
+model Loan {
+  id            String      @id @default(cuid())
+  companyId     String
+  loanName      String
+  loanIdNumber  String?
+  lenderName    String
+  loanAmount    Float
+  interestRate  Float?
+  termMonths    Int?
+  startDate     DateTime
+  endDate       DateTime?
+  loanType      LoanType    @default(TERM)
+  status        LoanStatus  @default(ACTIVE)
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  covenants     Covenant[]
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model Covenant {
+  id               String         @id @default(cuid())
+  loanId           String
+  covenantName     String
+  covenantType     CovenantType   @default(MINIMUM)
+  threshold        Float?
+  currentValue     Float?
+  status           CovenantStatus @default(COMPLIANT)
+  description      String?
+  isApplicable     Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  loan             Loan           @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId])
+  @@index([status])
+}
+
+enum LoanType {
+  TERM
+  REVOLVER
+  BRIDGE
+  LINE_OF_CREDIT
+  MORTGAGE
+  OTHER
+}
+
+enum LoanStatus {
+  ACTIVE
+  MATURING
+  PAID_OFF
+  DEFAULTED
+  INACTIVE
+}
+
+enum CovenantType {
+  MINIMUM
+  MAXIMUM
+  RANGE
+  QUALITATIVE
+}
+
+enum CovenantStatus {
+  COMPLIANT
+  WARNING
+  BREACHED
+  NOT_APPLICABLE
+}
+
+// ============================================================================
+// OPERATIONAL DATA MODELS (QuickBooks Snapshots)
+// ============================================================================
+
+model CustomerSalesSnapshot {
+  id             String   @id @default(cuid())
+  companyId      String
+  snapshotDate   DateTime // Changed from 'month' to support daily/weekly/monthly
+  frequency      String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  customerId     String?  // QuickBooks customer ID
+  customerName   String
+  revenue        Float
+  invoiceCount   Int
+  avgInvoiceSize Float?
+  createdAt      DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, customerId])
+}
+
+model ARAgingSnapshot {
+  id           String   @id @default(cuid())
+  companyId    String
+  snapshotDate DateTime // Changed from 'month'
+  frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  totalAR      Float
+  current      Float    // 0-30 days
+  days1to30    Float    // 31-60 days
+  days31to60   Float    // 61-90 days
+  days61to90   Float    // 91-120 days
+  days90plus   Float    // 121+ days
+  createdAt    DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@unique([companyId, snapshotDate, frequency])
+}
+
+model APAgingSnapshot {
+  id           String   @id @default(cuid())
+  companyId    String
+  snapshotDate DateTime // Changed from 'month'
+  frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  totalAP      Float
+  current      Float    // 0-30 days
+  days1to30    Float    // 31-60 days
+  days31to60   Float    // 61-90 days
+  days61to90   Float    // 91-120 days
+  days90plus   Float    // 121+ days
+  createdAt    DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@unique([companyId, snapshotDate, frequency])
+}
+
+model ProductSalesSnapshot {
+  id              String   @id @default(cuid())
+  companyId       String
+  snapshotDate    DateTime // Changed from 'month'
+  frequency       String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  itemId          String?  // QuickBooks item ID
+  itemName        String
+  sku             String?
+  quantitySold    Float
+  revenue         Float
+  cogs            Float?
+  grossMargin     Float?
+  grossMarginPct  Float?
+  createdAt       DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, itemId])
+}
+
+model InventorySnapshot {
+  id           String   @id @default(cuid())
+  companyId    String
+  snapshotDate DateTime // Changed from 'month'
+  frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  itemId       String?  // QuickBooks item ID
+  itemName     String
+  sku          String?
+  qtyOnHand    Float
+  assetValue   Float
+  avgCost      Float?
+  createdAt    DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, itemId])
+}
+
+model CashSnapshot {
+  id              String   @id @default(cuid())
+  companyId       String
+  snapshotDate    DateTime
+  frequency       String   @default("daily") // 'daily', 'weekly', 'monthly'
+  accountId       String?  // QuickBooks account ID
+  accountName     String   // Bank account name
+  accountNumber   String?  // Last 4 digits (optional)
+  cashBalance     Float
+  changeAmount    Float?   // Change from previous period
+  changePercent   Float?   // % change from previous period
+  createdAt       DateTime @default(now())
+  
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, accountId])
 }

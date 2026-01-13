@@ -2,12 +2,14 @@
 
 import React from 'react';
 import { applyLOBAllocations, AccountValue, AccountMapping, CompanyLOB } from '@/lib/lob-allocator';
-import type { MonthlyDataRow, Mappings } from '../../types';
+import type { MonthlyDataRow } from '../../types';
+import { useMasterData } from '@/lib/master-data-store';
+import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 
 interface LOBReportingTabProps {
   company: any;
-  monthly: MonthlyDataRow[];
-  accountMappings: Mappings[];
+  selectedCompanyId: string;
+  accountMappings: any[];
   statementType: 'income-statement' | 'balance-sheet' | 'income-statement-percent';
   selectedLineOfBusiness: string;
   statementPeriod: string;
@@ -16,11 +18,12 @@ interface LOBReportingTabProps {
   onLineOfBusinessChange: (lob: string) => void;
   onPeriodChange: (period: string) => void;
   onDisplayChange: (display: 'monthly' | 'quarterly' | 'annual') => void;
+  onNavigateToAccountMappings?: () => void;
 }
 
 export default function LOBReportingTab({
   company,
-  monthly,
+  selectedCompanyId,
   accountMappings,
   statementType,
   selectedLineOfBusiness,
@@ -30,11 +33,23 @@ export default function LOBReportingTab({
   onLineOfBusinessChange,
   onPeriodChange,
   onDisplayChange,
+  onNavigateToAccountMappings,
 }: LOBReportingTabProps) {
-  
+  // Use master data store instead of receiving monthly data as prop
+  const { data: masterData, monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
   
   // Get Lines of Business from company
   const linesOfBusiness = company?.linesOfBusiness || [];
+  
+  // Auto-select first LOB if none selected or invalid (but allow "all")
+  // IMPORTANT: This hook must be called before any early returns to maintain hook order
+  React.useEffect(() => {
+    if (!selectedLineOfBusiness || (selectedLineOfBusiness !== 'all' && !linesOfBusiness.some((lob: any) => lob.name === selectedLineOfBusiness))) {
+      if (linesOfBusiness.length > 0) {
+        onLineOfBusinessChange(linesOfBusiness[0].name);
+      }
+    }
+  }, [selectedLineOfBusiness, linesOfBusiness, onLineOfBusinessChange]);
   
   // Check if LOBs are configured
   if (!linesOfBusiness || linesOfBusiness.length === 0) {
@@ -51,7 +66,14 @@ export default function LOBReportingTab({
             To view line of business reporting, you need to configure LOB allocations in your account mappings.
           </p>
           <button
-            onClick={() => window.location.href = '#account-mappings'}
+            onClick={() => {
+              if (onNavigateToAccountMappings) {
+                onNavigateToAccountMappings();
+              } else {
+                // Fallback: try to navigate using window location if prop not provided
+                window.location.href = '#account-mappings';
+              }
+            }}
             style={{
               padding: '8px 16px',
               background: '#f59e0b',
@@ -70,8 +92,27 @@ export default function LOBReportingTab({
     );
   }
   
-  // Check if financial data exists
-  if (!monthly || monthly.length === 0) {
+  // Check if master data exists
+  if (masterDataLoading) {
+    return (
+      <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+          Line of Business Reporting
+        </h2>
+        <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>⏳</div>
+          <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+            Loading Master Data
+          </div>
+          <p style={{ fontSize: '14px', color: '#64748b' }}>
+            Loading financial data from master data store...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (masterDataError || !monthlyData || monthlyData.length === 0) {
     return (
       <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
@@ -80,24 +121,18 @@ export default function LOBReportingTab({
         <div style={{ background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '48px 24px', textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
           <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-            No Financial Data
+            No Master Data Available
           </div>
           <p style={{ fontSize: '14px', color: '#64748b' }}>
-            Sync your QuickBooks data to view line of business reports.
+            {masterDataError ? `Error: ${masterDataError}` : 'No master data available for LOB reporting. Please process financial data first.'}
           </p>
         </div>
       </div>
     );
   }
-  
-  // Auto-select first LOB if none selected or invalid (but allow "all")
-  React.useEffect(() => {
-    if (!selectedLineOfBusiness || (selectedLineOfBusiness !== 'all' && !linesOfBusiness.some((lob: any) => lob.name === selectedLineOfBusiness))) {
-      if (linesOfBusiness.length > 0) {
-        onLineOfBusinessChange(linesOfBusiness[0].name);
-      }
-    }
-  }, [selectedLineOfBusiness, linesOfBusiness, onLineOfBusinessChange]);
+
+  // Use master data monthly data
+  const monthly = monthlyData;
   
   // Filter monthly data by selected period
   const now = new Date();
@@ -136,6 +171,7 @@ export default function LOBReportingTab({
   let detailedBreakdowns: any = {};
   let monthlyLOBData: any[] = [];
   let monthLabels: string[] = [];
+  let allMonthlyData: any[] = []; // Initialize before conditional block
   
   // Helper to get LOB value from a breakdown field - DEFINE BEFORE USE
   const getLOBValue = (fieldName: string): number => {
@@ -152,7 +188,7 @@ export default function LOBReportingTab({
   };
   
   // Convert account mappings to the format expected by applyLOBAllocations
-  const convertMappings = (mappings: Mappings[]): AccountMapping[] => {
+  const convertMappings = (mappings: any[]): AccountMapping[] => {
     return mappings.map(m => ({
       qbAccount: m.qbAccount || '',
       qbAccountId: m.qbAccountId,
@@ -170,21 +206,77 @@ export default function LOBReportingTab({
     }));
   };
   
+  // Format month as MM-YYYY
+  const formatMonth = (monthValue: any): string => {
+    if (!monthValue) return '';
+    
+    // If already in MM-YYYY format, return as is
+    if (typeof monthValue === 'string' && /^\d{2}-\d{4}$/.test(monthValue)) {
+      return monthValue;
+    }
+    
+    // If already in MM/YYYY format, convert to MM-YYYY
+    if (typeof monthValue === 'string' && /^\d{1,2}\/\d{4}$/.test(monthValue)) {
+      const [month, year] = monthValue.split('/');
+      return `${month.padStart(2, '0')}-${year}`;
+    }
+    
+    // Try to parse as date
+    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // If it's a string that doesn't match expected formats, return as is
+      return String(monthValue);
+    }
+    
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${month}-${year}`;
+  };
+  
   // Process monthly data for LOB reporting
   if (filteredMonthly && filteredMonthly.length > 0 && accountMappings && accountMappings.length > 0) {
     
     // Process each month in the filtered monthly data
-    const allMonthlyData: any[] = [];
+    // allMonthlyData is already initialized above
     
     // First, process month by month to build detailed data
     filteredMonthly.forEach((monthData, idx) => {
-      const monthLabel = monthData.month || monthData.date || `Month ${idx + 1}`;
+      const rawMonth = monthData.month || monthData.date || monthData.monthDate;
+      const monthLabel = rawMonth ? formatMonth(rawMonth) : `Month ${idx + 1}`;
       
       // All financial fields we want to track
       const fields = {
         revenue: monthData.revenue || 0,
         cogs: monthData.cogsTotal || monthData.cogs || 0,
         expense: monthData.expense || 0,
+        stateIncomeTaxes: monthData.stateIncomeTaxes || 0,
+        federalIncomeTaxes: monthData.federalIncomeTaxes || 0,
+        // COGS components
+        cogsContractors: monthData.cogsContractors || 0,
+        cogsPayroll: monthData.cogsPayroll || 0,
+        cogsMaterials: monthData.cogsMaterials || 0,
+        cogsOwnerPay: monthData.cogsOwnerPay || 0,
+        cogsCommissions: monthData.cogsCommissions || 0,
+        cogsOther: monthData.cogsOther || 0,
+        // Operating expense components
+        payroll: monthData.payroll || 0,
+        benefits: monthData.benefits || 0,
+        insurance: monthData.insurance || 0,
+        professionalFees: monthData.professionalFees || 0,
+        subcontractors: monthData.subcontractors || 0,
+        rent: monthData.rent || 0,
+        taxLicense: monthData.taxLicense || 0,
+        phoneComm: monthData.phoneComm || 0,
+        infrastructure: monthData.infrastructure || 0,
+        autoTravel: monthData.autoTravel || 0,
+        salesExpense: monthData.salesExpense || 0,
+        marketing: monthData.marketing || 0,
+        mealsEntertainment: monthData.mealsEntertainment || 0,
+        otherExpense: monthData.otherExpense || 0,
+        // Balance sheet fields
         cash: monthData.cash || 0,
         ar: monthData.ar || 0,
         inventory: monthData.inventory || 0,
@@ -227,12 +319,53 @@ export default function LOBReportingTab({
         const lobData = applyLOBAllocations(accountValues, convertedMappings, convertedLOBs);
         monthBreakdowns = lobData.breakdowns;
       }
+      
+      // Always ensure component fields are populated, even if applyLOBAllocations didn't return them
+      // This ensures COGS and expense detail rows will render
+      const totalHeadcount = linesOfBusiness.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
+      const hasHeadcount = totalHeadcount > 0;
+      
+      // Define all fields including component fields
+      const allFieldNames = [
+        'revenue', 'cogs', 'expense', 'stateIncomeTaxes', 'federalIncomeTaxes',
+        // COGS components
+        'cogsContractors', 'cogsPayroll', 'cogsMaterials', 'cogsOwnerPay', 'cogsCommissions', 'cogsOther',
+        // Operating expense components
+        'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors', 'rent', 
+        'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 
+        'marketing', 'mealsEntertainment', 'otherExpense',
+        // Balance sheet fields
+        'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
+        'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
+        'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'
+      ];
+      
+      // Populate any missing fields with distributed values
+      allFieldNames.forEach(fieldName => {
+        if (!monthBreakdowns[fieldName]) {
+          monthBreakdowns[fieldName] = {};
+        }
+        const fieldValue = fields[fieldName as keyof typeof fields] || 0;
+        
+        linesOfBusiness.forEach((lob: any) => {
+          // Only populate if the field doesn't already have a value for this LOB
+          if (monthBreakdowns[fieldName][lob.name] === undefined || monthBreakdowns[fieldName][lob.name] === null) {
+            if (hasHeadcount && totalHeadcount > 0) {
+              // Distribute based on headcount percentage
+              monthBreakdowns[fieldName][lob.name] = (fieldValue * (lob.headcountPercentage || 0)) / totalHeadcount;
+            } else {
+              // Distribute equally
+              monthBreakdowns[fieldName][lob.name] = fieldValue / linesOfBusiness.length;
+            }
+          }
+        });
+      });
 
       // Calculate total COGS and expense for each LOB in this month
       linesOfBusiness.forEach((lob: any) => {
         const lobName = lob.name;
 
-        // Calculate total COGS
+        // Calculate total COGS from components, or use the cogs field if components aren't available
         const cogsComponents = ['cogsContractors', 'cogsPayroll', 'cogsMaterials'];
         let totalCogs = 0;
         cogsComponents.forEach(component => {
@@ -243,9 +376,19 @@ export default function LOBReportingTab({
         if (!monthBreakdowns.cogs) {
           monthBreakdowns.cogs = {};
         }
-        monthBreakdowns.cogs[lobName] = totalCogs;
+        // If no component breakdowns exist, use the total COGS value distributed
+        if (totalCogs === 0 && monthBreakdowns.cogs[lobName] === undefined) {
+          const totalHeadcount = linesOfBusiness.reduce((sum, l) => sum + (l.headcountPercentage || 0), 0);
+          if (totalHeadcount > 0) {
+            monthBreakdowns.cogs[lobName] = (fields.cogs * (lob.headcountPercentage || 0)) / totalHeadcount;
+          } else {
+            monthBreakdowns.cogs[lobName] = fields.cogs / linesOfBusiness.length;
+          }
+        } else if (totalCogs > 0) {
+          monthBreakdowns.cogs[lobName] = totalCogs;
+        }
 
-        // Calculate total expenses
+        // Calculate total expenses from components, or use the expense field if components aren't available
         const expenseComponents = ['payroll', 'rent', 'utilities', 'insurance', 'professionalFees', 'salesExpense', 'taxLicense', 'otherExpense', 'benefits', 'autoTravel', 'phoneComm', 'infrastructure', 'mealsEntertainment'];
         let totalExpense = 0;
         expenseComponents.forEach(component => {
@@ -256,11 +399,82 @@ export default function LOBReportingTab({
         if (!monthBreakdowns.expense) {
           monthBreakdowns.expense = {};
         }
-        monthBreakdowns.expense[lobName] = totalExpense;
+        // If no component breakdowns exist, use the total expense value distributed
+        if (totalExpense === 0 && monthBreakdowns.expense[lobName] === undefined) {
+          const totalHeadcount = linesOfBusiness.reduce((sum, l) => sum + (l.headcountPercentage || 0), 0);
+          if (totalHeadcount > 0) {
+            monthBreakdowns.expense[lobName] = (fields.expense * (lob.headcountPercentage || 0)) / totalHeadcount;
+          } else {
+            monthBreakdowns.expense[lobName] = fields.expense / linesOfBusiness.length;
+          }
+        } else if (totalExpense > 0) {
+          monthBreakdowns.expense[lobName] = totalExpense;
+        }
       });
 
       // Extract values based on selected LOB
       if (selectedLineOfBusiness === 'all') {
+        // When showing "all", we need to ensure breakdowns are populated for display
+        // If monthBreakdowns is empty or missing allocations, populate it with field values
+        // distributed across LOBs based on headcount or equally
+        if (!monthBreakdowns || Object.keys(monthBreakdowns).length === 0) {
+          // No breakdowns exist - create them by distributing totals across LOBs
+          const totalHeadcount = linesOfBusiness.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
+          const hasHeadcount = totalHeadcount > 0;
+          
+          // Initialize breakdowns for all fields including component fields
+          const fieldNames = ['revenue', 'cogs', 'expense', 'stateIncomeTaxes', 'federalIncomeTaxes', 
+                             // COGS components
+                             'cogsContractors', 'cogsPayroll', 'cogsMaterials', 'cogsOwnerPay', 'cogsCommissions', 'cogsOther',
+                             // Operating expense components
+                             'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors', 'rent', 
+                             'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 
+                             'marketing', 'mealsEntertainment', 'otherExpense',
+                             // Balance sheet fields
+                             'cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets',
+                             'ap', 'otherCL', 'ltd', 'ownersCapital', 'ownersDraw', 'commonStock',
+                             'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock'];
+          
+          fieldNames.forEach(fieldName => {
+            if (!monthBreakdowns[fieldName]) {
+              monthBreakdowns[fieldName] = {};
+            }
+            const fieldValue = fields[fieldName as keyof typeof fields] || 0;
+            
+            linesOfBusiness.forEach((lob: any) => {
+              if (hasHeadcount && totalHeadcount > 0) {
+                // Distribute based on headcount percentage
+                monthBreakdowns[fieldName][lob.name] = (fieldValue * (lob.headcountPercentage || 0)) / totalHeadcount;
+              } else {
+                // Distribute equally
+                monthBreakdowns[fieldName][lob.name] = fieldValue / linesOfBusiness.length;
+              }
+            });
+          });
+          
+          // Also ensure COGS and expense breakdowns are set (they might be calculated separately)
+          if (!monthBreakdowns.cogs) {
+            monthBreakdowns.cogs = {};
+            linesOfBusiness.forEach((lob: any) => {
+              if (hasHeadcount && totalHeadcount > 0) {
+                monthBreakdowns.cogs[lob.name] = (fields.cogs * (lob.headcountPercentage || 0)) / totalHeadcount;
+              } else {
+                monthBreakdowns.cogs[lob.name] = fields.cogs / linesOfBusiness.length;
+              }
+            });
+          }
+          if (!monthBreakdowns.expense) {
+            monthBreakdowns.expense = {};
+            linesOfBusiness.forEach((lob: any) => {
+              if (hasHeadcount && totalHeadcount > 0) {
+                monthBreakdowns.expense[lob.name] = (fields.expense * (lob.headcountPercentage || 0)) / totalHeadcount;
+              } else {
+                monthBreakdowns.expense[lob.name] = fields.expense / linesOfBusiness.length;
+              }
+            });
+          }
+        }
+        
         // Sum across all LOBs (use totals)
         const cash = fields.cash;
         const ar = fields.ar;
@@ -291,6 +505,8 @@ export default function LOBReportingTab({
           revenue: fields.revenue,
           expense: fields.expense,
           cogs: fields.cogs,
+          stateIncomeTaxes: fields.stateIncomeTaxes,
+          federalIncomeTaxes: fields.federalIncomeTaxes,
           cash,
           ar,
           inventory,
@@ -349,6 +565,8 @@ export default function LOBReportingTab({
           revenue: getLOBVal('revenue'),
           expense: getLOBVal('expense'),
           cogs: getLOBVal('cogs'),
+          stateIncomeTaxes: getLOBVal('stateIncomeTaxes'),
+          federalIncomeTaxes: getLOBVal('federalIncomeTaxes'),
           cash,
           ar,
           inventory,
@@ -439,8 +657,8 @@ export default function LOBReportingTab({
           const monthStr = m.month;
           let quarter = '';
           
-          // Parse month from format like "12/2024" or month names
-          const monthMatch = monthStr.match(/^(\d{1,2})\/(\d{4})$/); // MM/YYYY format
+          // Parse month from format like "12-2024" (MM-YYYY) or "12/2024" (MM/YYYY) or month names
+          const monthMatch = monthStr.match(/^(\d{1,2})[-\/](\d{4})$/); // MM-YYYY or MM/YYYY format
           if (monthMatch) {
             const monthNum = parseInt(monthMatch[1]);
             const year = monthMatch[2];
@@ -455,7 +673,7 @@ export default function LOBReportingTab({
               quarter = `Q4 ${year}`;
             }
           } else {
-            // Fallback for month names
+            // Fallback for month names or try to parse as date
             const year = monthStr.match(/\d{4}/)?.[0] || '';
             if (monthStr.includes('Jan') || monthStr.includes('Feb') || monthStr.includes('Mar')) {
               quarter = `Q1 ${year}`;
@@ -465,6 +683,22 @@ export default function LOBReportingTab({
               quarter = `Q3 ${year}`;
             } else if (monthStr.includes('Oct') || monthStr.includes('Nov') || monthStr.includes('Dec')) {
               quarter = `Q4 ${year}`;
+            } else {
+              // Try to parse as date and extract quarter
+              const date = new Date(monthStr);
+              if (!isNaN(date.getTime())) {
+                const monthNum = date.getMonth() + 1;
+                const year = date.getFullYear();
+                if (monthNum >= 1 && monthNum <= 3) {
+                  quarter = `Q1 ${year}`;
+                } else if (monthNum >= 4 && monthNum <= 6) {
+                  quarter = `Q2 ${year}`;
+                } else if (monthNum >= 7 && monthNum <= 9) {
+                  quarter = `Q3 ${year}`;
+                } else if (monthNum >= 10 && monthNum <= 12) {
+                  quarter = `Q4 ${year}`;
+                }
+              }
             }
           }
           
@@ -676,13 +910,16 @@ export default function LOBReportingTab({
   // Calculate metrics
   const grossProfit = lobRevenue - lobCOGS;
   const grossMargin = lobRevenue > 0 ? (grossProfit / lobRevenue) * 100 : 0;
-  const netIncome = lobRevenue - lobCOGS - lobExpense;
+  const lobStateIncomeTaxes = allMonthlyData.reduce((sum, m: any) => sum + (m.stateIncomeTaxes || 0), 0);
+  const lobFederalIncomeTaxes = allMonthlyData.reduce((sum, m: any) => sum + (m.federalIncomeTaxes || 0), 0);
+  const incomeBeforeTax = lobRevenue - lobCOGS - lobExpense;
+  const netIncome = incomeBeforeTax - lobStateIncomeTaxes - lobFederalIncomeTaxes;
   const netMargin = lobRevenue > 0 ? (netIncome / lobRevenue) * 100 : 0;
   
   // Check if we have any data to display (income statement OR balance sheet items)
   const hasData = lobRevenue > 0 || lobExpense > 0 || lobCOGS > 0 || 
                    lobCash > 0 || lobAR > 0 || lobAP > 0 || lobEquity !== 0 ||
-                   allMonthlyData.length > 0;
+                   monthlyData.length > 0;
   
   // Format currency
   const fmt = (value: number) => {
@@ -848,7 +1085,7 @@ export default function LOBReportingTab({
                   
                   {/* Total Revenue */}
                   <tr style={{ borderBottom: '2px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Revenue</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('revenue')}</td>
                     {linesOfBusiness.map((lob: any) => {
                       const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                       return (
@@ -890,7 +1127,7 @@ export default function LOBReportingTab({
                   {/* COGS - Payroll */}
                   {linesOfBusiness.some((lob: any) => (detailedBreakdowns.cogsPayroll?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>COGS Payroll</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsPayroll')}</td>
                       {linesOfBusiness.map((lob: any) => {
                         const val = detailedBreakdowns.cogsPayroll?.[lob.name] || 0;
                         return (
@@ -925,7 +1162,7 @@ export default function LOBReportingTab({
                   
                   {/* Total COGS */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Cost of Goods Sold</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('cogsTotal')}</td>
                     {linesOfBusiness.map((lob: any) => {
                       const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
                       return (
@@ -1014,7 +1251,7 @@ export default function LOBReportingTab({
                   {/* Sales & Marketing */}
                   {linesOfBusiness.some((lob: any) => (detailedBreakdowns.salesExpense?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Sales & Marketing</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('salesExpense')}</td>
                       {linesOfBusiness.map((lob: any) => {
                         const val = detailedBreakdowns.salesExpense?.[lob.name] || 0;
                         return (
@@ -1032,7 +1269,7 @@ export default function LOBReportingTab({
                   {/* Marketing */}
                   {linesOfBusiness.some((lob: any) => (detailedBreakdowns.marketing?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Marketing</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('marketing')}</td>
                       {linesOfBusiness.map((lob: any) => {
                         const val = detailedBreakdowns.marketing?.[lob.name] || 0;
                         return (
@@ -1050,7 +1287,7 @@ export default function LOBReportingTab({
                   {/* Other Expenses */}
                   {linesOfBusiness.some((lob: any) => (detailedBreakdowns.otherExpense?.[lob.name] || 0) > 0) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Other Expenses</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('otherExpense')}</td>
                       {linesOfBusiness.map((lob: any) => {
                         const val = detailedBreakdowns.otherExpense?.[lob.name] || 0;
                         return (
@@ -1067,7 +1304,7 @@ export default function LOBReportingTab({
                   
                   {/* Total Operating Expenses */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('totalOperatingExpenses')}</td>
                     {linesOfBusiness.map((lob: any) => {
                       const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
                       return (
@@ -1080,15 +1317,72 @@ export default function LOBReportingTab({
                       {fmt(lobExpense)}
                     </td>
                   </tr>
-                  
-                  {/* Net Income */}
+
+                  {/* Income Before Tax */}
                   <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
-                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>Net Income</td>
+                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>{getFieldDisplayName('incomeBeforeTax')}</td>
                     {linesOfBusiness.map((lob: any) => {
                       const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                       const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
                       const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
-                      const ni = lobRev - lobCogs - lobExp;
+                      const preTax = lobRev - lobCogs - lobExp;
+                      return (
+                        <td key={lob.name} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: preTax >= 0 ? '#059669' : '#dc2626' }}>
+                          {fmt(preTax)}
+                        </td>
+                      );
+                    })}
+                    <td style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', fontSize: '14px', color: incomeBeforeTax >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1' }}>
+                      {fmt(incomeBeforeTax)}
+                    </td>
+                  </tr>
+
+                  {/* Income Taxes (only if present) */}
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0) > 0) && (
+                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('stateIncomeTaxes')}</td>
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0;
+                        return (
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(getTotalAcrossLOBs('stateIncomeTaxes'))}
+                      </td>
+                    </tr>
+                  )}
+
+                  {linesOfBusiness.some((lob: any) => (detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0) > 0) && (
+                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('federalIncomeTaxes')}</td>
+                      {linesOfBusiness.map((lob: any) => {
+                        const val = detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0;
+                        return (
+                          <td key={lob.name} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                        {fmt(getTotalAcrossLOBs('federalIncomeTaxes'))}
+                      </td>
+                    </tr>
+                  )}
+                  
+                  {/* Net Income */}
+                  <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
+                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>{getFieldDisplayName('netIncome')}</td>
+                    {linesOfBusiness.map((lob: any) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                      const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
+                      const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
+                      const preTax = lobRev - lobCogs - lobExp;
+                      const stateTax = detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0;
+                      const fedTax = detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0;
+                      const ni = preTax - stateTax - fedTax;
                       return (
                         <td key={lob.name} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: ni >= 0 ? '#059669' : '#dc2626' }}>
                           {fmt(ni)}
@@ -1108,9 +1402,11 @@ export default function LOBReportingTab({
                   {linesOfBusiness.map((lob: any) => {
                     const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
                     const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
-                    const lobExp = detailedBreakdowns.expense?.[lob] || 0;
+                    const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
+                    const stateTax = detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0;
+                    const fedTax = detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0;
                     const gp = lobRev - lobCogs;
-                    const ni = lobRev - lobCogs - lobExp;
+                    const ni = (lobRev - lobCogs - lobExp) - stateTax - fedTax;
                     const gm = lobRev > 0 ? (gp / lobRev) * 100 : 0;
                     const nm = lobRev > 0 ? (ni / lobRev) * 100 : 0;
                     
@@ -1191,7 +1487,7 @@ export default function LOBReportingTab({
                   
                   {/* Total Revenue */}
                   <tr style={{ borderBottom: '2px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Revenue</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('revenue')}</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
                         {linesOfBusiness.map((lob: any, lobIdx) => {
@@ -1275,7 +1571,7 @@ export default function LOBReportingTab({
                   {/* COGS - Payroll */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.cogsPayroll?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>COGS Payroll</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsPayroll')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: any, lobIdx) => {
@@ -1354,9 +1650,132 @@ export default function LOBReportingTab({
                     </tr>
                   )}
                   
+                  {/* COGS - Owner Pay */}
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.cogsOwnerPay?.[lob.name] || 0) > 0)) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsOwnerPay')}</td>
+                      {monthlyLOBData.map((m, pidx) => (
+                        <React.Fragment key={pidx}>
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.cogsOwnerPay?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
+                            const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                            return (
+                              <React.Fragment key={lob.name}>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                                  {fmt(val)}
+                                </td>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                                  {pct.toFixed(1)}%
+                                </td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.cogsOwnerPay?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                        const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                        return (
+                          <React.Fragment key={lob.name}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  
+                  {/* COGS - Commissions */}
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.cogsCommissions?.[lob.name] || 0) > 0)) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Commissions</td>
+                      {monthlyLOBData.map((m, pidx) => (
+                        <React.Fragment key={pidx}>
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.cogsCommissions?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
+                            const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                            return (
+                              <React.Fragment key={lob.name}>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                                  {fmt(val)}
+                                </td>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                                  {pct.toFixed(1)}%
+                                </td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.cogsCommissions?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                        const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                        return (
+                          <React.Fragment key={lob.name}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  
+                  {/* COGS - Other */}
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.cogsOther?.[lob.name] || 0) > 0)) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsOther')}</td>
+                      {monthlyLOBData.map((m, pidx) => (
+                        <React.Fragment key={pidx}>
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.cogsOther?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
+                            const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                            return (
+                              <React.Fragment key={lob.name}>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                                  {fmt(val)}
+                                </td>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                                  {pct.toFixed(1)}%
+                                </td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.cogsOther?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                        const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                        return (
+                          <React.Fragment key={lob.name}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  
                   {/* Total COGS */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Cost of Goods Sold</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('cogsTotal')}</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
                         {linesOfBusiness.map((lob: any, lobIdx) => {
@@ -1444,7 +1863,7 @@ export default function LOBReportingTab({
                   {/* Payroll */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.payroll?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Payroll</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('payroll')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: any, lobIdx) => {
@@ -1485,7 +1904,7 @@ export default function LOBReportingTab({
                   {/* Insurance */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.insurance?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Insurance</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('insurance')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1526,7 +1945,7 @@ export default function LOBReportingTab({
                   {/* Professional Services */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.professionalFees?.[lob] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Professional Services</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('professionalFees')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1567,7 +1986,7 @@ export default function LOBReportingTab({
                   {/* Subcontractors */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.subcontractors?.[lob] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Subcontractors</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('subcontractors')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1608,7 +2027,7 @@ export default function LOBReportingTab({
                   {/* Rent/Lease */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.rent?.[lob.name] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Rent/Lease</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('rent')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: any, lobIdx) => {
@@ -1649,7 +2068,7 @@ export default function LOBReportingTab({
                   {/* Tax & License */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.taxLicense?.[lob] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Tax & License</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('taxLicense')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1690,7 +2109,7 @@ export default function LOBReportingTab({
                   {/* Infrastructure/Utilities */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.infrastructure?.[lob] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Infrastructure/Utilities</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('infrastructure')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1731,7 +2150,7 @@ export default function LOBReportingTab({
                   {/* Auto & Travel */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.autoTravel?.[lob] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Auto & Travel</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('autoTravel')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1772,7 +2191,7 @@ export default function LOBReportingTab({
                   {/* Sales & Marketing */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.salesExpense?.[lob] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Sales & Marketing</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('salesExpense')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1813,7 +2232,7 @@ export default function LOBReportingTab({
                   {/* Marketing */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.marketing?.[lob] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Marketing</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('marketing')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1854,7 +2273,7 @@ export default function LOBReportingTab({
                   {/* Other Expenses */}
                   {monthlyLOBData.some(m => linesOfBusiness.some((lob: string) => (m.breakdowns?.otherExpense?.[lob] || 0) > 0)) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Other Expenses</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('otherExpense')}</td>
                       {monthlyLOBData.map((m, pidx) => (
                         <React.Fragment key={pidx}>
                           {linesOfBusiness.map((lob: string, lobIdx) => {
@@ -1894,7 +2313,7 @@ export default function LOBReportingTab({
                   
                   {/* Total Operating Expenses */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('totalOperatingExpenses')}</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
                         {linesOfBusiness.map((lob: any, lobIdx) => {
@@ -1931,16 +2350,143 @@ export default function LOBReportingTab({
                     })}
                   </tr>
                   
-                  {/* Net Income */}
-                  <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
-                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>Net Income</td>
+                  {/* Income Before Tax */}
+                  <tr style={{ borderTop: '2px solid #cbd5e1', background: '#fef3c7' }}>
+                    <td style={{ padding: '10px 8px', fontWeight: '700', color: '#92400e' }}>{getFieldDisplayName('incomeBeforeTax')}</td>
                     {monthlyLOBData.map((m, pidx) => (
                       <React.Fragment key={pidx}>
                         {linesOfBusiness.map((lob: any, lobIdx) => {
                           const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
                           const lobCogs = m.breakdowns?.cogs?.[lob.name] || 0;
                           const lobExp = m.breakdowns?.expense?.[lob.name] || 0;
-                          const ni = lobRev - lobCogs - lobExp;
+                          const incomeBeforeTax = lobRev - lobCogs - lobExp;
+                          const pct = lobRev > 0 ? (incomeBeforeTax / lobRev) * 100 : 0;
+                          return (
+                            <React.Fragment key={lob.name}>
+                              <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#92400e', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                                {fmt(incomeBeforeTax)}
+                              </td>
+                              <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#92400e' }}>
+                                {pct.toFixed(1)}%
+                              </td>
+                            </React.Fragment>
+                          );
+                        })}
+                      </React.Fragment>
+                    ))}
+                    {linesOfBusiness.map((lob: any, lobIdx) => {
+                      const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                      const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
+                      const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
+                      const incomeBeforeTax = lobRev - lobCogs - lobExp;
+                      const pct = lobRev > 0 ? (incomeBeforeTax / lobRev) * 100 : 0;
+                      return (
+                        <React.Fragment key={lob.name}>
+                          <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#92400e', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                            {fmt(incomeBeforeTax)}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#92400e', background: '#e2e8f0' }}>
+                            {pct.toFixed(1)}%
+                          </td>
+                        </React.Fragment>
+                      );
+                    })}
+                  </tr>
+                  
+                  {/* State Income Taxes */}
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.stateIncomeTaxes?.[lob.name] || 0) > 0)) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('stateIncomeTaxes')}</td>
+                      {monthlyLOBData.map((m, pidx) => (
+                        <React.Fragment key={pidx}>
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.stateIncomeTaxes?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
+                            const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                            return (
+                              <React.Fragment key={lob.name}>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                                  {fmt(val)}
+                                </td>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                                  {pct.toFixed(1)}%
+                                </td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                        const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                        return (
+                          <React.Fragment key={lob.name}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  
+                  {/* Federal Income Taxes */}
+                  {monthlyLOBData.some(m => linesOfBusiness.some((lob: any) => (m.breakdowns?.federalIncomeTaxes?.[lob.name] || 0) > 0)) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('federalIncomeTaxes')}</td>
+                      {monthlyLOBData.map((m, pidx) => (
+                        <React.Fragment key={pidx}>
+                          {linesOfBusiness.map((lob: any, lobIdx) => {
+                            const val = m.breakdowns?.federalIncomeTaxes?.[lob.name] || 0;
+                            const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
+                            const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                            return (
+                              <React.Fragment key={lob.name}>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                                  {fmt(val)}
+                                </td>
+                                <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                                  {pct.toFixed(1)}%
+                                </td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                      {linesOfBusiness.map((lob: any, lobIdx) => {
+                        const val = detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0;
+                        const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
+                        const pct = lobRev > 0 ? (val / lobRev) * 100 : 0;
+                        return (
+                          <React.Fragment key={lob.name}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  
+                  {/* Net Income */}
+                  <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
+                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>{getFieldDisplayName('netIncome')}</td>
+                    {monthlyLOBData.map((m, pidx) => (
+                      <React.Fragment key={pidx}>
+                        {linesOfBusiness.map((lob: any, lobIdx) => {
+                          const lobRev = m.breakdowns?.revenue?.[lob.name] || 0;
+                          const lobCogs = m.breakdowns?.cogs?.[lob.name] || 0;
+                          const lobExp = m.breakdowns?.expense?.[lob.name] || 0;
+                          const lobStateTax = m.breakdowns?.stateIncomeTaxes?.[lob.name] || 0;
+                          const lobFedTax = m.breakdowns?.federalIncomeTaxes?.[lob.name] || 0;
+                          const ni = lobRev - lobCogs - lobExp - lobStateTax - lobFedTax;
                           const pct = lobRev > 0 ? (ni / lobRev) * 100 : 0;
                           return (
                             <React.Fragment key={lob.name}>
@@ -1957,12 +2503,14 @@ export default function LOBReportingTab({
                     ))}
                     {linesOfBusiness.map((lob: any, lobIdx) => {
                       const lobRev = detailedBreakdowns.revenue?.[lob.name] || 0;
-                      const lobCogs = detailedBreakdowns.cogs?.[lob] || 0;
+                      const lobCogs = detailedBreakdowns.cogs?.[lob.name] || 0;
                       const lobExp = detailedBreakdowns.expense?.[lob.name] || 0;
-                      const ni = lobRev - lobCogs - lobExp;
+                      const lobStateTax = detailedBreakdowns.stateIncomeTaxes?.[lob.name] || 0;
+                      const lobFedTax = detailedBreakdowns.federalIncomeTaxes?.[lob.name] || 0;
+                      const ni = lobRev - lobCogs - lobExp - lobStateTax - lobFedTax;
                       const pct = lobRev > 0 ? (ni / lobRev) * 100 : 0;
                       return (
-                        <React.Fragment key={lob}>
+                        <React.Fragment key={lob.name}>
                           <td style={{ textAlign: 'right', padding: '12px 4px', fontWeight: '700', fontSize: '15px', color: ni >= 0 ? '#059669' : '#dc2626', background: '#cbd5e1', borderLeft: lobIdx === 0 ? '2px solid #94a3b8' : '1px solid #e2e8f0' }}>
                             {fmt(ni)}
                           </td>
@@ -2050,7 +2598,7 @@ export default function LOBReportingTab({
                   
                   {/* Total Revenue */}
                   <tr style={{ borderBottom: '2px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Revenue</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('revenue')}</td>
                     {monthlyLOBData.map((m, idx) => (
                       <td key={idx} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#059669' }}>
                         {fmt(m.revenue)}
@@ -2105,7 +2653,7 @@ export default function LOBReportingTab({
                     return val > 0;
                   }) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>COGS Payroll</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsPayroll')}</td>
                       {monthlyLOBData.map((m, idx) => {
                         const val = selectedLineOfBusiness === 'all'
                           ? (m.breakdowns?.cogsPayroll ? Object.values(m.breakdowns.cogsPayroll).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
@@ -2151,9 +2699,90 @@ export default function LOBReportingTab({
                     </tr>
                   )}
                   
+                  {/* COGS - Owner Pay */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.cogsOwnerPay ? Object.values(m.breakdowns.cogsOwnerPay).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.cogsOwnerPay?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsOwnerPay')}</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.cogsOwnerPay ? Object.values(m.breakdowns.cogsOwnerPay).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.cogsOwnerPay?.[selectedLineOfBusiness] || 0);
+                        return (
+                          <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('cogsOwnerPay'))}
+                        </td>
+                      )}
+                    </tr>
+                  )}
+                  
+                  {/* COGS - Commissions */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.cogsCommissions ? Object.values(m.breakdowns.cogsCommissions).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.cogsCommissions?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Commissions</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.cogsCommissions ? Object.values(m.breakdowns.cogsCommissions).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.cogsCommissions?.[selectedLineOfBusiness] || 0);
+                        return (
+                          <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('cogsCommissions'))}
+                        </td>
+                      )}
+                    </tr>
+                  )}
+                  
+                  {/* COGS - Other */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.cogsOther ? Object.values(m.breakdowns.cogsOther).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.cogsOther?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsOther')}</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.cogsOther ? Object.values(m.breakdowns.cogsOther).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.cogsOther?.[selectedLineOfBusiness] || 0);
+                        return (
+                          <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('cogsOther'))}
+                        </td>
+                      )}
+                    </tr>
+                  )}
+                  
                   {/* Total COGS */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Cost of Goods Sold</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('cogsTotal')}</td>
                     {monthlyLOBData.map((m, idx) => (
                       <td key={idx} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#dc2626' }}>
                         {fmt(m.cogs)}
@@ -2254,7 +2883,7 @@ export default function LOBReportingTab({
                     return val > 0;
                   }) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Other Expenses</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('otherExpense')}</td>
                       {monthlyLOBData.map((m, idx) => {
                         const val = selectedLineOfBusiness === 'all'
                           ? (m.breakdowns?.otherExpense ? Object.values(m.breakdowns.otherExpense).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
@@ -2275,7 +2904,7 @@ export default function LOBReportingTab({
                   
                   {/* Total Operating Expenses */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('totalOperatingExpenses')}</td>
                     {monthlyLOBData.map((m, idx) => (
                       <td key={idx} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '600', color: '#dc2626' }}>
                         {fmt(m.expense)}
@@ -2288,11 +2917,92 @@ export default function LOBReportingTab({
                     )}
                   </tr>
                   
+                  {/* Income Before Tax */}
+                  <tr style={{ borderTop: '2px solid #cbd5e1', background: '#fef3c7' }}>
+                    <td style={{ padding: '10px 8px', fontWeight: '700', color: '#92400e' }}>{getFieldDisplayName('incomeBeforeTax')}</td>
+                    {monthlyLOBData.map((m, idx) => {
+                      const incomeBeforeTax = m.revenue - m.cogs - m.expense;
+                      return (
+                        <td key={idx} style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#92400e' }}>
+                          {fmt(incomeBeforeTax)}
+                        </td>
+                      );
+                    })}
+                    {statementDisplay !== 'annual' && (() => {
+                      const totalIncomeBeforeTax = lobRevenue - lobCOGS - lobExpense;
+                      return (
+                        <td style={{ textAlign: 'right', padding: '10px 8px', fontWeight: '700', color: '#92400e', background: '#e2e8f0' }}>
+                          {fmt(totalIncomeBeforeTax)}
+                        </td>
+                      );
+                    })()}
+                  </tr>
+                  
+                  {/* State Income Taxes */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.stateIncomeTaxes ? Object.values(m.breakdowns.stateIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.stateIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('stateIncomeTaxes')}</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.stateIncomeTaxes ? Object.values(m.breakdowns.stateIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.stateIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                        return (
+                          <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('stateIncomeTaxes'))}
+                        </td>
+                      )}
+                    </tr>
+                  )}
+                  
+                  {/* Federal Income Taxes */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.federalIncomeTaxes ? Object.values(m.breakdowns.federalIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.federalIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('federalIncomeTaxes')}</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.federalIncomeTaxes ? Object.values(m.breakdowns.federalIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.federalIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                        return (
+                          <td key={idx} style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b' }}>
+                            {fmt(val)}
+                          </td>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <td style={{ textAlign: 'right', padding: '6px 8px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                          {fmt(getLOBValue('federalIncomeTaxes'))}
+                        </td>
+                      )}
+                    </tr>
+                  )}
+                  
                   {/* Net Income Row */}
                   <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
-                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>Net Income</td>
+                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>{getFieldDisplayName('netIncome')}</td>
                     {monthlyLOBData.map((m, idx) => {
-                      const ni = m.revenue - m.cogs - m.expense;
+                      const stateTax = selectedLineOfBusiness === 'all'
+                        ? (m.breakdowns?.stateIncomeTaxes ? Object.values(m.breakdowns.stateIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                        : (m.breakdowns?.stateIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                      const fedTax = selectedLineOfBusiness === 'all'
+                        ? (m.breakdowns?.federalIncomeTaxes ? Object.values(m.breakdowns.federalIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                        : (m.breakdowns?.federalIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                      const ni = m.revenue - m.cogs - m.expense - stateTax - fedTax;
                       return (
                         <td key={idx} style={{ textAlign: 'right', padding: '12px 8px', fontWeight: '700', color: ni >= 0 ? '#059669' : '#dc2626' }}>
                           {fmt(ni)}
@@ -2361,7 +3071,7 @@ export default function LOBReportingTab({
                   
                   {/* Total Revenue */}
                   <tr style={{ borderBottom: '2px solid #cbd5e1', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Revenue</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('revenue')}</td>
                     {monthlyLOBData.map((m, idx) => (
                       <React.Fragment key={idx}>
                         <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '600', color: '#059669', borderLeft: idx === 0 ? 'none' : '1px solid #e2e8f0' }}>
@@ -2437,7 +3147,7 @@ export default function LOBReportingTab({
                     return val > 0;
                   }) && (
                     <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>COGS Payroll</td>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsPayroll')}</td>
                       {monthlyLOBData.map((m, idx) => {
                         const val = selectedLineOfBusiness === 'all'
                           ? (m.breakdowns?.cogsPayroll ? Object.values(m.breakdowns.cogsPayroll).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
@@ -2505,9 +3215,123 @@ export default function LOBReportingTab({
                     </tr>
                   )}
                   
+                  {/* COGS - Owner Pay */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.cogsOwnerPay ? Object.values(m.breakdowns.cogsOwnerPay).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.cogsOwnerPay?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsOwnerPay')}</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.cogsOwnerPay ? Object.values(m.breakdowns.cogsOwnerPay).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.cogsOwnerPay?.[selectedLineOfBusiness] || 0);
+                        const pct = m.revenue > 0 ? (val / m.revenue) * 100 : 0;
+                        return (
+                          <React.Fragment key={idx}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: idx === 0 ? 'none' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('cogsOwnerPay'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('cogsOwnerPay') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )}
+                  
+                  {/* COGS - Commissions */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.cogsCommissions ? Object.values(m.breakdowns.cogsCommissions).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.cogsCommissions?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>Commissions</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.cogsCommissions ? Object.values(m.breakdowns.cogsCommissions).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.cogsCommissions?.[selectedLineOfBusiness] || 0);
+                        const pct = m.revenue > 0 ? (val / m.revenue) * 100 : 0;
+                        return (
+                          <React.Fragment key={idx}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: idx === 0 ? 'none' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('cogsCommissions'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('cogsCommissions') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )}
+                  
+                  {/* COGS - Other */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.cogsOther ? Object.values(m.breakdowns.cogsOther).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.cogsOther?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('cogsOther')}</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.cogsOther ? Object.values(m.breakdowns.cogsOther).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.cogsOther?.[selectedLineOfBusiness] || 0);
+                        const pct = m.revenue > 0 ? (val / m.revenue) * 100 : 0;
+                        return (
+                          <React.Fragment key={idx}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: idx === 0 ? 'none' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('cogsOther'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('cogsOther') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )}
+                  
                   {/* Total COGS */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Cost of Goods Sold</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('cogsTotal')}</td>
                     {monthlyLOBData.map((m, idx) => {
                       const pct = m.revenue > 0 ? (m.cogs / m.revenue) * 100 : 0;
                       return (
@@ -2637,7 +3461,7 @@ export default function LOBReportingTab({
                   
                   {/* Total Operating Expenses */}
                   <tr style={{ borderBottom: '1px solid #e2e8f0', borderTop: '1px solid #cbd5e1' }}>
-                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</td>
+                    <td style={{ padding: '10px 8px', fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('totalOperatingExpenses')}</td>
                     {monthlyLOBData.map((m, idx) => {
                       const pct = m.revenue > 0 ? (m.expense / m.revenue) * 100 : 0;
                       return (
@@ -2663,11 +3487,125 @@ export default function LOBReportingTab({
                     )}
                   </tr>
                   
+                  {/* Income Before Tax */}
+                  <tr style={{ borderTop: '2px solid #cbd5e1', background: '#fef3c7' }}>
+                    <td style={{ padding: '10px 8px', fontWeight: '700', color: '#92400e' }}>{getFieldDisplayName('incomeBeforeTax')}</td>
+                    {monthlyLOBData.map((m, idx) => {
+                      const incomeBeforeTax = m.revenue - m.cogs - m.expense;
+                      const pct = m.revenue > 0 ? (incomeBeforeTax / m.revenue) * 100 : 0;
+                      return (
+                        <React.Fragment key={idx}>
+                          <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#92400e', borderLeft: idx === 0 ? 'none' : '1px solid #e2e8f0' }}>
+                            {fmt(incomeBeforeTax)}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#92400e' }}>
+                            {pct.toFixed(1)}%
+                          </td>
+                        </React.Fragment>
+                      );
+                    })}
+                    {statementDisplay !== 'annual' && (() => {
+                      const totalIncomeBeforeTax = lobRevenue - lobCOGS - lobExpense;
+                      return (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#92400e', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(totalIncomeBeforeTax)}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '10px 4px', fontWeight: '700', color: '#92400e', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((totalIncomeBeforeTax / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      );
+                    })()}
+                  </tr>
+                  
+                  {/* State Income Taxes */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.stateIncomeTaxes ? Object.values(m.breakdowns.stateIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.stateIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('stateIncomeTaxes')}</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.stateIncomeTaxes ? Object.values(m.breakdowns.stateIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.stateIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                        const pct = m.revenue > 0 ? (val / m.revenue) * 100 : 0;
+                        return (
+                          <React.Fragment key={idx}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: idx === 0 ? 'none' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('stateIncomeTaxes'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('stateIncomeTaxes') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )}
+                  
+                  {/* Federal Income Taxes */}
+                  {monthlyLOBData.some(m => {
+                    const val = selectedLineOfBusiness === 'all'
+                      ? (m.breakdowns?.federalIncomeTaxes ? Object.values(m.breakdowns.federalIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                      : (m.breakdowns?.federalIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                    return val > 0;
+                  }) && (
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{getFieldDisplayName('federalIncomeTaxes')}</td>
+                      {monthlyLOBData.map((m, idx) => {
+                        const val = selectedLineOfBusiness === 'all'
+                          ? (m.breakdowns?.federalIncomeTaxes ? Object.values(m.breakdowns.federalIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                          : (m.breakdowns?.federalIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                        const pct = m.revenue > 0 ? (val / m.revenue) * 100 : 0;
+                        return (
+                          <React.Fragment key={idx}>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', borderLeft: idx === 0 ? 'none' : '1px solid #e2e8f0' }}>
+                              {fmt(val)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b' }}>
+                              {pct.toFixed(1)}%
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                      {statementDisplay !== 'annual' && (
+                        <>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0', borderLeft: '2px solid #94a3b8' }}>
+                            {fmt(getLOBValue('federalIncomeTaxes'))}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '6px 4px', fontSize: '12px', color: '#64748b', background: '#e2e8f0' }}>
+                            {lobRevenue > 0 ? ((getLOBValue('federalIncomeTaxes') / lobRevenue) * 100).toFixed(1) : '0.0'}%
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )}
+                  
                   {/* Net Income */}
                   <tr style={{ borderTop: '2px solid #cbd5e1', background: '#f1f5f9' }}>
-                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>Net Income</td>
+                    <td style={{ padding: '12px 8px', fontWeight: '700', color: '#1e293b' }}>{getFieldDisplayName('netIncome')}</td>
                     {monthlyLOBData.map((m, idx) => {
-                      const ni = m.revenue - m.cogs - m.expense;
+                      const stateTax = selectedLineOfBusiness === 'all'
+                        ? (m.breakdowns?.stateIncomeTaxes ? Object.values(m.breakdowns.stateIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                        : (m.breakdowns?.stateIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                      const fedTax = selectedLineOfBusiness === 'all'
+                        ? (m.breakdowns?.federalIncomeTaxes ? Object.values(m.breakdowns.federalIncomeTaxes).reduce((sum: number, v: any) => sum + (Number(v) || 0), 0) : 0)
+                        : (m.breakdowns?.federalIncomeTaxes?.[selectedLineOfBusiness] || 0);
+                      const ni = m.revenue - m.cogs - m.expense - stateTax - fedTax;
                       const pct = m.revenue > 0 ? (ni / m.revenue) * 100 : 0;
                       return (
                         <React.Fragment key={idx}>

@@ -16,7 +16,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Ensure table exists - create if it doesn't
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ExpenseGoal" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "companyId" TEXT NOT NULL,
+          "goals" JSONB NOT NULL,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP NOT NULL
+        )
+      `);
+      
+      // Create indexes if they don't exist
+      await prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS "ExpenseGoal_companyId_key" ON "ExpenseGoal"("companyId")
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "ExpenseGoal_companyId_idx" ON "ExpenseGoal"("companyId")
+      `);
+    } catch (tableError: any) {
+      // Ignore errors if table/indexes already exist
+      if (!tableError.message?.includes('already exists') && !tableError.message?.includes('duplicate')) {
+        console.warn('⚠️ Table creation warning:', tableError.message);
+      }
+    }
+
     // Use raw SQL to bypass Prisma schema validation issues
+    // The ExpenseGoal model is commented out in schema, but table exists in DB
     const goalsJson = JSON.stringify(goals);
     const now = new Date().toISOString();
     
@@ -28,21 +55,29 @@ export async function POST(request: NextRequest) {
     console.log('💾 API: Existing record check:', existing);
     
     if (existing.length > 0) {
-      // Update existing
+      // Update existing - match the import script pattern exactly
       console.log('💾 API: Updating existing record');
-      await prisma.$executeRaw`
-        UPDATE "ExpenseGoal" 
-        SET goals = ${goalsJson}::json, "updatedAt" = ${now}::timestamp
-        WHERE "companyId" = ${companyId}
-      `;
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ExpenseGoal" 
+         SET goals = $1::jsonb, "updatedAt" = $2::timestamp
+         WHERE "companyId" = $3`,
+        goalsJson,
+        now,
+        companyId
+      );
     } else {
-      // Create new
+      // Create new - match the import script pattern exactly
       console.log('💾 API: Creating new record');
       const id = `eg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      await prisma.$executeRaw`
-        INSERT INTO "ExpenseGoal" (id, "companyId", goals, "createdAt", "updatedAt")
-        VALUES (${id}, ${companyId}, ${goalsJson}::json, ${now}::timestamp, ${now}::timestamp)
-      `;
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "ExpenseGoal" (id, "companyId", goals, "createdAt", "updatedAt")
+         VALUES ($1, $2, $3::jsonb, $4::timestamp, $5::timestamp)`,
+        id,
+        companyId,
+        goalsJson,
+        now,
+        now
+      );
     }
 
     console.log('✅ API: Goals saved successfully');
@@ -71,6 +106,24 @@ export async function GET(request: NextRequest) {
         { error: 'Company ID is required' },
         { status: 400 }
       );
+    }
+
+    // Ensure table exists - create if it doesn't
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ExpenseGoal" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "companyId" TEXT NOT NULL,
+          "goals" JSONB NOT NULL,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP NOT NULL
+        )
+      `);
+    } catch (tableError: any) {
+      // Ignore errors if table already exists
+      if (!tableError.message?.includes('already exists')) {
+        console.warn('⚠️ Table creation warning:', tableError.message);
+      }
     }
 
     // Use raw SQL to bypass Prisma schema validation issues

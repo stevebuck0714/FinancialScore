@@ -1,0 +1,109 @@
+{
+  "totalAR": 120000,
+  "current": 55000,
+  "days1to30": 35000,
+  "days31to60": 18000,
+  "days61to90": 8000,
+  "days90plus": 4000,
+  "breakdown": [
+    {
+      "customerName": "Tech Innovations Inc",
+      "totalDue": 28000,
+      "current": 15000,
+      "days1to30": 10000,
+      "days31to60": 3000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "customerName": "Global Manufacturing Corp",
+      "totalDue": 22000,
+      "current": 12000,
+      "days1to30": 8000,
+      "days31to60": 2000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "customerName": "Retail Solutions Ltd",
+      "totalDue": 18000,
+      "current": 8000,
+      "days1to30": 6000,
+      "days31to60": 3000,
+      "days61to90": 1000,
+      "days90plus": 0
+    },
+    {
+      "customerName": "Healthcare Systems Inc",
+      "totalDue": 15000,
+      "current": 10000,
+      "days1to30": 3000,
+      "days31to60": 2000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "customerName": "Education Partners",
+      "totalDue": 12000,
+      "current": 5000,
+      "days1to30": 4000,
+      "days31to60": 2000,
+      "days61to90": 1000,
+      "days90plus": 0
+    },
+    {
+      "customerName": "Financial Services Group",
+      "totalDue": 10000,
+      "current": 3000,
+      "days1to30": 2000,
+      "days31to60": 3000,
+      "days61to90": 2000,
+      "days90plus": 0
+    },
+    {
+      "customerName": "Construction Co",
+      "totalDue": 8000,
+      "current": 2000,
+      "days1to30": 1000,
+      "days31to60": 2000,
+      "days61to90": 2000,
+      "days90plus": 1000
+    },
+    {
+      "customerName": "Transport Logistics",
+      "totalDue": 4000,
+      "current": 0,
+      "days1to30": 1000,
+      "days31to60": 1000,
+      "days61to90": 1000,
+      "days90plus": 1000
+    },
+    {
+      "customerName": "Restaurant Group LLC",
+      "totalDue": 2000,
+      "current": 0,
+      "days1to30": 0,
+      "days31to60": 0,
+      "days61to90": 1000,
+      "days90plus": 1000
+    },
+    {
+      "customerName": "Legal Associates",
+      "totalDue": 1000,
+      "current": 0,
+      "days1to30": 0,
+      "days31to60": 0,
+      "days61to90": 0,
+      "days90plus": 1000
+    }
+  ]
+}
+
+
+
+
+
+
+
+
+

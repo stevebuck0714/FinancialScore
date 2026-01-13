@@ -3,14 +3,94 @@
 import React from "react";
 import { exportDataReviewToExcel } from "../../utils/excel-export";
 import type { MonthlyDataRow, Mappings } from "../../types";
+import { useMasterData } from "@/lib/master-data-store";
+import { getFieldDisplayName } from "@/lib/constants/field-display-names";
 
 interface DataReviewTabProps {
-  monthly: MonthlyDataRow[];
+  selectedCompanyId: string;
   companyName: string;
   accountMappings: Mappings[];
 }
 
-export default function DataReviewTab({ monthly, companyName, accountMappings }: DataReviewTabProps) {
+export default function DataReviewTab({ selectedCompanyId, companyName, accountMappings }: DataReviewTabProps) {
+  // Use master data store instead of receiving monthly data as prop
+  const { monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
+
+  // Check if master data exists
+  if (masterDataLoading) {
+    return (
+      <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "200px",
+            background: "white",
+            borderRadius: "12px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "48px", marginBottom: "16px" }}>⏳</div>
+            <div style={{ fontSize: "18px", fontWeight: "600", color: "#1e293b", marginBottom: "8px" }}>
+              Loading Data Review
+            </div>
+            <p style={{ fontSize: "14px", color: "#64748b" }}>
+              Loading financial data from master data store...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (masterDataError || !monthlyData || monthlyData.length === 0) {
+    return (
+      <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "200px",
+            background: "white",
+            borderRadius: "12px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "48px", marginBottom: "16px" }}>📊</div>
+            <div style={{ fontSize: "18px", fontWeight: "600", color: "#1e293b", marginBottom: "8px" }}>
+              No Data Available
+            </div>
+            <p style={{ fontSize: "14px", color: "#64748b" }}>
+              {masterDataError ? `Error: ${masterDataError}` : 'No master data available for data review.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Use master data as monthly data
+  const monthly = monthlyData;
+
+  // Format month as MM-YYYY
+  const formatMonth = (monthValue: any): string => {
+    if (!monthValue) return '';
+    
+    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return String(monthValue);
+    
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${month}-${year}`;
+  };
+
   return (
     <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
       <div
@@ -171,7 +251,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                           minWidth: "90px",
                         }}
                       >
-                        {m.month}
+                        {formatMonth(m.month)}
                       </th>
                     ))}
                   </tr>
@@ -194,7 +274,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Total Revenue
+                      {getFieldDisplayName('revenue')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -232,7 +312,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      COST OF GOODS SOLD
+                      {getFieldDisplayName('costOfGoodsSold')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: "8px 10px" }}></td>
@@ -249,7 +329,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      COGS - Payroll
+                      {getFieldDisplayName('cogsPayroll')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -279,7 +359,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      COGS - Owner Pay
+                      {getFieldDisplayName('cogsOwnerPay')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -309,7 +389,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      COGS - Contractors
+                      {getFieldDisplayName('cogsContractors')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -339,7 +419,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      COGS - Materials
+                      {getFieldDisplayName('cogsMaterials')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -369,7 +449,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      COGS - Commissions
+                      {getFieldDisplayName('cogsCommissions')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -399,7 +479,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      COGS - Other
+                      {getFieldDisplayName('cogsOther')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -434,7 +514,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      COGS - Total
+                      {getFieldDisplayName('cogsTotal')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -473,7 +553,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      GROSS PROFIT
+                      {getFieldDisplayName('grossProfit')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => {
                       const grossProfit = (m.revenue || 0) - (m.cogsTotal || 0);
@@ -515,7 +595,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      OPERATING EXPENSES
+                      {getFieldDisplayName('operatingExpenses')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: "8px 10px" }}></td>
@@ -532,7 +612,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Payroll
+                      {getFieldDisplayName('payroll')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -562,7 +642,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Owner Base Pay
+                      {getFieldDisplayName('ownerBasePay')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -592,7 +672,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Benefits
+                      {getFieldDisplayName('benefits')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -622,7 +702,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Insurance
+                      {getFieldDisplayName('insurance')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -652,7 +732,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Professional Fees
+                      {getFieldDisplayName('professionalFees')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -682,7 +762,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Subcontractors
+                      {getFieldDisplayName('subcontractors')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -712,7 +792,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Rent
+                      {getFieldDisplayName('rent')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -742,7 +822,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Tax & License
+                      {getFieldDisplayName('taxLicense')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -772,7 +852,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Phone & Communication
+                      {getFieldDisplayName('phoneComm')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -802,7 +882,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Infrastructure/Utilities
+                      {getFieldDisplayName('infrastructure')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -832,7 +912,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Auto & Travel
+                      {getFieldDisplayName('autoTravel')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -862,7 +942,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Sales & Marketing
+                      {getFieldDisplayName('salesExpense')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -892,7 +972,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Marketing
+                      {getFieldDisplayName('marketing')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -922,7 +1002,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Training & Certification
+                      {getFieldDisplayName('trainingCert')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -952,7 +1032,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Meals & Entertainment
+                      {getFieldDisplayName('mealsEntertainment')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -982,7 +1062,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Interest Expense
+                      {getFieldDisplayName('interestExpense')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1012,7 +1092,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Depreciation & Amortization
+                      {getFieldDisplayName('depreciationAmortization')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1045,7 +1125,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Other Expense
+                      {getFieldDisplayName('otherExpense')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1080,7 +1160,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Total Operating Expenses
+                      {getFieldDisplayName('totalOperatingExpenses')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => {
                       const totalOpex =
@@ -1124,26 +1204,24 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                     })}
                   </tr>
 
-                  {/* Net Income */}
+                  {/* Income Before Tax */}
                   <tr
                     style={{
-                      borderBottom: "3px solid #10b981",
-                      background: "#10b981",
-                      color: "white",
+                      borderBottom: "2px solid #e2e8f0",
+                      background: "#f1f5f9",
                     }}
                   >
                     <td
                       style={{
-                        padding: "12px 10px",
+                        padding: "10px 10px",
                         fontWeight: "700",
-                        fontSize: "15px",
                         position: "sticky",
                         left: 0,
-                        background: "#10b981",
+                        background: "#f1f5f9",
                         zIndex: 1,
                       }}
                     >
-                      NET INCOME
+                      {getFieldDisplayName('incomeBeforeTax')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => {
                       const totalOpex =
@@ -1167,8 +1245,146 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         (m.trainingCert || 0) +
                         (m.mealsEntertainment || 0) +
                         (m.otherExpense || 0);
-                      const netIncome =
+
+                      const incomeBeforeTax =
                         (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
+
+                      return (
+                        <td
+                          key={idx}
+                          style={{
+                            padding: "10px 10px",
+                            textAlign: "right",
+                            fontFamily: "monospace",
+                            fontWeight: "700",
+                          }}
+                        >
+                          $
+                          {incomeBeforeTax.toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                      );
+                    })}
+                  </tr>
+
+                  {/* Income Taxes (only show if any month has > 0) */}
+                  {monthly.slice(-36).some((m: any) => (m.stateIncomeTaxes || 0) > 0) && (
+                    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td
+                        style={{
+                          padding: "8px 10px",
+                          paddingLeft: "20px",
+                          position: "sticky",
+                          left: 0,
+                          background: "white",
+                          zIndex: 1,
+                        }}
+                      >
+                        {getFieldDisplayName('stateIncomeTaxes')}
+                      </td>
+                      {monthly.slice(-36).map((m: any, idx: number) => (
+                        <td
+                          key={idx}
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "right",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          $
+                          {(m.stateIncomeTaxes || 0).toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                      ))}
+                    </tr>
+                  )}
+
+                  {monthly.slice(-36).some((m: any) => (m.federalIncomeTaxes || 0) > 0) && (
+                    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td
+                        style={{
+                          padding: "8px 10px",
+                          paddingLeft: "20px",
+                          position: "sticky",
+                          left: 0,
+                          background: "white",
+                          zIndex: 1,
+                        }}
+                      >
+                        {getFieldDisplayName('federalIncomeTaxes')}
+                      </td>
+                      {monthly.slice(-36).map((m: any, idx: number) => (
+                        <td
+                          key={idx}
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "right",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          $
+                          {(m.federalIncomeTaxes || 0).toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                      ))}
+                    </tr>
+                  )}
+
+                  {/* Net Income */}
+                  <tr
+                    style={{
+                      borderBottom: "3px solid #10b981",
+                      background: "#10b981",
+                      color: "white",
+                    }}
+                  >
+                    <td
+                      style={{
+                        padding: "12px 10px",
+                        fontWeight: "700",
+                        fontSize: "15px",
+                        position: "sticky",
+                        left: 0,
+                        background: "#10b981",
+                        zIndex: 1,
+                      }}
+                    >
+                      {getFieldDisplayName('netIncome')}
+                    </td>
+                    {monthly.slice(-36).map((m: any, idx: number) => {
+                      const totalOpex =
+                        (m.payroll || 0) +
+                        (m.ownerBasePay || 0) +
+                        (m.ownersRetirement || 0) +
+                        (m.professionalFees || 0) +
+                        (m.rent || 0) +
+                        (m.utilities || 0) +
+                        (m.infrastructure || 0) +
+                        (m.autoTravel || 0) +
+                        (m.insurance || 0) +
+                        (m.salesExpense || 0) +
+                        (m.subcontractors || 0) +
+                        (m.depreciationAmortization || 0) +
+                        (m.interestExpense || 0) +
+                        (m.marketing || 0) +
+                        (m.benefits || 0) +
+                        (m.taxLicense || 0) +
+                        (m.phoneComm || 0) +
+                        (m.trainingCert || 0) +
+                        (m.mealsEntertainment || 0) +
+                        (m.otherExpense || 0);
+                      const incomeBeforeTax =
+                        (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
+                      const netIncome =
+                        incomeBeforeTax -
+                        (m.stateIncomeTaxes || 0) -
+                        (m.federalIncomeTaxes || 0);
                       return (
                         <td
                           key={idx}
@@ -1254,7 +1470,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                           minWidth: "90px",
                         }}
                       >
-                        {m.month}
+                        {formatMonth(m.month)}
                       </th>
                     ))}
                   </tr>
@@ -1277,7 +1493,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      CURRENT ASSETS
+                      {getFieldDisplayName('currentAssets')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: "8px 10px" }}></td>
@@ -1294,7 +1510,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Cash
+                      {getFieldDisplayName('cash')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1324,7 +1540,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Accounts Receivable
+                      {getFieldDisplayName('ar')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1354,7 +1570,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Inventory
+                      {getFieldDisplayName('inventory')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1384,7 +1600,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Other Current Assets
+                      {getFieldDisplayName('otherCA')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1419,7 +1635,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Total Current Assets
+                      {getFieldDisplayName('tca')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1452,7 +1668,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Fixed Assets
+                      {getFieldDisplayName('fixedAssets')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1482,7 +1698,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Other Assets
+                      {getFieldDisplayName('otherAssets')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1518,7 +1734,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      TOTAL ASSETS
+                      {getFieldDisplayName('totalAssets')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1557,7 +1773,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      CURRENT LIABILITIES
+                      {getFieldDisplayName('currentLiabilities')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: "8px 10px" }}></td>
@@ -1574,7 +1790,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Accounts Payable
+                      {getFieldDisplayName('ap')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1604,7 +1820,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Other Current Liabilities
+                      {getFieldDisplayName('otherCL')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1639,7 +1855,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Total Current Liabilities
+                      {getFieldDisplayName('tcl')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1672,7 +1888,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Long-term Debt
+                      {getFieldDisplayName('ltd')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1747,7 +1963,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      EQUITY
+                      {getFieldDisplayName('equity')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: "8px 10px" }}></td>
@@ -1764,7 +1980,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Owner's Capital
+                      {getFieldDisplayName('ownersCapital')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1794,7 +2010,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Owner's Draw
+                      {getFieldDisplayName('ownersDraw')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1824,7 +2040,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Common Stock
+                      {getFieldDisplayName('commonStock')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1854,7 +2070,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Preferred Stock
+                      {getFieldDisplayName('preferredStock')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1884,7 +2100,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Retained Earnings
+                      {getFieldDisplayName('retainedEarnings')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1914,7 +2130,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Additional Paid-In Capital
+                      {getFieldDisplayName('additionalPaidInCapital')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1947,7 +2163,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      Treasury Stock
+                      {getFieldDisplayName('treasuryStock')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
                       <td
@@ -1983,7 +2199,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      TOTAL EQUITY
+                      {getFieldDisplayName('totalEquity')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => {
                       const calculatedTotalEquity =
@@ -2033,7 +2249,7 @@ export default function DataReviewTab({ monthly, companyName, accountMappings }:
                         zIndex: 1,
                       }}
                     >
-                      TOTAL LIABILITIES & EQUITY
+                      {getFieldDisplayName('totalLiabilitiesAndEquity')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => {
                       const calculatedTotalEquity =

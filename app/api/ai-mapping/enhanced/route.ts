@@ -11,7 +11,7 @@ const mappingRules = [
   { keywords: ['non-operating income', 'other income', 'interest income', 'dividend income'], targetField: 'nonOperatingIncome', confidence: 'high' },
 
   // Cost of Goods Sold
-  { keywords: ['cogs payroll', 'cost of sales payroll', 'production payroll', 'direct labor'], targetField: 'cogsPayroll', confidence: 'high' },
+  { keywords: ['cogs payroll', 'cost of sales payroll', 'production payroll', 'direct labor', 'employees wages', 'employee wages', 'wages'], targetField: 'cogsPayroll', confidence: 'high' },
   { keywords: ['cogs owner', 'owner draw cogs'], targetField: 'cogsOwnerPay', confidence: 'medium' },
   { keywords: ['cogs contractor', 'subcontractor cogs', 'job cost contractor'], targetField: 'cogsContractors', confidence: 'high' },
   { keywords: ['materials', 'supplies', 'cogs materials', 'job materials', 'raw materials'], targetField: 'cogsMaterials', confidence: 'high' },
@@ -27,7 +27,12 @@ const mappingRules = [
   { keywords: ['professional', 'legal', 'accounting', 'consulting', 'attorney', 'professional fees', 'professional services'], targetField: 'professionalFees', confidence: 'high' },
   { keywords: ['subcontractors', 'independent contractors', 'contract labor'], targetField: 'subcontractors', confidence: 'high' },
   { keywords: ['rent', 'lease', 'office rent', 'facility'], targetField: 'rent', confidence: 'high' },
-  { keywords: ['tax', 'license', 'permit', 'business license'], targetField: 'taxLicense', confidence: 'high' },
+  // Income taxes (NOT Tax & License)
+  { keywords: ['state income tax', 'state income taxes'], targetField: 'stateIncomeTaxes', confidence: 'high' },
+  { keywords: ['federal income tax', 'federal income taxes'], targetField: 'federalIncomeTaxes', confidence: 'high' },
+  { keywords: ['income tax', 'income taxes'], targetField: 'federalIncomeTaxes', confidence: 'medium' },
+  { keywords: ['tax expense', 'license fee', 'business license', 'license renewal', 'tax license', 'occupancy permit', 'property tax', 'real estate tax'], targetField: 'taxLicense', confidence: 'high' },
+  { keywords: ['county tax', 'city tax', 'state tax', 'federal tax'], targetField: 'taxLicense', confidence: 'medium' },
   { keywords: ['phone', 'telephone', 'communication', 'internet', 'cell phone'], targetField: 'phoneComm', confidence: 'high' },
   { keywords: ['utilities', 'electric', 'water', 'gas bill'], targetField: 'infrastructure', confidence: 'high' },
   { keywords: ['auto', 'vehicle', 'travel', 'mileage', 'fuel', 'gas', 'transportation', 'parking', 'tolls', 'airfare', 'car rental', 'gasoline'], targetField: 'autoTravel', confidence: 'high' },
@@ -206,7 +211,7 @@ export async function POST(request: NextRequest) {
       targetField: string;
       confidence: string;
       reasoning: string;
-      source: 'keyword' | 'learned' | 'similar' | 'accountCode';
+      source: 'keyword' | 'learned' | 'similar' | 'accountCode' | 'none';
     }> = [];
 
     // Process each account
@@ -218,7 +223,7 @@ export async function POST(request: NextRequest) {
 
       let bestMapping = null;
       let bestConfidence = 0;
-      let source: 'keyword' | 'learned' | 'similar' | 'accountCode' = 'keyword';
+      let source: 'keyword' | 'learned' | 'similar' | 'accountCode' | 'none' = 'keyword';
 
       // 1. Try account code-based mapping first (most reliable for standard COA)
       if (accountCode) {
@@ -238,10 +243,15 @@ export async function POST(request: NextRequest) {
         source = 'keyword';
       }
 
-      // 2. Try machine learning suggestion
+      // 3. Try machine learning suggestion (only if available and valid)
       try {
         const mlSuggestion = await mappingLearner.getSuggestion(accountName, classification);
-        if (mlSuggestion && mlSuggestion.confidence > bestConfidence) {
+        // Only use ML if it has a valid targetField (not empty, not unmapped)
+        if (mlSuggestion && 
+            mlSuggestion.targetField && 
+            mlSuggestion.targetField !== 'unmapped' &&
+            mlSuggestion.targetField !== '' &&
+            mlSuggestion.confidence > bestConfidence) {
           bestMapping = {
             targetField: mlSuggestion.targetField,
             confidence: mlSuggestion.confidence >= 90 ? 'high' : mlSuggestion.confidence >= 70 ? 'medium' : 'low',
@@ -251,11 +261,11 @@ export async function POST(request: NextRequest) {
           source = mlSuggestion.source;
         }
       } catch (mlError) {
-        console.warn('[ML] Error getting suggestion:', mlError);
-        // Continue with keyword match if ML fails
+        // ML system not available - continue with keyword match
+        // This is expected if LearnedMapping table doesn't exist yet
       }
 
-      if (bestMapping) {
+      if (bestMapping && bestMapping.targetField) {
         mappings.push({
           qbAccount: accountName,
           qbAccountClassification: classification,
@@ -265,14 +275,14 @@ export async function POST(request: NextRequest) {
           source
         });
       } else {
-        // No match found
+        // No match found - mark as unmapped
         mappings.push({
           qbAccount: accountName,
           qbAccountClassification: classification,
-          targetField: '',
+          targetField: 'unmapped',
           confidence: 'low',
           reasoning: 'No keyword or learned match found - please select manually',
-          source: 'keyword'
+          source: 'none'
         });
       }
     }

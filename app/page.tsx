@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
@@ -16,7 +16,10 @@ import { exportDataReviewToExcel, exportMonthlyRatiosToExcel } from './utils/exc
 import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, AssessmentResponses, AssessmentNotes, AssessmentRecord, Consultant, User, FinancialDataRecord, LOBData } from './types';
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
+import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
+const MFAEnrollmentModal = dynamic(() => import('./components/auth/MFAEnrollmentModal'), { ssr: false });
+const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerificationModal'), { ssr: false });
 // Dynamic chart components
 const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.LineChart), { ssr: false });
 const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
@@ -29,6 +32,13 @@ const LOBReportingTab = dynamic(() => import('./components/dashboard/LOBReportin
 const ConsultantDashboard = dynamic(() => import('./components/consultant/ConsultantDashboard'), { ssr: false });
 const CompanyManagementTab = dynamic(() => import('./components/admin/CompanyManagementTab'), { ssr: false });
 const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySettingsTab'), { ssr: false });
+
+// Feature flag for covenants module
+const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true; // Default to enabled for development
+
+const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab'), { ssr: false });
+const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
+
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
 const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
@@ -39,7 +49,19 @@ const MAScoresSummaryView = dynamic(() => import('./components/assessment/MAScor
 const MAYourResultsView = dynamic(() => import('./components/assessment/MAYourResultsView'), { ssr: false });
 const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), { ssr: false });
 import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
+import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
+const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
+const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false });
+const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: false });
+const WorkingCapitalTab = dynamic(() => import('./components/WorkingCapitalTab'), { ssr: false });
+const ProjectionsTab = dynamic(() => import('./components/ProjectionsTab'), { ssr: false });
+const MDAView = dynamic(() => import('./components/MDAView'), { ssr: false });
+const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
+const FinancialScoreView = dynamic(() => import('./components/FinancialScoreView'), { ssr: false });
+import GoalsView from './components/GoalsView';
+import TrendAnalysisView from './components/TrendAnalysisView';
+import SimpleChart from './components/SimpleChart';
 import toast, { Toaster } from 'react-hot-toast';
 
 // Constants (now imported from ./constants)
@@ -75,6 +97,12 @@ function FinancialScorePage() {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSuccess, setResetSuccess] = useState('');
+  
+  // State - MFA
+  const [showMFAEnrollment, setShowMFAEnrollment] = useState(false);
+  const [showMFAVerification, setShowMFAVerification] = useState(false);
+  const [mfaUserId, setMfaUserId] = useState('');
+  const [mfaUserEmail, setMfaUserEmail] = useState('');
   
   // State - Consultants
   const [consultants, setConsultants] = useState<Consultant[]>([]);
@@ -129,6 +157,60 @@ function FinancialScorePage() {
   
   // State - Active Subscription Management
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
+
+  // Master data for dynamic categories
+  const masterData = useMasterData(selectedCompanyId);
+  const cogsCategories = masterData.data?.cogsCategories || [];
+  const expenseCategories = masterData.data?.expenseCategories || [];
+
+  // Clear master data cache when company changes
+  useEffect(() => {
+    if (selectedCompanyId) {
+      masterDataStore.clearCompanyCache(selectedCompanyId);
+    }
+  }, [selectedCompanyId]);
+  
+  // Load user from localStorage and verify NextAuth session on mount
+  useEffect(() => {
+    if (typeof window === 'undefined' || currentUser) return;
+    
+    const restoreSession = async () => {
+      const storedUser = localStorage.getItem('fs_currentUser');
+      console.log('🔍 Checking localStorage for currentUser:', !!storedUser);
+      
+      if (storedUser) {
+        try {
+          const user = JSON.parse(storedUser);
+          console.log('✅ User loaded from localStorage:', user.email);
+          
+          // Check if NextAuth session exists
+          const { getSession } = await import('next-auth/react');
+          const session = await getSession();
+          
+          if (!session) {
+            console.log('⚠️ No NextAuth session found - user will need to re-login');
+            // Clear localStorage since session expired
+            localStorage.removeItem('fs_currentUser');
+            setIsLoggedIn(false);
+            return;
+          }
+          
+          console.log('✅ NextAuth session valid');
+          setCurrentUser(user);
+          setIsLoggedIn(true);
+        } catch (error) {
+          console.error('❌ Failed to restore session:', error);
+          localStorage.removeItem('fs_currentUser');
+          setIsLoggedIn(false);
+        }
+      } else {
+        console.log('⚠️ No user found in localStorage');
+      }
+    };
+    
+    restoreSession();
+  }, [currentUser]);
+  
   const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [showUpdatePaymentModal, setShowUpdatePaymentModal] = useState(false);
   const [updatingPayment, setUpdatingPayment] = useState(false);
@@ -197,7 +279,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -285,6 +367,14 @@ function FinancialScorePage() {
                     setSelectedCompanyId(newCompany.id);
                     setExpandedCompanyInfoId(newCompany.id);
                     needsPayment = !newCompany.selectedSubscriptionPlan;
+                  } else {
+                    // Fallback: try to select company with master data for testing
+                    const companyWithMasterData = loadedCompanies.find((c: any) => c.id === 'cmgmttbfh0004qhgwm6vd9oa5');
+                    if (companyWithMasterData) {
+                      setSelectedCompanyId(companyWithMasterData.id);
+                      setExpandedCompanyInfoId(companyWithMasterData.id);
+                      needsPayment = !companyWithMasterData.selectedSubscriptionPlan;
+                    }
                   }
                 } else if (loadedCompanies && loadedCompanies.length > 0) {
                   // Consultant with companies
@@ -316,6 +406,10 @@ function FinancialScorePage() {
                 .then(data => {
                   if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
                     safeSetCompanies(data.companies);
+                    // Ensure selectedCompanyId is set if not already
+                    if (!selectedCompanyId && data.companies.length > 0) {
+                      setSelectedCompanyId(data.companies[0].id);
+                    }
                   } else {
                     safeSetCompanies([]);
                   }
@@ -325,6 +419,20 @@ function FinancialScorePage() {
           } else {
             setCurrentView('upload');
             setSelectedCompanyId(user.companyId || '');
+            // For business users without userType set, try to load their company
+            if (user.companyId) {
+              fetch(`/api/companies?companyId=${user.companyId}`)
+                .then(res => res.json())
+                .then(data => {
+                  if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
+                    safeSetCompanies(data.companies);
+                    if (!selectedCompanyId && data.companies.length > 0) {
+                      setSelectedCompanyId(data.companies[0].id);
+                    }
+                  }
+                })
+                .catch(err => console.error('Error loading company:', err));
+            }
           }
         }
         // Clear the pending login data
@@ -345,18 +453,21 @@ function FinancialScorePage() {
 
   // Helper function to handle view changes for assessment users
   const handleViewChange = (newView: string) => {
-    console.log('🔄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
+    console.log('📄 handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
     if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
       console.log('🚫 View not allowed, redirecting to ma-welcome');
       setCurrentView('ma-welcome');
     } else {
-      console.log('🔄 Setting view to:', newView);
+      console.log('📄 Setting view to:', newView);
       setCurrentView(newView as any);
     }
   };
   const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
+
+  // Master data for dynamic goals
+  const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
-  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('team-management');
+  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -472,6 +583,8 @@ function FinancialScorePage() {
   // Affiliate pricing cache removed - pricing now stored permanently in database
 
   // Check if payment is required for the current company
+  // Payment is required if ANY of the 3 subscription prices are > $0
+  // Payment is NOT required only if ALL 3 prices are exactly $0
   const isPaymentRequired = useCallback(() => {
     if (!selectedCompanyId || !currentUser) return false;
 
@@ -479,21 +592,17 @@ function FinancialScorePage() {
     if (!Array.isArray(companies)) return false;
 
     const selectedCompany = companies.find(c => c.id === selectedCompanyId);
-    if (!selectedCompany) return false;
-
-    // Check if company is free (multiple ways to detect)
-    // 1. Explicit free status
-    if (selectedCompany.subscriptionStatus === "free") {
-      console.log('🔒 Company marked as free - no payment required');
-      return false;
+    if (!selectedCompany) {
+      console.log('🔒 No company found - allowing access temporarily');
+      return false; // Don't block if company not loaded yet
     }
 
-    // 2. Check dedicated pricing fields
+    // Check dedicated pricing fields
     let monthly = selectedCompany.subscriptionMonthlyPrice;
     let quarterly = selectedCompany.subscriptionQuarterlyPrice;
     let annual = selectedCompany.subscriptionAnnualPrice;
 
-    // 3. Fall back to userDefinedAllocations if dedicated fields are null
+    // Fall back to userDefinedAllocations if dedicated fields are null/undefined
     if ((monthly === null || monthly === undefined) &&
         selectedCompany.userDefinedAllocations?.subscriptionPricing) {
       monthly = selectedCompany.userDefinedAllocations.subscriptionPricing.monthly;
@@ -501,26 +610,40 @@ function FinancialScorePage() {
       annual = selectedCompany.userDefinedAllocations.subscriptionPricing.annual;
     }
 
-    // 4. Check if pricing is $0
-    if (monthly === 0 && quarterly === 0 && annual === 0) {
-      console.log('🔒 Company has $0 pricing - no payment required');
+    // Check userDefinedAllocations for explicit free pricing flag
+    const userDefinedPricing = (selectedCompany as any).userDefinedAllocations?.subscriptionPricing;
+    const isExplicitlyFree = userDefinedPricing?.isFree === true;
+
+    // If pricing is null/undefined and no userDefinedAllocations, treat as "needs default pricing" = payment required
+    // Only treat as free if:
+    // 1. All prices are explicitly $0, OR
+    // 2. userDefinedAllocations has isFree: true (from affiliate code)
+    if (monthly === null && quarterly === null && annual === null && !userDefinedPricing) {
+      console.log('🔒 Pricing is null and no userDefinedAllocations - payment required (will use defaults)', { monthly, quarterly, annual });
+      return true; // Payment required - will use default pricing
+    }
+
+    // Check if explicitly free (all prices are exactly $0 OR isFree flag is true)
+    if (isExplicitlyFree || (monthly === 0 && quarterly === 0 && annual === 0)) {
+      console.log('🔒 Company has $0 pricing - no payment required', { monthly, quarterly, annual, isExplicitlyFree });
       return false;
     }
 
-    // 5. If no pricing data or non-zero pricing, payment required
-    console.log('🔒 Payment required - no free pricing detected');
-    return true;
-
-    // If pricing hasn't loaded yet, don't block (avoid false positives)
-    if (subscriptionMonthlyPrice === undefined || subscriptionQuarterlyPrice === undefined || subscriptionAnnualPrice === undefined) {
-      console.log('🔒 Pricing still loading - allowing access temporarily');
-      return false; // Don't block while pricing is loading
+    // If ANY price is > $0, payment is required
+    if ((monthly ?? 0) > 0 || (quarterly ?? 0) > 0 || (annual ?? 0) > 0) {
+      console.log('🔒 Payment required - non-zero pricing detected', { monthly, quarterly, annual });
+      return true;
     }
 
-    // Payment required for non-free pricing
-    console.log('🔒 Payment required for pricing:', { subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice });
-    return true;
-  }, [selectedCompanyId, currentUser, companies, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice]);
+    // If we have pricing data but it's not explicitly $0, payment required
+    if (monthly !== null || quarterly !== null || annual !== null) {
+      console.log('🔒 Payment required - has pricing data that is not free', { monthly, quarterly, annual });
+      return true;
+    }
+
+    // Default: no payment required (shouldn't reach here, but safe fallback)
+    return false;
+  }, [selectedCompanyId, currentUser, companies]);
 
   // State - Management Assessment
   const [assessmentResponses, setAssessmentResponses] = useState<AssessmentResponses>({});
@@ -530,7 +653,7 @@ function FinancialScorePage() {
   
   // State - Trend Analysis
   const [selectedTrendItem, setSelectedTrendItem] = useState<string>('revenue');
-  const [selectedTrendItems, setSelectedTrendItems] = useState<string[]>(['revenue']);
+  const [selectedTrendItems, setSelectedTrendItems] = useState<string[]>(['Revenue', 'Gross Profit', 'Total Operating Expenses', 'Net Income']);
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
 
   // State - Expense Analysis
@@ -539,90 +662,50 @@ function FinancialScorePage() {
   
   // Helper function to get full display name for trend items
   const getTrendItemDisplayName = (item: string): string => {
-    const displayNames: { [key: string]: string } = {
-      // Income Statement
-      'revenue': 'Total Revenue',
+    // Use centralized mapping, with fallbacks for items not in the mapping
+    const centralizedName = getFieldDisplayName(item);
+    if (centralizedName !== item) {
+      return centralizedName;
+    }
+    
+    // Fallback for items not in centralized mapping
+    const fallbackNames: { [key: string]: string } = {
       'expense': 'Total Expenses',
-      'cogsTotal': 'COGS Total',
-      'cogsPayroll': 'COGS Payroll',
-      'cogsOwnerPay': 'COGS Owner Pay',
-      'cogsContractors': 'COGS Contractors',
-      'cogsMaterials': 'COGS Materials',
-      'cogsCommissions': 'COGS Commissions',
-      'cogsOther': 'COGS Other',
-      'salesExpense': 'Sales & Marketing',
-      'rent': 'Rent/Lease',
-      'infrastructure': 'Infrastructure/Utilities',
-      'autoTravel': 'Auto & Travel',
-      'professionalFees': 'Professional Services',
-      'insurance': 'Insurance',
-      'marketing': 'OPEX Other',
-      'payroll': 'OPEX Payroll',
-      'ownerBasePay': 'Owners Base Pay',
-      'ownersRetirement': 'Owners Retirement',
-      'subcontractors': 'Contractors/Distribution',
-      'interestExpense': 'Interest Expense',
-      'depreciationAmortization': 'Depreciation Expense',
-      'operatingExpenseTotal': 'Operating Expense Total',
-      'nonOperatingIncome': 'Non-Operating Income',
-      'extraordinaryItems': 'Extraordinary Items',
       'netProfit': 'Net Profit',
       'grossProfit': 'Gross Profit',
       'ebitda': 'EBITDA',
       'ebit': 'EBIT',
-      // Balance Sheet - Assets
-      'totalAssets': 'Total Assets',
-      'cash': 'Cash',
-      'ar': 'Accounts Receivable',
-      'inventory': 'Inventory',
-      'otherCA': 'Other Current Assets',
-      'tca': 'Total Current Assets',
-      'fixedAssets': 'Fixed Assets',
-      'otherAssets': 'Other Assets',
-      // Balance Sheet - Liabilities
-      'totalLiab': 'Total Liabilities',
-      'ap': 'Accounts Payable',
-      'otherCL': 'Other Current Liabilities',
-      'tcl': 'Total Current Liabilities',
-      'ltd': 'Long Term Debt',
-      // Balance Sheet - Equity
-      'totalEquity': 'Total Equity'
+      'operatingExpenseTotal': 'Operating Expense Total',
+      'nonOperatingIncome': 'Non-Operating Income',
+      'extraordinaryItems': 'Extraordinary Items',
     };
     
-    return displayNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1');
+    return fallbackNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/([A-Z])/g, ' $1');
   };
 
   // Helper function to get display name for expense analysis items
   const getExpenseFieldDisplayName = (item: string): string => {
-    const displayNames: { [key: string]: string } = {
+    // Convert kebab-case to camelCase for centralized mapping
+    const camelCaseItem = item.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+    const centralizedName = getFieldDisplayName(camelCaseItem);
+    if (centralizedName !== camelCaseItem) {
+      return centralizedName;
+    }
+    
+    // Fallback for items not in centralized mapping
+    const fallbackNames: { [key: string]: string } = {
       'total-expenses': 'Total Expenses',
-      'cogs-total': 'COGS Total',
-      'cogs-payroll': 'COGS Payroll',
-      'cogs-owner-pay': 'COGS Owner Pay',
-      'cogs-contractors': 'COGS Contractors',
-      'cogs-materials': 'COGS Materials',
-      'cogs-commissions': 'COGS Commissions',
-      'cogs-other': 'COGS Other',
-      'payroll': 'Payroll',
-      'owner-base-pay': 'Owner Base Pay',
-      'owners-retirement': 'Owners Retirement',
-      'subcontractors': 'Subcontractors',
-      'professional-fees': 'Professional Fees',
-      'insurance': 'Insurance',
-      'rent': 'Rent',
-      'phone-comm': 'Phone & Communications',
-      'infrastructure': 'Infrastructure',
-      'auto-travel': 'Auto & Travel',
-      'sales-expense': 'Sales Expense',
-      'marketing': 'Marketing',
-      'training-cert': 'Training & Certification',
-      'meals-entertainment': 'Meals & Entertainment',
-      'interest-expense': 'Interest Expense',
-      'depreciation-amortization': 'Depreciation & Amortization',
-      'other-expense': 'Other Expense'
+      'cogs-total': getFieldDisplayName('cogsTotal'),
+      'cogs-payroll': getFieldDisplayName('cogsPayroll'),
+      'cogs-owner-pay': getFieldDisplayName('cogsOwnerPay'),
+      'cogs-contractors': getFieldDisplayName('cogsContractors'),
+      'cogs-materials': getFieldDisplayName('cogsMaterials'),
+      'cogs-commissions': getFieldDisplayName('cogsCommissions'),
+      'cogs-other': getFieldDisplayName('cogsOther'),
+      'sales-expense': getFieldDisplayName('salesExpense'),
     };
 
-    return displayNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/-/g, ' ');
+    return fallbackNames[item] || item.charAt(0).toUpperCase() + item.slice(1).replace(/-/g, ' ');
   };
 
   // State - Valuation
@@ -651,6 +734,13 @@ function FinancialScorePage() {
 
   // State - QuickBooks Connection
   const [qbConnected, setQbConnected] = useState(false);
+
+  // State - Xero Connection
+  const [xeroConnected, setXeroConnected] = useState(false);
+  const [xeroStatus, setXeroStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
+  const [xeroLastSync, setXeroLastSync] = useState<Date | null>(null);
+  const [xeroSyncing, setXeroSyncing] = useState(false);
+  const [xeroError, setXeroError] = useState<string | null>(null);
 
   // State - Financial Statements
   const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent'>('income-statement');
@@ -704,16 +794,8 @@ function FinancialScorePage() {
     profile: false
   });
 
-  const handleExportMdaToWord = async () => {
+  const handleExportMdaToWord = async (executiveSummaryText: string, mdaAnalysis: { strengths: string[]; weaknesses: string[]; insights: string[] }) => {
     try {
-      let executiveSummaryText = '';
-      if (typeof document !== 'undefined') {
-        const container = document.getElementById('mda-executive-summary-container');
-        if (container) {
-          executiveSummaryText = container.innerText || '';
-        }
-      }
-
       const response = await fetch('/api/mda/export', {
         method: 'POST',
         headers: {
@@ -896,12 +978,12 @@ function FinancialScorePage() {
         // Clear localStorage companies data to prevent reappearance on navigation
         if (typeof window !== 'undefined') {
           localStorage.removeItem('fs_companies');
-          console.log('🗑️ Cleared localStorage companies data after deletion');
+          console.log('🔒ï¸ Cleared localStorage companies data after deletion');
         }
 
         // Force reload companies from API to ensure deletion took effect
         if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
-          console.log('🔄 Reloading companies from API after deletion');
+          console.log('📄 Reloading companies from API after deletion');
           setTimeout(async () => {
             try {
               const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
@@ -931,12 +1013,12 @@ function FinancialScorePage() {
         // Clear localStorage companies data to prevent reappearance on navigation
         if (typeof window !== 'undefined') {
           localStorage.removeItem('fs_companies');
-          console.log('🗑️ Cleared localStorage companies data after deletion (server error)');
+          console.log('🔒ï¸ Cleared localStorage companies data after deletion (server error)');
         }
 
         // Force reload companies from API to ensure deletion took effect
         if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
-          console.log('🔄 Reloading companies from API after deletion (server error)');
+          console.log('📄 Reloading companies from API after deletion (server error)');
           setTimeout(async () => {
             try {
               const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
@@ -1128,31 +1210,59 @@ function FinancialScorePage() {
     }
   }, [selectedCompanyId]);
 
-  // Load dashboard widgets from localStorage when company changes
+  // Load dashboard widgets from database (with localStorage fallback) when company changes
   useEffect(() => {
     if (selectedCompanyId) {
-      const storageKey = `dashboardWidgets_${selectedCompanyId}`;
-      const savedWidgets = localStorage.getItem(storageKey);
-      if (savedWidgets) {
+      const loadDashboardPrefs = async () => {
         try {
-          const widgets = JSON.parse(savedWidgets);
-          // Filter out obsolete widget names that are no longer available
-          const obsoleteWidgets = ['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'];
-          const cleanedWidgets = widgets.filter((w: string) => !obsoleteWidgets.includes(w));
-          setSelectedDashboardWidgets(cleanedWidgets);
+          // Try to load from database first
+          const response = await fetch(`/api/dashboard-prefs?companyId=${selectedCompanyId}`);
           
-          // Update localStorage if we removed any obsolete widgets
-          if (cleanedWidgets.length !== widgets.length) {
-            localStorage.setItem(storageKey, JSON.stringify(cleanedWidgets));
+          if (response.ok) {
+            const data = await response.json();
+            if (data.widgets && Array.isArray(data.widgets) && data.widgets.length > 0) {
+              // Filter out obsolete widget names
+              const obsoleteWidgets = ['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'];
+              const cleanedWidgets = data.widgets.filter((w: string) => !obsoleteWidgets.includes(w));
+              setSelectedDashboardWidgets(cleanedWidgets);
+              
+              // Also update localStorage
+              const storageKey = `dashboardWidgets_${selectedCompanyId}`;
+              localStorage.setItem(storageKey, JSON.stringify(cleanedWidgets));
+              return;
+            }
+          }
+          
+          // Fallback to localStorage if database load fails or returns empty
+          const storageKey = `dashboardWidgets_${selectedCompanyId}`;
+          const savedWidgets = localStorage.getItem(storageKey);
+          if (savedWidgets) {
+            const widgets = JSON.parse(savedWidgets);
+            const obsoleteWidgets = ['Revenue Trend', 'Expense Trend', 'Net Profit Trend', 'Gross Margin Trend'];
+            const cleanedWidgets = widgets.filter((w: string) => !obsoleteWidgets.includes(w));
+            setSelectedDashboardWidgets(cleanedWidgets);
+          } else {
+            setSelectedDashboardWidgets([]);
           }
         } catch (err) {
-          console.error('Error loading dashboard widgets:', err);
-          setSelectedDashboardWidgets([]);
+          console.error('Error loading dashboard preferences:', err);
+          // Fallback to localStorage on error
+          const storageKey = `dashboardWidgets_${selectedCompanyId}`;
+          const savedWidgets = localStorage.getItem(storageKey);
+          if (savedWidgets) {
+            try {
+              const widgets = JSON.parse(savedWidgets);
+              setSelectedDashboardWidgets(widgets);
+            } catch (parseErr) {
+              setSelectedDashboardWidgets([]);
+            }
+          } else {
+            setSelectedDashboardWidgets([]);
+          }
         }
-      } else {
-        // No saved widgets for this company, start fresh
-        setSelectedDashboardWidgets([]);
-      }
+      };
+      
+      loadDashboardPrefs();
     }
   }, [selectedCompanyId]);
 
@@ -1220,13 +1330,38 @@ function FinancialScorePage() {
     }
   }, [selectedCompanyId, adminDashboardTab]);
 
-  // Save dashboard widgets to localStorage whenever they change
-  useEffect(() => {
-    if (selectedCompanyId && selectedDashboardWidgets) {
+  // Save dashboard widgets to database
+  const saveDashboardPreferences = async () => {
+    if (!selectedCompanyId) {
+      toast.error('No company selected');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/dashboard-prefs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          widgets: selectedDashboardWidgets
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save dashboard preferences');
+      }
+
+      // Also save to localStorage as backup
       const storageKey = `dashboardWidgets_${selectedCompanyId}`;
       localStorage.setItem(storageKey, JSON.stringify(selectedDashboardWidgets));
+
+      toast.success('Dashboard preferences saved successfully!');
+    } catch (error) {
+      console.error('Error saving dashboard preferences:', error);
+      toast.error('Failed to save dashboard preferences');
+      throw error;
     }
-  }, [selectedCompanyId, selectedDashboardWidgets]);
+  };
 
   // Load affiliates when Affiliates tab is opened
   useEffect(() => {
@@ -1263,24 +1398,79 @@ function FinancialScorePage() {
     }
   }, [siteAdminTab]);
 
-  // Load default pricing when Default Pricing tab is opened
+  // Load all companies and users when Businesses tab is opened in site admin
   useEffect(() => {
-    if (siteAdminTab === 'default-pricing') {
-      fetch('/api/settings')
+    if (siteAdminTab === 'businesses' && currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
+      console.log('📊 Loading all companies and users for site admin businesses tab...');
+      
+      // Load companies
+      fetch('/api/companies')
         .then(res => res.json())
         .then(data => {
-          if (data.settings) {
-            setDefaultBusinessMonthlyPrice(data.settings.businessMonthlyPrice ?? 195);
-            setDefaultBusinessQuarterlyPrice(data.settings.businessQuarterlyPrice ?? 500);
-            setDefaultBusinessAnnualPrice(data.settings.businessAnnualPrice ?? 1750);
-            setDefaultConsultantMonthlyPrice(data.settings.consultantMonthlyPrice ?? 195);
-            setDefaultConsultantQuarterlyPrice(data.settings.consultantQuarterlyPrice ?? 500);
-            setDefaultConsultantAnnualPrice(data.settings.consultantAnnualPrice ?? 1750);
+          if (data.companies && Array.isArray(data.companies)) {
+            safeSetCompanies(data.companies);
+            console.log(`✅ Loaded ${data.companies.length} companies for businesses tab`);
+          } else {
+            console.warn('⚠️ No companies array in response:', data);
+            safeSetCompanies([]);
           }
         })
-        .catch(err => console.error('Error loading default pricing:', err));
+        .catch(err => {
+          console.error('❌ Error loading companies for businesses tab:', err);
+          safeSetCompanies([]);
+        });
+      
+      // Load users to find business users
+      fetch('/api/users')
+        .then(res => res.json())
+        .then(data => {
+          if (data.users && Array.isArray(data.users)) {
+            setUsers(data.users);
+            console.log(`✅ Loaded ${data.users.length} users for businesses tab`);
+          } else {
+            console.warn('⚠️ No users array in response:', data);
+            setUsers([]);
+          }
+        })
+        .catch(err => {
+          console.error('❌ Error loading users for businesses tab:', err);
+          setUsers([]);
+        });
     }
-  }, [siteAdminTab]);
+  }, [siteAdminTab, currentView, currentUser?.role]);
+
+  // Load default pricing on page load and when Default Pricing tab is opened
+  useEffect(() => {
+    // Load default pricing from SystemSettings (stored in database)
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.settings) {
+          setDefaultBusinessMonthlyPrice(data.settings.businessMonthlyPrice ?? 195);
+          setDefaultBusinessQuarterlyPrice(data.settings.businessQuarterlyPrice ?? 500);
+          setDefaultBusinessAnnualPrice(data.settings.businessAnnualPrice ?? 1750);
+          setDefaultConsultantMonthlyPrice(data.settings.consultantMonthlyPrice ?? 195);
+          setDefaultConsultantQuarterlyPrice(data.settings.consultantQuarterlyPrice ?? 500);
+          setDefaultConsultantAnnualPrice(data.settings.consultantAnnualPrice ?? 1750);
+          console.log('✅ Loaded default pricing from SystemSettings:', {
+            business: {
+              monthly: data.settings.businessMonthlyPrice ?? 195,
+              quarterly: data.settings.businessQuarterlyPrice ?? 500,
+              annual: data.settings.businessAnnualPrice ?? 1750
+            },
+            consultant: {
+              monthly: data.settings.consultantMonthlyPrice ?? 195,
+              quarterly: data.settings.consultantQuarterlyPrice ?? 500,
+              annual: data.settings.consultantAnnualPrice ?? 1750
+            }
+          });
+        }
+      })
+      .catch(err => {
+        console.error('Error loading default pricing:', err);
+        // Keep default values (195/500/1750) if API fails
+      });
+  }, []); // Load once on mount
 
   // Handle URL parameters for navigation and messages
   useEffect(() => {
@@ -1307,10 +1497,29 @@ function FinancialScorePage() {
       // Clean URL
       window.history.replaceState({}, '', window.location.pathname + '?view=admin');
     }
+    
+    if (success === 'xero_connected') {
+      alert('Xero connected successfully! You can now sync your financial data.');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
 
     // Show error message
     if (error === 'quickbooks_connection_failed') {
       alert('Failed to connect to QuickBooks. Please try again.');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
+    
+    if (error === 'xero_connection_failed') {
+      alert('Failed to connect to Xero. Please try again.');
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
+    
+    if (error === 'xero_auth_denied') {
+      const details = searchParams.get('details');
+      alert(`Xero authorization was denied or failed${details ? ': ' + details : ''}. Please try again.`);
       // Clean URL
       window.history.replaceState({}, '', window.location.pathname + '?view=admin');
     }
@@ -1374,7 +1583,7 @@ function FinancialScorePage() {
               !Array.isArray(latestRecord.rawData) &&
               (latestRecord.rawData.profitAndLoss || latestRecord.rawData.balanceSheet)) {
             // QuickBooks data - use monthlyData directly
-            console.log(`🔄 Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
+            console.log(`📄 Loading QB data for company: "${companyName}" (${selectedCompanyId})`);
             console.log(`📄 Record belongs to company ID: ${latestRecord.companyId}`);
             console.log(`📅 QB Data sync date:`, latestRecord.rawData.syncDate);
             console.log(`🔑 QB rawData object keys:`, Object.keys(latestRecord.rawData));
@@ -1494,7 +1703,7 @@ function FinancialScorePage() {
                 infrastructure: m.infrastructure || 0,
                 autoTravel: m.autoTravel || 0,
                 salesExpense: m.salesExpense || 0,
-                marketing: m.marketing || m.otherExpense || 0,
+                marketing: m.marketing || 0,
                 trainingCert: m.trainingCert || 0,
                 mealsEntertainment: m.mealsEntertainment || 0,
                 interestExpense: m.interestExpense || 0,
@@ -1632,28 +1841,74 @@ function FinancialScorePage() {
             // If dedicated pricing fields are null/undefined, try userDefinedAllocations backup
             if ((monthly === null || monthly === undefined) &&
                 company.userDefinedAllocations?.subscriptionPricing) {
-              console.log('🔄 Using backup pricing from userDefinedAllocations');
+              console.log('📄 Using backup pricing from userDefinedAllocations');
               monthly = company.userDefinedAllocations.subscriptionPricing.monthly;
               quarterly = company.userDefinedAllocations.subscriptionPricing.quarterly;
               annual = company.userDefinedAllocations.subscriptionPricing.annual;
             }
 
-            // Check if we have valid pricing data
-            const hasPricingData = monthly !== null && quarterly !== null && annual !== null &&
-                                  monthly !== undefined && quarterly !== undefined && annual !== undefined;
+            // IMPORTANT: Existing companies keep their original pricing (set at registration)
+            // Only use default pricing if company has NO pricing data (null/undefined)
+            // This ensures existing companies maintain their registration pricing
+            const hasPricingData = monthly !== null && monthly !== undefined &&
+                                  quarterly !== null && quarterly !== undefined &&
+                                  annual !== null && annual !== undefined;
+
+            // Check if company has explicit free pricing flag
+            const userDefinedPricing = (company as any)?.userDefinedAllocations?.subscriptionPricing;
+            const isExplicitlyFree = userDefinedPricing?.isFree === true;
 
             if (hasPricingData) {
-              // Use stored pricing from database
+              // Company has pricing data - use it (this is the pricing from registration)
+              // This preserves existing company pricing and doesn't override it
               setSubscriptionMonthlyPrice(monthly);
               setSubscriptionQuarterlyPrice(quarterly);
               setSubscriptionAnnualPrice(annual);
-              console.log('✅ Loaded pricing from database:', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
+              console.log('✅ Loaded existing company pricing from database (preserved from registration):', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
+            } else if (isExplicitlyFree) {
+              // Explicitly free (affiliate code with $0 pricing)
+              console.log('✅ Company has explicit free pricing - setting to $0');
+              setSubscriptionMonthlyPrice(0);
+              setSubscriptionQuarterlyPrice(0);
+              setSubscriptionAnnualPrice(0);
             } else {
-              // No pricing data available, fall back to defaults
-              console.log('⚠️ No pricing data available, using defaults');
-              setSubscriptionMonthlyPrice(195);
-              setSubscriptionQuarterlyPrice(500);
-              setSubscriptionAnnualPrice(1750);
+              // No pricing data = company was created before pricing was saved
+              // This should only happen for very old companies - use current default pricing
+              console.log('⚠️ No pricing data in database - using current default pricing (payment required)');
+              // Load default pricing from SystemSettings
+              fetch('/api/settings')
+                .then(res => res.json())
+                .then(data => {
+                  if (data.settings) {
+                    // Determine if the current user is a business user (not a consultant or site admin)
+                    const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
+                    const defaultMonthly = isBusinessUser 
+                      ? (data.settings.businessMonthlyPrice ?? 195)
+                      : (data.settings.consultantMonthlyPrice ?? 195);
+                    const defaultQuarterly = isBusinessUser
+                      ? (data.settings.businessQuarterlyPrice ?? 500)
+                      : (data.settings.consultantQuarterlyPrice ?? 500);
+                    const defaultAnnual = isBusinessUser
+                      ? (data.settings.businessAnnualPrice ?? 1750)
+                      : (data.settings.consultantAnnualPrice ?? 1750);
+                    setSubscriptionMonthlyPrice(defaultMonthly);
+                    setSubscriptionQuarterlyPrice(defaultQuarterly);
+                    setSubscriptionAnnualPrice(defaultAnnual);
+                    console.log('✅ Loaded default pricing for company without saved pricing:', { defaultMonthly, defaultQuarterly, defaultAnnual, isBusinessUser });
+                  } else {
+                    // Fallback to hardcoded defaults
+                    setSubscriptionMonthlyPrice(195);
+                    setSubscriptionQuarterlyPrice(500);
+                    setSubscriptionAnnualPrice(1750);
+                  }
+                })
+                .catch(err => {
+                  console.error('Error loading default pricing:', err);
+                  // Fallback to hardcoded defaults
+                  setSubscriptionMonthlyPrice(195);
+                  setSubscriptionQuarterlyPrice(500);
+                  setSubscriptionAnnualPrice(1750);
+                });
             }
 
             console.log('✅ Pricing loaded from database:', {
@@ -1668,6 +1923,8 @@ function FinancialScorePage() {
 
         // Check QuickBooks connection status
         await checkQBStatus(selectedCompanyId);
+        // Check Xero connection status
+        await checkXeroStatus(selectedCompanyId);
       } catch (error) {
         console.error('Error loading company data:', error);
       }
@@ -1818,12 +2075,14 @@ function FinancialScorePage() {
             infrastructure: m.infrastructure || 0,
             autoTravel: m.autoTravel || 0,
             salesExpense: m.salesExpense || 0,
-            marketing: m.marketing || m.otherExpense || m.marketing || 0,
+            marketing: m.marketing || 0,
             trainingCert: m.trainingCert || 0,
             mealsEntertainment: m.mealsEntertainment || 0,
             interestExpense: m.interestExpense || 0,
             depreciationAmortization: m.depreciationAmortization || m.depreciationAmortization || 0,
             otherExpense: m.otherExpense || 0,
+            stateIncomeTaxes: m.stateIncomeTaxes || 0,
+            federalIncomeTaxes: m.federalIncomeTaxes || 0,
             operatingExpenseTotal: m.operatingExpenseTotal || m.expense || 0,
             nonOperatingIncome: m.nonOperatingIncome || 0,
             extraordinaryItems: m.extraordinaryItems || 0,
@@ -1892,7 +2151,20 @@ function FinancialScorePage() {
 
   useEffect(() => {
     const saveFinancialData = async () => {
-      if (!file || rawRows.length === 0 || !mapping.date || !selectedCompanyId || !currentUser || !isFreshUpload) return;
+      console.log('💾 saveFinancialData effect triggered:', {
+        hasFile: !!file,
+        rawRowsLength: rawRows.length,
+        hasMappingDate: !!mapping.date,
+        hasCompanyId: !!selectedCompanyId,
+        hasCurrentUser: !!currentUser,
+        currentUserEmail: currentUser?.email,
+        isFreshUpload
+      });
+      
+      if (!file || rawRows.length === 0 || !mapping.date || !selectedCompanyId || !currentUser || !isFreshUpload) {
+        console.log('⏭️ Skipping save - conditions not met');
+        return;
+      }
       
       try {
         console.log('Saving financial data to database...');
@@ -2098,7 +2370,70 @@ function FinancialScorePage() {
     }
     
     try {
-      const { user } = await authApi.login(loginEmail, loginPassword);
+      // First, create NextAuth session for API authentication
+      const { signIn, getSession } = await import('next-auth/react');
+      const signInResult = await signIn('credentials', {
+        email: loginEmail,
+        password: loginPassword,
+        redirect: false,
+      });
+      
+      if (signInResult?.error || !signInResult?.ok) {
+        setLoginError('Invalid email or password');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Verify session was created successfully
+      const session = await getSession();
+      console.log('🔐 NextAuth session after login:', session ? 'EXISTS' : 'MISSING');
+      
+      if (!session) {
+        setLoginError('Failed to create session. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Small delay to ensure session is fully propagated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Then get user data from our custom endpoint
+      const loginResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      
+      if (!loginResponse.ok) {
+        setLoginError('Invalid email or password');
+        setIsLoading(false);
+        return;
+      }
+      
+      const loginData = await loginResponse.json();
+      
+      // Check if MFA enrollment is required (user hasn't set up MFA yet)
+      if (loginData.mfaEnrollmentRequired) {
+        console.log('🔒 MFA enrollment required');
+        setMfaUserId(loginData.userId);
+        setMfaUserEmail(loginData.email || loginEmail);
+        setShowMFAEnrollment(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Check if MFA verification is required (user has MFA enabled)
+      if (loginData.mfaRequired) {
+        console.log('🔐 MFA verification required');
+        setMfaUserId(loginData.userId);
+        setMfaUserEmail(loginEmail);
+        setShowMFAVerification(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // No MFA required (this shouldn't happen with mandatory MFA, but handle it gracefully)
+      const { user } = loginData;
       
       // Normalize role and userType to lowercase for frontend compatibility
       const normalizedUser = {
@@ -2126,7 +2461,7 @@ function FinancialScorePage() {
       if (normalizedUser.role === 'siteadmin') {
         setCurrentView('siteadmin');
       } else if (normalizedUser.role === 'consultant') {
-        setCurrentView('admin');
+        setCurrentView('consultant-dashboard');
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
       } else if (normalizedUser.userType === 'company') {
@@ -2157,16 +2492,18 @@ function FinancialScorePage() {
             needsPayment = !userCompany.selectedSubscriptionPlan;
           }
         } else if (loadedCompanies && loadedCompanies.length > 0) {
-          // Consultant with companies - check if any company has unpaid status
-          // For now, if they have companies, select the first one
-          const firstCompany = loadedCompanies[0];
-          setSelectedCompanyId(firstCompany.id);
-          setExpandedCompanyInfoId(firstCompany.id);
-          needsPayment = !firstCompany.selectedSubscriptionPlan;
+                  // Consultant with companies - check if any company has unpaid status
+                  // For now, if they have companies, select the first one
+                  // But prioritize company with master data for Goals page testing
+                  const companyWithMasterData = loadedCompanies.find((c: any) => c.id === 'cmgmttbfh0004qhgwm6vd9oa5');
+                  const companyToSelect = companyWithMasterData || loadedCompanies[0];
+                  setSelectedCompanyId(companyToSelect.id);
+                  setExpandedCompanyInfoId(companyToSelect.id);
+                  needsPayment = !companyToSelect.selectedSubscriptionPlan;
         }
         
-        // Always direct to company management on login
-        setAdminDashboardTab('company-management');
+        // Note: Consultants now start at consultant-dashboard view (Team Management / Company List)
+        // setAdminDashboardTab('company-management'); // Not needed for consultant-dashboard view
       }
       
       // Load company data for company users
@@ -2207,6 +2544,160 @@ function FinancialScorePage() {
     }
   };
 
+  const handleMFAEnrollmentComplete = async () => {
+    console.log('✅ MFA enrollment completed');
+    setShowMFAEnrollment(false);
+    
+    // After enrollment, user is now fully authenticated
+    // Get user data from session (no need to re-authenticate)
+    try {
+      const { getSession } = await import('next-auth/react');
+      await getSession(); // Refresh session
+      
+      // Get user data using session (no password required)
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (!response.ok) {
+        console.error('❌ Failed to get user data after MFA enrollment');
+        setLoginError('Failed to complete login after MFA setup');
+        return;
+      }
+      
+      const { user } = await response.json();
+      console.log('✅ User data retrieved after MFA enrollment:', user);
+      
+      // Continue with normal login flow
+      const normalizedUser = {
+        ...user,
+        role: user.role.toLowerCase(),
+        userType: user.userType?.toLowerCase(),
+        consultantCompanyName: user.consultantCompanyName,
+        consultantType: user.consultantType,
+        consultantId: user.consultantId,
+        isPrimaryContact: user.isPrimaryContact
+      };
+      
+      setCurrentUser(normalizedUser);
+      setIsLoggedIn(true);
+      
+      // Clear assessment data for assessment users
+      if (normalizedUser.userType === 'assessment') {
+        localStorage.removeItem('fs_assessmentResponses');
+        localStorage.removeItem('fs_assessmentNotes');
+        setAssessmentResponses({});
+        setAssessmentNotes({});
+      }
+      
+      // Set appropriate view
+      if (normalizedUser.role === 'siteadmin') {
+        setCurrentView('siteadmin');
+      } else if (normalizedUser.role === 'consultant') {
+        setCurrentView('consultant-dashboard');
+      } else if (normalizedUser.userType === 'assessment') {
+        setCurrentView('ma-welcome');
+      } else if (normalizedUser.userType === 'company') {
+        setCurrentView('admin');
+      } else {
+        setCurrentView('upload');
+      }
+      
+      if (normalizedUser.role !== 'consultant' && normalizedUser.role !== 'siteadmin') {
+        setSelectedCompanyId(user.companyId || '');
+      }
+      
+      setLoginEmail('');
+      setLoginPassword('');
+      setLoginError('');
+    } catch (error) {
+      console.error('Error completing MFA enrollment:', error);
+      setLoginError('Failed to complete login after MFA setup');
+    }
+  };
+
+  const handleMFAVerificationComplete = async () => {
+    console.log('✅ MFA verification completed');
+    setShowMFAVerification(false);
+    
+    // After verification, continue with normal login flow
+    try {
+      const { getSession } = await import('next-auth/react');
+      await getSession(); // Refresh session
+      
+      // Get user data using session (no password required)
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (!response.ok) {
+        console.error('❌ Failed to get user data after MFA verification');
+        setLoginError('Failed to complete login after MFA verification');
+        return;
+      }
+      
+      const { user } = await response.json();
+      console.log('✅ User data retrieved after MFA verification:', user);
+      
+      // Continue with normal login flow (same as above)
+      const normalizedUser = {
+        ...user,
+        role: user.role.toLowerCase(),
+        userType: user.userType?.toLowerCase(),
+        consultantCompanyName: user.consultantCompanyName,
+        consultantType: user.consultantType,
+        consultantId: user.consultantId,
+        isPrimaryContact: user.isPrimaryContact
+      };
+      
+      setCurrentUser(normalizedUser);
+      setIsLoggedIn(true);
+      
+      // Clear assessment data for assessment users
+      if (normalizedUser.userType === 'assessment') {
+        localStorage.removeItem('fs_assessmentResponses');
+        localStorage.removeItem('fs_assessmentNotes');
+        setAssessmentResponses({});
+        setAssessmentNotes({});
+      }
+      
+      // Set appropriate view
+      if (normalizedUser.role === 'siteadmin') {
+        setCurrentView('siteadmin');
+      } else if (normalizedUser.role === 'consultant') {
+        setCurrentView('consultant-dashboard');
+      } else if (normalizedUser.userType === 'assessment') {
+        setCurrentView('ma-welcome');
+      } else if (normalizedUser.userType === 'company') {
+        setCurrentView('admin');
+      } else {
+        setCurrentView('upload');
+      }
+      
+      if (normalizedUser.role !== 'consultant' && normalizedUser.role !== 'siteadmin') {
+        setSelectedCompanyId(user.companyId || '');
+      }
+      
+      setLoginEmail('');
+      setLoginPassword('');
+      setLoginError('');
+    } catch (error) {
+      console.error('Error completing MFA verification:', error);
+      setLoginError('Failed to complete login after MFA verification');
+    }
+  };
+
+  const handleMFACancel = () => {
+    console.log('❌ MFA verification cancelled');
+    setShowMFAVerification(false);
+    setShowMFAEnrollment(false);
+    setMfaUserId('');
+    setMfaUserEmail('');
+    setLoginError('Login cancelled');
+  };
+
   const handleRegisterConsultant = async () => {
     setLoginError('');
     setIsLoading(true);
@@ -2220,6 +2711,7 @@ function FinancialScorePage() {
     }
     
     try {
+      // Register the user
       const { user } = await authApi.register({
         name: loginName,
         email: loginEmail,
@@ -2234,6 +2726,36 @@ function FinancialScorePage() {
         companyZip: loginCompanyZip,
         companyWebsite: loginCompanyWebsite || undefined
       });
+      
+      // Create NextAuth session after registration
+      const { signIn, getSession } = await import('next-auth/react');
+      const signInResult = await signIn('credentials', {
+        email: loginEmail,
+        password: loginPassword,
+        redirect: false,
+      });
+      
+      if (signInResult?.error || !signInResult?.ok) {
+        console.error('Failed to create session after registration');
+        setLoginError('Registration successful but login failed. Please try logging in.');
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Verify session was created successfully
+      const session = await getSession();
+      console.log('🔐 NextAuth session after registration:', session ? 'EXISTS' : 'MISSING');
+      
+      if (!session) {
+        setLoginError('Registration successful but session creation failed. Please try logging in.');
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Small delay to ensure session is fully propagated
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       // Normalize role and userType to lowercase for frontend compatibility
       const normalizedUser = {
@@ -2289,7 +2811,12 @@ function FinancialScorePage() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Sign out from NextAuth
+    const { signOut } = await import('next-auth/react');
+    await signOut({ redirect: false });
+    
+    // Clear application state
     setCurrentUser(null);
     setIsLoggedIn(false);
     setCurrentView('login');
@@ -2300,6 +2827,94 @@ function FinancialScorePage() {
     setColumns([]);
     localStorage.removeItem('fs_currentUser');
     localStorage.removeItem('fs_selectedCompanyId');
+  };
+
+  // Load master data and extract categories for dynamic goals
+  const loadMasterDataForGoals = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+
+    try {
+      console.log('🎯 Loading master data for goals:', selectedCompanyId);
+      const response = await fetch(`/api/master-data?companyId=${selectedCompanyId}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(`Failed to load master data: ${data.error}`);
+        return;
+      }
+
+      // Extract categories from master data
+      const categories = extractCategoriesFromMasterData(data.monthlyData);
+      setMasterDataCategories(categories);
+
+      console.log('✅ Loaded categories from master data:', categories.length);
+      alert(`Loaded ${categories.length} expense categories from master data`);
+
+    } catch (error) {
+      console.error('Error loading master data:', error);
+      alert('Failed to load master data');
+    }
+  };
+
+  // Helper function to get nested object values
+  const getNestedValue = (obj: any, path: string) => {
+    return path.split('.').reduce((current, key) => current?.[key], obj);
+  };
+
+  // Extract COGS and expense categories from master data
+  const extractCategoriesFromMasterData = (monthlyData: any[]) => {
+    const cogsCategories = new Set<string>();
+    const expenseCategories = new Set<string>();
+
+    monthlyData.forEach(month => {
+      // Extract COGS categories
+      if (month.incomeStatement?.cogs) {
+        Object.keys(month.incomeStatement.cogs).forEach(key => {
+          if (month.incomeStatement.cogs[key] && month.incomeStatement.cogs[key] !== 0) {
+            cogsCategories.add(key);
+          }
+        });
+      }
+
+      // Extract operating expense categories
+      if (month.incomeStatement?.operatingExpenses) {
+        Object.keys(month.incomeStatement.operatingExpenses).forEach(key => {
+          if (month.incomeStatement.operatingExpenses[key] && month.incomeStatement.operatingExpenses[key] !== 0) {
+            expenseCategories.add(key);
+          }
+        });
+      }
+    });
+
+    // Convert to array format expected by goals table
+    const categories: any[] = [];
+
+    // Add COGS categories
+    Array.from(cogsCategories).sort().forEach(key => {
+      categories.push({
+        key: `cogs_${key}`,
+        label: `COGS - ${key.charAt(0).toUpperCase() + key.slice(1)}`,
+        category: 'COGS',
+        masterDataKey: key,
+        masterDataPath: `incomeStatement.cogs.${key}`
+      });
+    });
+
+    // Add expense categories
+    Array.from(expenseCategories).sort().forEach(key => {
+      categories.push({
+        key: `expense_${key}`,
+        label: `${key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')}`,
+        category: 'Expense',
+        masterDataKey: key,
+        masterDataPath: `incomeStatement.operatingExpenses.${key}`
+      });
+    });
+
+    return categories;
   };
 
   const addCompany = async () => {
@@ -2385,6 +3000,7 @@ function FinancialScorePage() {
     try {
       const response = await fetch('/api/consultants/team', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           consultantId: currentUser.consultantId,
@@ -2513,6 +3129,12 @@ function FinancialScorePage() {
         // Update sync timestamp - this will trigger the useEffect to reload data
         setQbLastSync(new Date());
         
+        // Clear the master data cache so Data Review tab shows updated data
+        if (selectedCompanyId) {
+          masterDataStore.clearCompanyCache(selectedCompanyId);
+          console.log('🧹 Master data cache cleared after QuickBooks sync');
+        }
+        
         // Refresh QuickBooks status
         if (selectedCompanyId) {
           await checkQBStatus(selectedCompanyId);
@@ -2562,6 +3184,130 @@ function FinancialScorePage() {
     } catch (error: any) {
       console.error('QuickBooks disconnect error:', error);
       alert('Failed to disconnect QuickBooks: ' + (error.message || 'Unknown error'));
+    }
+  };
+
+  // Xero Functions
+  const checkXeroStatus = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/xero/status?companyId=${companyId}`);
+      const data = await response.json();
+      
+      if (data.connected) {
+        setXeroConnected(true);
+        setXeroStatus(data.status);
+        const newSyncTime = data.lastSyncAt ? new Date(data.lastSyncAt).getTime() : null;
+        const currentSyncTime = xeroLastSync ? xeroLastSync.getTime() : null;
+        if (newSyncTime !== currentSyncTime) {
+          setXeroLastSync(data.lastSyncAt ? new Date(data.lastSyncAt) : null);
+        }
+        setXeroError(data.errorMessage);
+      } else {
+        setXeroConnected(false);
+        setXeroStatus('NOT_CONNECTED');
+        if (xeroLastSync !== null) {
+          setXeroLastSync(null);
+        }
+        setXeroError(null);
+      }
+    } catch (error) {
+      console.error('Failed to check Xero status:', error);
+      setXeroError('Failed to check connection status');
+    }
+  };
+
+  const connectXero = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/xero/auth?companyId=${selectedCompanyId}`);
+      const data = await response.json();
+      
+      if (data.authUri) {
+        window.location.href = data.authUri;
+      } else {
+        throw new Error('Failed to generate authorization URL');
+      }
+    } catch (error) {
+      console.error('Failed to initiate Xero connection:', error);
+      alert('Failed to connect to Xero. Please try again.');
+    }
+  };
+
+  const syncXero = async () => {
+    if (!selectedCompanyId || !currentUser) {
+      alert('Please select a company first');
+      return;
+    }
+
+    setXeroSyncing(true);
+    setXeroError(null);
+
+    try {
+      const response = await fetch('/api/xero/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          companyId: selectedCompanyId,
+          userId: currentUser.id
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setXeroLastSync(new Date());
+        
+        if (selectedCompanyId) {
+          await checkXeroStatus(selectedCompanyId);
+        }
+        
+        alert(`Xero data synced successfully! ${data.recordsImported || 0} financial records imported.`);
+      } else {
+        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
+        throw new Error(errorMsg);
+      }
+    } catch (error: any) {
+      console.error('Xero sync error:', error);
+      const errorMessage = error.message || 'Failed to sync data';
+      setXeroError(errorMessage);
+      alert('Failed to sync Xero data:\n\n' + errorMessage);
+    } finally {
+      setXeroSyncing(false);
+    }
+  };
+
+  const disconnectXero = async () => {
+    if (!selectedCompanyId) return;
+
+    if (!confirm('Are you sure you want to disconnect Xero? You can reconnect anytime.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/xero/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setXeroConnected(false);
+        setXeroStatus('NOT_CONNECTED');
+        setXeroLastSync(null);
+        setXeroError(null);
+        alert('Xero disconnected successfully');
+      } else {
+        throw new Error(data.error || 'Disconnect failed');
+      }
+    } catch (error: any) {
+      console.error('Xero disconnect error:', error);
+      alert('Failed to disconnect Xero: ' + (error.message || 'Unknown error'));
     }
   };
 
@@ -2921,13 +3667,23 @@ function FinancialScorePage() {
   };
 
   const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    console.log('📁 handleFile called');
     const f = e.target.files?.[0];
-    if (!f) return;
-    if (!selectedCompanyId) { alert('Please select a company first'); return; }
+    if (!f) {
+      console.log('❌ No file selected');
+      return;
+    }
+    if (!selectedCompanyId) {
+      console.log('❌ No company selected');
+      alert('Please select a company first');
+      return;
+    }
+    console.log('✅ File selected:', f.name, 'Company:', selectedCompanyId);
 
     setFile(f);
     setError(null);
     setIsFreshUpload(true);
+    console.log('📤 Set isFreshUpload=true, processing file...');
     const ab = await f.arrayBuffer();
     const wb = XLSX.read(ab, { cellDates: false });
     
@@ -3059,28 +3815,34 @@ function FinancialScorePage() {
     }));
   }, [rawRows, mapping, loadedMonthlyData]).map(m => {
     // Calculate Total Operating Expenses using standard chart of accounts (same as Data Review)
+    // Use the SAME calculation as Data Review for Total Operating Expenses
     const opexCategories = [
-      'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
-      'insurance', 'rent', 'infrastructure', 'autoTravel',
-      'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
+      'payroll', 'ownerBasePay', 'ownersRetirement', 'professionalFees',
+      'rent', 'utilities', 'infrastructure', 'autoTravel', 'insurance',
+      'salesExpense', 'subcontractors', 'depreciationAmortization', 'interestExpense',
+      'marketing', 'benefits', 'taxLicense', 'phoneComm', 'trainingCert',
+      'mealsEntertainment', 'otherExpense'
     ];
     const totalOperatingExpense = opexCategories.reduce((sum, key) => sum + ((m as any)[key] || 0), 0);
 
-    // Use calculated total if expense field is not set or is 0
-    const expense = m.expense || totalOperatingExpense;
+    // Always use calculated total operating expenses (matches Data Review)
+    const expense = totalOperatingExpense;
 
     // Calculate Gross Profit, EBIT and EBITDA for each month
     const revenue = m.revenue || 0;
     const cogsTotal = m.cogsTotal || 0;
     const interestExpense = m.interestExpense || 0;
     const depreciationAmortization = m.depreciationAmortization || 0;
-    
+    const netProfit = m.netProfit || 0;
+
     // Gross Profit = Revenue - COGS
     const grossProfit = revenue - cogsTotal;
-    // EBIT = Revenue - COGS - Operating Expenses + Interest Expense (add back interest)
-    const ebit = revenue - cogsTotal - expense + interestExpense;
-    // EBITDA = EBIT + Depreciation
-    const ebitda = ebit + depreciationAmortization;
+    // EBIT = Revenue - COGS - Operating Expenses (interest already included in operating expenses)
+    const ebit = revenue - cogsTotal - expense;
+    // EBITDA = EBIT + Interest Expense + Depreciation + Amortization
+    // (Add back interest expense that was included in operating expenses)
+    const ebitda = ebit + interestExpense + depreciationAmortization;
+
     
     return {
       ...m,
@@ -3225,9 +3987,9 @@ function FinancialScorePage() {
       
       const cur = monthly[i];
       const currentAssets = cur.tca || ((cur.cash || 0) + (cur.ar || 0) + (cur.inventory || 0) + (cur.otherCA || 0));
-      const currentLiab = cur.tcl || ((cur.ap || 0) + (cur.otherCL || 0));
+      const currentLiab = Math.abs(cur.tcl || ((cur.ap || 0) + (cur.otherCL || 0)));
       const quickAssets = (cur.cash || 0) + (cur.ar || 0);
-      
+
       const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
       const quickRatio = currentLiab > 0 ? quickAssets / currentLiab : 0;
       
@@ -3253,7 +4015,7 @@ function FinancialScorePage() {
       
       // Sales/Working Capital: Monthly revenue / Average WC (current + prior month)
       const priorMonthCurrentAssets = i > 0 ? (priorMonth.tca || ((priorMonth.cash || 0) + (priorMonth.ar || 0) + (priorMonth.inventory || 0) + (priorMonth.otherCA || 0))) : currentAssets;
-      const priorMonthCurrentLiab = i > 0 ? (priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.otherCL || 0))) : currentLiab;
+      const priorMonthCurrentLiab = i > 0 ? Math.abs(priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.otherCL || 0))) : currentLiab;
       const priorMonthWorkingCap = priorMonthCurrentAssets - priorMonthCurrentLiab;
       const avgWorkingCap = (workingCap + priorMonthWorkingCap) / 2;
       const salesWC = avgWorkingCap !== 0 ? (cur.revenue || 0) / avgWorkingCap : 0;
@@ -3421,9 +4183,10 @@ function FinancialScorePage() {
     // Working Capital Analysis
     const lastMonth = monthly[monthly.length - 1];
     const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
-    const currentLiab = lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0));
+    const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0)));
     const workingCapital = currentAssets - currentLiab;
-    const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : 0;
+    // Fix: If no current liabilities but have current assets, treat as very strong (>10.0), not 0
+    const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : (currentAssets > 0 ? 999 : 0);
     
     if (workingCapital > 0 && wcRatioMDA >= 1.5) {
       strengths.push(`Positive working capital of $${(workingCapital / 1000).toFixed(1)}K with strong WC ratio of ${wcRatioMDA.toFixed(1)} supports operational flexibility.`);
@@ -3951,53 +4714,71 @@ function FinancialScorePage() {
     printNext();
   };
 
-  // LOGIN VIEW
   if (!isLoggedIn) {
     return (
-      <LoginView
-        loginEmail={loginEmail}
-        setLoginEmail={setLoginEmail}
-        loginPassword={loginPassword}
-        setLoginPassword={setLoginPassword}
-        loginName={loginName}
-        setLoginName={setLoginName}
-        loginPhone={loginPhone}
-        setLoginPhone={setLoginPhone}
-        loginCompanyName={loginCompanyName}
-        setLoginCompanyName={setLoginCompanyName}
-        loginCompanyAddress1={loginCompanyAddress1}
-        setLoginCompanyAddress1={setLoginCompanyAddress1}
-        loginCompanyAddress2={loginCompanyAddress2}
-        setLoginCompanyAddress2={setLoginCompanyAddress2}
-        loginCompanyCity={loginCompanyCity}
-        setLoginCompanyCity={setLoginCompanyCity}
-        loginCompanyState={loginCompanyState}
-        setLoginCompanyState={setLoginCompanyState}
-        loginCompanyZip={loginCompanyZip}
-        setLoginCompanyZip={setLoginCompanyZip}
-        loginCompanyWebsite={loginCompanyWebsite}
-        setLoginCompanyWebsite={setLoginCompanyWebsite}
-        isRegistering={isRegistering}
-        setIsRegistering={setIsRegistering}
-        loginError={loginError}
-        setLoginError={setLoginError}
-        showPassword={showPassword}
-        setShowPassword={setShowPassword}
-        showForgotPassword={showForgotPassword}
-        setShowForgotPassword={setShowForgotPassword}
-        resetEmail={resetEmail}
-        setResetEmail={setResetEmail}
-        resetSuccess={resetSuccess}
-        setResetSuccess={setResetSuccess}
-        isLoading={isLoading}
-        setIsLoading={setIsLoading}
-        handleLogin={handleLogin}
-        handleRegisterConsultant={handleRegisterConsultant}
-      />
+      <>
+        <LoginView
+          loginEmail={loginEmail}
+          setLoginEmail={setLoginEmail}
+          loginPassword={loginPassword}
+          setLoginPassword={setLoginPassword}
+          loginName={loginName}
+          setLoginName={setLoginName}
+          loginPhone={loginPhone}
+          setLoginPhone={setLoginPhone}
+          loginCompanyName={loginCompanyName}
+          setLoginCompanyName={setLoginCompanyName}
+          loginCompanyAddress1={loginCompanyAddress1}
+          setLoginCompanyAddress1={setLoginCompanyAddress1}
+          loginCompanyAddress2={loginCompanyAddress2}
+          setLoginCompanyAddress2={setLoginCompanyAddress2}
+          loginCompanyCity={loginCompanyCity}
+          setLoginCompanyCity={setLoginCompanyCity}
+          loginCompanyState={loginCompanyState}
+          setLoginCompanyState={setLoginCompanyState}
+          loginCompanyZip={loginCompanyZip}
+          setLoginCompanyZip={setLoginCompanyZip}
+          loginCompanyWebsite={loginCompanyWebsite}
+          setLoginCompanyWebsite={setLoginCompanyWebsite}
+          isRegistering={isRegistering}
+          setIsRegistering={setIsRegistering}
+          loginError={loginError}
+          setLoginError={setLoginError}
+          showPassword={showPassword}
+          setShowPassword={setShowPassword}
+          showForgotPassword={showForgotPassword}
+          setShowForgotPassword={setShowForgotPassword}
+          resetEmail={resetEmail}
+          setResetEmail={setResetEmail}
+          resetSuccess={resetSuccess}
+          setResetSuccess={setResetSuccess}
+          isLoading={isLoading}
+          setIsLoading={setIsLoading}
+          handleLogin={handleLogin}
+          handleRegisterConsultant={handleRegisterConsultant}
+        />
+        
+        {/* MFA Enrollment Modal */}
+        {showMFAEnrollment && (
+          <MFAEnrollmentModal
+            userId={mfaUserId}
+            userEmail={mfaUserEmail}
+            onComplete={handleMFAEnrollmentComplete}
+          />
+        )}
+        
+        {/* MFA Verification Modal */}
+        {showMFAVerification && (
+          <MFAVerificationModal
+            userId={mfaUserId}
+            userEmail={mfaUserEmail}
+            onSuccess={handleMFAVerificationComplete}
+            onCancel={handleMFACancel}
+          />
+        )}
+      </>
     );
   }
-
-  console.log('🎨 RENDER:', { currentView, isLoggedIn, userType: currentUser?.userType, role: currentUser?.role });
 
   return (
     <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -4056,7 +4837,7 @@ function FinancialScorePage() {
                 }}
               >
                 <div style={{ fontSize: '11px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Company</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e40af' }}>
+                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e40af' }}>
                   {companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || 'Loading...' : '')}
                 </div>
                 {/* Show Advisor Name for Company Users */}
@@ -4076,6 +4857,52 @@ function FinancialScorePage() {
           )}
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
+            {/* Valuation Section */}
+            <div style={{ marginBottom: '1px' }}>
+              <h3 
+                onClick={() => setCurrentView('valuation')}
+                style={{ 
+                  fontSize: '14px', 
+                  fontWeight: '700', 
+                  color: currentView === 'valuation' ? '#667eea' : '#1e293b',
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.5px',
+                  padding: '1px 24px',
+                  marginBottom: '1px',
+                  cursor: 'pointer',
+                  transition: 'color 0.2s',
+                  borderLeft: currentView === 'valuation' ? '4px solid #667eea' : '4px solid transparent'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'valuation' ? '#667eea' : '#1e293b'}
+              >
+                Valuation
+              </h3>
+            </div>
+
+            {/* Financial Statements Section */}
+            <div style={{ marginBottom: '1px' }}>
+              <h3 
+                onClick={() => setCurrentView('financial-statements')}
+                style={{ 
+                  fontSize: '14px', 
+                  fontWeight: '700', 
+                  color: currentView === 'financial-statements' ? '#667eea' : '#1e293b',
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.5px',
+                  padding: '1px 24px',
+                  marginBottom: '1px',
+                  cursor: 'pointer',
+                  transition: 'color 0.2s',
+                  borderLeft: currentView === 'financial-statements' ? '4px solid #667eea' : '4px solid transparent'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'financial-statements' ? '#667eea' : '#1e293b'}
+              >
+                Financial Statements
+              </h3>
+            </div>
+
             {/* Financial Score Section */}
             <div style={{ marginBottom: '1px' }}>
               <h3 
@@ -4086,7 +4913,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -4131,7 +4958,7 @@ function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-intro' && '✓ '}Introduction
+                    {currentView === 'fs-intro' && '✔ '}Introduction
                   </div>
                   <div
                     onClick={() => setCurrentView('fs-score')}
@@ -4159,7 +4986,7 @@ function FinancialScorePage() {
                       }
                     }}
                   >
-                    {currentView === 'fs-score' && '✓ '}Financial Score
+                    {currentView === 'fs-score' && '✔ '}Financial Score
                   </div>
                 </div>
               )}
@@ -4176,7 +5003,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -4221,7 +5048,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-welcome' && '✓ '}Welcome
+                  {currentView === 'ma-welcome' && '✔ '}Welcome
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-questionnaire')}
@@ -4249,7 +5076,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-questionnaire' && '✓ '}Questionnaire
+                  {currentView === 'ma-questionnaire' && '✔ '}Questionnaire
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-your-results')}
@@ -4277,7 +5104,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-your-results' && '✓ '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
+                  {currentView === 'ma-your-results' && '✔ '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scores-summary')}
@@ -4305,7 +5132,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scores-summary' && '✓ '}Scores Summary
+                  {currentView === 'ma-scores-summary' && '✔ '}Scores Summary
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-scoring-guide')}
@@ -4333,7 +5160,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-scoring-guide' && '✓ '}Scoring Guide
+                  {currentView === 'ma-scoring-guide' && '✔ '}Scoring Guide
                 </div>
                 <div
                   onClick={() => setCurrentView('ma-charts')}
@@ -4361,7 +5188,7 @@ function FinancialScorePage() {
                     }
                   }}
                 >
-                  {currentView === 'ma-charts' && '✓ '}Charts
+                  {currentView === 'ma-charts' && '✔ '}Charts
                 </div>
               </div>
               )}
@@ -4382,7 +5209,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
@@ -4410,8 +5237,8 @@ function FinancialScorePage() {
                     color: currentView === 'custom-print' ? '#667eea' : '#1e293b',
                     textTransform: 'uppercase', 
                     letterSpacing: '0.5px',
-                    padding: '8px 24px',
-                    marginBottom: '8px',
+                    padding: '1px 24px',
+                    marginBottom: '1px',
                     cursor: 'pointer',
                     transition: 'color 0.2s',
                     borderLeft: currentView === 'custom-print' ? '4px solid #667eea' : '4px solid transparent'
@@ -4427,172 +5254,122 @@ function FinancialScorePage() {
               </div>
             )}
 
-            {/* Consultant Dashboard Section */}
-            {currentUser?.role === 'consultant' && (
+            {/* Company Dashboard Section - For Business Users (Company Users) */}
+            {currentUser?.role === 'user' && currentUser?.userType === 'company' && (
               <div style={{ marginBottom: '12px' }}>
                 <h3 
-                  onClick={() => currentUser.role === 'consultant' ? setCurrentView('consultant-dashboard') : setCurrentView('admin')}
+                  onClick={() => {
+                    if (selectedCompanyId) {
+                      setCurrentView('dashboard');
+                    } else {
+                      setCurrentView('admin');
+                      setAdminDashboardTab('company-management');
+                    }
+                  }}
                   style={{ 
                     fontSize: '14px', 
                     fontWeight: '700', 
-                    color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b',
+                    color: (currentView === 'dashboard' || currentView === 'admin') ? '#667eea' : '#1e293b',
                     textTransform: 'uppercase', 
                     letterSpacing: '0.5px',
                     padding: '8px 24px',
                     marginBottom: '8px',
                     cursor: 'pointer',
                     transition: 'color 0.2s',
-                    borderLeft: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '4px solid #667eea' : '4px solid transparent'
+                    borderLeft: (currentView === 'dashboard' || currentView === 'admin') ? '4px solid #667eea' : '4px solid transparent'
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.color = '#667eea';
-                    e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                    e.currentTarget.title = 'Company Dashboard';
                   }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'dashboard' || currentView === 'admin') ? '#667eea' : '#1e293b'}
                 >
-                  {(() => {
-                    if (currentUser.consultantType === 'business') {
-                      return 'Business Dashboard';
-                    }
-                    // For company users, show their consultant's company name
-                    if (currentUser.role === 'user' && currentUser.userType === 'company' && currentUser.consultantId) {
-                      const consultant = consultants.find(c => c.id === currentUser.consultantId);
-                      if (consultant && consultant.companyName) {
-                        return `Advisor: ${consultant.companyName}`;
-                      }
-                      return 'Dashboard';
-                    }
-                    // For consultants, show company name or default
-                    return currentUser.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard';
-                  })()}
+                  Company Dashboard
                 </h3>
-                
-                {/* Selected Company Name Display for Business Users */}
-                {currentUser.consultantType === 'business' && selectedCompanyId && Array.isArray(companies) && companies.find(c => c.id === selectedCompanyId) && (
-                  <div style={{ 
-                    paddingLeft: '28px', 
-                    marginBottom: '12px',
-                    paddingBottom: '12px',
-                    borderBottom: '2px solid #e2e8f0'
-                  }}>
-                    <div 
-                      onClick={() => {
-                        setCurrentView('admin');
-                        setAdminDashboardTab('company-management');
-                      }}
-                      style={{ 
-                        fontSize: '16px', 
-                        fontWeight: '600', 
-                        color: '#667eea',
-                        padding: '8px 12px',
-                        background: '#f0f9ff',
-                        borderRadius: '8px',
-                        border: '2px solid #bfdbfe',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#e0f2fe';
-                        e.currentTarget.style.border = '2px solid #7dd3fc';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#f0f9ff';
-                        e.currentTarget.style.border = '2px solid #bfdbfe';
-                      }}
-                    >
-                      {Array.isArray(companies) && companies.find(c => c.id === selectedCompanyId)?.name}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
-            {/* Getting Started & Legal Links Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
-              <a
-                href="/getting-started"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                ℹ️ Getting Started
-              </a>
-              <a
-                href="/privacy-policy"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                🛡️ Privacy Policy
-              </a>
-              <a
-                href="/license-agreement"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                📄 License Agreement
-              </a>
+            {/* User/Consultant Name Display - Now acts as dashboard link */}
+            <div 
+              onClick={() => {
+                if (currentUser?.role === 'consultant') {
+                  setCurrentView('consultant-dashboard');
+                } else if (currentUser?.userType === 'company') {
+                  setCurrentView('admin');
+                }
+              }}
+              style={{ 
+                marginTop: 'auto', 
+                paddingTop: '16px', 
+                paddingBottom: '8px', 
+                borderTop: '1px solid #e2e8f0', 
+                paddingLeft: '24px', 
+                paddingRight: '24px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                borderRadius: '6px',
+                marginLeft: '0',
+                marginRight: '0',
+                marginBottom: '0'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f0f9ff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px', paddingLeft: '24px' }}>
+                {currentUser?.role === 'consultant' ? 'Consultant' : 'User'}
+              </div>
+              <div style={{ 
+                fontSize: '14px', 
+                fontWeight: '600', 
+                color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b',
+                paddingLeft: '24px',
+                transition: 'color 0.2s'
+              }}>
+                {currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
+              </div>
             </div>
 
-            {/* Contact Support Section */}
-            <div style={{ paddingTop: '12px' }}>
+            {/* User Info and Logout Section */}
+            <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+              <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Logged in as
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+                  {currentUser?.name}
+                </div>
+                <button 
+                  onClick={handleLogout} 
+                  style={{ 
+                    width: '100%',
+                    padding: '10px 16px', 
+                    background: '#ef4444', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '8px', 
+                    fontSize: '14px', 
+                    fontWeight: '600', 
+                    cursor: 'pointer',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                >
+                  🚪 LOGOUT
+                </button>
+              </div>
+            </div>
+
+            {/* Support Section */}
+            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
               <a
-                href="mailto:steve@stevebuck.us"
+                href="/support"
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{
                   display: 'block',
                   fontSize: '14px',
@@ -4613,7 +5390,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                💬 Contact Support
+                🆘 SUPPORT
               </a>
             </div>
           </nav>
@@ -4646,7 +5423,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -4766,7 +5543,7 @@ function FinancialScorePage() {
                   color: '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
-                  padding: '4px 24px',
+                  padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
@@ -4782,92 +5559,43 @@ function FinancialScorePage() {
               </h3>
             </div>
 
-            {/* Getting Started & Legal Links Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
-              <a
-                href="/getting-started"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                ℹ️ Getting Started
-              </a>
-              <a
-                href="/privacy-policy"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                🛡️ Privacy Policy
-              </a>
-              <a
-                href="/license-agreement"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#667eea',
-                  textDecoration: 'none',
-                  padding: '12px 24px',
-                  transition: 'all 0.2s',
-                  borderRadius: '6px',
-                  margin: '0 12px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
-                }}
-              >
-                📄 License Agreement
-              </a>
+            {/* User Info and Logout Section */}
+            <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+              <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Logged in as
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+                  {currentUser?.name}
+                </div>
+                <button 
+                  onClick={handleLogout} 
+                  style={{ 
+                    width: '100%',
+                    padding: '10px 16px', 
+                    background: '#ef4444', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '8px', 
+                    fontSize: '14px', 
+                    fontWeight: '600', 
+                    cursor: 'pointer',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+                >
+                  🚪 LOGOUT
+                </button>
+              </div>
             </div>
 
-            {/* Contact Support Section */}
-            <div style={{ paddingTop: '12px' }}>
+            {/* Support Section */}
+            <div style={{ marginTop: '0', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
               <a
-                href="mailto:steve@stevebuck.us"
+                href="/support"
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{
                   display: 'block',
                   fontSize: '14px',
@@ -4888,7 +5616,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#667eea';
                 }}
               >
-                💬 Contact Support
+                🆘 SUPPORT
               </a>
             </div>
           </nav>
@@ -4983,6 +5711,9 @@ function FinancialScorePage() {
               setLoadedConsultantId={setLoadedConsultantId}
               setCompanies={setCompanies}
               currentUser={currentUser}
+              setSelectedCompanyId={setSelectedCompanyId}
+              setCompanyToDelete={setCompanyToDelete}
+              setShowDeleteConfirmation={setShowDeleteConfirmation}
               newSiteAdminFirstName={newSiteAdminFirstName}
               setNewSiteAdminFirstName={setNewSiteAdminFirstName}
               newSiteAdminLastName={newSiteAdminLastName}
@@ -5049,6 +5780,9 @@ function FinancialScorePage() {
                 setCompanyToDelete={setCompanyToDelete}
                 setShowDeleteConfirmation={setShowDeleteConfirmation}
                 isLoading={isLoading}
+                selectedCompanyId={selectedCompanyId}
+                monthly={monthly}
+                companyName={companyName}
               />
             </div>
           )}
@@ -5705,6 +6439,102 @@ function FinancialScorePage() {
                 </div>
               </div>
 
+              {/* Xero Connection */}
+              <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#13B5EA' }}>X</div>
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Xero</h3>
+                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Xero Accounting Software</p>
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ 
+                    flex: 1, 
+                    padding: '12px', 
+                    background: xeroConnected && xeroStatus === 'ACTIVE' ? '#d1fae5' : xeroStatus === 'ERROR' ? '#fee2e2' : xeroStatus === 'EXPIRED' ? '#fed7aa' : '#fef3c7', 
+                    borderRadius: '8px', 
+                    border: `1px solid ${xeroConnected && xeroStatus === 'ACTIVE' ? '#10b981' : xeroStatus === 'ERROR' ? '#ef4444' : xeroStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: xeroConnected && xeroStatus === 'ACTIVE' ? '#065f46' : xeroStatus === 'ERROR' ? '#991b1b' : xeroStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
+                      {xeroConnected && xeroStatus === 'ACTIVE' ? '✅ Connected' : xeroStatus === 'ERROR' ? '❌ Error' : xeroStatus === 'EXPIRED' ? '⚠️ Token Expired' : '⚠️ Status: Not Connected'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: xeroConnected && xeroStatus === 'ACTIVE' ? '#065f46' : xeroStatus === 'ERROR' ? '#991b1b' : xeroStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
+                      {xeroError || (xeroConnected && xeroStatus === 'ACTIVE' ? (xeroLastSync ? `Last synced: ${xeroLastSync.toLocaleString()}` : 'Ready to sync') : xeroStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  {!xeroConnected || xeroStatus === 'EXPIRED' || xeroStatus === 'ERROR' ? (
+                    <button
+                      onClick={connectXero}
+                      style={{
+                        padding: '12px 24px',
+                        background: '#13B5EA',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#0E8FBA'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#13B5EA'}
+                    >
+                      {xeroConnected ? 'Reconnect' : 'Connect'} to Xero
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={syncXero}
+                        disabled={xeroSyncing}
+                        style={{
+                          padding: '12px 24px',
+                          background: xeroSyncing ? '#94a3b8' : '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: xeroSyncing ? 'not-allowed' : 'pointer',
+                          transition: 'background 0.2s',
+                          opacity: xeroSyncing ? 0.7 : 1
+                        }}
+                        onMouseEnter={(e) => !xeroSyncing && (e.currentTarget.style.background = '#5568d3')}
+                        onMouseLeave={(e) => !xeroSyncing && (e.currentTarget.style.background = '#667eea')}
+                      >
+                        {xeroSyncing ? 'Syncing...' : 'Sync Data'}
+                      </button>
+                      <button
+                        onClick={disconnectXero}
+                        disabled={xeroSyncing}
+                        style={{
+                          padding: '12px 24px',
+                          background: 'white',
+                          color: '#ef4444',
+                          border: '2px solid #ef4444',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: xeroSyncing ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.2s',
+                          opacity: xeroSyncing ? 0.7 : 1
+                        }}
+                        onMouseEnter={(e) => !xeroSyncing && (e.currentTarget.style.background = '#fef2f2')}
+                        onMouseLeave={(e) => !xeroSyncing && (e.currentTarget.style.background = 'white')}
+                      >
+                        Disconnect
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
               {/* QuickBooks Data Verification */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
@@ -5985,22 +6815,136 @@ function FinancialScorePage() {
           )}
 
           {/* Payments Tab */}
-          {adminDashboardTab === 'payments' && selectedCompanyId && (
-            <PaymentsTab
-              selectedCompany={Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined}
-              selectedSubscriptionPlan={selectedSubscriptionPlan}
-              setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
-              activeSubscription={activeSubscription}
-              setActiveSubscription={setActiveSubscription}
-              loadingSubscription={loadingSubscription}
-              setShowCheckoutModal={setShowCheckoutModal}
-              setShowUpdatePaymentModal={setShowUpdatePaymentModal}
-              selectedCompanyId={selectedCompanyId}
-              subscriptionMonthlyPrice={subscriptionMonthlyPrice}
-              subscriptionQuarterlyPrice={subscriptionQuarterlyPrice}
-              subscriptionAnnualPrice={subscriptionAnnualPrice}
-            />
-          )}
+          {adminDashboardTab === 'payments' && selectedCompanyId && (() => {
+            const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+            
+            // Get pricing directly from company data (not state variables)
+            let monthlyPrice = selectedCompany?.subscriptionMonthlyPrice;
+            let quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice;
+            let annualPrice = selectedCompany?.subscriptionAnnualPrice;
+            
+            // Fall back to userDefinedAllocations if dedicated fields are null/undefined
+            if ((monthlyPrice === null || monthlyPrice === undefined) &&
+                selectedCompany?.userDefinedAllocations?.subscriptionPricing) {
+              monthlyPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.monthly;
+              quarterlyPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.quarterly;
+              annualPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.annual;
+            }
+            
+            // Check if company has explicit free pricing (isFree flag in userDefinedAllocations)
+            const userDefinedPricing = (selectedCompany as any)?.userDefinedAllocations?.subscriptionPricing;
+            const isExplicitlyFree = userDefinedPricing?.isFree === true;
+            
+            // Determine final pricing values
+            let finalMonthlyPrice: number;
+            let finalQuarterlyPrice: number;
+            let finalAnnualPrice: number;
+            
+            // Normalize pricing values to numbers (handle string "0" and number 0)
+            // Also handle the case where values might be 0, "0", or null/undefined
+            const normalizedMonthly = monthlyPrice != null ? Number(monthlyPrice) : null;
+            const normalizedQuarterly = quarterlyPrice != null ? Number(quarterlyPrice) : null;
+            const normalizedAnnual = annualPrice != null ? Number(annualPrice) : null;
+            
+            // Determine final pricing values
+            // Check if all prices are explicitly 0 (free pricing) - handle both string "0" and number 0
+            // Also check raw values in case normalization didn't work
+            const allPricesAreZero = (normalizedMonthly === 0 && normalizedQuarterly === 0 && normalizedAnnual === 0) ||
+                                    (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0);
+            
+            // Check if pricing is null/undefined and no userDefinedAllocations (use default pricing)
+            const pricingIsMissing = normalizedMonthly === null && normalizedQuarterly === null && normalizedAnnual === null && !userDefinedPricing;
+            
+            // CRITICAL: If company has $0 pricing, always use $0 (don't fall back to defaults)
+            if (isExplicitlyFree || allPricesAreZero) {
+              // Explicitly free (affiliate code with $0 pricing) - use $0
+              finalMonthlyPrice = 0;
+              finalQuarterlyPrice = 0;
+              finalAnnualPrice = 0;
+              console.log('✅ Company has $0 pricing - setting all prices to 0');
+            } else if (pricingIsMissing) {
+              // Company was created without affiliate code - use default pricing from SystemSettings
+              // For business users, use business pricing defaults; for consultants, use consultant defaults
+              const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
+              if (isBusinessUser) {
+                // Use business pricing defaults from SystemSettings (loaded in state)
+                finalMonthlyPrice = defaultBusinessMonthlyPrice ?? 195;
+                finalQuarterlyPrice = defaultBusinessQuarterlyPrice ?? 500;
+                finalAnnualPrice = defaultBusinessAnnualPrice ?? 1750;
+              } else {
+                // Consultant pricing from SystemSettings (loaded in state)
+                finalMonthlyPrice = defaultConsultantMonthlyPrice ?? 195;
+                finalQuarterlyPrice = defaultConsultantQuarterlyPrice ?? 500;
+                finalAnnualPrice = defaultConsultantAnnualPrice ?? 1750;
+              }
+            } else {
+              // Has pricing data - use it (or defaults for any null/undefined values)
+              // For business users, use business defaults; for consultants, use consultant defaults
+              const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
+              const defaultMonthly = isBusinessUser ? (defaultBusinessMonthlyPrice ?? 195) : (defaultConsultantMonthlyPrice ?? 195);
+              const defaultQuarterly = isBusinessUser ? (defaultBusinessQuarterlyPrice ?? 500) : (defaultConsultantQuarterlyPrice ?? 500);
+              const defaultAnnual = isBusinessUser ? (defaultBusinessAnnualPrice ?? 1750) : (defaultConsultantAnnualPrice ?? 1750);
+              
+              // Use normalized values if they exist, but preserve 0 values (don't replace 0 with defaults)
+              finalMonthlyPrice = (normalizedMonthly !== null && normalizedMonthly !== undefined) 
+                ? normalizedMonthly 
+                : ((monthlyPrice === 0) ? 0 : defaultMonthly);
+              finalQuarterlyPrice = (normalizedQuarterly !== null && normalizedQuarterly !== undefined) 
+                ? normalizedQuarterly 
+                : ((quarterlyPrice === 0) ? 0 : defaultQuarterly);
+              finalAnnualPrice = (normalizedAnnual !== null && normalizedAnnual !== undefined) 
+                ? normalizedAnnual 
+                : ((annualPrice === 0) ? 0 : defaultAnnual);
+              
+              // Double-check: if all final prices are 0, ensure they stay 0
+              if (finalMonthlyPrice === 0 && finalQuarterlyPrice === 0 && finalAnnualPrice === 0) {
+                console.log('✅ All final prices are 0 - confirming free pricing');
+              }
+            }
+            
+            // Debug logging
+            console.log('💰 PaymentsTab Pricing Debug:', {
+              companyId: selectedCompanyId,
+              companyName: selectedCompany?.name,
+              fromCompany: {
+                monthly: selectedCompany?.subscriptionMonthlyPrice,
+                quarterly: selectedCompany?.subscriptionQuarterlyPrice,
+                annual: selectedCompany?.subscriptionAnnualPrice
+              },
+              fromUserDefined: userDefinedPricing,
+              isExplicitlyFree,
+              rawValues: { monthlyPrice, quarterlyPrice, annualPrice },
+              normalizedValues: { normalizedMonthly, normalizedQuarterly, normalizedAnnual },
+              allPricesAreZero,
+              pricingIsMissing,
+              finalValues: { finalMonthlyPrice, finalQuarterlyPrice, finalAnnualPrice },
+              isFree: isExplicitlyFree || allPricesAreZero || (finalMonthlyPrice === 0 && finalQuarterlyPrice === 0 && finalAnnualPrice === 0),
+              defaultPricing: {
+                business: { monthly: defaultBusinessMonthlyPrice, quarterly: defaultBusinessQuarterlyPrice, annual: defaultBusinessAnnualPrice },
+                consultant: { monthly: defaultConsultantMonthlyPrice, quarterly: defaultConsultantQuarterlyPrice, annual: defaultConsultantAnnualPrice }
+              },
+              userType: currentUser?.userType,
+              role: currentUser?.role,
+              consultantId: currentUser?.consultantId
+            });
+            
+            return (
+              <PaymentsTab
+                selectedCompany={selectedCompany}
+                selectedSubscriptionPlan={selectedSubscriptionPlan}
+                setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
+                activeSubscription={activeSubscription}
+                setActiveSubscription={setActiveSubscription}
+                loadingSubscription={loadingSubscription}
+                setShowCheckoutModal={setShowCheckoutModal}
+                setShowUpdatePaymentModal={setShowUpdatePaymentModal}
+                selectedCompanyId={selectedCompanyId}
+                subscriptionMonthlyPrice={finalMonthlyPrice}
+                subscriptionQuarterlyPrice={finalQuarterlyPrice}
+                subscriptionAnnualPrice={finalAnnualPrice}
+              />
+            );
+          })()}
 
           {!selectedCompanyId && adminDashboardTab === 'payments' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
@@ -6008,7 +6952,46 @@ function FinancialScorePage() {
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and payments.</p>
             </div>
           )}
+        </div>
+      )}
 
+      {/* Covenants View - Accessible from header navigation */}
+      {currentView === 'covenants' && selectedCompanyId && (
+        <CovenantsTab
+          selectedCompanyId={selectedCompanyId}
+          currentUser={currentUser}
+          monthly={monthly}
+          companyName={companyName}
+        />
+      )}
+
+      {/* Covenants View - No Company Selected */}
+      {currentView === 'covenants' && !selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to manage covenants.</p>
+        </div>
+      )}
+
+      {/* Operations View - With Company Selected */}
+      {currentView === 'operations' && selectedCompanyId && (
+        <OperationsTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+        />
+      )}
+
+      {/* Operations View - No Company Selected */}
+      {currentView === 'operations' && !selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view operational data.</p>
+        </div>
+      )}
+
+      {/* Admin Dashboard */}
+      {currentView === 'admin' && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           {/* Checkout Modal */}
           {showCheckoutModal && selectedSubscriptionPlan && (() => {
             const planPrice = selectedSubscriptionPlan === 'monthly' ? (subscriptionMonthlyPrice ?? 0) :
@@ -6160,7 +7143,7 @@ function FinancialScorePage() {
                       
                       {/* Billing Address Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>📍 Billing Address</h4>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>🏠 Billing Address</h4>
                         
                         <div style={{ marginBottom: '12px' }}>
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
@@ -6393,7 +7376,7 @@ function FinancialScorePage() {
                   {/* Billing Address Section */}
                   <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
                     <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                      📍 Billing Address
+                      🏠 Billing Address
                     </h4>
 
                     <div style={{ marginBottom: '12px' }}>
@@ -6520,14 +7503,14 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !csvTrialBalanceData && !qbRawData && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '32px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
-                <p style={{ fontSize: '14px', color: '#94a3b8' }}>Sync QuickBooks data or upload a Trial Balance CSV to map accounts.</p>
+                <p style={{ fontSize: '14px', color: '#94a3b8' }}>Sync QuickBooks/Xero data or upload a Trial Balance CSV to map accounts.</p>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', maxWidth: '800px', margin: '0 auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', maxWidth: '1100px', margin: '0 auto' }}>
                 {/* QuickBooks Option */}
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
                   <div style={{ fontSize: '32px', marginBottom: '12px' }}>💻</div>
@@ -6549,6 +7532,28 @@ function FinancialScorePage() {
                     Connect QuickBooks
                   </button>
                 </div>
+
+                {/* Xero Option */}
+                <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '24px', border: '2px solid #fed7aa', textAlign: 'center' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>☁️</div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Xero API</div>
+                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to Xero to sync your financial data automatically.</p>
+                  <button
+                    onClick={() => setAdminDashboardTab('api-connections')}
+                    style={{
+                      padding: '10px 20px',
+                      background: '#fb923c',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Connect Xero
+                  </button>
+                </div>
                 
                 {/* Trial Balance Upload Option */}
                 <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '24px', border: '2px solid #86efac' }}>
@@ -6559,22 +7564,41 @@ function FinancialScorePage() {
                     type="file" 
                     accept=".csv" 
                     onChange={async (e) => {
+                      console.log('📁 CSV File selected');
                       const file = e.target.files?.[0];
-                      if (!file) return;
+                      if (!file) {
+                        console.log('❌ No file selected');
+                        return;
+                      }
+                      
+                      console.log('✅ File:', file.name, 'Size:', file.size, 'Company:', selectedCompanyId);
+                      console.log('👤 Current User:', currentUser?.email || 'NOT SET');
                       
                       try {
+                        console.log('📖 Reading file text...');
                         const text = await file.text();
+                        console.log('✅ File read, length:', text.length);
+                        
+                        console.log('🔄 Parsing Trial Balance CSV...');
                         const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
+                        console.log('✅ Parsed successfully:', parsed);
+                        
                         const csvData = {
                           ...parsed,
                           _companyId: selectedCompanyId,
                           fileName: file.name,
                         };
+                        
+                        console.log('💾 Setting csvTrialBalanceData state...');
                         setCsvTrialBalanceData(csvData);
-                        // Save to localStorage for persistence across sessions
+                        
+                        console.log('💾 Saving to localStorage...');
                         localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
+                        
                         setError(null);
+                        console.log('✅ CSV upload complete!');
                       } catch (err: any) {
+                        console.error('❌ Error parsing CSV:', err);
                         setError(`Failed to parse Trial Balance CSV: ${err.message}`);
                         setCsvTrialBalanceData(null);
                       }
@@ -6596,6 +7620,572 @@ function FinancialScorePage() {
               </div>
             </div>
           )}
+
+          {/* Account Mapping Interface - Shows after CSV is uploaded */}
+          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && (csvTrialBalanceData?._companyId === selectedCompanyId || (aiMappings.length > 0 && showMappingSection))) && (() => {
+            const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+
+            // Get accounts for mapping from CSV data (if available)
+            const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
+            const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
+
+            return (
+              <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
+                  {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
+                </div>
+                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                  {hasCsvData
+                    ? `Map Trial Balance accounts to your standardized financial fields - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} - ${csvTrialBalanceData.dates?.length || 0} periods`
+                    : `${aiMappings.length} saved account mappings loaded from database`
+                  }
+                </p>
+
+
+                {/* AI-Assisted Mapping Section for CSV */}
+                {hasCsvData && (
+                <div style={{ marginBottom: '32px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div>
+                        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                          AI-Assisted Account Mapping
+                        </h2>
+                        <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+                          Use AI to automatically suggest mappings from Trial Balance accounts ({csvAccountsForMapping.length} accounts) to your standardized financial fields
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setIsGeneratingMappings(true);
+                          try {
+                            // Convert CSV accounts to format expected by AI mapping
+                            const qbAccountsWithClass = csvAccountsForMapping.map(acc => ({
+                              name: acc.name,
+                              classification: acc.classification,
+                              accountCode: acc.acctId,  // Include account code for better AI mapping
+                              accountType: acc.acctType,
+                            }));
+
+                            console.log('🤖 CSV accounts to map:', qbAccountsWithClass.length);
+                            console.log('🤖 First 10 accounts:', qbAccountsWithClass.slice(0, 10));
+
+                            const response = await fetch('/api/ai-mapping/enhanced', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                qbAccountsWithClass,
+                                companyId: selectedCompanyId,
+                                targetFields: []
+                              })
+                            });
+
+                            if (!response.ok) {
+                              throw new Error('Failed to generate mappings');
+                            }
+
+                            const data = await response.json();
+                            setAiMappings(data.mappings || []);
+                            setShowMappingSection(true);
+                          } catch (error: any) {
+                            console.error('Error generating mappings:', error);
+                            alert('Failed to generate AI mappings: ' + error.message);
+                          } finally {
+                            setIsGeneratingMappings(false);
+                          }
+                        }}
+                        disabled={isGeneratingMappings || csvAccountsForMapping.length === 0}
+                        style={{
+                          padding: '12px 24px',
+                          background: isGeneratingMappings ? '#94a3b8' : '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: isGeneratingMappings ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        {isGeneratingMappings ? (
+                          <>
+                            <span>🔄</span>
+                            <span>Generating Mappings...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🤖</span>
+                            <span>Generate AI Mappings</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Account Summary by Type */}
+                    <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Type:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {Object.entries(csvTrialBalanceData.accountsByType || {}).map(([type, accounts]: [string, any]) => (
+                          <span key={type} style={{
+                            padding: '4px 12px',
+                            background: 'white',
+                            borderRadius: '16px',
+                            fontSize: '12px',
+                            color: '#065f46',
+                            border: '1px solid #86efac'
+                          }}>
+                            {type}: {accounts.length}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {/* AI-Assisted Mapping Section for API synced accounts (QuickBooks/Xero) */}
+                {!hasCsvData && aiMappings.length > 0 && aiMappings.filter(m => m.targetField === 'unmapped').length > 0 && (
+                <div style={{ marginBottom: '32px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div>
+                        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                          AI-Assisted Account Mapping
+                        </h2>
+                        <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+                          Use AI to automatically suggest mappings for {aiMappings.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setIsGeneratingMappings(true);
+                          try {
+                            // Convert current accounts to format expected by AI mapping
+                            const qbAccountsWithClass = aiMappings.map(acc => ({
+                              name: acc.qbAccount,
+                              classification: acc.qbAccountClassification,
+                              accountCode: acc.qbAccountCode,
+                            }));
+
+                            console.log('🤖 API accounts to map:', qbAccountsWithClass.length);
+
+                            const response = await fetch('/api/ai-mapping/enhanced', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                qbAccountsWithClass,
+                                companyId: selectedCompanyId,
+                                targetFields: []
+                              })
+                            });
+
+                            if (!response.ok) {
+                              throw new Error('Failed to generate mappings');
+                            }
+
+                            const data = await response.json();
+                            setAiMappings(data.mappings || []);
+                            setShowMappingSection(true);
+                          } catch (error: any) {
+                            console.error('Error generating mappings:', error);
+                            alert('Failed to generate AI mappings: ' + error.message);
+                          } finally {
+                            setIsGeneratingMappings(false);
+                          }
+                        }}
+                        disabled={isGeneratingMappings}
+                        style={{
+                          padding: '12px 24px',
+                          background: isGeneratingMappings ? '#94a3b8' : '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: isGeneratingMappings ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        {isGeneratingMappings ? (
+                          <>
+                            <span>🔄</span>
+                            <span>Generating Mappings...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🤖</span>
+                            <span>Generate AI Mappings</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Account Summary by Classification */}
+                    <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Classification:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {Object.entries(
+                          aiMappings.reduce((acc: any, m) => {
+                            const type = m.qbAccountClassification || 'Other';
+                            acc[type] = (acc[type] || 0) + 1;
+                            return acc;
+                          }, {})
+                        ).map(([type, count]: [string, any]) => (
+                          <span key={type} style={{
+                            padding: '4px 12px',
+                            background: 'white',
+                            borderRadius: '16px',
+                            fontSize: '12px',
+                            color: '#065f46',
+                            border: '1px solid #86efac'
+                          }}>
+                            {type}: {count}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {/* Mapping Results Section */}
+                {showMappingSection && aiMappings.length > 0 && (
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '32px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                        Account Mappings ({aiMappings.length} accounts)
+                      </h2>
+                    </div>
+
+                    <AccountMappingTable
+                      mappings={aiMappings}
+                      linesOfBusiness={linesOfBusiness}
+                      userDefinedAllocations={userDefinedAllocations}
+                      onMappingChange={(index, updates) => {
+                        const updated = [...aiMappings];
+                        updated[index] = { ...updated[index], ...updates };
+                        setAiMappings(updated);
+                      }}
+                    />
+
+                    {/* Save Mappings Section */}
+                    <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+                      {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
+                        <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #93c5fd' }}>
+                          <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
+                            <span style={{ fontSize: '16px' }}>ℹ️</span>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>Xero/QuickBooks Data Detected</div>
+                              <p style={{ fontSize: '12px', color: '#1e40af', margin: 0 }}>
+                                Your financial data is imported. After saving mappings, click <strong>"Apply Mappings to Data"</strong> to create detailed expense breakdowns, then view in <strong>Data Review</strong> tab!
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
+                          <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
+                            {csvTrialBalanceData ? 'Save your mappings, then process the CSV data to create monthly records.' : 'Save your mappings to apply them to your Xero/QuickBooks data.'}
+                          </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          {/* Only show Process button for CSV data - Xero/QB data is already processed */}
+                          {csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId && (
+                          <button
+                            onClick={async () => {
+                              if (!aiMappings || aiMappings.length === 0) {
+                                alert('Please save account mappings first!');
+                                return;
+                              }
+
+                              if (!currentUser) {
+                                alert('User not logged in!');
+                                return;
+                              }
+
+                              setIsProcessingMonthlyData(true);
+                              try {
+                                console.log('⚙️ Processing CSV/Trial Balance data using mappings...');
+                                console.log('⚙️ Total mappings:', aiMappings.length);
+
+                                // Process the CSV data using mappings
+                                const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
+
+                                // Save to database
+                                const response = await fetch('/api/financials', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    companyId: selectedCompanyId,
+                                    uploadedByUserId: currentUser.id,
+                                    fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
+                                    rawData: csvTrialBalanceData,
+                                    columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
+                                    monthlyData: processedData
+                                  })
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error('Failed to save processed data');
+                                }
+
+                                const result = await response.json();
+                                console.log(`✅ Processed and saved ${processedData.length} months of CSV data`);
+
+                                // Automatically create master data from the processed data
+                                try {
+                                  console.log('📄 Auto-creating master data...');
+                                  const masterDataResponse = await fetch('/api/save-master-file', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      companyId: selectedCompanyId,
+                                      monthlyData: processedData
+                                    })
+                                  });
+
+                                const masterDataResult = await masterDataResponse.json();
+                                if (masterDataResult.success) {
+                                  console.log(`✅ Master data auto-created: ${masterDataResult.months} months`);
+                                  // Clear the master data cache so Data Review tab shows updated data
+                                  masterDataStore.clearCompanyCache(selectedCompanyId);
+                                  console.log('🧹 Master data cache cleared - Data Review will show fresh data');
+                                } else {
+                                  console.error('❌ Failed to auto-create master data:', masterDataResult.error);
+                                }
+                              } catch (masterDataError) {
+                                console.error('❌ Error auto-creating master data:', masterDataError);
+                              }
+
+                              // Update local state
+                              setLoadedMonthlyData(processedData);
+
+                                alert(`✅ Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                              } catch (error: any) {
+                                console.error('Error processing CSV data:', error);
+                                alert('Failed to process CSV data: ' + error.message);
+                              } finally {
+                                setIsProcessingMonthlyData(false);
+                              }
+                            }}
+                            disabled={isProcessingMonthlyData || aiMappings.length === 0}
+                            style={{
+                              padding: '8px 16px',
+                              background: isProcessingMonthlyData || aiMappings.length === 0 ? '#9ca3af' : '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
+                              boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
+                            }}
+                          >
+                            {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
+                          </button>
+                          )}
+                          
+                          {/* Reprocess Xero Data button - only show if API-synced data exists */}
+                          {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
+                          <button
+                            onClick={async () => {
+                              if (!selectedCompanyId) {
+                                alert('No company selected');
+                                return;
+                              }
+                              
+                              const confirmed = confirm('Reprocess Xero/QuickBooks data with your account mappings?\n\nThis will fetch account-level details and apply your mappings to create detailed expense breakdowns.');
+                              if (!confirmed) return;
+                              
+                              setIsProcessingMonthlyData(true);
+                              try {
+                                console.log('🔄 Reprocessing Xero/QB data with mappings...');
+                                
+                                const response = await fetch('/api/xero/reprocess-mappings', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ companyId: selectedCompanyId })
+                                });
+                                
+                                const result = await response.json();
+                                
+                                if (result.success) {
+                                  alert(`✅ ${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
+                                  // Switch to Data Review tab
+                                  setAdminDashboardTab('data-review');
+                                  // Trigger data reload by updating qbLastSync (this triggers the useEffect)
+                                  setQbLastSync(Date.now());
+                                } else {
+                                  alert(`❌ Failed to reprocess: ${result.error}`);
+                                }
+                              } catch (error: any) {
+                                console.error('Reprocess error:', error);
+                                alert('Failed to reprocess data: ' + error.message);
+                              } finally {
+                                setIsProcessingMonthlyData(false);
+                              }
+                            }}
+                            disabled={isProcessingMonthlyData}
+                            style={{
+                              padding: '8px 16px',
+                              background: isProcessingMonthlyData ? '#9ca3af' : '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '600',
+                              cursor: isProcessingMonthlyData ? 'not-allowed' : 'pointer',
+                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                            }}
+                          >
+                            {isProcessingMonthlyData ? 'Processing...' : '⚙️ Apply Mappings to Data'}
+                          </button>
+                          )}
+                          
+                          <button
+                            onClick={async () => {
+                              try {
+                                console.log('🔍 Save Mappings Debug:', {
+                                  currentCompany,
+                                  currentCompanyId: currentCompany?.id,
+                                  selectedCompanyId,
+                                  aiMappingsCount: aiMappings?.length,
+                                  aiMappingsSample: aiMappings?.slice(0, 2),
+                                  linesOfBusinessCount: linesOfBusiness?.length
+                                });
+
+                                if (!currentCompany?.id) {
+                                  alert(`Cannot save mappings: Company not found. Selected: ${selectedCompanyId}, Available companies: ${companies?.length || 0}`);
+                                  return;
+                                }
+
+                                if (!aiMappings || aiMappings.length === 0) {
+                                  alert('No mappings to save. Please generate AI mappings first.');
+                                  return;
+                                }
+
+                                setIsSavingMappings(true);
+                                const response = await fetch('/api/account-mappings', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    companyId: currentCompany.id,
+                                    mappings: aiMappings,
+                                    linesOfBusiness: linesOfBusiness
+                                  })
+                                });
+
+                                if (response.ok) {
+                                  alert('Account mappings saved successfully!');
+                                } else {
+                                  alert('Failed to save account mappings');
+                                }
+                              } catch (error) {
+                                console.error('Error saving mappings:', error);
+                                alert('Failed to save account mappings');
+                              } finally {
+                                setIsSavingMappings(false);
+                              }
+                            }}
+                            disabled={isSavingMappings}
+                            style={{
+                              padding: '8px 16px',
+                              background: isSavingMappings ? '#9ca3af' : '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '14px',
+                              fontWeight: '500',
+                              cursor: isSavingMappings ? 'not-allowed' : 'pointer',
+                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                            }}
+                          >
+                            {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Account Preview Section */}
+                {hasCsvData && csvTrialBalanceData && (
+                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+                    Account Review - All {csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)
+                  </h2>
+                  <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                      <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px' }}>Type</th>
+                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px' }}>ID</th>
+                          <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px' }}>Description</th>
+                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '100px' }}>Latest Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
+                          // Filter out empty dates and get the last valid one
+                          const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
+                          const latestDate = validDates[validDates.length - 1];
+                          
+                          // Get latest value
+                          let latestValue = 0;
+                          
+                          if (account.values) {
+                            // Method 1: Direct lookup with the latest valid date
+                            if (latestDate && account.values[latestDate] !== undefined) {
+                              latestValue = account.values[latestDate];
+                            } 
+                            // Method 2: Get the last key from the values object
+                            else {
+                              const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
+                              if (valueKeys.length > 0) {
+                                const lastKey = valueKeys[valueKeys.length - 1];
+                                latestValue = account.values[lastKey] || 0;
+                              }
+                            }
+                          }
+
+                          return (
+                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{account.acctType}</td>
+                              <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{account.acctId}</td>
+                              <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {latestValue < 0 && ' (CR)'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: '12px', padding: '8px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px' }}>
+                    <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
+                      📊 Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
+                    </p>
+                    <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>
+                      Total accounts: {csvTrialBalanceData.accounts?.length || 0} |
+                      Scroll to see all accounts | Use this to verify account mappings and amounts
+                    </p>
+                  </div>
+                </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -6622,935 +8212,30 @@ function FinancialScorePage() {
       {!selectedCompanyId && currentView !== 'admin' && currentView !== 'consultant-dashboard' && currentView !== 'siteadmin' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
-          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'} to continue.</p>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the Consultant Dashboard to continue.</p>
           {currentUser?.role === 'consultant' && (
-            <button onClick={() => setCurrentView('consultant-dashboard')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to {currentUser?.consultantCompanyName ? `${currentUser.consultantCompanyName} Dashboard` : 'Consultant Dashboard'}</button>
+            <button onClick={() => setCurrentView('consultant-dashboard')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to Consultant Dashboard</button>
           )}
         </div>
       )}
 
       {/* Data Review Tab */}
       {currentView === 'admin' && adminDashboardTab === 'data-review' && selectedCompanyId && (
-        <DataReviewTab monthly={monthly} companyName={companyName} accountMappings={aiMappings} />
+        <DataReviewTab selectedCompanyId={selectedCompanyId} companyName={companyName} accountMappings={aiMappings} />
       )}
 
       {/* Trend Analysis View */}
       {currentView === 'trend-analysis' && selectedCompanyId && monthly.length > 0 && (
-        <div style={{ maxWidth: '100%', padding: '32px 32px 32px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Trend Analysis</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
-            <button 
-              onClick={() => setTrendAnalysisTab('item-trends')}
-              style={{ 
-                padding: '12px 24px', 
-                background: 'none', 
-                border: 'none', 
-                fontSize: '16px', 
-                fontWeight: '600', 
-                color: trendAnalysisTab === 'item-trends' ? '#667eea' : '#64748b', 
-                cursor: 'pointer',
-                borderBottom: trendAnalysisTab === 'item-trends' ? '3px solid #667eea' : '3px solid transparent',
-                marginBottom: '-2px'
-              }}
-            >
-              Item Trends
-            </button>
-            <button 
-              onClick={() => setTrendAnalysisTab('expense-analysis')}
-              style={{ 
-                padding: '12px 24px', 
-                background: 'none', 
-                border: 'none', 
-                fontSize: '16px', 
-                fontWeight: '600', 
-                color: trendAnalysisTab === 'expense-analysis' ? '#667eea' : '#64748b', 
-                cursor: 'pointer',
-                borderBottom: trendAnalysisTab === 'expense-analysis' ? '3px solid #667eea' : '3px solid transparent',
-                marginBottom: '-2px'
-              }}
-            >
-              Expense Analysis
-            </button>
-          </div>
-
-          {/* Item Trends Tab */}
-          {trendAnalysisTab === 'item-trends' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>
-                  Add Items to Analyze (max 10):
-                </label>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                <select 
-                  value={selectedTrendItem} 
-                    onChange={(e) => {
-                      setSelectedTrendItem(e.target.value);
-                      if (e.target.value && !selectedTrendItems.includes(e.target.value) && selectedTrendItems.length < 10) {
-                        setSelectedTrendItems([...selectedTrendItems, e.target.value]);
-                      }
-                    }}
-                    style={{ flex: 1, maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
-                >
-                  <optgroup label="Income Statement">
-                    <option value="revenue">Total Revenue</option>
-                    <option value="expense">Total Expenses</option>
-                    {mapping.cogsTotal && <option value="cogsTotal">COGS Total</option>}
-                    {mapping.cogsPayroll && <option value="cogsPayroll">COGS Payroll</option>}
-                    {mapping.cogsOwnerPay && <option value="cogsOwnerPay">COGS Owner Pay</option>}
-                    {mapping.cogsContractors && <option value="cogsContractors">COGS Contractors</option>}
-                    {mapping.cogsMaterials && <option value="cogsMaterials">COGS Materials</option>}
-                    {mapping.cogsCommissions && <option value="cogsCommissions">COGS Commissions</option>}
-                    {mapping.cogsOther && <option value="cogsOther">COGS Other</option>}
-                    <option value="grossProfit">Gross Profit</option>
-                    {mapping.salesExpense && <option value="salesExpense">Sales & Marketing</option>}
-                    {mapping.rent && <option value="rent">Rent/Lease</option>}
-                    {mapping.infrastructure && <option value="infrastructure">Infrastructure/Utilities</option>}
-                    {mapping.autoTravel && <option value="autoTravel">Auto & Travel</option>}
-                    {mapping.professionalFees && <option value="professionalFees">Professional Fees</option>}
-                    {mapping.insurance && <option value="insurance">Insurance</option>}
-                    {mapping.marketing && <option value="marketing">OPEX Other</option>}
-                    {mapping.payroll && <option value="payroll">OPEX Payroll</option>}
-                    {mapping.ownerBasePay && <option value="ownerBasePay">Owners Base Pay</option>}
-                    {mapping.ownersRetirement && <option value="ownersRetirement">Owners Retirement</option>}
-                    {mapping.subcontractors && <option value="subcontractors">Contractors/Distribution</option>}
-                    {mapping.interestExpense && <option value="interestExpense">Interest Expense</option>}
-                    {mapping.depreciationAmortization && <option value="depreciationAmortization">Depreciation Expense</option>}
-                    {mapping.operatingExpenseTotal && <option value="operatingExpenseTotal">Operating Expense Total</option>}
-                    {mapping.nonOperatingIncome && <option value="nonOperatingIncome">Non-Operating Income</option>}
-                    {mapping.extraordinaryItems && <option value="extraordinaryItems">Extraordinary Items</option>}
-                    {mapping.netProfit && <option value="netProfit">Net Profit</option>}
-                    <option value="ebitda">EBITDA</option>
-                    <option value="ebit">EBIT</option>
-                  </optgroup>
-                  <optgroup label="Balance Sheet - Assets">
-                    <option value="totalAssets">Total Assets</option>
-                    <option value="cash">Cash</option>
-                    <option value="ar">Accounts Receivable</option>
-                    <option value="inventory">Inventory</option>
-                    {mapping.otherCA && <option value="otherCA">Other Current Assets</option>}
-                    {mapping.tca && <option value="tca">Total Current Assets</option>}
-                    {mapping.fixedAssets && <option value="fixedAssets">Fixed Assets</option>}
-                    {mapping.otherAssets && <option value="otherAssets">Other Assets</option>}
-                  </optgroup>
-                  <optgroup label="Balance Sheet - Liabilities">
-                    <option value="totalLiab">Total Liabilities</option>
-                    <option value="ap">Accounts Payable</option>
-                    {mapping.otherCL && <option value="otherCL">Other Current Liabilities</option>}
-                    {mapping.tcl && <option value="tcl">Total Current Liabilities</option>}
-                    {mapping.ltd && <option value="ltd">Long Term Debt</option>}
-                  </optgroup>
-                  <optgroup label="Balance Sheet - Equity">
-                    <option value="ownersCapital">Owner's Capital</option>
-                    <option value="ownersDraw">Owner's Draw</option>
-                    <option value="commonStock">Common Stock</option>
-                    <option value="preferredStock">Preferred Stock</option>
-                    <option value="retainedEarnings">Retained Earnings</option>
-                    <option value="additionalPaidInCapital">Additional Paid-In Capital</option>
-                    <option value="treasuryStock">Treasury Stock</option>
-                    <option value="totalEquity">Total Equity</option>
-                  </optgroup>
-                </select>
-                  <button
-                    onClick={() => {
-                      if (selectedTrendItem && !selectedTrendItems.includes(selectedTrendItem) && selectedTrendItems.length < 10) {
-                        setSelectedTrendItems([...selectedTrendItems, selectedTrendItem]);
-                      } else if (selectedTrendItems.length >= 10) {
-                        alert('Maximum of 10 items can be selected');
-                      }
-                    }}
-                    style={{
-                      padding: '12px 24px',
-                      background: selectedTrendItems.length >= 10 ? '#cbd5e1' : '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: selectedTrendItems.length >= 10 ? 'not-allowed' : 'pointer'
-                    }}
-                    disabled={selectedTrendItems.length >= 10}
-                  >
-                    Add Item
-                  </button>
-              </div>
-
-                {/* Selected Items Display */}
-                {selectedTrendItems.length > 0 && (
-                  <div style={{ marginBottom: '20px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                      Selected Items ({selectedTrendItems.length}/10):
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {selectedTrendItems.map((item, index) => (
-                        <div
-                          key={index}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            background: '#f0f9ff',
-                            border: '1px solid #667eea',
-                            borderRadius: '6px',
-                            padding: '6px 12px',
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: '#1e293b'
-                          }}
-                        >
-                          <span>{getTrendItemDisplayName(item)}</span>
-                          <button
-                            onClick={() => {
-                              setSelectedTrendItems(selectedTrendItems.filter((_, i) => i !== index));
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#ef4444',
-                              cursor: 'pointer',
-                              fontSize: '16px',
-                              padding: '0',
-                              lineHeight: '1'
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Render graphs for all selected items */}
-              <div style={{ display: 'grid', gap: '24px' }}>
-                {selectedTrendItems.map((item, index) => (
-                  <div key={index} style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <LineChart 
-                        title={`${getTrendItemDisplayName(item)} Trend`}
-                        data={monthly.map(m => ({ month: m.month, value: m[item as keyof typeof m] as number }))}
-                    color="#667eea"
-                    showTable={true}
-                    labelFormat="quarterly"
-                    goalLineData={(() => {
-                      // Check if selected item is "expense" (Total Expenses)
-                          if (item === 'expense') {
-                        // Sum all operating expense goals (not COGS)
-                        const opexCategories = [
-                          'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
-                          'insurance', 'rent', 'infrastructure', 'autoTravel', 
-                          'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                        ];
-                        const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                        
-                        if (totalGoalPct > 0) {
-                          return monthly.map(m => {
-                            const revenue = m.revenue || 0;
-                            return revenue * (totalGoalPct / 100);
-                          });
-                        }
-                      }
-                      
-                      // Check if selected item is an expense category with a goal
-                      const expenseCategories = [
-                        'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 'insurance', 
-                        'rent', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
-                        'depreciationAmortization', 'interestExpense'
-                      ];
-                      
-                      if (expenseCategories.includes(item) && expenseGoals[item]) {
-                        // Calculate goal as: Goal % × Revenue for each month
-                        return monthly.map(m => {
-                          const revenue = m.revenue || 0;
-                              const goalPct = expenseGoals[item] / 100;
-                          return revenue * goalPct;
-                        });
-                      }
-                      return undefined;
-                    })()}
-                  />
-                </div>
-                
-                <div style={{ width: '280px', flexShrink: 0 }}>
-                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', border: '1px solid #e2e8f0', position: 'sticky', top: '100px' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', textAlign: 'center' }}>Growth Analysis</h3>
-                    
-                    <div style={{ marginBottom: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
-                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Current Year</div>
-                      <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 24 ? 
-                        (() => {
-                          if (monthly.length < 24) return '#64748b';
-                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
-                          return growthRate >= 0 ? '#10b981' : '#ef4444';
-                        })()
-                        : '#64748b'
-                      }}>
-                        {monthly.length >= 24 ? (() => {
-                          if (monthly.length < 24) return 'N/A';
-                          const last12 = monthly.slice(-12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const growthRate = prev12 !== 0 ? ((last12 - prev12) / prev12) * 100 : 0;
-                          return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
-                        })() : 'N/A'}
-                      </div>
-                    </div>
-
-                    <div style={{ padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GROWTH RATE</div>
-                      <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>Previous Year</div>
-                      <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: monthly.length >= 36 ? 
-                        (() => {
-                          if (monthly.length < 36) return '#64748b';
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
-                          return growthRate >= 0 ? '#10b981' : '#ef4444';
-                        })()
-                        : '#64748b'
-                      }}>
-                        {monthly.length >= 36 ? (() => {
-                          if (monthly.length < 36) return 'N/A';
-                          const prev12 = monthly.slice(-24, -12).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const prev24 = monthly.slice(-36, -24).reduce((sum, m) => sum + (m[item as keyof typeof m] as number || 0), 0);
-                          const growthRate = prev24 !== 0 ? ((prev12 - prev24) / prev24) * 100 : 0;
-                          return `${growthRate >= 0 ? '+' : ''}${growthRate.toFixed(2)}%`;
-                        })() : 'N/A'}
-                      </div>
-                    </div>
-
-                    {/* Goal % for Expense Items */}
-                    {(() => {
-                      // Check if "expense" (Total Expenses) is selected
-                          if (item === 'expense') {
-                        const opexCategories = [
-                          'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
-                          'insurance', 'rent', 'infrastructure', 'autoTravel', 
-                          'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                        ];
-                        const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                        
-                        if (totalGoalPct > 0) {
-                          return (
-                            <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
-                              <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
-                              <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
-                                {totalGoalPct.toFixed(1)}%
-                              </div>
-                              <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', textAlign: 'center' }}>
-                                (Sum of Operating Expenses)
-                              </div>
-                            </div>
-                          );
-                        }
-                      }
-                      
-                      const expenseCategories = [
-                        'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 'insurance', 
-                        'rent', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
-                        'depreciationAmortization', 'interestExpense'
-                      ];
-                      
-                          if (expenseCategories.includes(item) && expenseGoals[item]) {
-                        return (
-                          <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #10b981' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>GOAL</div>
-                            <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px', textAlign: 'center' }}>% of Revenue</div>
-                            <div style={{ fontSize: '24px', fontWeight: '700', textAlign: 'center', color: '#10b981' }}>
-                                  {expenseGoals[item].toFixed(1)}%
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-                </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Expense Analysis Tab */}
-          {trendAnalysisTab === 'expense-analysis' && (
-            <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Expense Items as % of Total Revenue</h2>
-              
-              <div style={{ marginBottom: '12px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>💡 How to Use This Analysis</h3>
-                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#15803d', lineHeight: '1.6' }}>
-                  <li>Each chart shows an expense category as a <strong>percentage of total revenue</strong> over time</li>
-                  <li>Look for categories with <strong>increasing trends</strong> that may need cost control</li>
-                  <li>Compare percentages to industry benchmarks to identify inefficiencies</li>
-                  <li>Watch for sudden spikes that may indicate one-time events or problems</li>
-                </ul>
-              </div>
-
-              {/* Expense Field Selection */}
-              <div style={{ marginBottom: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'block', fontSize: '16px', fontWeight: '600', color: '#374151', marginBottom: '16px' }}>
-                  Select Expense Categories to Analyze (max 10):
-                </label>
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                  <select
-                    value={selectedExpenseItem}
-                    onChange={(e) => {
-                      setSelectedExpenseItem(e.target.value);
-                      if (e.target.value && !selectedExpenseItems.includes(e.target.value) && selectedExpenseItems.length < 10) {
-                        setSelectedExpenseItems([...selectedExpenseItems, e.target.value]);
-                      }
-                    }}
-                    style={{ flex: 1, maxWidth: '400px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}
-                  >
-                    <optgroup label="Expense Categories">
-                      <option value="total-expenses">Total Expenses</option>
-                      <option value="cogsTotal">COGS Total</option>
-                      <option value="cogsPayroll">COGS Payroll</option>
-                      <option value="cogsOwnerPay">COGS Owner Pay</option>
-                      <option value="cogsContractors">COGS Contractors</option>
-                      <option value="cogsMaterials">COGS Materials</option>
-                      <option value="cogsCommissions">COGS Commissions</option>
-                      <option value="cogsOther">COGS Other</option>
-                      <option value="payroll">Payroll</option>
-                      <option value="ownerBasePay">Owner Base Pay</option>
-                      <option value="ownersRetirement">Owner's Retirement</option>
-                      <option value="subcontractors">Subcontractors</option>
-                      <option value="professionalFees">Professional Services</option>
-                      <option value="insurance">Insurance</option>
-                      <option value="rent">Rent/Lease</option>
-                      <option value="phoneComm">Phone & Communications</option>
-                      <option value="infrastructure">Infrastructure/Utilities</option>
-                      <option value="autoTravel">Auto & Travel</option>
-                      <option value="salesExpense">Sales & Marketing</option>
-                      <option value="marketing">Marketing</option>
-                      <option value="trainingCert">Training & Certification</option>
-                      <option value="mealsEntertainment">Meals & Entertainment</option>
-                      <option value="interestExpense">Interest Expense</option>
-                      <option value="depreciationAmortization">Depreciation & Amortization</option>
-                      <option value="otherExpense">Other Expenses</option>
-                    </optgroup>
-                  </select>
-
-                  <button
-                    onClick={() => {
-                      if (selectedExpenseItem && !selectedExpenseItems.includes(selectedExpenseItem) && selectedExpenseItems.length < 10) {
-                        setSelectedExpenseItems([...selectedExpenseItems, selectedExpenseItem]);
-                      }
-                    }}
-                    disabled={selectedExpenseItems.length >= 10}
-                    style={{
-                      padding: '12px 20px',
-                      background: selectedExpenseItems.length >= 10 ? '#cbd5e1' : '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: selectedExpenseItems.length >= 10 ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Add Category
-                  </button>
-                </div>
-
-                {selectedExpenseItems.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '12px' }}>
-                      Selected Categories ({selectedExpenseItems.length}/10):
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {selectedExpenseItems.map((item, index) => (
-                        <div
-                          key={item}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '6px 12px',
-                            background: '#e0f2fe',
-                            border: '1px solid #0ea5e9',
-                            borderRadius: '20px',
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: '#0c4a6e'
-                          }}
-                        >
-                          <span>{getExpenseFieldDisplayName(item)}</span>
-                          <button
-                            onClick={() => {
-                              setSelectedExpenseItems(selectedExpenseItems.filter((_, i) => i !== index));
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#0c4a6e',
-                              cursor: 'pointer',
-                              fontSize: '16px',
-                              lineHeight: '1',
-                              padding: '0',
-                              marginLeft: '4px'
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
-                {/* Total Expenses */}
-                {selectedExpenseItems.includes('total-expenses') && (
-                  <LineChart
-                    title="Total Expenses (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? (m.expense / m.revenue) * 100 : 0
-                    }))}
-                    color="#ef4444"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={(() => {
-                      // Sum all operating expense goals (not COGS)
-                      const opexCategories = [
-                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees',
-                        'insurance', 'rent', 'infrastructure', 'autoTravel',
-                        'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                      ];
-                      const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                      return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
-                    })()}
-                  />
-                )}
-
-                {/* COGS Total */}
-                {selectedExpenseItems.includes('cogsTotal') && (
-                  <LineChart
-                    title="COGS Total (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsTotal || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#f59e0b"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsTotal ? monthly.map(() => expenseGoals.cogsTotal) : undefined}
-                  />
-                )}
-
-                {/* COGS Breakdown */}
-                {selectedExpenseItems.includes('cogsPayroll') && (
-                  <LineChart
-                    title="COGS Payroll (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsPayroll || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fb923c"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsPayroll ? monthly.map(() => expenseGoals.cogsPayroll) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsOwnerPay') && (
-                  <LineChart
-                    title="COGS Owner Pay (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsOwnerPay || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fdba74"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsOwnerPay ? monthly.map(() => expenseGoals.cogsOwnerPay) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsContractors') && (
-                  <LineChart
-                    title="COGS Contractors (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsContractors || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fed7aa"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsContractors ? monthly.map(() => expenseGoals.cogsContractors) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsMaterials') && (
-                  <LineChart
-                    title="COGS Materials (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsMaterials || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fde047"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsMaterials ? monthly.map(() => expenseGoals.cogsMaterials) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsCommissions') && (
-                  <LineChart
-                    title="COGS Commissions (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsCommissions || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#bef264"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsCommissions ? monthly.map(() => expenseGoals.cogsCommissions) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('cogsOther') && (
-                  <LineChart
-                    title="COGS Other (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.cogsOther || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#86efac"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.cogsOther ? monthly.map(() => expenseGoals.cogsOther) : undefined}
-                  />
-                )}
-                
-                {mapping.operatingExpenseTotal && (
-                  <LineChart 
-                    title="Operating Expense Total (% of Revenue)"
-                    data={monthly.map(m => ({ 
-                      month: m.month, 
-                      value: m.revenue > 0 ? ((m.operatingExpenseTotal || 0) / m.revenue) * 100 : 0 
-                    }))}
-                    color="#3b82f6"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={(() => {
-                      // Sum all operating expense goals (not COGS)
-                      const opexCategories = [
-                        'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
-                        'insurance', 'rent', 'infrastructure', 'autoTravel', 
-                        'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                      ];
-                      const totalGoal = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                      return totalGoal > 0 ? monthly.map(() => totalGoal) : undefined;
-                    })()}
-                  />
-                )}
-                
-                {selectedExpenseItems.includes('payroll') && (
-                  <LineChart
-                    title="OPEX Payroll (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.payroll || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#60a5fa"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.payroll ? monthly.map(() => expenseGoals.payroll) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('salesExpense') && (
-                  <LineChart
-                    title="Sales & Marketing (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.salesExpense || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#93c5fd"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.salesExpense ? monthly.map(() => expenseGoals.salesExpense) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('rent') && (
-                  <LineChart
-                    title="Rent/Lease (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.rent || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#8b5cf6"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.rent ? monthly.map(() => expenseGoals.rent) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('infrastructure') && (
-                  <LineChart
-                    title="Infrastructure/Utilities (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.infrastructure || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#a78bfa"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.infrastructure ? monthly.map(() => expenseGoals.infrastructure) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('phoneComm') && (
-                  <LineChart
-                    title="Phone & Communications (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.phoneComm || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#dbeafe"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.phoneComm ? monthly.map(() => expenseGoals.phoneComm) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('autoTravel') && (
-                  <LineChart
-                    title="Auto & Travel (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.autoTravel || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#ec4899"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.autoTravel ? monthly.map(() => expenseGoals.autoTravel) : undefined}
-                  />
-                )}
-                
-                {selectedExpenseItems.includes('professionalFees') && (
-                  <LineChart
-                    title="Professional Services (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.professionalFees || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#f472b6"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.professionalFees ? monthly.map(() => expenseGoals.professionalFees) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('insurance') && (
-                  <LineChart
-                    title="Insurance (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.insurance || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#f9a8d4"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.insurance ? monthly.map(() => expenseGoals.insurance) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('ownerBasePay') && (
-                  <LineChart
-                    title="Owners Base Pay (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.ownerBasePay || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#14b8a6"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.ownerBasePay ? monthly.map(() => expenseGoals.ownerBasePay) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('ownersRetirement') && (
-                  <LineChart
-                    title="Owners Retirement (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.ownersRetirement || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#2dd4bf"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('subcontractors') && (
-                  <LineChart
-                    title="Contractors/Distribution (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.subcontractors || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#5eead4"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.subcontractors ? monthly.map(() => expenseGoals.subcontractors) : undefined}
-                  />
-                )}
-                
-                {selectedExpenseItems.includes('interestExpense') && (
-                  <LineChart
-                    title="Interest Expense (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.interestExpense || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fb7185"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.interestExpense ? monthly.map(() => expenseGoals.interestExpense) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('depreciationAmortization') && (
-                  <LineChart
-                    title="Depreciation Expense (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.depreciationAmortization || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fca5a5"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.depreciationAmortization ? monthly.map(() => expenseGoals.depreciationAmortization) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('marketing') && (
-                  <LineChart
-                    title="Marketing (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.marketing || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fecaca"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.marketing ? monthly.map(() => expenseGoals.marketing) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('trainingCert') && (
-                  <LineChart
-                    title="Training & Certification (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.trainingCert || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fef3c7"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.trainingCert ? monthly.map(() => expenseGoals.trainingCert) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('mealsEntertainment') && (
-                  <LineChart
-                    title="Meals & Entertainment (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.mealsEntertainment || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#fce7f3"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.mealsEntertainment ? monthly.map(() => expenseGoals.mealsEntertainment) : undefined}
-                  />
-                )}
-
-                {selectedExpenseItems.includes('otherExpense') && (
-                  <LineChart
-                    title="Other Expenses (% of Revenue)"
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m.otherExpense || 0) / m.revenue) * 100 : 0
-                    }))}
-                    color="#e0f2fe"
-                    compact
-                    showTable={true}
-                    labelFormat="quarterly"
-                    formatter={(val: number) => `${val.toFixed(1)}%`}
-                    goalLineData={expenseGoals.otherExpense ? monthly.map(() => expenseGoals.otherExpense) : undefined}
-                  />
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        <TrendAnalysisView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          monthly={monthly}
+          expenseGoals={expenseGoals}
+          selectedExpenseItems={selectedExpenseItems}
+          setSelectedExpenseItems={setSelectedExpenseItems}
+          selectedItemTrends={selectedTrendItems}
+          setSelectedItemTrends={setSelectedTrendItems}
+        />
       )}
 
       {/* Financial Score - Introduction View */}
@@ -7573,7 +8258,7 @@ function FinancialScorePage() {
                 
                 <div style={{ display: 'grid', gap: '20px' }}>
                   <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 – 100: Strong Financial Performance</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 — 100: Strong Financial Performance</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#064e3b', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Good growth and good balance</li>
                       <li>In a good position for considering an M&A transaction</li>
@@ -7582,7 +8267,7 @@ function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 – 80: Good Fundamentals</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 — 80: Good Fundamentals</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>In a good position for revenue growth</li>
                       <li>Needs to focus on bringing costs down as volume grows</li>
@@ -7590,7 +8275,7 @@ function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 – 50: Basic Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 — 50: Basic Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Cost structure issues; not in a position to grow</li>
                       <li>Improvements needed in operations and process controls</li>
@@ -7599,7 +8284,7 @@ function FinancialScorePage() {
                   </div>
                   
                   <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 – 30: Serious Performance Problems</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 — 30: Serious Performance Problems</div>
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '15px', lineHeight: '1.6' }}>
                       <li>Problems exist which may not be correctable</li>
                       <li>Some form of major restructuring or liquidation may be best</li>
@@ -7626,210 +8311,21 @@ function FinancialScorePage() {
 
       {/* Financial Score Trends View */}
       {currentView === 'fs-score' && selectedCompanyId && trendData.length > 0 && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
-            @media print {
-              @page {
-                size: portrait;
-                margin: 0.3in;
-              }
-              
-              /* Hide navigation and UI elements */
-              .no-print,
-              header,
-              nav,
-              aside,
-              [role="navigation"],
-              button {
-                display: none !important;
-              }
-              
-              /* Remove backgrounds and shadows for print */
-              * {
-                box-shadow: none !important;
-              }
-              
-              /* Compress title and header */
-              .fs-header h1 {
-                font-size: 18px !important;
-                margin-bottom: 8px !important;
-              }
-              
-              .fs-header > div {
-                font-size: 16px !important;
-              }
-              
-              /* Compress main score cards */
-              .fs-score-cards {
-                margin-bottom: 12px !important;
-                gap: 10px !important;
-              }
-              
-              .fs-score-cards > div {
-                padding: 10px !important;
-                border-radius: 6px !important;
-              }
-              
-              .fs-score-cards > div > div:first-child {
-                font-size: 9px !important;
-                margin-bottom: 4px !important;
-              }
-              
-              .fs-score-cards > div > div:nth-child(2) {
-                font-size: 22px !important;
-              }
-              
-              /* Compress detail cards */
-              .fs-detail-cards {
-                gap: 8px !important;
-                margin-bottom: 12px !important;
-              }
-              
-              .fs-detail-cards > div {
-                padding: 8px !important;
-              }
-              
-              .fs-detail-cards > div > div:first-child {
-                font-size: 8px !important;
-              }
-              
-              .fs-detail-cards > div > div:nth-child(2) {
-                font-size: 14px !important;
-              }
-              
-              .fs-detail-cards > div > div:last-child {
-                font-size: 7px !important;
-              }
-              
-              /* Compress chart grid */
-              .fs-charts-grid {
-                gap: 8px !important;
-              }
-              
-              .fs-charts-grid > div {
-                transform: scale(0.65);
-                transform-origin: top left;
-                width: 153.85%;
-                height: 250px;
-                margin-bottom: -69px;
-              }
-              
-              /* Force page break after row 2 (after 4th chart) */
-              .fs-charts-grid > div:nth-child(4) {
-                page-break-after: always;
-                break-after: page;
-              }
-              
-              /* Show page 2 header only on print */
-              .page-2-header {
-                display: block !important;
-                margin-top: 72px !important;
-                padding-bottom: 72px !important;
-              }
-              
-              h2 {
-                font-size: 12px !important;
-                margin-bottom: 8px !important;
-              }
-            }
-          `}</style>
-          
-          <div className="fs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Score Trends</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-              <button 
-                className="no-print"
-                onClick={() => window.print()} 
-                style={{ 
-                  padding: '12px 24px', 
-                  background: '#667eea', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
-                }}>
-                🖨️ Print
-              </button>
-            </div>
-          </div>
-          
-          {monthly.length >= 24 && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Financial Score Analysis</h2>
-              
-              <div className="fs-score-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px', maxWidth: '900px' }}>
-                <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', padding: '20px', color: 'white', boxShadow: '0 4px 12px rgba(102,126,234,0.3)' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Corelytics Financial Score</div>
-                  <div style={{ fontSize: '42px', fontWeight: '700' }}>{finalScore.toFixed(2)}</div>
-                </div>
-                <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '20px', border: '2px solid #86efac' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '8px' }}>Profitability Score</div>
-                  <div style={{ fontSize: '42px', fontWeight: '700', color: '#10b981' }}>{profitabilityScore.toFixed(2)}</div>
-                </div>
-                <div style={{ background: '#ede9fe', borderRadius: '12px', padding: '20px', border: '2px solid #c4b5fd' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#5b21b6', marginBottom: '8px' }}>Asset Development Score</div>
-                  <div style={{ fontSize: '42px', fontWeight: '700', color: '#8b5cf6' }}>{assetDevScore.toFixed(2)}</div>
-                </div>
-              </div>
-
-              <div className="fs-detail-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' }}>
-                <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Base RGS (24mo)</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{baseRGS.toFixed(0)}</div>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Growth: {growth_24mo.toFixed(1)}%</div>
-                </div>
-                <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Adjusted RGS (6mo)</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{adjustedRGS.toFixed(1)}</div>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Growth: {growth_6mo.toFixed(1)}%</div>
-                </div>
-                <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Expense Adjustment</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: expenseAdjustment >= 0 ? '#10b981' : '#ef4444' }}>
-                    {expenseAdjustment >= 0 ? '+' : ''}{expenseAdjustment}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                    {expenseAdjustment > 0 ? '? BONUS' : expenseAdjustment < 0 ? '? PENALTY' : 'NEUTRAL'}
-                  </div>
-                </div>
-                <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>ALR-1 (Current)</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{typeof alr1 === 'number' ? alr1.toFixed(2) : alr1}</div>
-                </div>
-                <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>ALR Growth %</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: alrGrowth >= 0 ? '#10b981' : '#ef4444' }}>
-                    {alrGrowth >= 0 ? '+' : ''}{alrGrowth.toFixed(1)}%
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          <div className="fs-charts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
-            <LineChart title="Financial Score Trend" data={trendData} valueKey="financialScore" color="#667eea" compact />
-            <LineChart title="Profitability Score Trend" data={trendData} valueKey="profitabilityScore" color="#10b981" compact />
-            <LineChart title="Revenue Growth Score (RGS)" data={trendData} valueKey="rgs" color="#f59e0b" compact />
-            <LineChart title="RGS with 6-Month Adjustment" data={trendData} valueKey="rgsAdj" color="#3b82f6" compact />
-            
-            {/* Page 2 Header - only visible in print */}
-            <div className="page-2-header" style={{ display: 'none', gridColumn: '1 / -1', paddingBottom: '72px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Score Trends (cont)</h1>
-                {companyName && <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-              </div>
-            </div>
-            
-            <LineChart title="Expense Adjustment" data={trendData} valueKey="expenseAdj" color="#8b5cf6" compact />
-            <LineChart title="Asset Development Score (ADS)" data={trendData} valueKey="adsScore" color="#ec4899" compact />
-            <LineChart title="ALR-1 (Asset-Liability Ratio)" data={trendData} valueKey="alr1" color="#14b8a6" compact />
-            <LineChart title="ALR Growth %" data={trendData} valueKey="alrGrowth" color="#f97316" compact />
-          </div>
-        </div>
+        <FinancialScoreView
+          monthly={monthly}
+          trendData={trendData}
+          companyName={companyName}
+          finalScore={finalScore}
+          profitabilityScore={profitabilityScore}
+          assetDevScore={assetDevScore}
+          baseRGS={baseRGS}
+          adjustedRGS={adjustedRGS}
+          growth_24mo={growth_24mo}
+          growth_6mo={growth_6mo}
+          expenseAdjustment={expenseAdjustment}
+          alr1={alr1}
+          alrGrowth={alrGrowth}
+        />
       )}
 
       {/* Formula Popup Modal */}
@@ -7946,4569 +8442,92 @@ function FinancialScorePage() {
 
       {/* Custom Dashboard View */}
       {currentView === 'dashboard' && selectedCompanyId && trendData.length > 0 && (
-        <div className="dashboard-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
-            @media print {
-              @page {
-                size: landscape;
-                margin: 0.2in 0.4in 0.3in 0.4in;
-              }
-              
-              /* Hide navigation and UI elements */
-              .no-print,
-              header,
-              nav,
-              aside,
-              [role="navigation"],
-              button {
-                display: none !important;
-              }
-              
-              /* Remove background colors and shadows */
-              * {
-                box-shadow: none !important;
-                background: white !important;
-              }
-              
-              /* Remove all padding from body and containers */
-              body {
-                padding: 0 !important;
-                margin: 0 !important;
-              }
-              
-              body > div {
-                padding: 0 !important;
-                margin: 0 !important;
-                height: auto !important;
-                overflow: visible !important;
-              }
-              
-              body > div > div {
-                padding: 0 !important;
-                margin: 0 !important;
-                height: auto !important;
-                overflow: visible !important;
-              }
-              
-              /* Dashboard container */
-              .dashboard-container {
-                padding: 0 !important;
-                margin: 0 !important;
-              }
-              
-              /* Dashboard title */
-              h1 {
-                font-size: 18px !important;
-                margin: 0 !important;
-                padding: 0 0 6px 0 !important;
-                page-break-after: avoid;
-              }
-              
-              /* Optimize grid for printing */
-              .dashboard-grid {
-                display: grid !important;
-                grid-template-columns: repeat(2, 1fr) !important;
-                gap: 8px !important;
-                margin: 0 !important;
-                padding: 0 !important;
-              }
-              
-              /* Prevent page breaks inside charts and remove all spacing */
-              .dashboard-grid > div {
-                page-break-inside: avoid;
-                margin: 0 !important;
-                padding: 8px !important;
-              }
-              
-              /* Compact chart styling */
-              .recharts-wrapper {
-                max-height: 200px !important;
-              }
-              
-              .recharts-surface {
-                max-height: 180px !important;
-              }
-              
-              /* Working Capital and Valuation containers */
-              .dashboard-grid > div[style*="gridColumn"] {
-                grid-column: 1 / -1 !important;
-                page-break-before: auto;
-                page-break-after: auto;
-                padding: 8px !important;
-                margin: 0 !important;
-              }
-              
-              /* Reduce chart title size */
-              .dashboard-grid h3 {
-                font-size: 11px !important;
-                margin: 0 0 2px 0 !important;
-                padding: 0 !important;
-              }
-              
-              /* Reduce chart text size */
-              .recharts-text {
-                font-size: 9px !important;
-              }
-            }
-          `}</style>
-          
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              Dashboard: {companyName || 'My Dashboard'}
-            </h1>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                className="no-print"
-                onClick={() => window.print()}
-                style={{
-                  background: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 24px',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                  transition: 'all 0.3s'
-                }}
-                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-              >
-                🖨️ Print Dashboard
-              </button>
-              <button
-                className="no-print"
-                onClick={() => setShowDashboardCustomizer(!showDashboardCustomizer)}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 24px',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
-                  transition: 'all 0.3s'
-                }}
-                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-              >
-                {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
-              </button>
-            </div>
-          </div>
-
-          {/* Dashboard Customizer */}
-          {showDashboardCustomizer && (
-            <div style={{ 
-              background: 'white', 
-              borderRadius: '16px', 
-              padding: '32px', 
-              marginBottom: '32px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-              border: '2px solid #667eea'
-            }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                🔨 Build Your Custom Dashboard
-              </h2>
-              <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
-                Select the metrics and charts you want to see. Click on any item to add or remove it from your dashboard. Items will appear in the order selected.
-              </p>
-
-              {/* Widget Categories */}
-              <div style={{ display: 'grid', gap: '24px' }}>
-                
-              {/* Ratios Section */}
-              <div>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  📊 Financial Ratios
-                </h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                  {/* Liquidity Ratios */}
-                  <div>
-                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
-                      Liquidity Ratios
-                    </label>
-                    <select
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value && !selectedDashboardWidgets.includes(value)) {
-                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
-                        }
-                        e.target.value = '';
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        border: '2px solid #e2e8f0',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        background: 'white',
-                        cursor: 'pointer',
-                        color: '#1e293b'
-                      }}
-                    >
-                      <option value="">Select a ratio...</option>
-                      <option value="Current Ratio">Current Ratio</option>
-                      <option value="Quick Ratio">Quick Ratio</option>
-                    </select>
-                  </div>
-
-                  {/* Activity Ratios */}
-                  <div>
-                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
-                      Activity Ratios
-                    </label>
-                    <select
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value && !selectedDashboardWidgets.includes(value)) {
-                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
-                        }
-                        e.target.value = '';
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        border: '2px solid #e2e8f0',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        background: 'white',
-                        cursor: 'pointer',
-                        color: '#1e293b'
-                      }}
-                    >
-                      <option value="">Select a ratio...</option>
-                      <option value="Days Receivables">Days' Receivables</option>
-                      <option value="Days Inventory">Days' Inventory</option>
-                      <option value="Days Payables">Days' Payables</option>
-                      <option value="Inventory Turnover">Inventory Turnover</option>
-                      <option value="Receivables Turnover">Receivables Turnover</option>
-                      <option value="Payables Turnover">Payables Turnover</option>
-                      <option value="Sales/Working Capital">Sales/Working Capital</option>
-                    </select>
-                  </div>
-
-                  {/* Coverage Ratios */}
-                  <div>
-                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
-                      Coverage Ratios
-                    </label>
-                    <select
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value && !selectedDashboardWidgets.includes(value)) {
-                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
-                        }
-                        e.target.value = '';
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        border: '2px solid #e2e8f0',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        background: 'white',
-                        cursor: 'pointer',
-                        color: '#1e293b'
-                      }}
-                    >
-                      <option value="">Select a ratio...</option>
-                      <option value="Interest Coverage">Interest Coverage</option>
-                      <option value="Debt Service Coverage">Debt Service Coverage</option>
-                      <option value="Cash Flow to Debt">Cash Flow to Debt</option>
-                    </select>
-                  </div>
-
-                  {/* Leverage Ratios */}
-                  <div>
-                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
-                      Leverage Ratios
-                    </label>
-                    <select
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value && !selectedDashboardWidgets.includes(value)) {
-                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
-                        }
-                        e.target.value = '';
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        border: '2px solid #e2e8f0',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        background: 'white',
-                        cursor: 'pointer',
-                        color: '#1e293b'
-                      }}
-                    >
-                      <option value="">Select a ratio...</option>
-                      <option value="Debt/Net Worth">Debt/Net Worth</option>
-                      <option value="Fixed Assets/Net Worth">Fixed Assets/Net Worth</option>
-                      <option value="Leverage Ratio">Leverage Ratio</option>
-                    </select>
-                  </div>
-
-                  {/* Operating Ratios */}
-                  <div>
-                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
-                      Operating Ratios
-                    </label>
-                    <select
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value && !selectedDashboardWidgets.includes(value)) {
-                          setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
-                        }
-                        e.target.value = '';
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        border: '2px solid #e2e8f0',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        background: 'white',
-                        cursor: 'pointer',
-                        color: '#1e293b'
-                      }}
-                    >
-                      <option value="">Select a ratio...</option>
-                      <option value="ROA">Return on Assets (ROA)</option>
-                      <option value="ROE">Return on Equity (ROE)</option>
-                      <option value="Total Asset Turnover">Total Asset Turnover</option>
-                      <option value="EBITDA Margin">EBITDA Margin</option>
-                      <option value="EBIT Margin">EBIT Margin</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Display selected ratios */}
-                {selectedDashboardWidgets.filter(w => 
-                  ['Current Ratio', 'Quick Ratio', 'Days Receivables', 'Days Inventory', 'Days Payables', 'Inventory Turnover', 'Receivables Turnover', 'Payables Turnover', 'Sales/Working Capital', 'Interest Coverage', 'Debt Service Coverage', 'Cash Flow to Debt', 'Debt/Net Worth', 'Fixed Assets/Net Worth', 'Leverage Ratio', 'ROA', 'ROE', 'Total Asset Turnover', 'EBITDA Margin', 'EBIT Margin'].includes(w)
-                ).length > 0 && (
-                  <div style={{ marginTop: '16px' }}>
-                    <p style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Selected Ratios:</p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {selectedDashboardWidgets.filter(w => 
-                        ['Current Ratio', 'Quick Ratio', 'Days Receivables', 'Days Inventory', 'Days Payables', 'Inventory Turnover', 'Receivables Turnover', 'Payables Turnover', 'Sales/Working Capital', 'Interest Coverage', 'Debt Service Coverage', 'Cash Flow to Debt', 'Debt/Net Worth', 'Fixed Assets/Net Worth', 'Leverage Ratio', 'ROA', 'ROE', 'Total Asset Turnover', 'EBITDA Margin', 'EBIT Margin'].includes(w)
-                      ).map(widget => (
-                        <div
-                          key={widget}
-                          style={{
-                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            color: 'white',
-                            padding: '8px 12px',
-                            borderRadius: '6px',
-                            fontSize: '13px',
-                            fontWeight: '600',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          }}
-                        >
-                          <span>{widget}</span>
-                          <button
-                            onClick={() => setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget))}
-                            style={{
-                              background: 'rgba(255,255,255,0.2)',
-                              border: 'none',
-                              color: 'white',
-                              cursor: 'pointer',
-                              borderRadius: '50%',
-                              width: '18px',
-                              height: '18px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '12px',
-                              padding: 0
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-                {/* Trend Analysis Section */}
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    📈 Trend Analysis
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                    {/* Item Trends Dropdown */}
-                    <div>
-                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
-                        Item Trends
-                      </label>
-                      <select
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value && !selectedDashboardWidgets.includes(value)) {
-                            setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
-                          }
-                          e.target.value = '';
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          border: '2px solid #e2e8f0',
-                          borderRadius: '8px',
-                          fontSize: '14px',
-                          background: 'white',
-                          cursor: 'pointer',
-                          color: '#1e293b'
-                        }}
-                      >
-                        <option value="">Select an item...</option>
-                        <optgroup label="Income Statement">
-                          <option value="revenue">Total Revenue</option>
-                          <option value="expense">Total Expenses</option>
-                          <option value="cogsTotal">COGS Total</option>
-                          <option value="cogsPayroll">COGS Payroll</option>
-                          <option value="cogsOwnerPay">COGS Owner Pay</option>
-                          <option value="cogsContractors">COGS Contractors</option>
-                          <option value="cogsMaterials">COGS Materials</option>
-                          <option value="cogsCommissions">COGS Commissions</option>
-                          <option value="cogsOther">COGS Other</option>
-                          <option value="salesExpense">Sales & Marketing</option>
-                          <option value="rent">Rent/Lease</option>
-                          <option value="infrastructure">Infrastructure/Utilities</option>
-                          <option value="autoTravel">Auto & Travel</option>
-                          <option value="professionalFees">Professional Services</option>
-                          <option value="insurance">Insurance</option>
-                          <option value="marketing">OPEX Other</option>
-                          <option value="payroll">OPEX Payroll</option>
-                          <option value="ownerBasePay">Owners Base Pay</option>
-                          <option value="ownersRetirement">Owners Retirement</option>
-                          <option value="subcontractors">Contractors/Distribution</option>
-                          <option value="interestExpense">Interest Expense</option>
-                          <option value="depreciationAmortization">Depreciation Expense</option>
-                          <option value="operatingExpenseTotal">Operating Expense Total</option>
-                          <option value="nonOperatingIncome">Non-Operating Income</option>
-                          <option value="extraordinaryItems">Extraordinary Items</option>
-                          <option value="netProfit">Net Profit</option>
-                        </optgroup>
-                        <optgroup label="Balance Sheet - Assets">
-                          <option value="totalAssets">Total Assets</option>
-                          <option value="cash">Cash</option>
-                          <option value="ar">Accounts Receivable</option>
-                          <option value="inventory">Inventory</option>
-                          <option value="otherCA">Other Current Assets</option>
-                          <option value="tca">Total Current Assets</option>
-                          <option value="fixedAssets">Fixed Assets</option>
-                          <option value="otherAssets">Other Assets</option>
-                        </optgroup>
-                        <optgroup label="Balance Sheet - Liabilities">
-                          <option value="totalLiab">Total Liabilities</option>
-                          <option value="ap">Accounts Payable</option>
-                          <option value="otherCL">Other Current Liabilities</option>
-                          <option value="tcl">Total Current Liabilities</option>
-                          <option value="ltd">Long Term Debt</option>
-                        </optgroup>
-                        <optgroup label="Balance Sheet - Equity">
-                          <option value="ownersCapital">Owner's Capital</option>
-                          <option value="ownersDraw">Owner's Draw</option>
-                          <option value="commonStock">Common Stock</option>
-                          <option value="preferredStock">Preferred Stock</option>
-                          <option value="retainedEarnings">Retained Earnings</option>
-                          <option value="additionalPaidInCapital">Additional Paid-In Capital</option>
-                          <option value="treasuryStock">Treasury Stock</option>
-                          <option value="totalEquity">Total Equity</option>
-                        </optgroup>
-                      </select>
-                    </div>
-
-                    {/* Expense Analysis Dropdown */}
-                    <div>
-                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px', display: 'block' }}>
-                        Expense Analysis (% of Revenue)
-                      </label>
-                      <select
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value && !selectedDashboardWidgets.includes(value)) {
-                            setSelectedDashboardWidgets([...selectedDashboardWidgets, value]);
-                          }
-                          e.target.value = '';
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          border: '2px solid #e2e8f0',
-                          borderRadius: '8px',
-                          fontSize: '14px',
-                          background: 'white',
-                          cursor: 'pointer',
-                          color: '#1e293b'
-                        }}
-                      >
-                        <option value="">Select an expense...</option>
-                        <option value="Expense % - Total Expenses">Total Expenses</option>
-                        <option value="Expense % - COGS Total">COGS Total</option>
-                        <option value="Expense % - OPEX Payroll">OPEX Payroll</option>
-                        <option value="Expense % - Owners Base Pay">Owners Base Pay</option>
-                        <option value="Expense % - Contractors">Contractors/Distribution</option>
-                        <option value="Expense % - Professional Services">Professional Services</option>
-                        <option value="Expense % - Insurance">Insurance</option>
-                        <option value="Expense % - Rent/Lease">Rent/Lease</option>
-                        <option value="Expense % - Infrastructure">Infrastructure/Utilities</option>
-                        <option value="Expense % - Auto & Travel">Auto & Travel</option>
-                        <option value="Expense % - Sales & Marketing">Sales & Marketing</option>
-                        <option value="Expense % - Other">Other Expenses</option>
-                        <option value="Expense % - Depreciation">Depreciation</option>
-                        <option value="Expense % - Interest">Interest</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Display selected trend analysis items */}
-                  {selectedDashboardWidgets.filter(w => 
-                    ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
-                     'salesExpense', 'rent', 'infrastructure', 'autoTravel', 'professionalFees', 'insurance', 'marketing', 
-                     'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors', 'interestExpense', 'depreciationAmortization', 
-                     'operatingExpenseTotal', 'nonOperatingIncome', 'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 
-                     'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'].includes(w) ||
-                     w.startsWith('Expense % - ')
-                  ).length > 0 && (
-                    <div style={{ marginTop: '16px' }}>
-                      <p style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Selected Trend Items:</p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                        {selectedDashboardWidgets.filter(w => 
-                          ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
-                           'salesExpense', 'rent', 'infrastructure', 'autoTravel', 'professionalFees', 'insurance', 'marketing', 
-                           'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors', 'interestExpense', 'depreciationAmortization', 
-                           'operatingExpenseTotal', 'nonOperatingIncome', 'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 
-                           'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'].includes(w) ||
-                           w.startsWith('Expense % - ')
-                        ).map(widget => (
-                          <div
-                            key={widget}
-                            style={{
-                              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                              color: 'white',
-                              padding: '8px 12px',
-                              borderRadius: '6px',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                          display: 'flex',
-                          alignItems: 'center',
-                              gap: '8px'
-                            }}
-                          >
-                            <span>{widget.startsWith('Expense % - ') ? widget : getTrendItemDisplayName(widget)}</span>
-                            <button
-                              onClick={() => setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget))}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: 'white',
-                                cursor: 'pointer',
-                                fontSize: '16px',
-                                padding: '0',
-                                lineHeight: '1'
-                              }}
-                            >
-                              ×
-                            </button>
-                      </div>
-                    ))}
-                  </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Working Capital Metrics */}
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💼 Working Capital Metrics
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-                    {['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle', 'Working Capital Trend'].map(widget => (
-                      <div
-                        key={widget}
-                        onClick={() => {
-                          if (selectedDashboardWidgets.includes(widget)) {
-                            setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget));
-                          } else {
-                            setSelectedDashboardWidgets([...selectedDashboardWidgets, widget]);
-                          }
-                        }}
-                        style={{
-                          background: selectedDashboardWidgets.includes(widget) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc',
-                          color: selectedDashboardWidgets.includes(widget) ? 'white' : '#1e293b',
-                          padding: '16px',
-                          borderRadius: '12px',
-                          cursor: 'pointer',
-                          border: selectedDashboardWidgets.includes(widget) ? '2px solid #667eea' : '2px solid #e2e8f0',
-                          transition: 'all 0.3s',
-                          fontWeight: '600',
-                          fontSize: '14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between'
-                        }}
-                      >
-                        <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '?' : '+'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Cash Flow Metrics */}
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💰 Cash Flow
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-                    {['Operating Cash Flow', 'Free Cash Flow', 'Cash Position'].map(widget => (
-                      <div
-                        key={widget}
-                        onClick={() => {
-                          if (selectedDashboardWidgets.includes(widget)) {
-                            setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget));
-                          } else {
-                            setSelectedDashboardWidgets([...selectedDashboardWidgets, widget]);
-                          }
-                        }}
-                        style={{
-                          background: selectedDashboardWidgets.includes(widget) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc',
-                          color: selectedDashboardWidgets.includes(widget) ? 'white' : '#1e293b',
-                          padding: '16px',
-                          borderRadius: '12px',
-                          cursor: 'pointer',
-                          border: selectedDashboardWidgets.includes(widget) ? '2px solid #667eea' : '2px solid #e2e8f0',
-                          transition: 'all 0.3s',
-                          fontWeight: '600',
-                          fontSize: '14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between'
-                        }}
-                      >
-                        <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '?' : '+'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Valuation Metrics */}
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    💎 Valuation Metrics
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-                    {['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'].map(widget => (
-                      <div
-                        key={widget}
-                        onClick={() => {
-                          if (selectedDashboardWidgets.includes(widget)) {
-                            setSelectedDashboardWidgets(selectedDashboardWidgets.filter(w => w !== widget));
-                          } else {
-                            setSelectedDashboardWidgets([...selectedDashboardWidgets, widget]);
-                          }
-                        }}
-                        style={{
-                          background: selectedDashboardWidgets.includes(widget) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#f8fafc',
-                          color: selectedDashboardWidgets.includes(widget) ? 'white' : '#1e293b',
-                          padding: '16px',
-                          borderRadius: '12px',
-                          cursor: 'pointer',
-                          border: selectedDashboardWidgets.includes(widget) ? '2px solid #667eea' : '2px solid #e2e8f0',
-                          transition: 'all 0.3s',
-                          fontWeight: '600',
-                          fontSize: '14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between'
-                        }}
-                      >
-                        <span>{widget}</span>
-                        <span>{selectedDashboardWidgets.includes(widget) ? '?' : '+'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '24px', textAlign: 'center' }}>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                  {selectedDashboardWidgets.length === 0 ? 'No widgets selected. Click items above to add them.' : `${selectedDashboardWidgets.length} widget${selectedDashboardWidgets.length === 1 ? '' : 's'} selected`}
-                </p>
-                {selectedDashboardWidgets.length > 0 && (
-                  <button
-                    onClick={() => setSelectedDashboardWidgets([])}
-                    style={{
-                      background: 'white',
-                      color: '#ef4444',
-                      border: '2px solid #ef4444',
-                      padding: '10px 20px',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.3s'
-                    }}
-                  >
-                    Clear All
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Display Selected Widgets */}
-          {selectedDashboardWidgets.length === 0 && !showDashboardCustomizer ? (
-            <div style={{
-              background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
-              borderRadius: '16px',
-              padding: '80px 32px',
-              textAlign: 'center',
-              border: '2px dashed #cbd5e1'
-            }}>
-              <div style={{ fontSize: '64px', marginBottom: '16px' }}>📊</div>
-              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
-                Your Dashboard is Empty
-              </h3>
-              <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '24px', maxWidth: '500px', margin: '0 auto 24px' }}>
-                Click the "Customize Dashboard" button above to select metrics and charts you'd like to track.
-              </p>
-              <button
-                onClick={() => setShowDashboardCustomizer(true)}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '14px 32px',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
-                }}
-              >
-                Get Started
-              </button>
-            </div>
-          ) : (
-            <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-              {/* Render widgets in user-selected order */}
-              {(() => {
-                const renderedWCWidgets = new Set();
-                const renderedValuationWidgets = new Set();
-                const wcWidgetsList = ['Current Working Capital', 'Working Capital Ratio', 'Days Working Capital', 'Cash Conversion Cycle'];
-                const valuationWidgetsList = ['SDE Valuation', 'EBITDA Valuation', 'DCF Valuation'];
-                
-          const renderedWidgets = selectedDashboardWidgets.map((widget, index) => {
-                  
-                  // Check if this is a Working Capital widget
-                  if (wcWidgetsList.includes(widget)) {
-                    // If we've already rendered WC widgets, skip
-                    if (renderedWCWidgets.size > 0) {
-                      return null;
-                    }
-                    
-                    // Mark all WC widgets as rendered
-                    wcWidgetsList.forEach(w => renderedWCWidgets.add(w));
-                    
-                    // Get all selected WC widgets
-                    const wcWidgets = selectedDashboardWidgets.filter(w => wcWidgetsList.includes(w));
-                    
-                  // Calculate working capital data
-                  const wcData = monthly.map(m => {
-                    const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
-                    const cl = m.tcl || ((m.ap || 0) + (m.otherCL || 0));
-                    return {
-                      month: m.month,
-                      currentAssets: ca,
-                      currentLiabilities: cl,
-                      workingCapital: ca - cl,
-                      revenue: m.revenue
-                    };
-                  });
-                  
-                  const current = wcData[wcData.length - 1];
-                  const prior = wcData.length >= 13 ? wcData[wcData.length - 13] : wcData[0];
-                  const currentWC = current.workingCapital;
-                  const wcRatio = current.currentLiabilities !== 0 ? current.currentAssets / current.currentLiabilities : 0;
-                  const wcChange = currentWC - prior.workingCapital;
-                  const wcChangePercent = prior.workingCapital !== 0 ? (wcChange / Math.abs(prior.workingCapital)) * 100 : 0;
-                  
-                  const last12Months = monthly.slice(-12);
-                  const annualRevenue = last12Months.reduce((sum, m) => sum + m.revenue, 0);
-                  const dailyRevenue = annualRevenue / 365;
-                  const daysWC = dailyRevenue !== 0 ? currentWC / dailyRevenue : 0;
-                  
-                  const daysAR = current.revenue !== 0 ? (current.currentAssets * 0.4 / (current.revenue * 12)) * 365 : 0;
-                  const daysAP = current.revenue !== 0 ? (current.currentLiabilities * 0.6 / (current.revenue * 12 * 0.7)) * 365 : 0;
-                  const daysInventory = current.revenue !== 0 ? (current.currentAssets * 0.2 / (current.revenue * 12 * 0.7)) * 365 : 0;
-                  const cashConversionCycle = daysAR + daysInventory - daysAP;
-                  
-                  return (
-                    <div key="wc-metrics" style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', justifyContent: 'flex-start' }}>
-                      {wcWidgets.includes('Current Working Capital') && (
-                        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
-                          <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Current Working Capital</h3>
-                          <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
-                            ${(currentWC / 1000).toFixed(0)}K
-                          </div>
-                          <div style={{ fontSize: '11px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                            {wcChange >= 0 ? '?' : '?'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%)
-                          </div>
-                        </div>
-                      )}
-                      
-                      {wcWidgets.includes('Working Capital Ratio') && (
-                        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
-                          <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Working Capital Ratio</h3>
-                          <div style={{ fontSize: '24px', fontWeight: '700', color: wcRatio >= 1.5 ? '#10b981' : wcRatio >= 1.0 ? '#f59e0b' : '#ef4444', marginBottom: '4px' }}>
-                            {wcRatio.toFixed(2)}
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            {wcRatio >= 1.5 ? 'Strong' : wcRatio >= 1.0 ? 'Adequate' : 'Needs Attention'}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {wcWidgets.includes('Days Working Capital') && (
-                        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
-                          <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Days Working Capital</h3>
-                          <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                            {daysWC.toFixed(0)}
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            Days of revenue covered
-                          </div>
-                        </div>
-                      )}
-                      
-                      {wcWidgets.includes('Cash Conversion Cycle') && (
-                        <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea', minWidth: '200px' }}>
-                          <h3 style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Cash Conversion Cycle</h3>
-                          <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                            {cashConversionCycle.toFixed(0)}
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#64748b' }}>
-                            Days (estimated)
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-                  
-                  // Check if this is a Valuation widget
-                  if (valuationWidgetsList.includes(widget)) {
-                    // If we've already rendered valuation widgets, skip
-                    if (renderedValuationWidgets.size > 0) {
-                return null;
-                    }
-                    
-                    // Mark all valuation widgets as rendered
-                    valuationWidgetsList.forEach(w => renderedValuationWidgets.add(w));
-                    
-                    // Get all selected valuation widgets
-                    const selectedValuationWidgets = selectedDashboardWidgets.filter(w => valuationWidgetsList.includes(w));
-                    
-                    // Calculate all valuations
-                    const last12 = monthly.slice(-12);
-                    const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                    const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
-                    const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
-                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
-                    const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                    const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
-                    const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
-                    const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
-                    const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
-                    const sdeValuation = ttmSDE * sdeMultiplier;
-                    const ebitdaValuation = ttmEBITDA * ebitdaMultiplier;
-                    
-                    // DCF calculation
-                    const currentMonth = monthly[monthly.length - 1];
-                    const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
-                    const currentWC_val = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
-                    const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
-                    const changeInWC = currentWC_val - priorWC;
-                    const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
-                    const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
-                    const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
-                    const growthRate = growth_24mo / 100;
-                    const discountRate = dcfDiscountRate / 100;
-                    const terminalGrowthRate = dcfTerminalGrowth / 100;
-                    let dcfValue = 0;
-                    for (let year = 1; year <= 5; year++) {
-                      const projectedFCF = ttmFreeCashFlow * Math.pow(1 + growthRate, year);
-                      dcfValue += projectedFCF / Math.pow(1 + discountRate, year);
-                    }
-                    const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
-                    dcfValue += terminalValue / Math.pow(1 + discountRate, 5);
-                    
-                    // Render container with all selected valuation widgets
-                    return (
-                      <div key="valuation-container" style={{ 
-                        background: 'white', 
-                        borderRadius: '12px', 
-                        padding: '20px', 
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                        gridColumn: '1 / -1'
-                      }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${selectedValuationWidgets.length}, 1fr)`, gap: '16px' }}>
-                          {selectedValuationWidgets.includes('SDE Valuation') && (
-                            <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #10b981' }}>
-                              <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>SDE Valuation</h3>
-                              <div style={{ fontSize: '32px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
-                                ${(sdeValuation / 1000000).toFixed(2)}M
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier.toFixed(1)}x
-                              </div>
-                            </div>
-                          )}
-                          
-                          {selectedValuationWidgets.includes('EBITDA Valuation') && (
-                            <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #06b6d4' }}>
-                              <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>EBITDA Valuation</h3>
-                              <div style={{ fontSize: '32px', fontWeight: '700', color: '#06b6d4', marginBottom: '8px' }}>
-                                ${(ebitdaValuation / 1000000).toFixed(2)}M
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier.toFixed(1)}x
-                              </div>
-                            </div>
-                          )}
-                          
-                          {selectedValuationWidgets.includes('DCF Valuation') && (
-                            <div style={{ padding: '20px', borderRadius: '8px', border: '2px solid #8b5cf6' }}>
-                              <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>DCF Valuation</h3>
-                              <div style={{ fontSize: '32px', fontWeight: '700', color: '#8b5cf6', marginBottom: '8px' }}>
-                                ${(dcfValue / 1000000).toFixed(2)}M
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                5-year projection at {dcfDiscountRate}% discount
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  // Render all other widgets normally
-                  return (() => {
-                // Render appropriate chart based on widget name
-                if (widget === 'Current Ratio') {
-                  return <LineChart key={widget} title="Current Ratio" data={trendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'Quick Ratio') {
-                  return <LineChart key={widget} title="Quick Ratio" data={trendData} valueKey="quickRatio" color="#14b8a6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Quick Ratio')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'Debt/Net Worth') {
-                  return <LineChart key={widget} title="Debt/Net Worth" data={trendData} valueKey="debtToNW" color="#ec4899" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt/Net Worth')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'ROA') {
-                  return <LineChart key={widget} title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
-                }
-                if (widget === 'ROE') {
-                  return <LineChart key={widget} title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
-                }
-                if (widget === 'Interest Coverage') {
-                  return <LineChart key={widget} title="Interest Coverage" data={trendData} valueKey="interestCov" color="#8b5cf6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Interest Coverage')} formatter={(v) => v.toFixed(1)} />;
-                }
-                // Additional Activity Ratios
-                if (widget === 'Inventory Turnover') {
-                  return <LineChart key={widget} title="Inventory Turnover" data={trendData} valueKey="invTurnover" color="#f59e0b" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Inventory Turnover')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'Receivables Turnover') {
-                  return <LineChart key={widget} title="Receivables Turnover" data={trendData} valueKey="arTurnover" color="#f97316" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Receivables Turnover')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'Payables Turnover') {
-                  return <LineChart key={widget} title="Payables Turnover" data={trendData} valueKey="apTurnover" color="#ef4444" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Payables Turnover')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'Sales/Working Capital') {
-                  return <LineChart key={widget} title="Sales/Working Capital" data={trendData} valueKey="salesWC" color="#06b6d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Sales/Working Capital')} formatter={(v) => v.toFixed(1)} />;
-                }
-                // Additional Coverage Ratios
-                if (widget === 'Debt Service Coverage') {
-                  return <LineChart key={widget} title="Debt Service Coverage" data={trendData} valueKey="debtSvcCov" color="#a78bfa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt Service Coverage')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'Cash Flow to Debt') {
-                  return <LineChart key={widget} title="Cash Flow to Debt" data={trendData} valueKey="cfToDebt" color="#c4b5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Cash Flow to Debt')} formatter={(v) => v.toFixed(1)} />;
-                }
-                // Additional Leverage Ratios
-                if (widget === 'Fixed Assets/Net Worth') {
-                  return <LineChart key={widget} title="Fixed Assets/Net Worth" data={trendData} valueKey="fixedToNW" color="#f472b6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Fixed Assets/Net Worth')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'Leverage Ratio') {
-                  return <LineChart key={widget} title="Leverage Ratio" data={trendData} valueKey="leverage" color="#f9a8d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Leverage Ratio')} formatter={(v) => v.toFixed(1)} />;
-                }
-                // Additional Operating Ratios
-                if (widget === 'Total Asset Turnover') {
-                  return <LineChart key={widget} title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} />;
-                }
-                if (widget === 'EBITDA Margin') {
-                  const ebitdaBM = getBenchmarkValue(benchmarks, 'EBITDA/Revenue');
-                  return <LineChart key={widget} title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact yMax={0.5} benchmarkValue={ebitdaBM !== null ? ebitdaBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
-                }
-                if (widget === 'EBIT Margin') {
-                  const ebitBM = getBenchmarkValue(benchmarks, 'EBIT/Revenue');
-                  return <LineChart key={widget} title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact yMax={0.5} benchmarkValue={ebitBM !== null ? ebitBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
-                }
-                // Note: Revenue Trend, Expense Trend, Net Profit Trend, and Gross Margin Trend widgets
-                // have been replaced with the Trend Analysis dropdown selections
-                
-                // Handle Item Trends from dropdown (specific financial metrics)
-                const itemTrendFields = ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 
-                  'cogsMaterials', 'cogsCommissions', 'cogsOther', 'salesExpense', 'rent', 'utilities', 'equipment', 
-                  'travel', 'professionalFees', 'insurance', 'marketing', 'payroll', 'ownerBasePay', 'ownersRetirement', 
-                  'subcontractors', 'interestExpense', 'depreciationAmortization', 'operatingExpenseTotal', 'nonOperatingIncome', 
-                  'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 
-                  'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'];
-                
-                if (itemTrendFields.includes(widget)) {
-                  const title = getTrendItemDisplayName(widget);
-                  const isCurrency = !['totalEquity', 'totalLiab', 'totalAssets'].includes(widget) || widget.includes('revenue') || widget.includes('expense') || widget.includes('profit');
-                  return (
-                    <LineChart 
-                      key={widget} 
-                      title={title} 
-                      data={monthly.map(m => ({ month: m.month, value: m[widget as keyof typeof m] as number || 0 }))} 
-                      color="#667eea" 
-                      compact 
-                      formatter={(v) => isCurrency ? '$' + (v / 1000).toFixed(0) + 'k' : v.toFixed(0)} 
-                    />
-                  );
-                }
-                
-                // Handle Expense Analysis (% of Revenue) from dropdown
-                if (widget.startsWith('Expense % - ')) {
-                  const expenseName = widget.replace('Expense % - ', '');
-                  const expenseFieldMap: {[key: string]: string} = {
-                    'Total Expenses': 'expense',
-                    'COGS Total': 'cogsTotal',
-                    'OPEX Payroll': 'payroll',
-                    'Owners Base Pay': 'ownerBasePay',
-                    'Contractors': 'subcontractors',
-                    'Professional Services': 'professionalFees',
-                    'Insurance': 'insurance',
-                    'Rent/Lease': 'rent',
-                    'Utilities': 'utilities',
-                    'Equipment': 'equipment',
-                    'Travel': 'travel',
-                    'Sales & Marketing': 'salesExpense',
-                    'Other': 'marketing',
-                    'Depreciation': 'depreciationAmortization',
-                    'Interest': 'interestExpense'
-                  };
-                  
-                  const fieldKey = expenseFieldMap[expenseName];
-                  if (fieldKey) {
-                    const expensePercentData = monthly.map(m => ({
-                      month: m.month,
-                      value: m.revenue > 0 ? ((m[fieldKey as keyof typeof m] as number || 0) / m.revenue * 100) : 0
-                    }));
-                    
-                    // Get goal line data if available
-                    const goalLineData = expenseGoals[fieldKey] ? monthly.map(() => expenseGoals[fieldKey]) : undefined;
-                    
-                    return (
-                      <LineChart 
-                        key={widget} 
-                        title={`${expenseName} (% of Revenue)`}
-                        data={expensePercentData} 
-                        color="#ef4444" 
-                        compact 
-                        formatter={(v) => v.toFixed(1) + '%'}
-                        goalLineData={goalLineData}
-                      />
-                    );
-                  }
-                }
-                
-                if (widget === 'Days Receivables') {
-                  return <LineChart key={widget} title="Days' Receivables" data={trendData} valueKey="daysAR" color="#fb923c" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Receivables')} formatter={(v) => v.toFixed(0)} />;
-                }
-                if (widget === 'Days Inventory') {
-                  return <LineChart key={widget} title="Days' Inventory" data={trendData} valueKey="daysInv" color="#fbbf24" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Inventory')} formatter={(v) => v.toFixed(0)} />;
-                }
-                if (widget === 'Days Payables') {
-                  return <LineChart key={widget} title="Days' Payables" data={trendData} valueKey="daysAP" color="#f87171" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Payables')} formatter={(v) => v.toFixed(0)} />;
-                }
-                if (widget === 'Operating Cash Flow') {
-                  return <LineChart key={widget} title="Operating Cash Flow" data={monthly} valueKey="netProfit" color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
-                }
-                if (widget === 'Free Cash Flow') {
-                  const fcfData = monthly.map(d => ({
-                    month: d.month,
-                    value: d.netProfit - (d.fixedAssets > 0 ? d.fixedAssets * 0.1 : 0) // Simplified FCF
-                  }));
-                  return <LineChart key={widget} title="Free Cash Flow" data={fcfData} color="#06b6d4" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
-                }
-                if (widget === 'Cash Position') {
-                  return <LineChart key={widget} title="Cash Position" data={monthly} valueKey="cash" color="#f59e0b" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'k'} />;
-                }
-                if (widget === 'Working Capital Trend') {
-                  // Holt-Winters Exponential Smoothing with Seasonality
-                  const holtWintersProjection = (data: number[], seasons: number = 12, periods: number = 12) => {
-                    if (data.length < seasons * 2) return [];
-                    
-                    // Initialize parameters
-                    const alpha = 0.3; // Level smoothing
-                    const beta = 0.1;  // Trend smoothing
-                    const gamma = 0.3; // Seasonal smoothing
-                    
-                    // Initial values
-                    let level = data.slice(0, seasons).reduce((a, b) => a + b) / seasons;
-                    let trend = 0;
-                    const seasonal: number[] = [];
-                    
-                    // Initialize seasonal factors
-                    for (let i = 0; i < seasons; i++) {
-                      seasonal[i] = data[i] / level;
-                    }
-                    
-                    // Fit the model
-                    for (let i = seasons; i < data.length; i++) {
-                      const oldLevel = level;
-                      const seasonalIndex = i % seasons;
-                      
-                      level = alpha * (data[i] / seasonal[seasonalIndex]) + (1 - alpha) * (oldLevel + trend);
-                      trend = beta * (level - oldLevel) + (1 - beta) * trend;
-                      seasonal[seasonalIndex] = gamma * (data[i] / level) + (1 - gamma) * seasonal[seasonalIndex];
-                    }
-                    
-                    // Generate forecasts
-                    const forecasts: number[] = [];
-                    for (let i = 0; i < periods; i++) {
-                      const seasonalIndex = (data.length + i) % seasons;
-                      forecasts.push((level + (i + 1) * trend) * seasonal[seasonalIndex]);
-                    }
-                    
-                    return forecasts;
-                  };
-                  
-                  // Calculate historical working capital
-                  const wcHistorical = monthly.map(m => {
-                    const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
-                    const cl = m.tcl || ((m.ap || 0) + (m.otherCL || 0));
-                    return {
-                      month: m.month,
-                      value: ca - cl,
-                      tca: ca,
-                      tcl: cl
-                    };
-                  });
-                  
-                  // Use last 36 months (3 years) for projection if available
-                  const historicalData = wcHistorical.slice(-36);
-                  
-                  // Extract TCA and TCL arrays
-                  const tcaValues = historicalData.map(d => d.tca);
-                  const tclValues = historicalData.map(d => d.tcl);
-                  
-                  // Project TCA and TCL separately
-                  const tcaProjections = holtWintersProjection(tcaValues, 12, 12);
-                  const tclProjections = holtWintersProjection(tclValues, 12, 12);
-                  
-                  // Calculate projected working capital
-                  const wcProjections = tcaProjections.map((tca, i) => tca - tclProjections[i]);
-                  
-                  // Generate month labels for projections
-                  const lastMonth = new Date(historicalData[historicalData.length - 1].month);
-                  const projectedMonths = Array.from({ length: 12 }, (_, i) => {
-                    const date = new Date(lastMonth);
-                    date.setMonth(date.getMonth() + i + 1);
-                    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-                  });
-                  
-                  const projectedData = projectedMonths.map((month, i) => ({
-                    month,
-                    value: wcProjections[i]
-                  }));
-                  
-                  return (
-                    <div key={widget} style={{ gridColumn: '1 / -1' }}>
-                      <ProjectionChart 
-                        title="Working Capital Trend & 12-Month Projection" 
-                        historicalData={wcHistorical}
-                        projectedData={{
-                          mostLikely: projectedData,
-                          bestCase: projectedData.map(d => ({ ...d, value: d.value * 1.1 })),
-                          worstCase: projectedData.map(d => ({ ...d, value: d.value * 0.9 }))
-                        }}
-                        valueKey="value"
-                        formatValue={(v) => '$' + (v / 1000).toFixed(0) + 'k'}
-                      />
-                    </div>
-                  );
-                }
-                
-                return null;
-                  })();
-                });
-                
-                return renderedWidgets;
-              })()}
-            </div>
-          )}
-        </div>
+        <DashboardView
+          monthly={monthly}
+          trendData={trendData}
+          companyName={companyName || ''}
+          selectedCompanyId={selectedCompanyId}
+          selectedDashboardWidgets={selectedDashboardWidgets}
+          setSelectedDashboardWidgets={setSelectedDashboardWidgets}
+          showDashboardCustomizer={showDashboardCustomizer}
+          setShowDashboardCustomizer={setShowDashboardCustomizer}
+          sdeMultiplier={sdeMultiplier}
+          ebitdaMultiplier={ebitdaMultiplier}
+          dcfDiscountRate={dcfDiscountRate}
+          dcfTerminalGrowth={dcfTerminalGrowth}
+          growth_24mo={growth_24mo}
+          benchmarks={benchmarks}
+          expenseGoals={expenseGoals}
+          onSaveDashboardPrefs={saveDashboardPreferences}
+        />
       )}
 
       {/* KPI Dashboard View */}
-      {currentView === 'kpis' && selectedCompanyId && trendData.length > 0 && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
-            @media print {
-              @page {
-                size: letter;
-                margin: 0.375in 0.375in 0.75in 0.375in;
-              }
-              
-              /* Hide navigation and UI elements */
-              .no-print,
-              header,
-              nav,
-              aside,
-              [role="navigation"],
-              button {
-                display: none !important;
-              }
-              
-              /* Show print header */
-              .print-header {
-                display: block !important;
-              }
-              
-              /* Scale down charts proportionally and adjust spacing */
-              .priority-ratios-print-content > div:last-child {
-                display: grid !important;
-                grid-template-columns: repeat(2, 1fr) !important;
-                gap: 0px !important;
-                row-gap: 0px !important;
-              }
-              
-              .priority-ratios-print-content > div:last-child > div {
-                transform: scale(0.75);
-                transform-origin: top left;
-                width: 133%;
-                height: 265px;
-                overflow: visible;
-              }
-              
-              /* First row */
-              .priority-ratios-print-content > div:last-child > div:nth-child(1),
-              .priority-ratios-print-content > div:last-child > div:nth-child(2) {
-                margin-bottom: 0px;
-              }
-              
-              /* Second row */
-              .priority-ratios-print-content > div:last-child > div:nth-child(3),
-              .priority-ratios-print-content > div:last-child > div:nth-child(4) {
-                margin-bottom: 0px;
-              }
-              
-              /* Third row */
-              .priority-ratios-print-content > div:last-child > div:nth-child(5),
-              .priority-ratios-print-content > div:last-child > div:nth-child(6) {
-                margin-bottom: 0;
-              }
-            }
-            
-            .print-header {
-              display: none;
-            }
-          `}</style>
-          <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Ratios</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-          
-          {/* Benchmark Status Indicator */}
-          {benchmarks.length > 0 ? (
-            <div className="no-print" style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#065f46' }}>
-              ? Industry benchmarks loaded: {benchmarks.length} metrics for {benchmarks[0]?.industryName || 'Unknown Industry'} ({benchmarks[0]?.assetSizeCategory || 'N/A'})
-            </div>
-          ) : (
-            <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '12px', marginBottom: '12px', fontSize: '13px', color: '#991b1b' }}>
-              ⚠️ No industry benchmarks loaded. {!getCurrentCompany()?.industrySector ? 'Please set the industry sector in Company Details.' : 'Benchmarks may not be available for this industry.'}
-            </div>
-          )}
-
-          {/* Tab Navigation */}
-          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '32px', borderBottom: '2px solid #e2e8f0' }}>
-            <button
-              onClick={() => setKpiDashboardTab('all-ratios')}
-              style={{
-                padding: '12px 24px',
-                background: kpiDashboardTab === 'all-ratios' ? '#667eea' : 'transparent',
-                color: kpiDashboardTab === 'all-ratios' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: kpiDashboardTab === 'all-ratios' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Ratio Graphs
-            </button>
-            <button
-              onClick={() => setKpiDashboardTab('priority-ratios')}
-              style={{
-                padding: '12px 24px',
-                background: kpiDashboardTab === 'priority-ratios' ? '#667eea' : 'transparent',
-                color: kpiDashboardTab === 'priority-ratios' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: kpiDashboardTab === 'priority-ratios' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Priority Ratios
-            </button>
-            <button
-              onClick={() => setKpiDashboardTab('monthly-ratios')}
-              style={{
-                padding: '12px 24px',
-                background: kpiDashboardTab === 'monthly-ratios' ? '#667eea' : 'transparent',
-                color: kpiDashboardTab === 'monthly-ratios' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: kpiDashboardTab === 'monthly-ratios' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Monthly Ratios by Category
-            </button>
-          </div>
-
-          {/* Ratio Graphs Tab */}
-          {kpiDashboardTab === 'all-ratios' && (
-            <>
-              <div style={{ marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Liquidity Ratios</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                  <LineChart title="Current Ratio" data={trendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Current Ratio')} />
-                  <LineChart title="Quick Ratio" data={trendData} valueKey="quickRatio" color="#14b8a6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Quick Ratio')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Quick Ratio')} />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Activity Ratios</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                  <LineChart title="Inventory Turnover" data={trendData} valueKey="invTurnover" color="#f59e0b" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Inventory Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Inventory Turnover')} />
-                  <LineChart title="Receivables Turnover" data={trendData} valueKey="arTurnover" color="#f97316" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Receivables Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Receivables Turnover')} />
-                  <LineChart title="Payables Turnover" data={trendData} valueKey="apTurnover" color="#ef4444" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Payables Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Payables Turnover')} />
-                  <LineChart title="Days' Inventory" data={trendData} valueKey="daysInv" color="#fbbf24" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Inventory')} formatter={(v) => v.toFixed(0)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Days\' Inventory')} />
-                  <LineChart title="Days' Receivables" data={trendData} valueKey="daysAR" color="#fb923c" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Receivables')} formatter={(v) => v.toFixed(0)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Days\' Receivables')} />
-                  <LineChart title="Days' Payables" data={trendData} valueKey="daysAP" color="#f87171" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Payables')} formatter={(v) => v.toFixed(0)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Days\' Payables')} />
-                  <LineChart title="Sales/Working Capital" data={trendData} valueKey="salesWC" color="#06b6d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Sales/Working Capital')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Sales/Working Capital')} />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Coverage Ratios</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                  <LineChart title="Interest Coverage" data={trendData} valueKey="interestCov" color="#8b5cf6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Interest Coverage')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Interest Coverage')} />
-                  <LineChart title="Debt Service Coverage" data={trendData} valueKey="debtSvcCov" color="#a78bfa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt Service Coverage')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Debt Service Coverage')} />
-                  <LineChart title="Cash Flow to Debt" data={trendData} valueKey="cfToDebt" color="#c4b5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Cash Flow to Debt')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Cash Flow to Debt')} />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Leverage Ratios</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                  <LineChart title="Debt/Net Worth" data={trendData} valueKey="debtToNW" color="#ec4899" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt/Net Worth')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Debt/Net Worth')} />
-                  <LineChart title="Fixed Assets/Net Worth" data={trendData} valueKey="fixedToNW" color="#f472b6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Fixed Assets/Net Worth')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Fixed Assets/Net Worth')} />
-                  <LineChart title="Leverage Ratio" data={trendData} valueKey="leverage" color="#f9a8d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Leverage Ratio')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Leverage Ratio')} />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Operating Ratios</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                  <LineChart title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Total Asset Turnover')} />
-                  <LineChart title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Return on Equity (ROE)')} />
-                  <LineChart title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('Return on Assets (ROA)')} />
-                  <LineChart title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact yMax={0.5} benchmarkValue={(() => { const bm = getBenchmarkValue(benchmarks, 'EBITDA/Revenue'); return bm !== null ? bm / 100 : null; })()} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBITDA Margin')} />
-                  <LineChart title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact yMax={0.5} benchmarkValue={(() => { const bm = getBenchmarkValue(benchmarks, 'EBIT/Revenue'); return bm !== null ? bm / 100 : null; })()} formatter={(v) => (v * 100).toFixed(1) + '%'} showFormulaButton onFormulaClick={() => setShowFormulaPopup('EBIT Margin')} />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Priority Ratios Tab */}
-          {kpiDashboardTab === 'priority-ratios' && (
-            <div>
-              <div className="no-print" style={{ marginBottom: '12px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Customize Your Priority Ratios</h3>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-                  Select up to 6 ratios to track as your priority KPIs. These selections will be saved and persist across sessions.
-                </p>
-                {/* Updated layout - more compact and horizontal */}
-                
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-                  {Object.entries(ratioCategories).map(([category, ratios]) => (
-                    <div key={category} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', whiteSpace: 'nowrap' }}>
-                        {category}:
-                      </label>
-                      <select
-                        value={priorityRatios.find(ratio => ratios.includes(ratio)) || ''}
-                        onChange={(e) => {
-                          const newRatio = e.target.value;
-                          if (newRatio) {
-                            const currentRatioFromCategory = priorityRatios.find(ratio => ratios.includes(ratio));
-                            if (currentRatioFromCategory) {
-                              // Replace existing ratio from this category
-                              setPriorityRatios(prev => prev.map(ratio => 
-                                ratio === currentRatioFromCategory ? newRatio : ratio
-                              ));
-                            } else if (priorityRatios.length < 6) {
-                              // Add new ratio if under limit
-                              setPriorityRatios(prev => [...prev, newRatio]);
-                            } else {
-                              alert('Maximum of 6 priority ratios allowed. Please remove one first.');
-                            }
-                          }
-                        }}
-                        style={{
-                          padding: '6px 8px',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          background: 'white',
-                          minWidth: '140px'
-                        }}
-                      >
-                        <option value="">Select...</option>
-                        {ratios.map(ratio => (
-                          <option key={ratio} value={ratio}>
-                            {ratio}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                    Selected: {priorityRatios.length}/6 ratios
-                  </div>
-                  <button
-                    onClick={savePriorityRatios}
-                    style={{
-                      padding: '6px 12px',
-                      background: '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-
-              {/* Display Selected Priority Ratios */}
-              {priorityRatios.length > 0 && (
-                <div>
-                  <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                      Your Priority Ratios ({priorityRatios.length}/6)
-                    </h3>
-                    <button
-                      onClick={() => window.print()}
-                      style={{
-                        padding: '10px 20px',
-                        background: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      🖨️ Print Priority Ratios
-                    </button>
-                  </div>
-                  <div className="priority-ratios-print-content">
-                    <div className="print-header" style={{ display: 'none' }}>
-                      <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', marginTop: '0', textAlign: 'center' }}>
-                        Priority Ratios {companyName && `- ${companyName}`}
-                      </h1>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
-                    {priorityRatios.map((ratio, index) => (
-                      <div key={ratio} style={{ position: 'relative' }}>
-                        <LineChart
-                          title={ratio}
-                          data={trendData}
-                          valueKey={getRatioValueKey(ratio)}
-                          color={getRatioColor(ratio)}
-                          compact
-                          benchmarkValue={getBenchmarkValue(benchmarks, ratio)}
-                          formatter={getRatioFormatter(ratio)}
-                          showFormulaButton
-                          onFormulaClick={() => setShowFormulaPopup(ratio)}
-                        />
-                        <button
-                          onClick={() => setPriorityRatios(prev => prev.filter((_, i) => i !== index))}
-                          className="no-print"
-                          style={{
-                            position: 'absolute',
-                            top: '8px',
-                            right: '8px',
-                            background: '#ef4444',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '50%',
-                            width: '24px',
-                            height: '24px',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {priorityRatios.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '60px', color: '#64748b' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                  <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>No Priority Ratios Selected</h3>
-                  <p>Select ratios from the dropdowns above to create your custom KPI dashboard.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Monthly Ratios by Category Tab */}
-          {kpiDashboardTab === 'monthly-ratios' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                  Financial Ratios Overview
-                </h2>
-                <button
-                  onClick={() => exportMonthlyRatiosToExcel(trendData, companyName)}
-                  style={{
-                    background: '#10b981',
-                    color: 'white',
-                    border: 'none',
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
-                  onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
-                >
-                  📊 Export to Excel
-                </button>
-              </div>
-              
-              {/* Liquidity Ratios */}
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Liquidity Ratios</h3>
-              <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
-                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                      {trendData.slice(-12).map((data, i) => (
-                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                          {data.month.substring(0, data.month.lastIndexOf('/'))}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Current Ratio</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.currentRatio !== undefined ? data.currentRatio.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Quick Ratio</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.quickRatio !== undefined ? data.quickRatio.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Activity Ratios */}
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Activity Ratios</h3>
-              <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
-                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                      {trendData.slice(-12).map((data, i) => (
-                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                          {data.month.substring(0, data.month.lastIndexOf('/'))}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Inventory Turnover</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.invTurnover !== undefined ? data.invTurnover.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Receivables Turnover</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.arTurnover !== undefined ? data.arTurnover.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Payables Turnover</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.apTurnover !== undefined ? data.apTurnover.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Inventory</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.daysInv !== undefined ? data.daysInv.toFixed(0) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Receivables</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.daysAR !== undefined ? data.daysAR.toFixed(0) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Payables</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.daysAP !== undefined ? data.daysAP.toFixed(0) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Sales/Working Capital</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.salesWC !== undefined ? data.salesWC.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Coverage Ratios */}
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Coverage Ratios</h3>
-              <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
-                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                      {trendData.slice(-12).map((data, i) => (
-                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                          {data.month.substring(0, data.month.lastIndexOf('/'))}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Interest Coverage</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.interestCov !== undefined ? data.interestCov.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt Service Coverage</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.debtSvcCov !== undefined ? data.debtSvcCov.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Cash Flow to Debt</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.cfToDebt !== undefined ? data.cfToDebt.toFixed(2) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Leverage Ratios */}
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Leverage Ratios</h3>
-              <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
-                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                      {trendData.slice(-12).map((data, i) => (
-                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                          {data.month.substring(0, data.month.lastIndexOf('/'))}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt/Net Worth</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.debtToNW !== undefined ? data.debtToNW.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Fixed Assets/Net Worth</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.fixedToNW !== undefined ? data.fixedToNW.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Leverage Ratio</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.leverage !== undefined ? data.leverage.toFixed(1) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Operating Ratios */}
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px', marginTop: '24px' }}>Operating Ratios</h3>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', minWidth: '120px' }}>Ratio</th>
-                      {trendData.slice(-12).map((data, i) => (
-                        <th key={i} style={{ textAlign: 'right', padding: '8px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '60px' }}>
-                          {data.month.substring(0, data.month.lastIndexOf('/'))}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Total Asset Turnover</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.totalAssetTO !== undefined ? data.totalAssetTO.toFixed(2) : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROE</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.roe !== undefined ? `${(data.roe * 100).toFixed(1)}%` : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROA</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.roa !== undefined ? `${(data.roa * 100).toFixed(1)}%` : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBITDA Margin</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.ebitdaMargin !== undefined ? `${(data.ebitdaMargin * 100).toFixed(1)}%` : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBIT Margin</td>
-                      {trendData.slice(-12).map((data, i) => (
-                        <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                          {data?.ebitMargin !== undefined ? `${(data.ebitMargin * 100).toFixed(1)}%` : 'N/A'}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
+      {currentView === 'kpis' && selectedCompanyId && (
+        <RatiosTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+          benchmarks={benchmarks}
+          onFormulaClick={(formula) => setShowFormulaPopup(formula)}
+        />
       )}
 
       {/* MD&A View */}
-      {currentView === 'mda' && selectedCompanyId && trendData.length > 0 && (
-        <div className="mda-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div className="mda-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <div>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>Management Discussion & Analysis</h1>
-              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <button 
-                className="no-print"
-                onClick={() => {
-                  // Force re-render by navigating away and back
-                  const currentCompany = selectedCompanyId;
-                  setCurrentView('dashboard');
-                  setTimeout(() => {
-                    setSelectedCompanyId(currentCompany);
-                    setCurrentView('mda');
-                  }, 10);
-                }} 
-                style={{ 
-                  padding: '12px 24px', 
-                  background: '#10b981', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#059669'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
-              >
-                🔄 Refresh Analysis
-              </button>
-              <button
-                className="no-print"
-                onClick={handleExportMdaToWord}
-                style={{
-                  padding: '12px 24px',
-                  background: '#0ea5e9',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)',
-                }}
-              >
-                ?? Export to Word
-              </button>
-              <button 
-                className="no-print"
-                onClick={() => window.print()} 
-                style={{ 
-                  padding: '12px 24px', 
-                  background: '#667eea', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
-                }}>
-                🖨️ Print
-              </button>
-              <TextToSpeech 
-                targetElementId={
-                  mdaTab === 'executive-summary' ? 'mda-executive-summary-container' :
-                  mdaTab === 'strengths-insights' ? 'mda-strengths-insights-container' :
-                  'mda-key-metrics-container'
-                }
-                buttonLabel="Listen"
-                variant="primary"
-                style={{
-                  padding: '12px 24px',
-                  boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)'
-                }}
-              />
-            </div>
-          </div>
-          
-          <style>{`
-            @media print {
-              @page {
-                size: portrait;
-                margin: 0.5in;
-              }
-              
-              /* Hide navigation and UI elements */
-              .no-print,
-              header,
-              nav,
-              aside,
-              [role="navigation"] {
-                display: none !important;
-              }
-              
-              /* Hide tab navigation buttons */
-              button[onclick*="setMdaTab"] {
-                display: none !important;
-              }
-              
-              /* Remove box shadows and backgrounds */
-              * {
-                box-shadow: none !important;
-              }
-              
-              /* Ensure text is readable */
-              body, p, li, div {
-                color: #000 !important;
-              }
-              
-              h1, h2, h3 {
-                page-break-after: avoid;
-              }
-              
-              /* Avoid breaking inside sections */
-              div[style*="background: white"] {
-                page-break-inside: avoid;
-              }
-            }
-          `}</style>
-          
-          {/* Tab Navigation */}
-          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
-            <button
-              onClick={() => setMdaTab('executive-summary')}
-              style={{
-                padding: '12px 24px',
-                background: mdaTab === 'executive-summary' ? '#667eea' : 'transparent',
-                color: mdaTab === 'executive-summary' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: mdaTab === 'executive-summary' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Executive Summary
-            </button>
-            <button
-              onClick={() => setMdaTab('strengths-insights')}
-              style={{
-                padding: '12px 24px',
-                background: mdaTab === 'strengths-insights' ? '#667eea' : 'transparent',
-                color: mdaTab === 'strengths-insights' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: mdaTab === 'strengths-insights' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Strengths and Insights
-            </button>
-            <button
-              onClick={() => setMdaTab('key-metrics')}
-              style={{
-                padding: '12px 24px',
-                background: mdaTab === 'key-metrics' ? '#667eea' : 'transparent',
-                color: mdaTab === 'key-metrics' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: mdaTab === 'key-metrics' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Critical Review Items
-            </button>
-          </div>
-
-          {/* Executive Summary Tab */}
-          {mdaTab === 'executive-summary' && (
-          <div
-            id="mda-executive-summary-container"
-            style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
-          >
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>Executive Summary</h2>
-
-            {/* Comprehensive Analysis Narrative */}
-            <div style={{ marginBottom: '28px' }}>
-              <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#475569', background: '#f8fafc', padding: '20px', borderRadius: '8px', borderLeft: '4px solid #667eea' }}>
-                <p style={{ margin: '0 0 12px 0' }}>
-                  {(() => {
-                    if (monthly.length < 12) return 'Requires 12+ months of data for year-over-year comparisons.';
-                    
-                    // Current quarter vs 4 quarters ago
-                    const currentQ = monthly.slice(-3);
-                    const fourQAgo = monthly.length >= 15 ? monthly.slice(-15, -12) : monthly.slice(-6, -3);
-                    const currentQRev = currentQ.reduce((sum, m) => sum + m.revenue, 0);
-                    const currentQExp = currentQ.reduce((sum, m) => sum + m.expense, 0);
-                    const fourQAgoRev = fourQAgo.reduce((sum, m) => sum + m.revenue, 0);
-                    const fourQAgoExp = fourQAgo.reduce((sum, m) => sum + m.expense, 0);
-                    const qRevChange = fourQAgoRev > 0 ? ((currentQRev - fourQAgoRev) / fourQAgoRev * 100) : 0;
-                    const qExpChange = fourQAgoExp > 0 ? ((currentQExp - fourQAgoExp) / fourQAgoExp * 100) : 0;
-                    const currentQMargin = currentQRev > 0 ? ((currentQRev - currentQExp) / currentQRev * 100) : 0;
-                    const fourQAgoMargin = fourQAgoRev > 0 ? ((fourQAgoRev - fourQAgoExp) / fourQAgoRev * 100) : 0;
-                    const qMarginChange = currentQMargin - fourQAgoMargin;
-                    
-                    // TTM vs prior TTM
-                    const last12 = monthly.slice(-12);
-                    const prior12 = monthly.length >= 24 ? monthly.slice(-24, -12) : monthly.slice(0, 12);
-                    const ttmRev = last12.reduce((sum, m) => sum + m.revenue, 0);
-                    const ttmExp = last12.reduce((sum, m) => sum + m.expense, 0);
-                    const priorTTMRev = prior12.reduce((sum, m) => sum + m.revenue, 0);
-                    const priorTTMExp = prior12.reduce((sum, m) => sum + m.expense, 0);
-                    const ttmRevChange = priorTTMRev > 0 ? ((ttmRev - priorTTMRev) / priorTTMRev * 100) : 0;
-                    const ttmExpChange = priorTTMExp > 0 ? ((ttmExp - priorTTMExp) / priorTTMExp * 100) : 0;
-                    const ttmMargin = ttmRev > 0 ? ((ttmRev - ttmExp) / ttmRev * 100) : 0;
-                    const priorTTMMargin = priorTTMRev > 0 ? ((priorTTMRev - priorTTMExp) / priorTTMRev * 100) : 0;
-                    const ttmMarginChange = ttmMargin - priorTTMMargin;
-                    
-                    return (
-                      <>
-                        <strong>Current quarter</strong> revenue of <strong>{formatDollar(currentQRev)}</strong> represents a {qRevChange > 0 ? 'increase' : 'decrease'} of <strong style={{ color: qRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qRevChange).toFixed(1)}%</strong> compared to four quarters ago ({formatDollar(fourQAgoRev)}), 
-                        while total expenses of <strong>{formatDollar(currentQExp)}</strong> {qExpChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: Math.abs(qExpChange) < Math.abs(qRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(qExpChange).toFixed(1)}%</strong> from {formatDollar(fourQAgoExp)}.
-                        Quarterly profit margin {qMarginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: qMarginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(qMarginChange).toFixed(1)}</strong> percentage points to <strong>{currentQMargin.toFixed(1)}%</strong>
-                        {qMarginChange > 5 ? <span style={{ color: '#10b981' }}>, reflecting significant margin expansion and improving profitability</span> :
-                         qMarginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
-                         qMarginChange > -5 ? <span style={{ color: '#64748b' }}>, maintaining relatively stable profitability</span> :
-                         <span style={{ color: '#ef4444' }}>, signaling substantial margin pressure requiring immediate management attention</span>}.
-                        {' '}<strong>Trailing twelve months (TTM)</strong> revenue of <strong>{formatDollar(ttmRev)}</strong> shows {ttmRevChange > 0 ? 'growth' : 'decline'} of <strong style={{ color: ttmRevChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmRevChange).toFixed(1)}%</strong> compared to the prior twelve-month period ({formatDollar(priorTTMRev)}), 
-                        with total expenses of <strong>{formatDollar(ttmExp)}</strong> {ttmExpChange > 0 ? 'growing' : 'declining'} by <strong style={{ color: Math.abs(ttmExpChange) < Math.abs(ttmRevChange) ? '#10b981' : '#ef4444' }}>{Math.abs(ttmExpChange).toFixed(1)}%</strong> from {formatDollar(priorTTMExp)}.
-                        Annual profit margin {ttmMarginChange > 0 ? 'improved' : 'deteriorated'} by <strong style={{ color: ttmMarginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(ttmMarginChange).toFixed(1)}</strong> percentage points to <strong>{ttmMargin.toFixed(1)}%</strong>
-                        {ttmExpChange < ttmRevChange ? <span style={{ color: '#10b981' }}>, with excellent operational leverage as expense growth is controlled relative to revenue expansion</span> :
-                         ttmExpChange > ttmRevChange + 5 ? <span style={{ color: '#ef4444' }}>, indicating concerning expense growth outpacing revenue that requires cost management initiatives</span> :
-                         ', maintaining operational efficiency'}.
-                      </>
-                    );
-                  })()}
-                </p>
-                <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Financial Ratios</strong> analysis provides insight into operational performance and financial health:
-                  {(() => {
-                    const ratioAnalysis = [];
-                    
-                    // Current Ratio
-                    const currentRatioBM = benchmarks.find(b => b.metricName === 'Current Ratio')?.fiveYearValue;
-                    if (currentRatioBM && trendData[trendData.length - 1]?.currentRatio) {
-                      const actual = trendData[trendData.length - 1].currentRatio;
-                      const diff = ((actual / currentRatioBM - 1) * 100);
-                      if (Math.abs(diff) > 20) {
-                        ratioAnalysis.push(
-                          <span key="current-ratio">
-                            <strong> Current Ratio</strong> of {actual.toFixed(2)} is <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> the industry average of {currentRatioBM.toFixed(2)}
-                            {diff > 0 ? ', indicating strong short-term liquidity with ample current assets to cover current liabilities, providing cushion for operational needs' : 
-                             ', suggesting potential liquidity constraints that may limit flexibility in meeting short-term obligations'}.
-                          </span>
-                        );
-                      }
-                    }
-                    
-                    // Quick Ratio
-                    const quickRatioBM = benchmarks.find(b => b.metricName === 'Quick Ratio')?.fiveYearValue;
-                    if (quickRatioBM && trendData[trendData.length - 1]?.quickRatio) {
-                      const actual = trendData[trendData.length - 1].quickRatio;
-                      const diff = ((actual / quickRatioBM - 1) * 100);
-                      if (Math.abs(diff) > 20) {
-                        ratioAnalysis.push(
-                          <span key="quick-ratio">
-                            <strong> Quick Ratio</strong> of {actual.toFixed(2)} stands <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> industry norms of {quickRatioBM.toFixed(2)}
-                            {diff > 0 ? ', demonstrating excellent immediate liquidity with liquid assets readily available to meet urgent obligations without relying on inventory conversion' :
-                             ', indicating the company may face challenges meeting immediate obligations from liquid assets alone, potentially requiring inventory liquidation or external financing'}.
-                          </span>
-                        );
-                      }
-                    }
-                    
-                    // Debt to Net Worth
-                    const debtToNWBM = benchmarks.find(b => b.metricName === 'Total Debt to Net Worth Ratio')?.fiveYearValue;
-                    if (debtToNWBM && trendData[trendData.length - 1]?.debtToNW) {
-                      const actual = trendData[trendData.length - 1].debtToNW;
-                      const diff = ((actual / debtToNWBM - 1) * 100);
-                      if (Math.abs(diff) > 30) {
-                        ratioAnalysis.push(
-                          <span key="debt-nw">
-                            <strong> Debt-to-Net Worth</strong> ratio of {actual.toFixed(2)} is <strong style={{ color: diff < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> industry average of {debtToNWBM.toFixed(2)}
-                            {diff < 0 ? ', reflecting conservative capital structure with lower financial leverage, which reduces financial risk but may indicate underutilization of debt financing opportunities' :
-                             ', indicating aggressive leverage that increases financial risk, amplifies return volatility, and may constrain future borrowing capacity or increase financing costs'}.
-                          </span>
-                        );
-                      }
-                    }
-                    
-                    // ROE
-                    const roeBM = benchmarks.find(b => b.metricName === 'Return on Net Worth %')?.fiveYearValue;
-                    if (roeBM && trendData[trendData.length - 1]?.roe) {
-                      const actualROE = trendData[trendData.length - 1].roe * 100;
-                      const diff = ((actualROE / roeBM - 1) * 100);
-                      if (Math.abs(diff) > 20) {
-                        ratioAnalysis.push(
-                          <span key="roe">
-                            <strong> Return on Equity</strong> of {actualROE.toFixed(1)}% is <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> industry benchmark of {roeBM.toFixed(1)}%
-                            {diff > 0 ? ', demonstrating superior profitability and efficient use of shareholder capital, suggesting strong competitive positioning and effective management execution' :
-                             ', indicating below-average returns on equity investment, which may signal operational inefficiencies, margin pressures, or suboptimal capital deployment'}.
-                          </span>
-                        );
-                      }
-                    }
-                    
-                    // ROA
-                    const roaBM = benchmarks.find(b => b.metricName === 'Return on Total Assets %')?.fiveYearValue;
-                    if (roaBM && trendData[trendData.length - 1]?.roa) {
-                      const actualROA = trendData[trendData.length - 1].roa * 100;
-                      const diff = ((actualROA / roaBM - 1) * 100);
-                      if (Math.abs(diff) > 20) {
-                        ratioAnalysis.push(
-                          <span key="roa">
-                            <strong> Return on Assets</strong> of {actualROA.toFixed(1)}% is <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'above' : 'below'}</strong> industry norm of {roaBM.toFixed(1)}%
-                            {diff > 0 ? ', reflecting efficient asset utilization and strong operational performance in converting invested capital into profits' :
-                             ', suggesting assets are generating below-average returns, potentially indicating overcapitalization, underutilized capacity, or operational inefficiencies'}.
-                          </span>
-                        );
-                      }
-                    }
-                    
-                    // Asset Turnover
-                    const assetTOBM = benchmarks.find(b => b.metricName === 'Total Asset Turnover')?.fiveYearValue;
-                    if (assetTOBM && trendData[trendData.length - 1]?.totalAssetTO) {
-                      const actual = trendData[trendData.length - 1].totalAssetTO;
-                      const diff = ((actual / assetTOBM - 1) * 100);
-                      if (Math.abs(diff) > 20) {
-                        ratioAnalysis.push(
-                          <span key="asset-to">
-                            <strong> Asset Turnover</strong> of {actual.toFixed(2)} is <strong style={{ color: diff > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'higher than' : 'lower than'}</strong> industry average of {assetTOBM.toFixed(2)}
-                            {diff > 0 ? ', indicating efficient revenue generation per dollar of assets, suggesting effective asset management and strong sales productivity' :
-                             ', reflecting lower revenue generation efficiency, which may indicate excess asset investments, idle capacity, or need for improved asset utilization strategies'}.
-                          </span>
-                        );
-                      }
-                    }
-                    
-                    // Days Receivables
-                    const daysARBM = benchmarks.find(b => b.metricName === "Days' Receivables")?.fiveYearValue;
-                    if (daysARBM && trendData[trendData.length - 1]?.daysAR > 0) {
-                      const actual = trendData[trendData.length - 1].daysAR;
-                      const diff = ((actual / daysARBM - 1) * 100);
-                      if (Math.abs(diff) > 20) {
-                        ratioAnalysis.push(
-                          <span key="days-ar">
-                            <strong> Days Receivables</strong> of {actual.toFixed(0)} days is <strong style={{ color: diff < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(diff).toFixed(0)}% {diff > 0 ? 'slower' : 'faster'}</strong> than industry average of {daysARBM.toFixed(0)} days
-                            {diff < 0 ? ', demonstrating strong collections processes and efficient working capital management, freeing up cash for operations' :
-                             ', indicating collection challenges that tie up working capital, potentially reflecting lenient credit terms, weak collection procedures, or customer payment difficulties'}.
-                          </span>
-                        );
-                      }
-                    }
-                    
-                    if (ratioAnalysis.length === 0) {
-                      return <span> The company's key financial ratios are generally in line with industry benchmarks, indicating balanced financial performance across liquidity, leverage, profitability, and efficiency metrics.</span>;
-                    }
-                    
-                    return ratioAnalysis;
-                  })()}.
-                  {benchmarks.length > 0 ? (() => {
-                    const comparisons = [];
-                    let aboveCount = 0;
-                    let belowCount = 0;
-                    
-                    // Check Current Ratio
-                    const currentRatioBM = benchmarks.find(b => b.metricName === 'Current Ratio')?.fiveYearValue;
-                    if (currentRatioBM && trendData[trendData.length - 1]?.currentRatio) {
-                      if (trendData[trendData.length - 1].currentRatio > currentRatioBM * 1.2) aboveCount++;
-                      else if (trendData[trendData.length - 1].currentRatio < currentRatioBM * 0.8) belowCount++;
-                    }
-                    
-                    // Check Quick Ratio
-                    const quickRatioBM = benchmarks.find(b => b.metricName === 'Quick Ratio')?.fiveYearValue;
-                    if (quickRatioBM && trendData[trendData.length - 1]?.quickRatio) {
-                      if (trendData[trendData.length - 1].quickRatio > quickRatioBM * 1.2) aboveCount++;
-                      else if (trendData[trendData.length - 1].quickRatio < quickRatioBM * 0.8) belowCount++;
-                    }
-                    
-                    // Check Debt-to-NW (lower is better)
-                    const debtToNWBM = benchmarks.find(b => b.metricName === 'Total Debt to Net Worth Ratio')?.fiveYearValue;
-                    if (debtToNWBM && trendData[trendData.length - 1]?.debtToNW) {
-                      if (trendData[trendData.length - 1].debtToNW < debtToNWBM * 0.7) aboveCount++;
-                      else if (trendData[trendData.length - 1].debtToNW > debtToNWBM * 1.3) belowCount++;
-                    }
-                    
-                    // Check ROE
-                    const roeBM = benchmarks.find(b => b.metricName === 'Return on Net Worth %')?.fiveYearValue;
-                    if (roeBM && trendData[trendData.length - 1]?.roe) {
-                      if ((trendData[trendData.length - 1].roe * 100) > roeBM * 1.2) aboveCount++;
-                      else if ((trendData[trendData.length - 1].roe * 100) < roeBM * 0.8) belowCount++;
-                    }
-                    
-                    // Check ROA
-                    const roaBM = benchmarks.find(b => b.metricName === 'Return on Total Assets %')?.fiveYearValue;
-                    if (roaBM && trendData[trendData.length - 1]?.roa) {
-                      if ((trendData[trendData.length - 1].roa * 100) > roaBM * 1.2) aboveCount++;
-                      else if ((trendData[trendData.length - 1].roa * 100) < roaBM * 0.8) belowCount++;
-                    }
-                    
-                    const totalCompared = aboveCount + belowCount;
-                    if (totalCompared > 0) {
-                      return <span> Overall, the company {aboveCount > belowCount ? <strong style={{ color: '#10b981' }}>outperforms</strong> : aboveCount < belowCount ? <strong style={{ color: '#ef4444' }}>underperforms</strong> : 'performs comparably to'} industry benchmarks in {aboveCount} of the key ratios shown above{belowCount > 0 ? `, with ${belowCount} areas below industry standards requiring attention` : ', demonstrating strong financial management'}.</span>;
-                    }
-                    return ` Industry benchmarks from ${benchmarks.length} metrics provide context for performance assessment.`;
-                  })() : ''}
-                  {trendData.length >= 12 && (() => {
-                    // Analyze ALL ratio trends over time with 5% threshold
-                    const currentRatios = trendData[trendData.length - 1];
-                    const year1AgoIdx = trendData.length >= 13 ? trendData.length - 13 : 0;
-                    const ratios1YrAgo = trendData[year1AgoIdx];
-                    
-                    const trendInsights = [];
-                    let decliningCount = 0;
-                    let improvingCount = 0;
-                    
-                    // Helper function to analyze ratio trends
-                    const analyzeRatio = (ratioName: string, currentVal: number | undefined, priorVal: number | undefined, config: {
-                      isPercentage?: boolean,
-                      lowerIsBetter?: boolean,
-                      declineVerb?: string,
-                      improveVerb?: string,
-                      declineContext?: string,
-                      improveContext?: string
-                    }) => {
-                      if (!currentVal || !priorVal || priorVal === 0) return;
-                      
-                const change = ((currentVal - priorVal) / Math.abs(priorVal)) * 100;
-                if (Math.abs(change) <= 5) return; // Only flag changes > 5%
-                      
-                      const isImproving = config.lowerIsBetter ? (change < 0) : (change > 0);
-                      const direction = config.lowerIsBetter ? 
-                        (change < 0 ? (config.improveVerb || 'decreased') : (config.declineVerb || 'increased')) :
-                        (change > 0 ? (config.improveVerb || 'improved') : (config.declineVerb || 'declined'));
-                      const color = isImproving ? '#10b981' : '#ef4444';
-                      const context = isImproving ? (config.improveContext || '') : (config.declineContext || '');
-                      
-                      if (isImproving) improvingCount++;
-                      else decliningCount++;
-                      
-                      const displayCurrent = config.isPercentage ? `${(currentVal * 100).toFixed(1)}%` : currentVal.toFixed(2);
-                      const displayPrior = config.isPercentage ? `${(priorVal * 100).toFixed(1)}%` : priorVal.toFixed(2);
-                      
-                      trendInsights.push(
-                        <span key={ratioName}>
-                          <strong> {ratioName}</strong> has <strong style={{ color }}>{direction}</strong> by <strong style={{ color }}>{Math.abs(change).toFixed(1)}%</strong> year-over-year from {displayPrior} to {displayCurrent}{context}.
-                        </span>
-                      );
-                    };
-                    
-                    // Analyze all available ratios
-                    analyzeRatio('Current Ratio', currentRatios?.currentRatio, ratios1YrAgo?.currentRatio, {
-                      improveVerb: 'increased',
-                      declineVerb: 'declined',
-                      declineContext: ' (suggesting either decreasing current assets or increasing current liabilities, which may indicate tightening liquidity or growing short-term obligations)',
-                      improveContext: ' (indicating improving short-term liquidity position with strengthening ability to meet current obligations)'
-                    });
-                    
-                    analyzeRatio('Quick Ratio', currentRatios?.quickRatio, ratios1YrAgo?.quickRatio, {
-                      improveVerb: 'improved',
-                      declineVerb: 'deteriorated',
-                      declineContext: ' (indicating potential challenges in immediate liquidity, cash position, or receivables collection)',
-                      improveContext: ' (demonstrating stronger immediate liquidity and cash management)'
-                    });
-                    
-                    analyzeRatio('Debt-to-Net Worth', currentRatios?.debtToNW, ratios1YrAgo?.debtToNW, {
-                      lowerIsBetter: true,
-                      improveVerb: 'decreased',
-                      declineVerb: 'increased',
-                      declineContext: ' (reflecting higher leverage and increased financial risk)',
-                      improveContext: ' (demonstrating deleveraging and improved financial stability)'
-                    });
-                    
-                    analyzeRatio('Return on Equity', currentRatios?.roe, ratios1YrAgo?.roe, {
-                      isPercentage: true,
-                      improveVerb: 'improved',
-                      declineVerb: 'declined',
-                      declineContext: ' (indicating reduced profitability relative to equity base)',
-                      improveContext: ' (showing stronger returns on equity investment)'
-                    });
-                    
-                    analyzeRatio('Return on Assets', currentRatios?.roa, ratios1YrAgo?.roa, {
-                      isPercentage: true,
-                      improveVerb: 'strengthened',
-                      declineVerb: 'weakened',
-                      declineContext: ' (suggesting declining asset efficiency or profitability)',
-                      improveContext: ' (indicating improved asset utilization and profitability)'
-                    });
-                    
-                    analyzeRatio('Asset Turnover', currentRatios?.totalAssetTO, ratios1YrAgo?.totalAssetTO, {
-                      improveVerb: 'increased',
-                      declineVerb: 'decreased',
-                      declineContext: ' (indicating assets are generating less revenue, possibly due to overcapitalization or declining sales efficiency)',
-                      improveContext: ' (showing improved revenue generation per dollar of assets)'
-                    });
-                    
-                    analyzeRatio('Inventory Turnover', currentRatios?.invTO, ratios1YrAgo?.invTO, {
-                      improveVerb: 'accelerated',
-                      declineVerb: 'slowed',
-                      declineContext: ' (suggesting slower inventory movement, potential obsolescence, or overstocking)',
-                      improveContext: ' (indicating more efficient inventory management and faster product movement)'
-                    });
-                    
-                    analyzeRatio('Receivables Turnover', currentRatios?.arTO, ratios1YrAgo?.arTO, {
-                      improveVerb: 'accelerated',
-                      declineVerb: 'slowed',
-                      declineContext: ' (indicating slower collections or customer payment challenges)',
-                      improveContext: ' (demonstrating improved collection efficiency)'
-                    });
-                    
-                    analyzeRatio('Days Receivables', currentRatios?.daysAR, ratios1YrAgo?.daysAR, {
-                      lowerIsBetter: true,
-                      improveVerb: 'decreased',
-                      declineVerb: 'increased',
-                      declineContext: ' (reflecting slower collection cycle and working capital tied up in receivables)',
-                      improveContext: ' (indicating faster collections and more efficient working capital management)'
-                    });
-                    
-                    analyzeRatio('Days Inventory', currentRatios?.daysInv, ratios1YrAgo?.daysInv, {
-                      lowerIsBetter: true,
-                      improveVerb: 'decreased',
-                      declineVerb: 'increased',
-                      declineContext: ' (suggesting inventory is sitting longer before sale)',
-                      improveContext: ' (indicating faster inventory turnover)'
-                    });
-                    
-                    analyzeRatio('Days Payables', currentRatios?.daysAP, ratios1YrAgo?.daysAP, {
-                      improveVerb: 'increased',
-                      declineVerb: 'decreased',
-                      declineContext: ' (indicating paying suppliers faster, which may strain cash but could reflect liquidity concerns or discount opportunities)',
-                      improveContext: ' (suggesting extended payment terms that improve short-term cash flow)'
-                    });
-                    
-                    analyzeRatio('Interest Coverage', currentRatios?.interestCoverage, ratios1YrAgo?.interestCoverage, {
-                      improveVerb: 'strengthened',
-                      declineVerb: 'weakened',
-                      declineContext: ' (indicating reduced capacity to service debt from operating earnings)',
-                      improveContext: ' (demonstrating enhanced ability to cover interest obligations)'
-                    });
-                    
-                    analyzeRatio('EBITDA Margin', currentRatios?.ebitdaMargin, ratios1YrAgo?.ebitdaMargin, {
-                      isPercentage: true,
-                      improveVerb: 'expanded',
-                      declineVerb: 'contracted',
-                      declineContext: ' (reflecting margin pressure or declining operational efficiency)',
-                      improveContext: ' (indicating improving operational profitability)'
-                    });
-                    
-                    analyzeRatio('Gross Margin', currentRatios?.grossMargin, ratios1YrAgo?.grossMargin, {
-                      isPercentage: true,
-                      improveVerb: 'expanded',
-                      declineVerb: 'contracted',
-                      declineContext: ' (suggesting pricing pressure, rising input costs, or unfavorable product mix)',
-                      improveContext: ' (indicating improved pricing power or cost management)'
-                    });
-                    
-                    if (trendInsights.length > 0) {
-                      return (
-                        <span>
-                          <strong> Ratio trend analysis</strong> over the past 12 months reveals {trendInsights.length} significant ratio {trendInsights.length === 1 ? 'change' : 'changes'}:
-                          {trendInsights}
-                          {decliningCount >= 3 && (
-                            <span style={{ color: '#ef4444' }}>
-                              <strong> Warning:</strong> {decliningCount} ratios are declining, which warrants immediate management attention to investigate underlying causes and implement corrective measures before financial position weakens further.
-                            </span>
-                          )}
-                          {decliningCount >= 2 && decliningCount < 3 && (
-                            <span style={{ color: '#f59e0b' }}>
-                              <strong> Caution:</strong> Multiple declining ratios suggest potential challenges that merit management focus to prevent further deterioration.
-                            </span>
-                          )}
-                          {improvingCount >= 3 && decliningCount < 2 && (
-                            <span style={{ color: '#10b981' }}>
-                              <strong> Positive momentum:</strong> Multiple improving ratios indicate strengthening financial performance and operational execution.
-                            </span>
-                          )}
-                        </span>
-                      );
-                    }
-                    return null;
-                  })()}
-                </p>
-                <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Trend Analysis</strong> tracking {monthly.length} months reveals:
-                  {(() => {
-                    // Calculate recent vs historical trends
-                    const last6Mo = monthly.slice(-6);
-                    const prev6Mo = monthly.slice(-12, -6);
-                    const revRecent = last6Mo.reduce((s, m) => s + m.revenue, 0);
-                    const revPrior = prev6Mo.reduce((s, m) => s + m.revenue, 0);
-                    const revTrend = prev6Mo.length > 0 ? ((revRecent - revPrior) / revPrior * 100) : 0;
-                    
-                    const expRecent = last6Mo.reduce((s, m) => s + m.expense, 0);
-                    const expPrior = prev6Mo.reduce((s, m) => s + m.expense, 0);
-                    const expTrend = prev6Mo.length > 0 ? ((expRecent - expPrior) / expPrior * 100) : 0;
-                    
-                    // Calculate margin trends
-                    const recentMargin = revRecent > 0 ? ((revRecent - expRecent) / revRecent * 100) : 0;
-                    const priorMargin = revPrior > 0 ? ((revPrior - expPrior) / revPrior * 100) : 0;
-                    const marginChange = recentMargin - priorMargin;
-                    
-                    // Asset trends
-                    const currentAssets = monthly[monthly.length - 1]?.totalAssets || 0;
-                    const priorAssets = monthly[monthly.length - 13] ? monthly[monthly.length - 13].totalAssets : currentAssets;
-                    const assetGrowth = priorAssets > 0 ? ((currentAssets - priorAssets) / priorAssets * 100) : 0;
-                    
-                    return (
-                      <>
-                        <strong> Revenue</strong> {revTrend > 0 ? 'increased' : 'decreased'} by <strong style={{ color: revTrend > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(revTrend).toFixed(1)}%</strong> in the most recent 6 months compared to the prior 6 months
-                        {revTrend > 15 ? <span style={{ color: '#10b981' }}>, demonstrating strong accelerating growth momentum</span> : 
-                         revTrend > 5 ? <span style={{ color: '#10b981' }}>, showing healthy expansion</span> :
-                         revTrend > -5 ? <span style={{ color: '#64748b' }}>, indicating stable performance</span> :
-                         revTrend > -15 ? <span style={{ color: '#f59e0b' }}>, suggesting slowing momentum requiring attention</span> :
-                         <span style={{ color: '#ef4444' }}>, indicating significant contraction requiring strategic intervention</span>}.
-                        <strong> Expense</strong> trends show {expTrend > 0 ? 'growth' : 'reduction'} of <strong style={{ color: Math.abs(expTrend) < Math.abs(revTrend) ? '#10b981' : '#ef4444' }}>{Math.abs(expTrend).toFixed(1)}%</strong> over the same period
-                        {expTrend < revTrend ? <span style={{ color: '#10b981' }}>, with expenses growing {revTrend - expTrend > 10 ? 'significantly ' : ''}slower than revenue - excellent operational leverage</span> :
-                         expTrend === revTrend ? ', matching revenue growth pace' :
-                         <span style={{ color: '#ef4444' }}>, outpacing revenue growth by {(expTrend - revTrend).toFixed(1)} percentage points - margin compression risk</span>}.
-                        <strong> Net margin</strong> {marginChange > 0 ? 'expanded' : 'contracted'} by <strong style={{ color: marginChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(marginChange).toFixed(1)}</strong> percentage points to <strong>{recentMargin.toFixed(1)}%</strong>
-                        {marginChange > 3 ? <span style={{ color: '#10b981' }}>, reflecting improving profitability and strong operational efficiency</span> :
-                         marginChange > 0 ? <span style={{ color: '#10b981' }}>, indicating positive margin trajectory</span> :
-                         marginChange > -3 ? <span style={{ color: '#64748b' }}>, maintaining relatively stable profitability</span> :
-                         <span style={{ color: '#ef4444' }}>, signaling margin pressure requiring cost management focus</span>}.
-                        {assetGrowth !== 0 && (
-                          <>
-                            <strong> Asset base</strong> {assetGrowth > 0 ? 'grew' : 'declined'} by <strong style={{ color: assetGrowth > 0 ? '#667eea' : '#f59e0b' }}>{Math.abs(assetGrowth).toFixed(1)}%</strong> year-over-year
-                            {assetGrowth > revTrend + 10 ? <span style={{ color: '#f59e0b' }}>, growing faster than revenue - monitor asset efficiency and ROA</span> :
-                             assetGrowth > 5 ? ', supporting business expansion' :
-                             assetGrowth > -5 ? ', remaining relatively stable' :
-                             <span style={{ color: '#64748b' }}>, contracting which may improve asset turnover ratios</span>}.
-                          </>
-                        )}
-                        {/* Analyze Dashboard-selected income statement items */}
-                        {monthly.length >= 13 && (() => {
-                          const incomeStatementItems = ['cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 
-                            'salesExpense', 'rent', 'infrastructure', 'autoTravel', 'professionalFees', 'insurance', 'marketing', 'payroll', 
-                            'ownerBasePay', 'ownersRetirement', 'subcontractors', 'interestExpense', 'depreciationAmortization', 'operatingExpenseTotal', 
-                            'nonOperatingIncome', 'extraordinaryItems', 'netProfit'];
-                          
-                          const dashboardIncomeItems = selectedDashboardWidgets.filter(w => incomeStatementItems.includes(w));
-                          if (dashboardIncomeItems.length === 0) return null;
-                          
-                          const itemAnalysis = [];
-                          const current = monthly[monthly.length - 1];
-                          const prior = monthly[monthly.length - 13];
-                          
-                          dashboardIncomeItems.forEach(item => {
-                            const currentVal = current[item as keyof typeof current] as number;
-                            const priorVal = prior[item as keyof typeof prior] as number;
-                            
-                            if (currentVal !== undefined && priorVal !== undefined && priorVal !== 0) {
-                              const change = ((currentVal - priorVal) / Math.abs(priorVal)) * 100;
-                              if (Math.abs(change) > 5) {
-                                const displayName = getTrendItemDisplayName(item);
-                                const isExpense = !['revenue', 'nonOperatingIncome'].includes(item);
-                                const isGoodChange = isExpense ? (change < 0) : (change > 0);
-                                
-                                itemAnalysis.push(
-                                  <span key={item}>
-                                    <strong> {displayName}</strong> {change > 0 ? 'increased' : 'decreased'} by <strong style={{ color: isGoodChange ? '#10b981' : '#ef4444' }}>{Math.abs(change).toFixed(1)}%</strong> year-over-year 
-                                    from ${(Math.abs(priorVal) / 1000).toFixed(1)}K to ${(Math.abs(currentVal) / 1000).toFixed(1)}K
-                                    {isExpense ? (
-                                      change < -10 ? <span style={{ color: '#10b981' }}>, reflecting strong cost controls and operational efficiency improvements</span> :
-                                      change < 0 ? <span style={{ color: '#10b981' }}>, showing positive cost management</span> :
-                                      change > 10 ? <span style={{ color: '#ef4444' }}>, indicating significant cost pressures requiring management attention</span> :
-                                      <span style={{ color: '#f59e0b' }}>, warranting monitoring to ensure costs remain aligned with revenue growth</span>
-                                    ) : (
-                                      change > 10 ? <span style={{ color: '#10b981' }}>, demonstrating strong growth momentum</span> :
-                                      change > 0 ? <span style={{ color: '#10b981' }}>, showing positive trajectory</span> :
-                                      change < -10 ? <span style={{ color: '#ef4444' }}>, indicating concerning decline requiring strategic intervention</span> :
-                                      <span style={{ color: '#f59e0b' }}>, suggesting need for revenue enhancement initiatives</span>
-                                    )}.
-                                  </span>
-                                );
-                              }
-                            }
-                          });
-                          
-                          return itemAnalysis.length > 0 ? itemAnalysis : null;
-                        })()}
-                      </>
-                    );
-                  })()}
-                </p>
-                <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Projections</strong> based on historical patterns forecast {monthly.length >= 24 ? (() => {
-                    // Calculate historical growth rates
-                    const last12 = monthly.slice(-12);
-                    const prev12 = monthly.slice(-24, -12);
-                    const annualRevGrowth = ((last12.reduce((s, m) => s + m.revenue, 0) - prev12.reduce((s, m) => s + m.revenue, 0)) / prev12.reduce((s, m) => s + m.revenue, 0)) * 100;
-                    const annualExpGrowth = ((last12.reduce((s, m) => s + m.expense, 0) - prev12.reduce((s, m) => s + m.expense, 0)) / prev12.reduce((s, m) => s + m.expense, 0)) * 100;
-                    
-                    // Calculate scenario growth rates
-                    const mostLikelyRevGrowth = annualRevGrowth;
-                    const mostLikelyExpGrowth = annualExpGrowth;
-                    const bestCaseRevGrowth = annualRevGrowth * bestCaseRevMultiplier;
-                    const bestCaseExpGrowth = annualExpGrowth * bestCaseExpMultiplier;
-                    const worstCaseRevGrowth = annualRevGrowth * worstCaseRevMultiplier;
-                    const worstCaseExpGrowth = annualExpGrowth * worstCaseExpMultiplier;
-                    
-                    return (
-                      <>
-                        three scenarios for the next 12 months: <strong>Most Likely</strong> projects revenue growing at <strong style={{ color: '#667eea' }}>{mostLikelyRevGrowth.toFixed(1)}%</strong> annually 
-                        with expenses at <strong style={{ color: '#667eea' }}>{mostLikelyExpGrowth.toFixed(1)}%</strong> (continuing historical trends); 
-                        <strong> Best Case</strong> models revenue accelerating to <strong style={{ color: '#10b981' }}>{bestCaseRevGrowth.toFixed(1)}%</strong> growth 
-                        while controlling expenses to <strong style={{ color: '#10b981' }}>{bestCaseExpGrowth.toFixed(1)}%</strong> growth 
-                        {bestCaseRevGrowth > bestCaseExpGrowth + 10 ? ', creating significant margin expansion potential' : 
-                         bestCaseRevGrowth > bestCaseExpGrowth ? ', supporting improved profitability' : ''};
-                        <strong> Worst Case</strong> assumes revenue slowing to <strong style={{ color: '#ef4444' }}>{worstCaseRevGrowth.toFixed(1)}%</strong> 
-                        with expenses rising to <strong style={{ color: '#ef4444' }}>{worstCaseExpGrowth.toFixed(1)}%</strong>
-                        {worstCaseExpGrowth > worstCaseRevGrowth ? ', potentially compressing margins and requiring cost management focus' : ''}.
-                        These scenarios model corresponding balance sheet evolution with sensitivity analysis for asset deployment, working capital needs, and capital structure implications
-                      </>
-                    );
-                  })() : 'forward-looking scenarios once sufficient historical data (24+ months) is available'}.
-                </p>
-                <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Working Capital</strong> analysis reveals critical insights into liquidity management and operational efficiency:
-                  {(() => {
-                    const current = monthly[monthly.length - 1];
-                    const prior = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
-                    const prior6Mo = monthly.length >= 7 ? monthly[monthly.length - 7] : monthly[0];
-                    
-                    // Current period working capital components
-                    const currentCash = current?.cash || 0;
-                    const currentAR = current?.ar || 0;
-                    const currentInv = current?.inventory || 0;
-                    const currentOtherCA = current?.otherCA || 0;
-                    const currentAP = current?.ap || 0;
-                    const currentOtherCL = current?.otherCL || 0;
-                    
-                    const totalCA = current?.tca || (currentCash + currentAR + currentInv + currentOtherCA);
-                    const totalCL = current?.tcl || (currentAP + currentOtherCL);
-                    const currentWC = totalCA - totalCL;
-                    const currentRevenue = current?.revenue || 1;
-                    
-                    // Prior period working capital
-                    const priorCA = prior?.tca || ((prior?.cash || 0) + (prior?.ar || 0) + (prior?.inventory || 0) + (prior?.otherCA || 0));
-                    const priorCL = prior?.tcl || ((prior?.ap || 0) + (prior?.otherCL || 0));
-                    const priorWC = priorCA - priorCL;
-                    
-                    // 6 months ago working capital
-                    const prior6MoCA = prior6Mo?.tca || ((prior6Mo?.cash || 0) + (prior6Mo?.ar || 0) + (prior6Mo?.inventory || 0) + (prior6Mo?.otherCA || 0));
-                    const prior6MoCL = prior6Mo?.tcl || ((prior6Mo?.ap || 0) + (prior6Mo?.otherCL || 0));
-                    const prior6MoWC = prior6MoCA - prior6MoCL;
-                    
-                    // Calculate changes
-                    const wcChange12Mo = priorWC !== 0 ? ((currentWC - priorWC) / Math.abs(priorWC)) * 100 : 0;
-                    const wcChange6Mo = prior6MoWC !== 0 ? ((currentWC - prior6MoWC) / Math.abs(prior6MoWC)) * 100 : 0;
-                    const wcAbsChange = currentWC - priorWC;
-                    
-                    // Component changes
-                    const cashChange = currentCash - (prior?.cash || 0);
-                    const arChange = currentAR - (prior?.ar || 0);
-                    const invChange = currentInv - (prior?.inventory || 0);
-                    const apChange = currentAP - (prior?.ap || 0);
-                    
-                    // Working capital ratios
-                    const wcRatio = totalCL > 0 ? totalCA / totalCL : 0;
-                    const priorWCRatio = priorCL > 0 ? priorCA / priorCL : 0;
-                    const wcRatioChange = priorWCRatio > 0 ? ((wcRatio - priorWCRatio) / priorWCRatio) * 100 : 0;
-                    
-                    // Working capital as % of revenue (last 12 months)
-                    const last12Revenue = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0);
-                    const wcPctRevenue = last12Revenue > 0 ? (currentWC / last12Revenue) * 100 : 0;
-                    
-                    // Cash Conversion Cycle
-                    const ccc = (trendData[trendData.length - 1]?.daysInv || 0) + (trendData[trendData.length - 1]?.daysAR || 0) - (trendData[trendData.length - 1]?.daysAP || 0);
-                    const priorIdx = trendData.length >= 13 ? trendData.length - 13 : 0;
-                    const priorCCC = (trendData[priorIdx]?.daysInv || 0) + (trendData[priorIdx]?.daysAR || 0) - (trendData[priorIdx]?.daysAP || 0);
-                    const cccChange = priorCCC !== 0 ? ccc - priorCCC : 0;
-                    
-                    // Days inventory, AR, AP changes
-                    const daysARChange = (trendData[trendData.length - 1]?.daysAR || 0) - (trendData[priorIdx]?.daysAR || 0);
-                    const daysInvChange = (trendData[trendData.length - 1]?.daysInv || 0) - (trendData[priorIdx]?.daysInv || 0);
-                    const daysAPChange = (trendData[trendData.length - 1]?.daysAP || 0) - (trendData[priorIdx]?.daysAP || 0);
-                    
-                    return (
-                      <>
-                        <strong> Current position</strong> shows working capital of <strong style={{ color: currentWC > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(currentWC)}</strong> ({currentWC > 0 ? 'positive' : 'negative'}), 
-                        representing <strong>{wcPctRevenue.toFixed(1)}%</strong> of trailing twelve-month revenue
-                        {wcPctRevenue > 20 ? <span style={{ color: '#10b981' }}>, indicating strong liquidity cushion and operational flexibility</span> :
-                         wcPctRevenue > 10 ? <span style={{ color: '#64748b' }}>, providing adequate working capital for normal operations</span> :
-                         wcPctRevenue > 0 ? <span style={{ color: '#f59e0b' }}>, suggesting limited liquidity buffer that may constrain operational flexibility</span> :
-                         <span style={{ color: '#ef4444' }}>, indicating negative working capital position requiring immediate attention and potential financing needs</span>}.
-                        The working capital ratio of <strong>{wcRatio.toFixed(2)}</strong> has {wcRatioChange > 0 ? 'improved' : wcRatioChange < 0 ? 'declined' : 'remained stable'} 
-                        {Math.abs(wcRatioChange) > 5 ? <span> by <strong style={{ color: wcRatioChange > 0 ? '#10b981' : '#ef4444' }}>{Math.abs(wcRatioChange).toFixed(1)}%</strong> from {priorWCRatio.toFixed(2)} a year ago</span> : ' over the past year'}
-                        {wcRatio < 1.0 ? <span style={{ color: '#ef4444' }}>, indicating current liabilities exceed current assets - a concerning liquidity position</span> :
-                         wcRatio < 1.5 ? <span style={{ color: '#f59e0b' }}>, suggesting tight liquidity that may limit operational flexibility</span> :
-                         wcRatio > 3.0 ? <span style={{ color: '#10b981' }}>, reflecting exceptionally strong liquidity, though potentially excess capital that could be deployed more productively</span> :
-                         ', indicating adequate short-term liquidity'}.
-                        
-                        <strong> Component analysis</strong> reveals current assets totaling <strong>{formatDollar(totalCA)}</strong>, comprised of 
-                        cash <strong>{formatDollar(currentCash)}</strong> ({((currentCash / totalCA) * 100).toFixed(0)}%), 
-                        receivables <strong>{formatDollar(currentAR)}</strong> ({((currentAR / totalCA) * 100).toFixed(0)}%), 
-                        inventory <strong>{formatDollar(currentInv)}</strong> ({((currentInv / totalCA) * 100).toFixed(0)}%), 
-                        and other current assets <strong>{formatDollar(currentOtherCA)}</strong> ({((currentOtherCA / totalCA) * 100).toFixed(0)}%), 
-                        against current liabilities of <strong>{formatDollar(totalCL)}</strong> including 
-                        payables <strong>{formatDollar(currentAP)}</strong> ({((currentAP / totalCL) * 100).toFixed(0)}%) 
-                        and other current liabilities <strong>{formatDollar(currentOtherCL)}</strong> ({((currentOtherCL / totalCL) * 100).toFixed(0)}%)
-                        {(currentCash / totalCA) > 0.4 ? <span style={{ color: '#10b981' }}>, with high cash composition providing excellent immediate liquidity</span> :
-                         (currentCash / totalCA) < 0.15 ? <span style={{ color: '#f59e0b' }}>, with limited cash representing potential liquidity risk if receivables or inventory cannot be quickly converted</span> : ''}.
-                        
-                        {monthly.length >= 13 && (
-                          <>
-                            <strong> Trend analysis</strong> shows working capital has {currentWC > priorWC ? 'increased' : 'decreased'} by <strong style={{ color: currentWC > priorWC ? '#10b981' : '#ef4444' }}>{formatDollar(wcAbsChange)}</strong> ({Math.abs(wcChange12Mo).toFixed(0)}%) 
-                            over the past 12 months from {formatDollar(priorWC)} to {formatDollar(currentWC)}
-                            {Math.abs(wcChange12Mo) > 30 && currentWC < priorWC ? <span style={{ color: '#ef4444' }}>, representing significant deterioration that requires management attention</span> :
-                             Math.abs(wcChange12Mo) > 30 && currentWC > priorWC ? <span style={{ color: '#10b981' }}>, demonstrating substantial strengthening of the liquidity position</span> :
-                             Math.abs(wcChange12Mo) > 15 ? <span style={{ color: currentWC > priorWC ? '#10b981' : '#f59e0b' }}>, indicating {currentWC > priorWC ? 'improving' : 'tightening'} liquidity trends</span> :
-                             ', maintaining relatively stable working capital levels'}.
-                            Key drivers include: 
-                            cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(cashChange)}</strong>
-                            {Math.abs(cashChange) > Math.abs(wcAbsChange) * 0.5 ? ' (primary driver)' : ''}, 
-                            receivables {arChange > 0 ? 'grew' : 'decreased'} by <strong style={{ color: arChange < 0 ? '#10b981' : '#64748b' }}>{formatDollar(arChange)}</strong>
-                            {arChange > last12Revenue * 0.1 ? <span style={{ color: '#f59e0b' }}> (significant increase tying up working capital)</span> : ''}, 
-                            inventory {invChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: invChange < 0 ? '#10b981' : '#64748b' }}>{formatDollar(invChange)}</strong>
-                            {invChange > last12Revenue * 0.08 ? <span style={{ color: '#f59e0b' }}> (substantial buildup requiring attention)</span> : ''}, 
-                            and payables {apChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: apChange > 0 ? '#10b981' : '#64748b' }}>{formatDollar(apChange)}</strong>
-                            {apChange > 0 && Math.abs(apChange) > Math.abs(wcAbsChange) * 0.3 ? ' (improving working capital through extended payables)' : ''}.
-                          </>
-                        )}
-                        
-                        <strong> Cash Conversion Cycle</strong> of <strong style={{ color: ccc < 30 ? '#10b981' : ccc < 60 ? '#64748b' : ccc < 90 ? '#f59e0b' : '#ef4444' }}>{ccc.toFixed(0)} days</strong>
-                        {monthly.length >= 13 && Math.abs(cccChange) > 5 && (
-                          <span> has {cccChange > 0 ? 'lengthened' : 'shortened'} by <strong style={{ color: cccChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(cccChange).toFixed(0)} days</strong> year-over-year</span>
-                        )}
-                        {ccc < 0 ? <span style={{ color: '#10b981' }}>, indicating the business receives payment before paying suppliers - an exceptionally favorable working capital dynamic generating float</span> :
-                         ccc < 30 ? <span style={{ color: '#10b981' }}>, demonstrating highly efficient working capital management with rapid cash generation cycles</span> :
-                         ccc < 60 ? ', reflecting reasonable working capital efficiency' :
-                         ccc < 90 ? <span style={{ color: '#f59e0b' }}>, suggesting extended working capital cycle that ties up significant cash in operations</span> :
-                         <span style={{ color: '#ef4444' }}>, indicating excessive working capital requirements that strain liquidity and may require external financing</span>}
-                        {' '}comprises Days Inventory <strong>{(trendData[trendData.length - 1]?.daysInv || 0).toFixed(0)} days</strong>
-                        {monthly.length >= 13 && Math.abs(daysInvChange) > 5 && (
-                          <span> ({daysInvChange > 0 ? 'up' : 'down'} <strong style={{ color: daysInvChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(daysInvChange).toFixed(0)}</strong> days YoY{daysInvChange > 10 ? ', suggesting inventory buildup or slower turnover' : daysInvChange < -10 ? ', indicating improved inventory management' : ''})</span>
-                        )}, Days Receivables <strong>{(trendData[trendData.length - 1]?.daysAR || 0).toFixed(0)} days</strong>
-                        {monthly.length >= 13 && Math.abs(daysARChange) > 5 && (
-                          <span> ({daysARChange > 0 ? 'up' : 'down'} <strong style={{ color: daysARChange < 0 ? '#10b981' : '#ef4444' }}>{Math.abs(daysARChange).toFixed(0)}</strong> days YoY{daysARChange > 10 ? ', reflecting slower collections' : daysARChange < -10 ? ', demonstrating improved collection efficiency' : ''})</span>
-                        )}, less Days Payables <strong>{(trendData[trendData.length - 1]?.daysAP || 0).toFixed(0)} days</strong>
-                        {monthly.length >= 13 && Math.abs(daysAPChange) > 5 && (
-                          <span> ({daysAPChange > 0 ? 'up' : 'down'} <strong style={{ color: daysAPChange > 0 ? '#10b981' : '#64748b' }}>{Math.abs(daysAPChange).toFixed(0)}</strong> days YoY{daysAPChange > 10 ? ', extending payment terms to preserve cash' : daysAPChange < -10 ? ', paying suppliers faster' : ''})</span>
-                        )}.
-                        {monthly.length >= 13 && cccChange > 15 && (
-                          <span style={{ color: '#ef4444' }}>
-                            <strong> The lengthening cash conversion cycle</strong> indicates deteriorating working capital efficiency, potentially driven by 
-                            {daysARChange > 5 && daysInvChange > 5 ? 'both slower collections and inventory buildup' :
-                             daysARChange > 5 ? 'slower customer collections' :
-                             daysInvChange > 5 ? 'inventory accumulation' :
-                             daysAPChange < -5 ? 'faster supplier payments' : 'multiple operational factors'}, 
-                            requiring management focus to prevent further cash flow strain.
-                          </span>
-                        )}
-                        {monthly.length >= 13 && cccChange < -15 && (
-                          <span style={{ color: '#10b981' }}>
-                            <strong> The improving cash conversion cycle</strong> reflects strengthening working capital management through 
-                            {daysARChange < -5 && daysInvChange < -5 ? 'both faster collections and improved inventory turnover' :
-                             daysARChange < -5 ? 'accelerated customer collections' :
-                             daysInvChange < -5 ? 'more efficient inventory management' :
-                             daysAPChange > 5 ? 'extended supplier payment terms' : 'enhanced operational efficiency'}, 
-                            freeing up cash for growth initiatives and strengthening financial flexibility.
-                          </span>
-                        )}
-                        {/* Analyze Dashboard-selected balance sheet items */}
-                        {monthly.length >= 13 && (() => {
-                          const balanceSheetItems = ['cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalAssets', 
-                            'ap', 'otherCL', 'tcl', 'ltd', 'totalLiab', 'totalEquity'];
-                          
-                          const dashboardBalanceItems = selectedDashboardWidgets.filter(w => balanceSheetItems.includes(w));
-                          if (dashboardBalanceItems.length === 0) return null;
-                          
-                          const itemAnalysis = [];
-                          const current = monthly[monthly.length - 1];
-                          const prior = monthly[monthly.length - 13];
-                          
-                          dashboardBalanceItems.forEach(item => {
-                            const currentVal = current[item as keyof typeof current] as number;
-                            const priorVal = prior[item as keyof typeof prior] as number;
-                            
-                            if (currentVal !== undefined && priorVal !== undefined && priorVal !== 0) {
-                              const change = ((currentVal - priorVal) / Math.abs(priorVal)) * 100;
-                              if (Math.abs(change) > 5) {
-                                const displayName = getTrendItemDisplayName(item);
-                                const isAsset = ['cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalAssets', 'totalEquity'].includes(item);
-                                const isLiability = ['ap', 'otherCL', 'tcl', 'ltd', 'totalLiab'].includes(item);
-                                
-                                // Determine if change is good or bad
-                                let isGoodChange = false;
-                                if (item === 'cash') isGoodChange = change > 0;
-                                else if (item === 'ar') isGoodChange = change < 0; // Lower AR is generally better
-                                else if (item === 'inventory') isGoodChange = Math.abs(change) < 15; // Moderate inventory changes are good
-                                else if (isLiability) isGoodChange = change < 0; // Lower liabilities are better
-                                else if (isAsset) isGoodChange = change > 0; // Higher assets are generally better
-                                
-                                itemAnalysis.push(
-                                  <span key={item}>
-                                    <strong> {displayName}</strong> {change > 0 ? 'increased' : 'decreased'} by <strong style={{ color: isGoodChange ? '#10b981' : change > 10 || change < -10 ? '#ef4444' : '#f59e0b' }}>{Math.abs(change).toFixed(1)}%</strong> year-over-year 
-                                    from ${(Math.abs(priorVal) / 1000).toFixed(1)}K to ${(Math.abs(currentVal) / 1000).toFixed(1)}K
-                                    {item === 'cash' ? (
-                                      change > 20 ? <span style={{ color: '#10b981' }}>, significantly strengthening liquidity position and operational flexibility</span> :
-                                      change > 0 ? <span style={{ color: '#10b981' }}>, improving cash reserves and financial cushion</span> :
-                                      change < -20 ? <span style={{ color: '#ef4444' }}>, materially reducing liquidity and potentially constraining operations</span> :
-                                      <span style={{ color: '#f59e0b' }}>, decreasing cash reserves which warrants monitoring</span>
-                                    ) : item === 'ar' ? (
-                                      change > 15 ? <span style={{ color: '#ef4444' }}>, suggesting potential collection challenges or extended payment terms that tie up working capital</span> :
-                                      change > 0 ? <span style={{ color: '#f59e0b' }}>, increasing receivables which should be monitored relative to revenue growth</span> :
-                                      change < -10 ? <span style={{ color: '#10b981' }}>, reflecting improved collections and working capital efficiency</span> :
-                                      <span style={{ color: '#10b981' }}>, showing slight improvement in receivables management</span>
-                                    ) : item === 'inventory' ? (
-                                      change > 20 ? <span style={{ color: '#ef4444' }}>, indicating potential overstocking or slow-moving inventory requiring attention</span> :
-                                      change < -20 ? <span style={{ color: '#ef4444' }}>, suggesting possible stock-outs risk or aggressive inventory reduction</span> :
-                                      <span style={{ color: '#10b981' }}>, maintaining appropriate inventory levels aligned with business needs</span>
-                                    ) : isLiability ? (
-                                      change > 15 ? <span style={{ color: '#ef4444' }}>, increasing financial leverage and potential risk requiring monitoring</span> :
-                                      change > 0 ? <span style={{ color: '#f59e0b' }}>, rising which should be tracked against revenue growth</span> :
-                                      change < -10 ? <span style={{ color: '#10b981' }}>, reducing financial obligations and improving balance sheet strength</span> :
-                                      <span style={{ color: '#10b981' }}>, decreasing which strengthens financial position</span>
-                                    ) : (
-                                      change > 15 ? <span style={{ color: '#10b981' }}>, demonstrating strong asset growth supporting business expansion</span> :
-                                      change > 0 ? <span style={{ color: '#10b981' }}>, showing healthy asset base development</span> :
-                                      change < -10 ? <span style={{ color: '#f59e0b' }}>, declining which may impact operational capacity</span> :
-                                      <span style={{ color: '#64748b' }}>, experiencing minor fluctuation</span>
-                                    )}.
-                                  </span>
-                                );
-                              }
-                            }
-                          });
-                          
-                          return itemAnalysis.length > 0 ? itemAnalysis : null;
-                        })()}
-                      </>
-                    );
-                  })()}
-                </p>
-                <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Cash Flow</strong> analysis provides comprehensive insight into cash generation and deployment across three key categories:
-                  {(() => {
-                    if (monthly.length < 6) return ' (requires additional months of data for detailed analysis)';
-                    
-                    // Calculate last 12 months cash flow
-                    const last12 = monthly.slice(-12);
-                    const prior = monthly.length > 12 ? monthly[monthly.length - 13] : last12[0];
-                    
-                    // Operating Cash Flow
-                    const ltmNetIncome = last12.reduce((sum, m) => sum + (m.revenue - m.expense), 0);
-                    const ltmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
-                    const changeInAR = last12[last12.length - 1].ar - prior.ar;
-                    const changeInInv = last12[last12.length - 1].inventory - prior.inventory;
-                    const changeInAP = last12[last12.length - 1].ap - prior.ap;
-                    const changeInWC = -(changeInAR + changeInInv - changeInAP);
-                    const operatingCF = ltmNetIncome + ltmDepreciation + changeInWC;
-                    const opCFMargin = ltmRev > 0 ? (operatingCF / ltmRev * 100) : 0;
-                    
-                    // Investing Cash Flow
-                    const changeInFA = last12[last12.length - 1].fixedAssets - prior.fixedAssets;
-                    const capEx = changeInFA + ltmDepreciation;
-                    const investingCF = -capEx;
-                    
-                    // Financing Cash Flow
-                    const changeInDebt = last12[last12.length - 1].ltd - prior.ltd;
-                    const changeInEquity = last12[last12.length - 1].totalEquity - prior.totalEquity - ltmNetIncome;
-                    const financingCF = changeInDebt + changeInEquity;
-                    
-                    // Free Cash Flow
-                    const freeCF = operatingCF - Math.max(0, capEx);
-                    
-                    // Cash change
-                    const cashChange = last12[last12.length - 1].cash - prior.cash;
-                    
-                    return (
-                      <>
-                        <strong> Operating activities</strong> generated <strong style={{ color: operatingCF > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(operatingCF)}</strong> over the past 12 months, 
-                        representing an operating cash flow margin of <strong style={{ color: opCFMargin > 15 ? '#10b981' : opCFMargin > 5 ? '#64748b' : '#ef4444' }}>{opCFMargin.toFixed(1)}%</strong>
-                        {opCFMargin > 15 ? <span style={{ color: '#10b981' }}>, demonstrating excellent cash conversion from operations</span> :
-                         opCFMargin > 5 ? ', indicating healthy cash generation' :
-                         opCFMargin > 0 ? <span style={{ color: '#f59e0b' }}>, suggesting opportunities to improve working capital efficiency</span> :
-                         <span style={{ color: '#ef4444' }}>, indicating cash outflow from operations requiring immediate attention</span>}.
-                        Working capital changes {changeInWC > 0 ? 'contributed' : 'consumed'} <strong>{formatDollar(changeInWC)}</strong>
-                        {changeInWC < -ltmNetIncome * 0.5 ? <span style={{ color: '#ef4444' }}>, representing significant cash tied up in working capital - review receivables and inventory management</span> :
-                         changeInWC > ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, with efficient working capital management releasing cash for other uses</span> :
-                         ''}.
-                        <strong> Investing activities</strong> {investingCF < 0 ? 'deployed' : 'generated'} <strong style={{ color: '#667eea' }}>{formatDollar(investingCF)}</strong>
-                        {capEx > operatingCF * 0.5 ? <span style={{ color: '#f59e0b' }}>, with capital expenditures representing {(capEx / operatingCF * 100).toFixed(0)}% of operating cash flow - monitor return on invested capital</span> :
-                         capEx > 0 ? ', supporting maintenance and growth of the asset base' :
-                         ', with minimal capital investment in fixed assets'}.
-                        <strong> Financing activities</strong> {financingCF > 0 ? 'provided' : 'consumed'} <strong style={{ color: financingCF > 0 ? '#667eea' : '#64748b' }}>{formatDollar(financingCF)}</strong>
-                        {changeInDebt > ltmNetIncome && changeInDebt > 0 ? <span style={{ color: '#f59e0b' }}>, with significant debt increase of {formatDollar(changeInDebt)} - monitor leverage ratios</span> :
-                         changeInDebt < -ltmNetIncome * 0.3 ? <span style={{ color: '#10b981' }}>, reducing debt by {formatDollar(changeInDebt)} and strengthening the balance sheet</span> :
-                         ''}.
-                        <strong> Free cash flow</strong> of <strong style={{ color: freeCF > 0 ? '#10b981' : '#ef4444' }}>{formatDollar(freeCF)}</strong>
-                        {freeCF > ltmNetIncome * 1.2 ? <span style={{ color: '#10b981' }}> (exceeding net income) provides strong financial flexibility for growth, debt reduction, or distributions</span> :
-                         freeCF > 0 ? ' provides resources for strategic initiatives beyond operational requirements' :
-                         <span style={{ color: '#ef4444' }}> indicates operations are not generating sufficient cash to cover capital needs</span>}.
-                        Net cash {cashChange > 0 ? 'increased' : 'decreased'} by <strong style={{ color: cashChange > 0 ? '#10b981' : '#f59e0b' }}>{formatDollar(cashChange)}</strong> to <strong>{formatDollar(last12[last12.length - 1].cash)}</strong>
-                        {cashChange / ltmRev > 0.15 ? <span style={{ color: '#10b981' }}>, building substantial cash reserves and financial resilience</span> :
-                         cashChange < -ltmRev * 0.1 ? <span style={{ color: '#f59e0b' }}>, drawing down reserves - monitor cash runway and funding needs</span> :
-                         ''}.
-                      </>
-                    );
-                  })()}
-                </p>
-                <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Goals</strong> tracking enables comparison of actual expense performance against management targets:
-                  {(() => {
-                    if (monthly.length < 3) return ' (requires at least 3 months of data for quarterly goals analysis)';
-                    
-                    // Major expense categories to analyze
-                    const majorCategories = [
-                      { key: 'payroll', label: 'Payroll' },
-                      { key: 'ownerBasePay', label: 'Owner Compensation' },
-                      { key: 'rent', label: 'Rent/Lease' },
-                      { key: 'professionalFees', label: 'Professional Services' },
-                      { key: 'salesExpense', label: 'Sales & Marketing' },
-                      { key: 'insurance', label: 'Insurance' }
-                    ];
-                    
-                    // Calculate last quarter (3 months) totals for each category
-                    const lastQuarter = monthly.slice(-3);
-                    const categoryAnalysis = majorCategories.map(cat => {
-                      // Sum total revenue and total expense for the quarter
-                      const totals = lastQuarter.reduce((acc, m) => {
-                        acc.totalRevenue += m.revenue || 0;
-                        acc.totalExpense += (m as any)[cat.key] || 0;
-                        return acc;
-                      }, { totalRevenue: 0, totalExpense: 0 });
-                      
-                      // Calculate actual percentage as (total expense / total revenue)
-                      const actualPct = totals.totalRevenue > 0 ? (totals.totalExpense / totals.totalRevenue * 100) : 0;
-                      const goalPct = expenseGoals[cat.key];
-                      
-                      return {
-                        label: cat.label,
-                        actual: actualPct,
-                        goal: goalPct,
-                        hasGoal: goalPct && goalPct > 0,
-                        variance: goalPct ? actualPct - goalPct : 0,
-                        metGoal: goalPct ? actualPct <= goalPct : null
-                      };
-                    });
-                    
-                    // Check if ANY goals are set at all
-                    const anyGoalsSet = categoryAnalysis.some(c => c.hasGoal);
-                    if (!anyGoalsSet) {
-                      return ' Management has not yet established expense goals for tracking and variance analysis. Setting goals for major expense categories enables proactive cost management and performance monitoring.';
-                    }
-                    
-                    // Filter to only show categories with goals and meaningful spend (>0.5% of revenue)
-                    const categoriesWithGoalsAndSpend = categoryAnalysis.filter(c => c.hasGoal && c.actual > 0.5);
-                    
-                    if (categoriesWithGoalsAndSpend.length === 0) {
-                      return ' Expense goals have been established, but the tracked categories currently show minimal spending activity. Continue monitoring as business activity increases.';
-                    }
-                    
-                    // Define threshold for "significant" deviation (1.5 percentage points)
-                    const SIGNIFICANT_THRESHOLD = 1.5;
-                    
-                    // Categorize based on significance
-                    const significantlyUnder = categoriesWithGoalsAndSpend.filter(c => c.metGoal && c.variance < -SIGNIFICANT_THRESHOLD);
-                    const onTarget = categoriesWithGoalsAndSpend.filter(c => Math.abs(c.variance) <= SIGNIFICANT_THRESHOLD);
-                    const significantlyOver = categoriesWithGoalsAndSpend.filter(c => !c.metGoal && c.variance > SIGNIFICANT_THRESHOLD);
-                    
-                    const hasSignificantDeviations = significantlyUnder.length > 0 || significantlyOver.length > 0;
-                    
-                    return (
-                      <>
-                        {!hasSignificantDeviations && (
-                          <span> All tracked expense categories are performing on target with no significant deviations from established goals, demonstrating effective expense management and strong financial discipline.</span>
-                        )}
-                        
-                        {significantlyUnder.length > 0 && (
-                          <>
-                            <strong style={{ color: '#10b981' }}> Significantly below target:</strong>
-                            {significantlyUnder.map((cat, idx) => (
-                              <span key={idx}>
-                                {idx > 0 && (idx === significantlyUnder.length - 1 ? ' and ' : ', ')}
-                                <strong style={{ color: '#10b981' }}>{cat.label}</strong> at {cat.actual.toFixed(1)}% of revenue (goal: {cat.goal.toFixed(1)}%, <strong>{Math.abs(cat.variance).toFixed(1)}pp under</strong>)
-                              </span>
-                            ))}
-                            {significantlyOver.length > 0 ? '.' : ', demonstrating exceptional expense discipline and effective cost management.'}
-                          </>
-                        )}
-                        
-                        {significantlyOver.length > 0 && (
-                          <>
-                            {significantlyUnder.length > 0 && <strong style={{ color: '#ef4444' }}> Significantly over target:</strong>}
-                            {significantlyUnder.length === 0 && <strong style={{ color: '#ef4444' }}> Significant variances requiring attention:</strong>}
-                            {significantlyOver.map((cat, idx) => (
-                              <span key={idx}>
-                                {idx > 0 && (idx === significantlyOver.length - 1 ? ' and ' : ', ')}
-                                <strong style={{ color: '#ef4444' }}>{cat.label}</strong> at {cat.actual.toFixed(1)}% (goal: {cat.goal.toFixed(1)}%, <strong>{cat.variance.toFixed(1)}pp over</strong>)
-                              </span>
-                            ))}
-                            {significantlyOver.length === 1 ? ', requiring immediate management attention to identify root causes and implement corrective actions' : 
-                             significantlyOver.length === categoriesWithGoalsAndSpend.length ? ', indicating need for comprehensive cost reduction initiatives across all expense categories with urgent management focus' :
-                             ', requiring targeted cost management initiatives to bring spending in line with established targets'}.
-                          </>
-                        )}
-                        
-                        {onTarget.length > 0 && hasSignificantDeviations && (
-                          <span> {onTarget.length} {onTarget.length === 1 ? 'category is' : 'categories are'} performing on target with no significant variances.</span>
-                        )}
-                      </>
-                    );
-                  })()}
-                </p>
-                <p style={{ margin: '12px 0' }}>
-                  <strong style={{ color: '#667eea' }}>Valuation</strong> analysis employs three complementary methodologies to assess enterprise value:
-                  {(() => {
-                    if (monthly.length < 12) return ' (requires 12+ months of data for comprehensive valuation analysis)';
-                    
-                    // Calculate TTM metrics
-                    const last12 = monthly.slice(-12);
-                    const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                    const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
-                    const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
-                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
-                    const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                    const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
-                    const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
-                    const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
-                    const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
-                    
-                    // Valuation calculations
-                    const sdeVal = ttmSDE * sdeMultiplier;
-                    const ebitdaVal = ttmEBITDA * ebitdaMultiplier;
-                    
-                    // DCF calculation
-                    const currentMonth = monthly[monthly.length - 1];
-                    const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
-                    const currentWC_val = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
-                    const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
-                    const changeInWC = currentWC_val - priorWC;
-                    const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
-                    const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
-                    const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
-                    const growthRate = growth_24mo / 100;
-                    const discountRate = dcfDiscountRate / 100;
-                    const terminalGrowthRate = dcfTerminalGrowth / 100;
-                    let dcfVal = 0;
-                    for (let year = 1; year <= 5; year++) {
-                      const projectedFCF = ttmFreeCashFlow * Math.pow(1 + growthRate, year);
-                      dcfVal += projectedFCF / Math.pow(1 + discountRate, year);
-                    }
-                    const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
-                    dcfVal += terminalValue / Math.pow(1 + discountRate, 5);
-                    
-                    const avgValuation = (sdeVal + ebitdaVal + dcfVal) / 3;
-                    const minValuation = Math.min(sdeVal, ebitdaVal, dcfVal);
-                    const maxValuation = Math.max(sdeVal, ebitdaVal, dcfVal);
-                    
-                    return (
-                      <>
-                        <strong> SDE (Seller's Discretionary Earnings)</strong> method values the business at <strong style={{ color: '#10b981' }}>${(sdeVal / 1000000).toFixed(2)}M</strong>, 
-                        applying a {sdeMultiplier.toFixed(1)}x multiple to trailing twelve-month SDE of ${(ttmSDE / 1000).toFixed(1)}K
-                        {ttmSDE > 0 ? ', appropriate for owner-operated businesses and capturing total economic benefit to a single owner-operator' : ''}.
-                        <strong> EBITDA multiple</strong> approach indicates a value of <strong style={{ color: '#667eea' }}>${(ebitdaVal / 1000000).toFixed(2)}M</strong>, 
-                        using a {ebitdaMultiplier.toFixed(1)}x multiple on EBITDA of ${(ttmEBITDA / 1000).toFixed(1)}K
-                        {ttmEBITDA > 0 ? ', commonly used in strategic acquisitions and private equity transactions' : ''}.
-                        <strong> Discounted Cash Flow (DCF)</strong> analysis projects an enterprise value of <strong style={{ color: '#8b5cf6' }}>${(dcfVal / 1000000).toFixed(2)}M</strong>, 
-                        discounting 5-year free cash flow projections at {dcfDiscountRate.toFixed(1)}% with {dcfTerminalGrowth.toFixed(1)}% terminal growth
-                        {ttmFreeCashFlow > 0 ? ', reflecting the present value of future cash generation capability' : ', though limited by current cash flow generation'}.
-                        The valuation range of <strong>${(minValuation / 1000000).toFixed(2)}M - ${(maxValuation / 1000000).toFixed(2)}M</strong> (average: ${(avgValuation / 1000000).toFixed(2)}M) 
-                        provides a comprehensive perspective 
-                        {(maxValuation - minValuation) / avgValuation > 0.5 ? <span style={{ color: '#f59e0b' }}> with significant variance across methods, suggesting need for additional due diligence and multiple validation</span> :
-                         ', with reasonable consistency across methodologies supporting valuation confidence'}, 
-                        useful for M&A discussions, financing negotiations, equity planning, and strategic decision-making.
-                      </>
-                    );
-                  })()}
-                </p>
-                <p style={{ margin: '12px 0 0 0' }}>
-                  The overall Financial Score of <strong>{finalScore.toFixed(1)}</strong>
-                  {finalScore >= 80 ? <span style={{ color: '#10b981' }}> (Strong Financial Performance)</span> :
-                   finalScore >= 50 ? <span style={{ color: '#3b82f6' }}> (Good Fundamentals - in a good position for revenue growth; needs to focus on bringing costs down as volume grows)</span> :
-                   finalScore >= 30 ? <span style={{ color: '#f59e0b' }}> (Financial Stress)</span> :
-                   <span style={{ color: '#ef4444' }}> (Critical Situation)</span>}.
-                </p>
-              </div>
-            </div>
-            
-            <div style={{ marginBottom: '12px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#10b981', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>?</span> Key Strengths & Competitive Advantages
-              </h3>
-              <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
-                {mdaAnalysis.strengths.length > 0 ? (
-                  <ul style={{ margin: 0, paddingLeft: '24px' }}>
-                    {mdaAnalysis.strengths.map((str: string, idx: number) => (
-                      <li key={idx} style={{ marginBottom: '8px' }}>{str}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p style={{ margin: 0, color: '#64748b' }}>The company is showing stable financial performance across key metrics. Continued monitoring will help identify emerging strengths.</p>
-                )}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '12px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ef4444', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>⚠️</span> Areas Requiring Management Attention
-              </h3>
-              <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
-                {mdaAnalysis.weaknesses.length > 0 ? (
-                  <ul style={{ margin: 0, paddingLeft: '24px' }}>
-                    {mdaAnalysis.weaknesses.map((weak: string, idx: number) => (
-                      <li key={idx} style={{ marginBottom: '8px' }}>{weak}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p style={{ margin: 0, color: '#64748b' }}>Continue monitoring key financial indicators to maintain current performance levels and identify potential challenges early.</p>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#667eea', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '20px' }}>💡</span> Strategic Recommendations & Action Items
-              </h3>
-              <div style={{ fontSize: '15px', lineHeight: '1.8', color: '#1e293b' }}>
-                {mdaAnalysis.insights.length > 0 ? (
-                  <ul style={{ margin: 0, paddingLeft: '24px' }}>
-                    {mdaAnalysis.insights.map((ins: string, idx: number) => (
-                      <li key={idx} style={{ marginBottom: '8px' }}>{ins}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p style={{ margin: 0, color: '#64748b' }}>Regular review of financial metrics and strategic planning will support continued growth and financial stability.</p>
-                )}
-              </div>
-            </div>
-          </div>
-          )}
-
-          {/* Strengths and Insights Tab */}
-          {mdaTab === 'strengths-insights' && (
-          <div id="mda-strengths-insights-container" style={{ display: 'grid', gap: '24px' }}>
-            {mdaAnalysis.strengths.length > 0 && (
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#10b981', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>?</span> Strengths
-                </h3>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  {mdaAnalysis.strengths.map((str, idx) => (
-                    <li key={idx} style={{ padding: '12px 16px', background: '#f0fdf4', borderRadius: '8px', marginBottom: '8px', borderLeft: '4px solid #10b981', fontSize: '14px', color: '#166534' }}>{str}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {mdaAnalysis.weaknesses.length > 0 && (
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#ef4444', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>?</span> Areas for Improvement
-                </h3>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  {mdaAnalysis.weaknesses.map((weak, idx) => (
-                    <li key={idx} style={{ padding: '12px 16px', background: '#fef2f2', borderRadius: '8px', marginBottom: '8px', borderLeft: '4px solid #ef4444', fontSize: '14px', color: '#991b1b' }}>{weak}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {mdaAnalysis.insights.length > 0 && (
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '24px' }}>🔍</span> Strategic Insights
-                </h3>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  {mdaAnalysis.insights.map((ins, idx) => (
-                    <li key={idx} style={{ padding: '12px 16px', background: '#ede9fe', borderRadius: '8px', marginBottom: '8px', borderLeft: '4px solid #667eea', fontSize: '14px', color: '#5b21b6' }}>{ins}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-          )}
-
-          {/* Critical Review Items Tab */}
-          {mdaTab === 'key-metrics' && monthly.length >= 12 && (
-          <div id="mda-key-metrics-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', borderBottom: '3px solid #ef4444', paddingBottom: '12px' }}>
-              ⚠️ Critical Review Items
-            </h2>
-            
-            <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' }}>
-              This analysis reviews all financial data across Trend Analysis, KPI Dashboard, Working Capital, and Cash Flow to identify issues requiring immediate attention.
-            </p>
-
-            {(() => {
-              const issues: { category: string; severity: 'high' | 'medium' | 'low'; title: string; description: string; metric?: string }[] = [];
-              const last = monthly[monthly.length - 1];
-              const prev = monthly.length >= 2 ? monthly[monthly.length - 2] : last;
-              const last12 = monthly.slice(-12);
-              const prev12 = monthly.length >= 24 ? monthly.slice(-24, -12) : last12;
-
-              // === REVENUE TREND ANALYSIS ===
-              const revenueGrowth12mo = prev12.length > 0 ? 
-                ((last12.reduce((s, m) => s + m.revenue, 0) - prev12.reduce((s, m) => s + m.revenue, 0)) / prev12.reduce((s, m) => s + m.revenue, 0)) * 100 : 0;
-              
-              if (revenueGrowth12mo < -5) {
-                issues.push({
-                  category: 'Revenue Trends',
-                  severity: 'high',
-                  title: 'Declining Revenue',
-                  description: `Revenue has declined by ${Math.abs(revenueGrowth12mo).toFixed(1)}% over the past 12 months. This indicates potential market share loss, pricing pressure, or customer attrition.`,
-                  metric: `${revenueGrowth12mo.toFixed(1)}%`
-                });
-              }
-
-              // Check revenue volatility
-              const revenueStdDev = (() => {
-                const mean = last12.reduce((s, m) => s + m.revenue, 0) / last12.length;
-                const variance = last12.reduce((s, m) => s + Math.pow(m.revenue - mean, 2), 0) / last12.length;
-                return Math.sqrt(variance);
-              })();
-              const revenueCV = (revenueStdDev / (last12.reduce((s, m) => s + m.revenue, 0) / last12.length)) * 100;
-              
-              if (revenueCV > 25) {
-                issues.push({
-                  category: 'Revenue Trends',
-                  severity: 'medium',
-                  title: 'High Revenue Volatility',
-                  description: `Revenue shows high volatility (${revenueCV.toFixed(1)}% coefficient of variation). This indicates inconsistent sales performance and unpredictable cash flow.`,
-                  metric: `${revenueCV.toFixed(1)}% CV`
-                });
-              }
-
-              // === EXPENSE ANALYSIS ===
-              const expenseGrowth12mo = prev12.length > 0 ?
-                ((last12.reduce((s, m) => s + m.expense, 0) - prev12.reduce((s, m) => s + m.expense, 0)) / prev12.reduce((s, m) => s + m.expense, 0)) * 100 : 0;
-              
-              if (expenseGrowth12mo > revenueGrowth12mo + 5) {
-                issues.push({
-                  category: 'Expense Control',
-                  severity: 'high',
-                  title: 'Expenses Growing Faster Than Revenue',
-                  description: `Expenses have grown ${expenseGrowth12mo.toFixed(1)}% while revenue grew ${revenueGrowth12mo.toFixed(1)}%. This margin compression threatens profitability and requires immediate cost control measures.`,
-                  metric: `${(expenseGrowth12mo - revenueGrowth12mo).toFixed(1)}% gap`
-                });
-              }
-
-              // Expense as % of revenue trending
-              const expenseRatio = (last.expense / last.revenue) * 100;
-              const prevExpenseRatio = prev12.length > 0 ? (prev12.reduce((s, m) => s + m.expense, 0) / prev12.reduce((s, m) => s + m.revenue, 0)) * 100 : expenseRatio;
-              
-              if (expenseRatio > 90) {
-                issues.push({
-                  category: 'Expense Control',
-                  severity: 'high',
-                  title: 'Extremely High Expense Ratio',
-                  description: `Total expenses represent ${expenseRatio.toFixed(1)}% of revenue, leaving minimal profit margin. The business is operating near break-even or at a loss.`,
-                  metric: `${expenseRatio.toFixed(1)}%`
-                });
-              } else if (expenseRatio - prevExpenseRatio > 5) {
-                issues.push({
-                  category: 'Expense Control',
-                  severity: 'medium',
-                  title: 'Rising Expense Ratio',
-                  description: `Expenses as a percentage of revenue have increased from ${prevExpenseRatio.toFixed(1)}% to ${expenseRatio.toFixed(1)}%, indicating deteriorating operational efficiency.`,
-                  metric: `+${(expenseRatio - prevExpenseRatio).toFixed(1)}%`
-                });
-              }
-
-              // === LIQUIDITY & RATIOS ===
-              if (last.currentRatio < 1.0) {
-                issues.push({
-                  category: 'Liquidity',
-                  severity: 'high',
-                  title: 'Critical Liquidity Position',
-                  description: `Current ratio of ${last.currentRatio.toFixed(2)} indicates current liabilities exceed current assets. The company may struggle to meet short-term obligations.`,
-                  metric: `${last.currentRatio.toFixed(2)}`
-                });
-              } else if (last.currentRatio < 1.2) {
-                issues.push({
-                  category: 'Liquidity',
-                  severity: 'medium',
-                  title: 'Weak Liquidity Position',
-                  description: `Current ratio of ${last.currentRatio.toFixed(2)} is below the healthy threshold of 1.5, indicating potential difficulty covering short-term obligations.`,
-                  metric: `${last.currentRatio.toFixed(2)}`
-                });
-              }
-
-              // Quick ratio
-              if (last.quickRatio < 0.8) {
-                issues.push({
-                  category: 'Liquidity',
-                  severity: last.quickRatio < 0.5 ? 'high' : 'medium',
-                  title: 'Poor Quick Ratio',
-                  description: `Quick ratio of ${last.quickRatio.toFixed(2)} shows the company cannot cover current liabilities with liquid assets. Heavy reliance on inventory or other less liquid assets.`,
-                  metric: `${last.quickRatio.toFixed(2)}`
-                });
-              }
-
-              // Debt ratios
-              const debtToEquity = last.totalEquity > 0 ? last.totalLiab / last.totalEquity : 999;
-              if (debtToEquity > 2.0) {
-                issues.push({
-                  category: 'Leverage',
-                  severity: 'high',
-                  title: 'High Debt Leverage',
-                  description: `Debt-to-equity ratio of ${debtToEquity.toFixed(2)} indicates the company is heavily leveraged. High debt levels increase financial risk and interest expenses.`,
-                  metric: `${debtToEquity.toFixed(2)}x`
-                });
-              }
-
-              const debtRatio = last.totalAssets > 0 ? (last.totalLiab / last.totalAssets) * 100 : 0;
-              if (debtRatio > 70) {
-                issues.push({
-                  category: 'Leverage',
-                  severity: 'medium',
-                  title: 'High Debt Ratio',
-                  description: `${debtRatio.toFixed(1)}% of assets are financed by debt, indicating high financial leverage and potential vulnerability to economic downturns.`,
-                  metric: `${debtRatio.toFixed(1)}%`
-                });
-              }
-
-              // === PROFITABILITY ===
-              const netMargin = last.revenue > 0 ? ((last.revenue - last.expense) / last.revenue) * 100 : 0;
-              if (netMargin < 0) {
-                issues.push({
-                  category: 'Profitability',
-                  severity: 'high',
-                  title: 'Operating at a Loss',
-                  description: `Net margin of ${netMargin.toFixed(1)}% indicates the company is losing money on operations. Immediate action required to restore profitability.`,
-                  metric: `${netMargin.toFixed(1)}%`
-                });
-              } else if (netMargin < 5) {
-                issues.push({
-                  category: 'Profitability',
-                  severity: 'medium',
-                  title: 'Thin Profit Margins',
-                  description: `Net margin of ${netMargin.toFixed(1)}% provides little buffer for unexpected costs or revenue shortfalls. Margin improvement strategies should be prioritized.`,
-                  metric: `${netMargin.toFixed(1)}%`
-                });
-              }
-
-              // ROE
-              if (last.roe < 0) {
-                issues.push({
-                  category: 'Profitability',
-                  severity: 'high',
-                  title: 'Negative Return on Equity',
-                  description: `ROE of ${(last.roe * 100).toFixed(1)}% indicates the company is destroying shareholder value. Equity holders are receiving negative returns.`,
-                  metric: `${(last.roe * 100).toFixed(1)}%`
-                });
-              } else if (last.roe < 0.05) {
-                issues.push({
-                  category: 'Profitability',
-                  severity: 'medium',
-                  title: 'Low Return on Equity',
-                  description: `ROE of ${(last.roe * 100).toFixed(1)}% is below typical market returns. Shareholders could achieve better returns elsewhere.`,
-                  metric: `${(last.roe * 100).toFixed(1)}%`
-                });
-              }
-
-              // === WORKING CAPITAL ===
-              const workingCapital = last.tca - last.tcl;
-              const wcRatio = last.revenue > 0 ? (workingCapital / (last.revenue / 12)) * 100 : 0;
-              
-              if (workingCapital < 0) {
-                issues.push({
-                  category: 'Working Capital',
-                  severity: 'high',
-                  title: 'Negative Working Capital',
-                  description: `Working capital of $${workingCapital.toLocaleString()} indicates current liabilities exceed current assets. This creates immediate cash flow pressure and operational constraints.`,
-                  metric: `$${workingCapital.toLocaleString()}`
-                });
-              }
-
-              // Days Sales Outstanding - using LTM revenue
-              const ltmRevenue = last12.reduce((s, m) => s + m.revenue, 0);
-              const dso = ltmRevenue > 0 ? (last.ar / (ltmRevenue / 365)) : 0;
-              if (dso > 60) {
-                issues.push({
-                  category: 'Working Capital',
-                  severity: 'medium',
-                  title: 'Slow Accounts Receivable Collection',
-                  description: `Days Sales Outstanding of ${dso.toFixed(0)} days indicates slow customer payments. This ties up cash and may signal credit quality issues.`,
-                  metric: `${dso.toFixed(0)} days`
-                });
-              }
-
-              // Days Payable Outstanding - using LTM COGS
-              const ltmCOGS = last12.reduce((s, m) => s + m.cogsTotal, 0);
-              const dpo = ltmCOGS > 0 ? (last.ap / (ltmCOGS / 365)) : 0;
-              if (dpo > 90) {
-                issues.push({
-                  category: 'Working Capital',
-                  severity: 'medium',
-                  title: 'Extended Payment Terms to Suppliers',
-                  description: `Days Payable Outstanding of ${dpo.toFixed(0)} days may indicate cash flow stress, causing the company to delay supplier payments.`,
-                  metric: `${dpo.toFixed(0)} days`
-                });
-              }
-
-              // === CASH FLOW (if we have the data) ===
-              const netIncome = last.revenue - last.expense;
-              const workingCapitalChange = monthly.length >= 2 ? (last.tca - last.tcl) - (prev.tca - prev.tcl) : 0;
-              const estimatedOCF = netIncome - workingCapitalChange;
-              
-              if (estimatedOCF < 0 && netIncome > 0) {
-                issues.push({
-                  category: 'Cash Flow',
-                  severity: 'high',
-                  title: 'Negative Operating Cash Flow Despite Profits',
-                  description: `While showing accounting profits, the company is consuming cash in operations (estimated -$${Math.abs(estimatedOCF).toLocaleString()}). This often results from working capital build-up or non-cash revenue.`,
-                  metric: `-$${Math.abs(estimatedOCF).toLocaleString()}`
-                });
-              }
-
-              // Cash position declining
-              if (monthly.length >= 6) {
-                const cashTrend = last.cash - monthly[monthly.length - 6].cash;
-                const cashTrendPct = monthly[monthly.length - 6].cash > 0 ? (cashTrend / monthly[monthly.length - 6].cash) * 100 : 0;
-                if (cashTrendPct < -20) {
-                  issues.push({
-                    category: 'Cash Flow',
-                    severity: 'high',
-                    title: 'Rapid Cash Depletion',
-                    description: `Cash has declined ${Math.abs(cashTrendPct).toFixed(1)}% over the past 6 months. At this burn rate, cash reserves may be exhausted quickly without corrective action.`,
-                    metric: `${cashTrendPct.toFixed(1)}%`
-                  });
-                }
-              }
-
-              // === ASSET EFFICIENCY ===
-              const assetTurnover = last.totalAssets > 0 ? (last.revenue * 12) / last.totalAssets : 0;
-              if (assetTurnover < 0.5) {
-                issues.push({
-                  category: 'Asset Efficiency',
-                  severity: 'low',
-                  title: 'Low Asset Turnover',
-                  description: `Asset turnover of ${assetTurnover.toFixed(2)}x indicates assets are not being utilized efficiently to generate revenue. Consider asset optimization or divestiture.`,
-                  metric: `${assetTurnover.toFixed(2)}x`
-                });
-              }
-
-              // === EXPENSE CATEGORY ANALYSIS (% of Revenue) ===
-              const expenseCategories = [
-                { key: 'cogsTotal', name: 'COGS Total', threshold: 70 },
-                { key: 'cogsPayroll', name: 'COGS Payroll', threshold: 35 },
-                { key: 'operatingExpenseTotal', name: 'Operating Expenses', threshold: 40 },
-                { key: 'payroll', name: 'OPEX Payroll', threshold: 25 },
-                { key: 'salesExpense', name: 'Sales & Marketing', threshold: 15 },
-                { key: 'rent', name: 'Rent/Lease', threshold: 10 },
-                { key: 'professionalFees', name: 'Professional Services', threshold: 8 }
-              ];
-
-              expenseCategories.forEach(cat => {
-                if (mapping[cat.key as keyof typeof mapping] && last[cat.key as keyof typeof last]) {
-                  const currentPct = last.revenue > 0 ? ((last[cat.key as keyof typeof last] as number) / last.revenue) * 100 : 0;
-                  
-                  // Check if expense category is too high
-                  if (currentPct > cat.threshold) {
-                    issues.push({
-                      category: 'Expense Control',
-                      severity: currentPct > cat.threshold * 1.3 ? 'high' : 'medium',
-                      title: `High ${cat.name} Expense`,
-                      description: `${cat.name} represents ${currentPct.toFixed(1)}% of revenue, which is above the recommended threshold of ${cat.threshold}%. This indicates potential inefficiencies or cost control issues in this area.`,
-                      metric: `${currentPct.toFixed(1)}%`
-                    });
-                  }
-
-                  // Check if trending upward
-                  if (monthly.length >= 6) {
-                    const sixMonthsAgo = monthly[monthly.length - 6];
-                    const prevPct = sixMonthsAgo.revenue > 0 ? ((sixMonthsAgo[cat.key as keyof typeof sixMonthsAgo] as number || 0) / sixMonthsAgo.revenue) * 100 : 0;
-                    const pctChange = currentPct - prevPct;
-                    
-                    if (pctChange > 3) {
-                      issues.push({
-                        category: 'Expense Trends',
-                        severity: pctChange > 5 ? 'medium' : 'low',
-                        title: `Rising ${cat.name} as % of Revenue`,
-                        description: `${cat.name} has increased from ${prevPct.toFixed(1)}% to ${currentPct.toFixed(1)}% of revenue over the past 6 months. This trend indicates deteriorating cost control or operational inefficiency.`,
-                        metric: `+${pctChange.toFixed(1)}%`
-                      });
-                    }
-                  }
-                }
-              });
-
-              // === BENCHMARK COMPARISON ===
-              if (benchmarks && benchmarks.length > 0) {
-                // Current Ratio vs Benchmark
-                const currentRatioBM = benchmarks.find(b => b.metric === 'Current Ratio');
-                if (currentRatioBM && last.currentRatio < currentRatioBM.p25) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: 'medium',
-                    title: 'Current Ratio Below Industry Benchmark',
-                    description: `Current ratio of ${last.currentRatio.toFixed(2)} is below the industry 25th percentile of ${currentRatioBM.p25.toFixed(2)}. This indicates weaker liquidity compared to industry peers.`,
-                    metric: `${last.currentRatio.toFixed(2)} vs ${currentRatioBM.p25.toFixed(2)}`
-                  });
-                }
-
-                // Quick Ratio vs Benchmark
-                const quickRatioBM = benchmarks.find(b => b.metric === 'Quick Ratio');
-                if (quickRatioBM && last.quickRatio < quickRatioBM.p25) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: 'medium',
-                    title: 'Quick Ratio Below Industry Benchmark',
-                    description: `Quick ratio of ${last.quickRatio.toFixed(2)} is below the industry 25th percentile of ${quickRatioBM.p25.toFixed(2)}. This suggests inadequate liquid assets compared to peers.`,
-                    metric: `${last.quickRatio.toFixed(2)} vs ${quickRatioBM.p25.toFixed(2)}`
-                  });
-                }
-
-                // Debt to Equity vs Benchmark
-                const debtToEquityBM = benchmarks.find(b => b.metric === 'Debt to Equity');
-                if (debtToEquityBM && debtToEquity < 900 && debtToEquity > debtToEquityBM.p75) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: 'medium',
-                    title: 'Debt-to-Equity Above Industry Benchmark',
-                    description: `Debt-to-equity ratio of ${debtToEquity.toFixed(2)} exceeds the industry 75th percentile of ${debtToEquityBM.p75.toFixed(2)}. The company is more leveraged than most peers.`,
-                    metric: `${debtToEquity.toFixed(2)} vs ${debtToEquityBM.p75.toFixed(2)}`
-                  });
-                }
-
-                // ROE vs Benchmark
-                const roeBM = benchmarks.find(b => b.metric === 'Return on Equity (ROE)');
-                if (roeBM && last.roe < roeBM.p25) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: 'medium',
-                    title: 'ROE Below Industry Benchmark',
-                    description: `Return on Equity of ${(last.roe * 100).toFixed(1)}% is below the industry 25th percentile of ${(roeBM.p25 * 100).toFixed(1)}%. The company is generating lower returns than most competitors.`,
-                    metric: `${(last.roe * 100).toFixed(1)}% vs ${(roeBM.p25 * 100).toFixed(1)}%`
-                  });
-                }
-
-                // ROA vs Benchmark
-                const roaBM = benchmarks.find(b => b.metric === 'Return on Assets (ROA)');
-                if (roaBM && last.roa < roaBM.p25) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: 'low',
-                    title: 'ROA Below Industry Benchmark',
-                    description: `Return on Assets of ${(last.roa * 100).toFixed(1)}% is below the industry 25th percentile of ${(roaBM.p25 * 100).toFixed(1)}%. Asset utilization is weaker than industry peers.`,
-                    metric: `${(last.roa * 100).toFixed(1)}% vs ${(roaBM.p25 * 100).toFixed(1)}%`
-                  });
-                }
-
-                // Profit Margin vs Benchmark
-                const profitMarginBM = benchmarks.find(b => b.metric === 'Profit Margin');
-                if (profitMarginBM && netMargin < profitMarginBM.p25) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: netMargin < 0 ? 'high' : 'medium',
-                    title: 'Profit Margin Below Industry Benchmark',
-                    description: `Net profit margin of ${netMargin.toFixed(1)}% is below the industry 25th percentile of ${profitMarginBM.p25.toFixed(1)}%. Profitability is weaker than most competitors.`,
-                    metric: `${netMargin.toFixed(1)}% vs ${profitMarginBM.p25.toFixed(1)}%`
-                  });
-                }
-
-                // Asset Turnover vs Benchmark
-                const assetTurnoverBM = benchmarks.find(b => b.metric === 'Asset Turnover');
-                if (assetTurnoverBM && assetTurnover < assetTurnoverBM.p25) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: 'low',
-                    title: 'Asset Turnover Below Industry Benchmark',
-                    description: `Asset turnover of ${assetTurnover.toFixed(2)}x is below the industry 25th percentile of ${assetTurnoverBM.p25.toFixed(2)}x. Assets are being used less efficiently than peers.`,
-                    metric: `${assetTurnover.toFixed(2)}x vs ${assetTurnoverBM.p25.toFixed(2)}x`
-                  });
-                }
-
-                // DSO vs Benchmark  
-                const dsoBM = benchmarks.find(b => b.metric === 'Days Sales Outstanding (DSO)');
-                if (dsoBM && dso > dsoBM.p75) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: 'medium',
-                    title: 'DSO Above Industry Benchmark',
-                    description: `Days Sales Outstanding of ${dso.toFixed(0)} days exceeds the industry 75th percentile of ${dsoBM.p75.toFixed(0)} days. Collections are slower than most competitors.`,
-                    metric: `${dso.toFixed(0)} vs ${dsoBM.p75.toFixed(0)} days`
-                  });
-                }
-
-                // Expense Ratio vs Benchmark
-                const expenseRatioBM = benchmarks.find(b => b.metric === 'Expense Ratio');
-                if (expenseRatioBM && expenseRatio > expenseRatioBM.p75) {
-                  issues.push({
-                    category: 'Benchmarks',
-                    severity: 'medium',
-                    title: 'Expense Ratio Above Industry Benchmark',
-                    description: `Total expense ratio of ${expenseRatio.toFixed(1)}% exceeds the industry 75th percentile of ${expenseRatioBM.p75.toFixed(1)}%. Operating costs are higher than most competitors.`,
-                    metric: `${expenseRatio.toFixed(1)}% vs ${expenseRatioBM.p75.toFixed(1)}%`
-                  });
-                }
-              }
-
-              // === FINANCIAL SCORE ANALYSIS ===
-              // Check overall Financial Score
-              if (finalScore < 40) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'high',
-                  title: 'Critical Financial Score',
-                  description: `Overall Financial Score of ${finalScore.toFixed(1)} is critically low, indicating severe financial distress. Both profitability and asset development require immediate attention.`,
-                  metric: `${finalScore.toFixed(1)}/100`
-                });
-              } else if (finalScore < 60) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'medium',
-                  title: 'Below Average Financial Score',
-                  description: `Financial Score of ${finalScore.toFixed(1)} is below industry standards. The company needs to improve both revenue growth/profitability and asset management.`,
-                  metric: `${finalScore.toFixed(1)}/100`
-                });
-              } else if (finalScore < 70) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'low',
-                  title: 'Moderate Financial Score',
-                  description: `Financial Score of ${finalScore.toFixed(1)} shows room for improvement. Consider strategies to enhance profitability and strengthen the balance sheet.`,
-                  metric: `${finalScore.toFixed(1)}/100`
-                });
-              }
-
-              // Check Profitability Score component
-              if (profitabilityScore < 40) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'high',
-                  title: 'Critical Profitability Score',
-                  description: `Profitability Score of ${profitabilityScore.toFixed(1)} indicates severe issues with revenue growth and expense management. Revenue may be declining or expenses growing faster than revenue.`,
-                  metric: `${profitabilityScore.toFixed(1)}/100`
-                });
-              } else if (profitabilityScore < 60) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'medium',
-                  title: 'Weak Profitability Score',
-                  description: `Profitability Score of ${profitabilityScore.toFixed(1)} suggests underperformance in revenue growth or expense control. Review pricing strategies, cost structure, and market positioning.`,
-                  metric: `${profitabilityScore.toFixed(1)}/100`
-                });
-              }
-
-              // Check Asset Development Score component
-              if (assetDevScore < 40) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'high',
-                  title: 'Critical Asset Development Score',
-                  description: `Asset Development Score of ${assetDevScore.toFixed(1)} indicates a weak balance sheet with assets barely exceeding liabilities. Asset-to-Liability ratio of ${alr1.toFixed(2)}:1 suggests potential solvency issues.`,
-                  metric: `${assetDevScore.toFixed(1)}/100 (ALR: ${alr1.toFixed(2)})`
-                });
-              } else if (assetDevScore < 60) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'medium',
-                  title: 'Weak Asset Development Score',
-                  description: `Asset Development Score of ${assetDevScore.toFixed(1)} indicates limited asset growth relative to liabilities. Asset-to-Liability ratio of ${alr1.toFixed(2)}:1 could be stronger to support future growth.`,
-                  metric: `${assetDevScore.toFixed(1)}/100 (ALR: ${alr1.toFixed(2)})`
-                });
-              }
-
-              // Check Asset-to-Liability Ratio trend
-              if (alr1 < 1.0) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'high',
-                  title: 'Liabilities Exceed Assets',
-                  description: `Asset-to-Liability ratio of ${alr1.toFixed(2)}:1 means liabilities exceed assets, indicating the company is technically insolvent on paper. This requires immediate financial restructuring or capital injection.`,
-                  metric: `${alr1.toFixed(2)}:1`
-                });
-              } else if (alr1 < 1.2 && alrGrowth < -10) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'high',
-                  title: 'Deteriorating Asset-to-Liability Ratio',
-                  description: `Asset-to-Liability ratio has declined by ${Math.abs(alrGrowth).toFixed(1)}% to ${alr1.toFixed(2)}:1. The balance sheet is weakening, with liabilities growing faster than assets.`,
-                  metric: `${alr1.toFixed(2)}:1 (${alrGrowth.toFixed(1)}%)`
-                });
-              } else if (alrGrowth < -5) {
-                issues.push({
-                  category: 'Financial Score',
-                  severity: 'medium',
-                  title: 'Declining Asset Quality',
-                  description: `Asset-to-Liability ratio decreased by ${Math.abs(alrGrowth).toFixed(1)}%, suggesting assets are not growing as fast as liabilities. Monitor debt levels and asset utilization.`,
-                  metric: `${alrGrowth.toFixed(1)}% decline`
-                });
-              }
-
-              // Check Financial Score trend if we have historical data
-              if (trendData && trendData.length >= 6) {
-                const currentFinScore = trendData[trendData.length - 1].financialScore;
-                const sixMonthsAgoFinScore = trendData[trendData.length - 6].financialScore;
-                const finScoreChange = currentFinScore - sixMonthsAgoFinScore;
-                
-                if (finScoreChange < -15) {
-                  issues.push({
-                    category: 'Financial Score',
-                    severity: 'high',
-                    title: 'Rapidly Declining Financial Score',
-                    description: `Financial Score has dropped ${Math.abs(finScoreChange).toFixed(1)} points over the past 6 months, from ${sixMonthsAgoFinScore.toFixed(1)} to ${currentFinScore.toFixed(1)}. This rapid deterioration requires immediate management attention.`,
-                    metric: `${finScoreChange.toFixed(1)} pts`
-                  });
-                } else if (finScoreChange < -10) {
-                  issues.push({
-                    category: 'Financial Score',
-                    severity: 'medium',
-                    title: 'Declining Financial Score Trend',
-                    description: `Financial Score has decreased by ${Math.abs(finScoreChange).toFixed(1)} points over the past 6 months. The company's financial health is trending in the wrong direction.`,
-                    metric: `${finScoreChange.toFixed(1)} pts`
-                  });
-                }
-
-                // Check Profitability Score trend
-                const currentProfScore = trendData[trendData.length - 1].profitabilityScore;
-                const sixMonthsAgoProfScore = trendData[trendData.length - 6].profitabilityScore;
-                const profScoreChange = currentProfScore - sixMonthsAgoProfScore;
-                
-                if (profScoreChange < -15) {
-                  issues.push({
-                    category: 'Financial Score',
-                    severity: 'medium',
-                    title: 'Deteriorating Profitability Trend',
-                    description: `Profitability Score has fallen ${Math.abs(profScoreChange).toFixed(1)} points over 6 months, indicating worsening revenue growth and/or expense control.`,
-                    metric: `${profScoreChange.toFixed(1)} pts`
-                  });
-                }
-
-                // Check Asset Development Score trend
-                const currentAdsScore = trendData[trendData.length - 1].adsScore;
-                const sixMonthsAgoAdsScore = trendData[trendData.length - 6].adsScore;
-                const adsScoreChange = currentAdsScore - sixMonthsAgoAdsScore;
-                
-                if (adsScoreChange < -15) {
-                  issues.push({
-                    category: 'Financial Score',
-                    severity: 'medium',
-                    title: 'Weakening Balance Sheet Trend',
-                    description: `Asset Development Score has dropped ${Math.abs(adsScoreChange).toFixed(1)} points over 6 months, indicating the balance sheet is deteriorating relative to historical levels.`,
-                    metric: `${adsScoreChange.toFixed(1)} pts`
-                  });
-                }
-              }
-
-              // Sort by severity
-              const severityOrder = { high: 0, medium: 1, low: 2 };
-              issues.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
-
-              return (
-                <div>
-                  {/* Summary Stats */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px' }}>
-                    <div style={{ background: '#fee2e2', borderRadius: '12px', padding: '20px', border: '2px solid #ef4444' }}>
-                      <div style={{ fontSize: '32px', fontWeight: '700', color: '#991b1b', marginBottom: '8px' }}>
-                        {issues.filter(i => i.severity === 'high').length}
-                      </div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#7f1d1d' }}>High Priority Issues</div>
-                    </div>
-                    <div style={{ background: '#fef3c7', borderRadius: '12px', padding: '20px', border: '2px solid #f59e0b' }}>
-                      <div style={{ fontSize: '32px', fontWeight: '700', color: '#92400e', marginBottom: '8px' }}>
-                        {issues.filter(i => i.severity === 'medium').length}
-                      </div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#78350f' }}>Medium Priority Issues</div>
-                    </div>
-                    <div style={{ background: '#dbeafe', borderRadius: '12px', padding: '20px', border: '2px solid #3b82f6' }}>
-                      <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e40af', marginBottom: '8px' }}>
-                        {issues.filter(i => i.severity === 'low').length}
-                      </div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e3a8a' }}>Low Priority Issues</div>
-                    </div>
-                  </div>
-
-                  {/* Issues List */}
-                  {issues.length === 0 ? (
-                    <div style={{ background: '#d1fae5', borderRadius: '12px', padding: '32px', textAlign: 'center', border: '2px solid #10b981' }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>?</div>
-                      <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>No Critical Issues Detected</h3>
-                      <p style={{ fontSize: '15px', color: '#047857', margin: 0 }}>
-                        All analyzed metrics are within acceptable ranges. Continue monitoring for any changes.
-                      </p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {issues.map((issue, idx) => {
-                        const bgColor = issue.severity === 'high' ? '#fee2e2' : issue.severity === 'medium' ? '#fef3c7' : '#dbeafe';
-                        const borderColor = issue.severity === 'high' ? '#ef4444' : issue.severity === 'medium' ? '#f59e0b' : '#3b82f6';
-                        const textColor = issue.severity === 'high' ? '#991b1b' : issue.severity === 'medium' ? '#92400e' : '#1e40af';
-                        const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🟢';
-                        
-                        return (
-                          <div key={idx} style={{ background: bgColor, borderRadius: '12px', padding: '20px', border: `2px solid ${borderColor}` }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                  <span style={{ fontSize: '18px' }}>{icon}</span>
-                                  <span style={{ fontSize: '11px', fontWeight: '700', color: textColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                    {issue.category}
-                                  </span>
-                                </div>
-                                <h3 style={{ fontSize: '18px', fontWeight: '700', color: textColor, marginBottom: '8px', margin: 0 }}>
-                                  {issue.title}
-                                </h3>
-                              </div>
-                              {issue.metric && (
-                                <div style={{ background: 'white', borderRadius: '8px', padding: '8px 16px', border: `1px solid ${borderColor}` }}>
-                                  <div style={{ fontSize: '18px', fontWeight: '700', color: textColor }}>{issue.metric}</div>
-                                </div>
-                              )}
-                            </div>
-                            <p style={{ fontSize: '14px', color: textColor, margin: 0, lineHeight: '1.6' }}>
-                              {issue.description}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Action Items */}
-                  {issues.filter(i => i.severity === 'high').length > 0 && (
-                    <div style={{ marginTop: '32px', background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #667eea' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>✅ Recommended Actions</h3>
-                      <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
-                        {issues.filter(i => i.severity === 'high').length > 0 && (
-                          <li><strong>Immediate attention required:</strong> Address all high-priority issues within the next 30 days</li>
-                        )}
-                        {issues.some(i => i.category === 'Liquidity') && (
-                          <li><strong>Improve liquidity:</strong> Focus on accelerating collections, managing payables, and securing additional working capital if needed</li>
-                        )}
-                        {issues.some(i => i.category === 'Expense Control') && (
-                          <li><strong>Cost reduction:</strong> Conduct detailed expense review to identify cost-saving opportunities without impacting revenue</li>
-                        )}
-                        {issues.some(i => i.category === 'Revenue Trends') && (
-                          <li><strong>Revenue growth:</strong> Develop strategies to stabilize and grow revenue through new markets, products, or customer acquisition</li>
-                        )}
-                        {issues.some(i => i.category === 'Cash Flow') && (
-                          <li><strong>Cash management:</strong> Implement cash flow forecasting and monitoring to prevent liquidity crises</li>
-                        )}
-                        <li><strong>Regular monitoring:</strong> Review these metrics weekly until trends improve</li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-          )}
-        </div>
+      {currentView === 'mda' && selectedCompanyId && (
+        <MDAView
+          monthly={monthly}
+          trendData={trendData}
+          companyName={companyName || ''}
+          finalScore={finalScore}
+          profitabilityScore={profitabilityScore}
+          growth_24mo={growth_24mo}
+          expenseAdjustment={expenseAdjustment}
+          revExpSpread={revExpSpread}
+          assetDevScore={assetDevScore}
+          ltmRev={ltmRev}
+          benchmarks={benchmarks}
+          expenseGoals={expenseGoals}
+          sdeMultiplier={sdeMultiplier}
+          ebitdaMultiplier={ebitdaMultiplier}
+          dcfDiscountRate={dcfDiscountRate}
+          dcfTerminalGrowth={dcfTerminalGrowth}
+          bestCaseRevMultiplier={bestCaseRevMultiplier}
+          bestCaseExpMultiplier={bestCaseExpMultiplier}
+          worstCaseRevMultiplier={worstCaseRevMultiplier}
+          worstCaseExpMultiplier={worstCaseExpMultiplier}
+          onExportToWord={handleExportMdaToWord}
+        />
       )}
 
       {/* Projections View */}
-      {currentView === 'projections' && selectedCompanyId && projections.mostLikely.length > 0 && (
-        <div style={{ maxWidth: '100%', padding: '32px 32px 32px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Projections</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-
-          <div style={{ display: 'grid', gap: '32px' }}>
-            <ProjectionChart title="Revenue Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="revenue" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Expense Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="expense" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Net Income Projection" historicalData={projections.monthlyWithNetIncome || monthly} projectedData={projections} valueKey="netIncome" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Total Assets Projection" historicalData={monthly} projectedData={projections} valueKey="totalAssets" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Total Liabilities Projection" historicalData={monthly} projectedData={projections} valueKey="totalLiab" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-            <ProjectionChart title="Equity Projection" historicalData={monthly} projectedData={projections} valueKey="totalEquity" formatValue={(v) => `$${(v / 1000).toFixed(0)}K`} />
-          </div>
-        </div>
+      {/* Projections View */}
+      {currentView === 'projections' && selectedCompanyId && (
+        <ProjectionsTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+        />
       )}
 
       {/* Goals View */}
       {currentView === 'goals' && selectedCompanyId && monthly.length >= 6 && (
-        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
-            input[type=number].no-spinner::-webkit-outer-spin-button,
-            input[type=number].no-spinner::-webkit-inner-spin-button {
-              -webkit-appearance: none;
-              margin: 0;
-            }
-            input[type=number].no-spinner {
-              -moz-appearance: textfield;
-            }
-          `}</style>
-          
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Expense Goals</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Expense Category</th>
-                  {(() => {
-                    const last6 = monthly.slice(-6);
-                    return last6.map((m, i) => {
-                      const monthDate = m.date || m.month;
-                      const dateObj = monthDate instanceof Date ? monthDate : new Date(monthDate);
-                      const displayDate = !isNaN(dateObj.getTime()) 
-                        ? dateObj.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-                        : 'N/A';
-                      
-                      return (
-                        <th key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                          {displayDate}
-                          <br />
-                          <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
-                        </th>
-                      );
-                    });
-                  })()}
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>
-                    6-Mo Avg<br />
-                    <span style={{ fontSize: '12px', fontWeight: '400' }}>% of Revenue</span>
-                  </th>
-                  <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#667eea' }}>
-                    Goal %<br />
-                    <span style={{ fontSize: '12px', fontWeight: '400' }}>of Revenue</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const last6 = monthly.slice(-6);
-                  const expenseCategories = [
-                    // COGS Breakdown
-                    { key: 'cogsPayroll', label: 'COGS - Payroll' },
-                    { key: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-                    { key: 'cogsContractors', label: 'COGS - Contractors' },
-                    { key: 'cogsMaterials', label: 'COGS - Materials' },
-                    { key: 'cogsCommissions', label: 'COGS - Commissions' },
-                    { key: 'cogsOther', label: 'COGS - Other' },
-                    // Operating Expenses
-                    { key: 'payroll', label: 'Payroll' },
-                    { key: 'ownerBasePay', label: 'Owner Base Pay' },
-                    { key: 'ownersRetirement', label: "Owner's Retirement" },
-                    { key: 'subcontractors', label: 'Subcontractors' },
-                    { key: 'salesExpense', label: 'Sales & Marketing' },
-                    { key: 'rent', label: 'Rent/Lease' },
-                    { key: 'infrastructure', label: 'Infrastructure/Utilities' },
-                    { key: 'autoTravel', label: 'Auto & Travel' },
-                    { key: 'professionalFees', label: 'Professional Services' },
-                    { key: 'insurance', label: 'Insurance' },
-                    { key: 'marketing', label: 'Marketing' },
-                    { key: 'interestExpense', label: 'Interest Expense' },
-                    { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
-                    { key: 'otherExpense', label: 'Other Expenses' }
-                  ];
-
-                  return expenseCategories.map((category) => {
-                    const last6Percentages = last6.map(m => {
-                      const revenue = m.revenue || 0;
-                      const expenseValue = (m as any)[category.key] || 0;
-                      return revenue > 0 ? (expenseValue / revenue) * 100 : 0;
-                    });
-                    
-                    const avg6mo = last6Percentages.reduce((sum, val) => sum + val, 0) / last6Percentages.length;
-                    const goalPct = expenseGoals[category.key];
-                    const hasGoal = goalPct && goalPct > 0;
-
-                    return (
-                      <tr key={category.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
-                          {category.label}
-                        </td>
-                        {last6Percentages.map((pct, i) => (
-                          <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: hasGoal && pct > goalPct ? '#ef4444' : '#64748b' }}>
-                            {pct.toFixed(1)}%
-                          </td>
-                        ))}
-                        <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: hasGoal && avg6mo > goalPct ? '#ef4444' : '#1e293b' }}>
-                          {avg6mo.toFixed(1)}%
-                        </td>
-                        <td style={{ textAlign: 'center', padding: '12px' }}>
-                          <input
-                            type="number"
-                            className="no-spinner"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            value={expenseGoals[category.key] || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setExpenseGoals(prev => {
-                                const newGoals = { ...prev };
-                                if (value === '' || value === null || value === undefined) {
-                                  // Remove the key if empty
-                                  delete newGoals[category.key];
-                                } else {
-                                  // Only set if it's a valid number
-                                  const numValue = parseFloat(value);
-                                  if (!isNaN(numValue) && numValue > 0) {
-                                    newGoals[category.key] = numValue;
-                                  } else {
-                                    delete newGoals[category.key];
-                                  }
-                                }
-                                return newGoals;
-                              });
-                            }}
-                            placeholder=""
-                            style={{
-                              width: '80px',
-                              padding: '8px 12px',
-                              fontSize: '14px',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '6px',
-                              textAlign: 'center',
-                              color: '#1e293b'
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  });
-                })()}
-                
-                {/* Total Operating Expenses Summary Row */}
-                {(() => {
-                  const last6 = monthly.slice(-6);
-                  const opexCategories = [
-                    'payroll', 'ownerBasePay', 'subcontractors', 'professionalFees', 
-                    'insurance', 'rent', 'infrastructure', 'autoTravel', 
-                    'salesExpense', 'marketing', 'depreciationAmortization', 'interestExpense'
-                  ];
-                  
-                  // Calculate totals for each month
-                  const last6Totals = last6.map(m => {
-                    const revenue = m.revenue || 0;
-                    if (revenue === 0) return 0;
-                    const totalExpense = opexCategories.reduce((sum, key) => sum + ((m as any)[key] || 0), 0);
-                    return (totalExpense / revenue) * 100;
-                  });
-                  
-                  const avg6mo = last6Totals.reduce((sum, val) => sum + val, 0) / last6Totals.length;
-                  const totalGoalPct = opexCategories.reduce((sum, key) => sum + (expenseGoals[key] || 0), 0);
-                  
-                  return (
-                    <tr style={{ borderTop: '3px solid #667eea', background: '#f0f9ff' }}>
-                      <td style={{ padding: '12px', fontSize: '14px', color: '#667eea', fontWeight: '700' }}>
-                        TOTAL OPERATING EXPENSES
-                      </td>
-                      {last6Totals.map((pct, i) => (
-                        <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#667eea' }}>
-                          {pct.toFixed(1)}%
-                        </td>
-                      ))}
-                      <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#667eea' }}>
-                        {avg6mo.toFixed(1)}%
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '700', color: '#667eea' }}>
-                        {totalGoalPct.toFixed(1)}%
-                      </td>
-                    </tr>
-                  );
-                })()}
-              </tbody>
-            </table>
-
-            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
-              <div style={{ flex: 1, padding: '16px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
-                <p style={{ fontSize: '14px', color: '#0c4a6e', margin: 0 }}>
-                  <strong>Tip:</strong> Set goal percentages for each expense category as a percentage of revenue. Leave blank to use the 6-month average as the target.
-                </p>
-              </div>
-              <button
-                onClick={async () => {
-                  if (!selectedCompanyId) return;
-                  
-                  // Filter out zero/invalid values before saving
-                  const goalsToSave: {[key: string]: number} = {};
-                  Object.entries(expenseGoals).forEach(([key, value]) => {
-                    if (typeof value === 'number' && value > 0) {
-                      goalsToSave[key] = value;
-                    }
-                  });
-                  
-                  console.log('?? Saving expense goals for company:', selectedCompanyId, goalsToSave);
-                  setGoalsSaveStatus('saving');
-                  try {
-                    const response = await fetch('/api/expense-goals', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        companyId: selectedCompanyId,
-                        goals: goalsToSave
-                      })
-                    });
-                    const result = await response.json();
-                    console.log('?? Save response:', result);
-                    if (response.ok) {
-                      setGoalsSaveStatus('saved');
-                      setTimeout(() => setGoalsSaveStatus('idle'), 3000);
-                    } else {
-                      console.error('? Failed to save goals:', result);
-                      setGoalsSaveStatus('error');
-                      setTimeout(() => setGoalsSaveStatus('idle'), 3000);
-                    }
-                  } catch (error) {
-                    console.error('? Error saving goals:', error);
-                    setGoalsSaveStatus('error');
-                    setTimeout(() => setGoalsSaveStatus('idle'), 3000);
-                  }
-                }}
-                disabled={goalsSaveStatus === 'saving'}
-                style={{
-                  padding: '12px 32px',
-                  background: goalsSaveStatus === 'saved' ? '#10b981' : goalsSaveStatus === 'error' ? '#ef4444' : goalsSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: goalsSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.3s ease'
-                }}
-              >
-                {goalsSaveStatus === 'saving' ? '?? Saving...' : goalsSaveStatus === 'saved' ? '? Saved!' : goalsSaveStatus === 'error' ? '? Error' : 'Save Goals'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <GoalsView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          monthly={monthly}
+          expenseGoals={expenseGoals}
+          setExpenseGoals={setExpenseGoals}
+          masterDataCategories={masterDataCategories}
+          setMasterDataCategories={setMasterDataCategories}
+        />
       )}
 
       {/* Working Capital View */}
-      {currentView === 'working-capital' && selectedCompanyId && monthly.length > 0 && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
-            @media print {
-              @page {
-                size: landscape;
-                margin: 0.15in;
-              }
-              
-              /* Hide navigation and UI elements */
-              .no-print,
-              header,
-              nav,
-              aside,
-              [role="navigation"],
-              button {
-                display: none !important;
-              }
-              
-              /* Remove background colors and shadows */
-              * {
-                box-shadow: none !important;
-              }
-              
-              /* Page breaks */
-              .page-break-after {
-                page-break-after: always;
-              }
-              
-              /* Show second page header only when printing */
-              .wc-page-2-header {
-                display: block !important;
-                margin-top: 0 !important;
-                padding-top: 24px !important;
-              }
-              
-              /* Ensure content fits on landscape pages */
-              .wc-print-content {
-                width: 100%;
-              }
-              
-              /* Scale down first page content to fit */
-              .wc-first-page-content,
-              .page-break-after {
-                transform: scale(0.85);
-                transform-origin: top left;
-                width: 117.65%; /* Compensate for scale */
-              }
-              
-              /* Additionally scale the chart horizontally to fit within page */
-              .page-break-after svg {
-                transform: scaleX(0.95) !important;
-                transform-origin: left center !important;
-                overflow: visible !important;
-              }
-              
-              /* Ensure chart container doesn't clip overflow labels */
-              .page-break-after > div {
-                overflow: visible !important;
-              }
-              
-              /* Reduce spacing for print */
-              @media print {
-                h1 {
-                  font-size: 24px !important;
-                  margin-bottom: 16px !important;
-                }
-                
-                h2 {
-                  font-size: 16px !important;
-                  margin-bottom: 12px !important;
-                }
-                
-                .wc-first-page-content {
-                  margin-bottom: 16px !important;
-                  gap: 8px !important;
-                }
-                
-                .page-break-after {
-                  margin-bottom: 16px !important;
-                  padding: 16px !important;
-                }
-                
-                /* Reduce padding and font sizes in metric cards */
-                .wc-first-page-content > div {
-                  padding: 10px !important;
-                }
-                
-                .wc-first-page-content > div h3 {
-                  font-size: 11px !important;
-                  margin-bottom: 6px !important;
-                }
-                
-                .wc-first-page-content > div > div:first-of-type {
-                  font-size: 22px !important;
-                  margin-bottom: 2px !important;
-                }
-                
-                .wc-first-page-content > div > div:last-of-type {
-                  font-size: 10px !important;
-                }
-                
-                /* Compress second page - Components Breakdown */
-                .wc-components-breakdown {
-                  margin-bottom: 12px !important;
-                  gap: 16px !important;
-                }
-                
-                .wc-components-breakdown > div {
-                  padding: 16px !important;
-                }
-                
-                .wc-components-breakdown h2 {
-                  font-size: 16px !important;
-                  margin-bottom: 12px !important;
-                }
-                
-                .wc-components-breakdown > div > div {
-                  gap: 8px !important;
-                }
-                
-                .wc-components-breakdown > div > div > div {
-                  padding: 8px !important;
-                  font-size: 12px !important;
-                }
-                
-                /* Compress second page - Insights Section */
-                .wc-insights {
-                  padding: 16px !important;
-                  margin-bottom: 0 !important;
-                }
-                
-                .wc-insights h2 {
-                  font-size: 16px !important;
-                  margin-bottom: 12px !important;
-                }
-                
-                .wc-insights > div {
-                  gap: 10px !important;
-                }
-                
-                .wc-insights > div > div {
-                  padding: 10px !important;
-                  font-size: 11px !important;
-                  line-height: 1.4 !important;
-                }
-                
-                .wc-insights > div > div > div:first-child {
-                  font-size: 12px !important;
-                  margin-bottom: 4px !important;
-                }
-                
-                .wc-insights > div > div > div:last-child {
-                  font-size: 11px !important;
-                }
-              }
-            }
-          `}</style>
-          
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Working Capital Analysis</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-              <button 
-                className="no-print"
-                onClick={() => window.print()} 
-                style={{ 
-                  padding: '12px 24px', 
-                  background: '#667eea', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
-                }}>
-                🖨️ Print
-              </button>
-            </div>
-          </div>
-          
-          {(() => {
-            // Calculate working capital for each month
-            const wcData = monthly.map(m => {
-              const ca = m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
-              const cl = m.tcl || ((m.ap || 0) + (m.otherCL || 0));
-              return {
-                month: m.month,
-                currentAssets: ca,
-                currentLiabilities: cl,
-                workingCapital: ca - cl,
-                revenue: m.revenue
-              };
-            });
-            
-            // Current period metrics
-            const current = wcData[wcData.length - 1];
-            const prior = wcData.length >= 13 ? wcData[wcData.length - 13] : wcData[0];
-            
-            const currentWC = current.workingCapital;
-            const wcRatio = current.currentLiabilities !== 0 ? current.currentAssets / current.currentLiabilities : 0;
-            const wcChange = currentWC - prior.workingCapital;
-            const wcChangePercent = prior.workingCapital !== 0 ? (wcChange / Math.abs(prior.workingCapital)) * 100 : 0;
-            
-            // Calculate days working capital (WC / daily revenue)
-            const last12Months = monthly.slice(-12);
-            const annualRevenue = last12Months.reduce((sum, m) => sum + m.revenue, 0);
-            const dailyRevenue = annualRevenue / 365;
-            const daysWC = dailyRevenue !== 0 ? currentWC / dailyRevenue : 0;
-            
-            // Working Capital Cycle components
-            const daysAR = current.revenue !== 0 ? (current.currentAssets * 0.4 / (current.revenue * 12)) * 365 : 0; // Estimate AR as 40% of current assets
-            const daysAP = current.revenue !== 0 ? (current.currentLiabilities * 0.6 / (current.revenue * 12 * 0.7)) * 365 : 0; // Estimate AP
-            const daysInventory = current.revenue !== 0 ? (current.currentAssets * 0.2 / (current.revenue * 12 * 0.7)) * 365 : 0; // Estimate inventory
-            const cashConversionCycle = daysAR + daysInventory - daysAP;
-            
-            // Historical averages
-            const avgWC = wcData.reduce((sum, d) => sum + d.workingCapital, 0) / wcData.length;
-            const minWC = Math.min(...wcData.map(d => d.workingCapital));
-            const maxWC = Math.max(...wcData.map(d => d.workingCapital));
-            
-            return (
-              <>
-                {/* Key Metrics Cards */}
-                <div className="wc-first-page-content" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 200px))', gap: '20px', marginBottom: '32px', justifyContent: 'center' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Current Working Capital</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
-                      ${(currentWC / 1000).toFixed(0)}K
-                    </div>
-                    <div style={{ fontSize: '12px', color: wcChange >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                      {wcChange >= 0 ? '?' : '?'} ${Math.abs(wcChange / 1000).toFixed(0)}K ({wcChangePercent >= 0 ? '+' : ''}{wcChangePercent.toFixed(1)}%) vs. 1Y ago
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Working Capital Ratio</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: wcRatio >= 1.5 ? '#10b981' : wcRatio >= 1.0 ? '#f59e0b' : '#ef4444', marginBottom: '4px' }}>
-                      {wcRatio.toFixed(2)}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      {wcRatio >= 1.5 ? 'Strong' : wcRatio >= 1.0 ? 'Adequate' : 'Needs Attention'}
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Days Working Capital</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                      {daysWC.toFixed(0)}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      Days of revenue covered
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Cash Conversion Cycle</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                      {cashConversionCycle.toFixed(0)}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      Days (estimated)
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Working Capital Trend Chart */}
-                <div className="page-break-after" style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Trend & 12-Month Projection</h2>
-                  {(() => {
-                    // Holt-Winters Exponential Smoothing with Seasonality
-                    const holtWintersProjection = (data: number[], seasons: number = 12, periods: number = 12) => {
-                      if (data.length < seasons * 2) return [];
-                      
-                      const alpha = 0.3; // Level smoothing
-                      const beta = 0.1;  // Trend smoothing
-                      const gamma = 0.3; // Seasonal smoothing
-                      
-                      let level = data.slice(0, seasons).reduce((a, b) => a + b) / seasons;
-                      let trend = 0;
-                      const seasonal: number[] = [];
-                      
-                      for (let i = 0; i < seasons; i++) {
-                        seasonal[i] = data[i] / level;
-                      }
-                      
-                      for (let i = seasons; i < data.length; i++) {
-                        const oldLevel = level;
-                        const seasonalIndex = i % seasons;
-                        
-                        level = alpha * (data[i] / seasonal[seasonalIndex]) + (1 - alpha) * (oldLevel + trend);
-                        trend = beta * (level - oldLevel) + (1 - beta) * trend;
-                        seasonal[seasonalIndex] = gamma * (data[i] / level) + (1 - gamma) * seasonal[seasonalIndex];
-                      }
-                      
-                      const forecasts: number[] = [];
-                      for (let i = 0; i < periods; i++) {
-                        const seasonalIndex = (data.length + i) % seasons;
-                        forecasts.push((level + (i + 1) * trend) * seasonal[seasonalIndex]);
-                      }
-                      
-                      return forecasts;
-                    };
-                    
-                    // Use last 36 months (3 years) for projection if available
-                    const historicalData = wcData.slice(-36);
-                    const tcaValues = historicalData.map(d => d.currentAssets);
-                    const tclValues = historicalData.map(d => d.currentLiabilities);
-                    
-                    // Project TCA and TCL separately
-                    const tcaProjections = holtWintersProjection(tcaValues, 12, 12);
-                    const tclProjections = holtWintersProjection(tclValues, 12, 12);
-                    const wcProjections = tcaProjections.map((tca, i) => tca - tclProjections[i]);
-                    
-                    // Generate month labels for projections
-                    const lastMonth = new Date(historicalData[historicalData.length - 1].month);
-                    const projectedMonths = Array.from({ length: 12 }, (_, i) => {
-                      const date = new Date(lastMonth);
-                      date.setMonth(date.getMonth() + i + 1);
-                      return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-                    });
-                    
-                    const projectedData = projectedMonths.map((month, i) => ({
-                      month,
-                      value: wcProjections[i]
-                    }));
-                    
-                    return <ProjectionChart 
-                      title="" 
-                      historicalData={wcData.map(d => ({ month: d.month, value: d.workingCapital }))}
-                      projectedData={{
-                        mostLikely: projectedData,
-                        bestCase: projectedData.map(d => ({ ...d, value: d.value * 1.1 })),
-                        worstCase: projectedData.map(d => ({ ...d, value: d.value * 0.9 }))
-                      }}
-                      valueKey="value"
-                      formatValue={(val) => `$${Math.round(val).toLocaleString()}`}
-                      showTable={false}
-                    />;
-                  })()}
-                  
-                  {/* Custom Quarterly Table */}
-                  <div style={{ marginTop: '16px', overflowX: 'auto' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <tbody>
-                        <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                          <td style={{ padding: '8px 12px', fontWeight: '700', color: '#1e293b', minWidth: '80px' }}>
-                            Quarter
-                          </td>
-                          {wcData.filter((_, i) => i % 3 === 2).map((d, i) => (
-                            <td key={`quarter-${i}`} style={{ padding: '8px 12px', textAlign: 'center', fontWeight: '600', color: '#64748b' }}>
-                              {d.month}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '8px 12px', fontWeight: '700', color: '#1e293b' }}>
-                            Value
-                          </td>
-                          {wcData.filter((_, i) => i % 3 === 2).map((d, i) => (
-                            <td key={`val-${i}`} style={{ padding: '8px 12px', textAlign: 'center', fontWeight: '700', color: '#667eea' }}>
-                              ${Math.round(d.workingCapital).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                
-                {/* Second Page Header */}
-                <div className="wc-page-2-header" style={{ display: 'none', marginTop: '32px', marginBottom: '12px', textAlign: 'center' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                    Working Capital Analysis - {companyName}
-                  </h2>
-                </div>
-                
-                {/* Components Breakdown */}
-                <div className="wc-components-breakdown" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '12px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Current Assets</h2>
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Cash</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentAssets * 0.3 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Accounts Receivable</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentAssets * 0.4 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Inventory</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentAssets * 0.2 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Other Current Assets</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentAssets * 0.1 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#667eea', borderRadius: '8px', marginTop: '8px' }}>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: 'white' }}>Total Current Assets</span>
-                        <span style={{ fontSize: '20px', fontWeight: '700', color: 'white' }}>${(current.currentAssets / 1000).toFixed(0)}K</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Current Liabilities</h2>
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Accounts Payable</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentLiabilities * 0.6 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Accrued Expenses</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentLiabilities * 0.25 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px' }}>
-                        <span style={{ fontSize: '14px', color: '#64748b' }}>Other Current Liabilities</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>${(current.currentLiabilities * 0.15 / 1000).toFixed(0)}K</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#ef4444', borderRadius: '8px', marginTop: '60px' }}>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: 'white' }}>Total Current Liabilities</span>
-                        <span style={{ fontSize: '20px', fontWeight: '700', color: 'white' }}>${(current.currentLiabilities / 1000).toFixed(0)}K</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Working Capital Analysis */}
-                <div className="wc-insights" style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>Working Capital Insights</h2>
-                  
-                  <div style={{ display: 'grid', gap: '16px' }}>
-                    {currentWC > 0 && wcRatio >= 1.5 && (
-                      <div style={{ padding: '16px', background: '#f0fdf4', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '4px' }}>? Strong Liquidity Position</div>
-                        <div style={{ fontSize: '13px', color: '#166534', lineHeight: '1.6' }}>
-                          Your working capital ratio of {wcRatio} indicates strong short-term financial health with ${(currentWC / 1000).toFixed(0)}K in working capital available to cover operational needs.
-                        </div>
-                      </div>
-                    )}
-                    
-                    {currentWC > 0 && wcRatio < 1.5 && wcRatio >= 1.0 && (
-                      <div style={{ padding: '16px', background: '#fffbeb', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️ Adequate but Monitor Closely</div>
-                        <div style={{ fontSize: '13px', color: '#92400e', lineHeight: '1.6' }}>
-                          Your working capital ratio of {wcRatio} is adequate but below ideal levels. Consider improving cash flow or reducing short-term liabilities to strengthen your position.
-                        </div>
-                      </div>
-                    )}
-                    
-                    {wcRatio < 1.0 && (
-                      <div style={{ padding: '16px', background: '#fef2f2', borderRadius: '8px', borderLeft: '4px solid #ef4444' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Liquidity Concern</div>
-                        <div style={{ fontSize: '13px', color: '#991b1b', lineHeight: '1.6' }}>
-                          Your working capital ratio of {wcRatio} indicates current liabilities exceed current assets. Immediate attention to cash flow management and working capital optimization is recommended.
-                        </div>
-                      </div>
-                    )}
-                    
-                    {wcChange > 0 && (
-                      <div style={{ padding: '16px', background: '#f0f9ff', borderRadius: '8px', borderLeft: '4px solid #0284c7' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px' }}>? Positive Trend</div>
-                        <div style={{ fontSize: '13px', color: '#0c4a6e', lineHeight: '1.6' }}>
-                          Working capital has increased by ${(wcChange / 1000).toFixed(0)}K ({wcChangePercent.toFixed(1)}%) over the past year, indicating improved operational efficiency and financial stability.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-        </div>
+      {/* Working Capital View */}
+      {currentView === 'working-capital' && selectedCompanyId && (
+        <WorkingCapitalTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+        />
       )}
 
       {/* Valuation View */}
@@ -12895,2596 +8914,12 @@ function FinancialScorePage() {
       )}
 
       {/* Cash Flow View */}
-      {currentView === 'cash-flow' && selectedCompanyId && monthly.length > 0 && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <style>{`
-            @media print {
-              @page {
-                size: portrait;
-                margin: 0.3in;
-              }
-              
-              /* Hide navigation and UI elements */
-              .no-print,
-              header,
-              nav,
-              aside,
-              [role="navigation"],
-              button {
-                display: none !important;
-              }
-              
-              /* Remove background colors and shadows */
-              * {
-                box-shadow: none !important;
-              }
-              
-              /* First page: Summary cards and start of table */
-              .cf-summary-cards {
-                page-break-after: avoid;
-              }
-              
-              /* Force page break before metrics section */
-              .cf-metrics-section {
-                page-break-before: always;
-                margin-top: 0 !important;
-              }
-              
-              /* Scale down content to fit portrait */
-              .cf-table-container {
-                transform: scale(0.75);
-                transform-origin: top left;
-                width: 133.33%;
-              }
-              
-              /* Reduce font sizes for compact display */
-              h1 {
-                font-size: 20px !important;
-                margin-bottom: 12px !important;
-              }
-              
-              h2 {
-                font-size: 16px !important;
-                margin-bottom: 12px !important;
-              }
-              
-              /* Compress summary cards */
-              .cf-summary-cards > div {
-                padding: 12px !important;
-              }
-              
-              .cf-summary-cards > div > div:first-child {
-                font-size: 10px !important;
-              }
-              
-              .cf-summary-cards > div > div:nth-child(2) {
-                font-size: 20px !important;
-              }
-              
-              .cf-summary-cards > div > div:last-child {
-                font-size: 9px !important;
-              }
-              
-              /* Table styling */
-              table {
-                font-size: 9px !important;
-              }
-              
-              th, td {
-                padding: 4px 6px !important;
-              }
-            }
-          `}</style>
-          
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-              {cashFlowDisplay !== 'monthly' && (
-                <button 
-                  className="no-print"
-                  onClick={() => window.print()} 
-                  style={{ 
-                    padding: '12px 24px', 
-                    background: '#667eea', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '8px', 
-                    fontSize: '14px', 
-                    fontWeight: '600', 
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
-                  }}>
-                  🖨️ Print
-                </button>
-              )}
-            </div>
-          </div>
-          
-          {/* Display Period Tabs */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '32px', borderBottom: '2px solid #e2e8f0' }}>
-            <button
-              onClick={() => setCashFlowDisplay('monthly')}
-              style={{
-                padding: '12px 24px',
-                background: cashFlowDisplay === 'monthly' ? '#667eea' : 'transparent',
-                color: cashFlowDisplay === 'monthly' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: cashFlowDisplay === 'monthly' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Monthly
-            </button>
-            <button
-              onClick={() => setCashFlowDisplay('quarterly')}
-              style={{
-                padding: '12px 24px',
-                background: cashFlowDisplay === 'quarterly' ? '#667eea' : 'transparent',
-                color: cashFlowDisplay === 'quarterly' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: cashFlowDisplay === 'quarterly' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Last 4 Quarters
-            </button>
-            <button
-              onClick={() => setCashFlowDisplay('annual')}
-              style={{
-                padding: '12px 24px',
-                background: cashFlowDisplay === 'annual' ? '#667eea' : 'transparent',
-                color: cashFlowDisplay === 'annual' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: cashFlowDisplay === 'annual' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Last 3 Years
-            </button>
-          </div>
-
-          {/* Educational Resources - Side by Side */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-            {/* Cash Flow Metrics Definitions */}
-            <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
-              <details>
-                <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                  💰 Cash Flow Metrics - Definitions & Examples
-                </summary>
-              
-              <div style={{ display: 'grid', gap: '20px', marginTop: '16px' }}>
-                {/* Operating Cash Flow */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#10b981', fontSize: '14px', fontWeight: '700' }}>Operating Cash Flow (OCF)</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Cash generated from normal business operations. Shows the company's ability to generate cash from its core activities.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Net Income + Depreciation + Change in Working Capital
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If Net Income = $50,000, Depreciation = $5,000, and Working Capital decreased by $3,000 (a source of cash), then OCF = $50,000 + $5,000 + $3,000 = <strong>$58,000</strong>
-                  </p>
-                </div>
-
-                {/* Investing Cash Flow */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #ef4444' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#ef4444', fontSize: '14px', fontWeight: '700' }}>Investing Cash Flow</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Cash used for investments in long-term assets like equipment, property, and other capital expenditures. Typically negative as it represents cash outflows.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> -(Capital Expenditures)
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If the company purchased $15,000 in new equipment, then Investing Cash Flow = <strong>-$15,000</strong>
-                  </p>
-                </div>
-
-                {/* Financing Cash Flow */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #3b82f6' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#3b82f6', fontSize: '14px', fontWeight: '700' }}>Financing Cash Flow</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Cash from financing activities including debt changes, equity changes, and owner distributions. Shows how the company finances its operations.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Change in Long-Term Debt + Change in Total Equity
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If debt decreased by $3,000 (payment) and equity increased by $2,000 (owner contribution), then Financing Cash Flow = -$3,000 + $2,000 = <strong>-$1,000</strong>
-                  </p>
-                </div>
-
-                {/* Free Cash Flow */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #667eea' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#667eea', fontSize: '14px', fontWeight: '700' }}>Free Cash Flow (FCF)</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Cash available after maintaining/expanding the asset base. This is cash available for distributions, debt repayment, or growth initiatives.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Operating Cash Flow - Capital Expenditures
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If OCF = $58,000 and CapEx = $15,000, then FCF = $58,000 - $15,000 = <strong>$43,000</strong>
-                  </p>
-                </div>
-
-                {/* Cash Flow Margin */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #f59e0b' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#f59e0b', fontSize: '14px', fontWeight: '700' }}>Cash Flow Margin</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Percentage of revenue converted to operating cash flow. Higher percentages indicate better cash generation efficiency.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> (Operating Cash Flow ÷ Revenue) × 100
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If OCF = $58,000 and Revenue = $250,000, then Cash Flow Margin = ($58,000 ÷ $250,000) × 100 = <strong>23.2%</strong>
-                  </p>
-                </div>
-
-                {/* Days Cash On Hand */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #8b5cf6' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#8b5cf6', fontSize: '14px', fontWeight: '700' }}>Days Cash On Hand</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Number of days the company can operate with its current cash balance at the current cash flow rate. Indicates financial runway.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> Ending Cash ÷ (Operating Cash Flow × 30)
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If Ending Cash = $75,000 and monthly OCF = $58,000, then Days Cash On Hand = $75,000 ÷ ($58,000 × 30) = <strong>38.8 days</strong>
-                  </p>
-                </div>
-
-                {/* DIO */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #06b6d4' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#06b6d4', fontSize: '14px', fontWeight: '700' }}>DIO (Days Inventory Outstanding)</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Average number of days inventory is held before being sold. Lower values indicate faster inventory turnover and better working capital management.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Inventory Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Inventory Turnover = LTM COGS ÷ Avg Inventory</span>
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg Inventory = $50,000, then Inventory Turnover = 12. DIO = 365 ÷ 12 = <strong>30.4 days</strong>
-                  </p>
-                </div>
-
-                {/* DSO */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #14b8a6' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#14b8a6', fontSize: '14px', fontWeight: '700' }}>DSO (Days Sales Outstanding)</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Average number of days to collect payment from customers after a sale. Lower values indicate faster cash collection and better receivables management.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Receivables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Receivables Turnover = LTM Revenue ÷ Avg A/R</span>
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM Revenue = $1,200,000 and Avg A/R = $100,000, then Receivables Turnover = 12. DSO = 365 ÷ 12 = <strong>30.4 days</strong>
-                  </p>
-                </div>
-
-                {/* DPO */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #ec4899' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#ec4899', fontSize: '14px', fontWeight: '700' }}>DPO (Days Payables Outstanding)</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Average number of days the company takes to pay its suppliers. Higher values can indicate better use of supplier credit, but be careful not to damage supplier relationships.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> 365 ÷ Payables Turnover<br/>
-                    <span style={{ fontSize: '12px' }}>Where Payables Turnover = LTM COGS ÷ Avg A/P</span>
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If LTM COGS = $600,000 and Avg A/P = $75,000, then Payables Turnover = 8. DPO = 365 ÷ 8 = <strong>45.6 days</strong>
-                  </p>
-                </div>
-
-                {/* Cash Conversion Cycle */}
-                <div style={{ background: 'white', padding: '16px', borderRadius: '8px', borderLeft: '4px solid #f97316' }}>
-                  <h4 style={{ margin: '0 0 8px 0', color: '#f97316', fontSize: '14px', fontWeight: '700' }}>Cash Conversion Cycle (CCC)</h4>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    <strong>Definition:</strong> Number of days between paying suppliers and collecting cash from customers. Shows how efficiently the company manages working capital. Lower (or negative) values are better.
-                  </p>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                    <strong>Formula:</strong> DIO + DSO - DPO
-                  </p>
-                  <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                    <strong>Example:</strong> If DIO = 30.4 days, DSO = 30.4 days, and DPO = 45.6 days, then CCC = 30.4 + 30.4 - 45.6 = <strong>15.2 days</strong>. This means cash is tied up for about 15 days.
-                  </p>
-                </div>
-              </div>
-            </details>
-            </div>
-
-            {/* Cash Flow Management Article */}
-            <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px 24px', border: '1px solid #e2e8f0' }}>
-              <details>
-                <summary style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', cursor: 'pointer', marginBottom: '16px' }}>
-                  ?? Why Cash Flow Management is Critical for your Business
-                </summary>
-              
-              <div style={{ marginTop: '16px', fontSize: '14px', lineHeight: '1.8', color: '#475569' }}>
-                <p style={{ marginBottom: '16px' }}>
-                  Liquidity fuels a business's ability to adapt. Whether it's covering payroll, meeting supplier deadlines, or investing in expansion, cash flow keeps the engine running. Without careful cash flow management, even profitable businesses can face serious challenges due to gaps between inflows and outflows.
-                </p>
-                
-                <p style={{ marginBottom: '16px' }}>
-                  Small businesses are especially vulnerable because they often lack the financial buffers that larger companies enjoy. Missed payments from clients, unexpected expenses, or seasonal slowdowns can quickly destabilize operations. By proactively managing cash flow, you create the flexibility needed to navigate these hurdles and achieve sustainable growth.
-                </p>
-
-                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginTop: '24px', marginBottom: '12px' }}>
-                  Proven Strategies to Strengthen Cash Flow
-                </h3>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  1. Build Accurate Cash Flow Forecasts
-                </h4>
-                <p style={{ marginBottom: '12px' }}>
-                  Forecasting cash flow is the cornerstone of liquidity management. By analyzing expected inflows and outflows over time, businesses can identify potential shortfalls and act early to prevent disruptions.
-                </p>
-                <p style={{ marginBottom: '8px', fontWeight: '600' }}>A robust forecast should:</p>
-                <ul style={{ marginLeft: '20px', marginBottom: '16px' }}>
-                  <li>Include all revenue sources, such as customer payments, loans, or grants.</li>
-                  <li>Account for fixed expenses like rent and payroll, as well as variable costs like inventory purchases.</li>
-                  <li>Be updated regularly to reflect current business conditions.</li>
-                </ul>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  2. Streamline Accounts Receivable
-                </h4>
-                <p style={{ marginBottom: '12px' }}>
-                  Late payments can cripple your cash flow. Implement these strategies to speed up receivables:
-                </p>
-                <ul style={{ marginLeft: '20px', marginBottom: '16px' }}>
-                  <li><strong>Set clear payment terms:</strong> Clearly outline due dates and penalties for late payments in contracts.</li>
-                  <li><strong>Send invoices promptly:</strong> The faster you send invoices, the sooner you'll get paid.</li>
-                  <li><strong>Offer incentives:</strong> Discounts for early payments encourage timely cash inflows.</li>
-                  <li><strong>Follow up persistently:</strong> Don't hesitate to send polite reminders for overdue payments.</li>
-                </ul>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  3. Optimize Accounts Payable
-                </h4>
-                <p style={{ marginBottom: '12px' }}>
-                  Balancing outgoing payments is just as important as collecting receivables. Avoid paying too early, which could leave your business cash-strapped. On the other hand, paying too late may harm vendor relationships. Use these best practices:
-                </p>
-                <ul style={{ marginLeft: '20px', marginBottom: '16px' }}>
-                  <li>Take advantage of the full payment terms offered by suppliers.</li>
-                  <li>Negotiate favorable terms, such as discounts for bulk orders or extended deadlines.</li>
-                  <li>Schedule payments strategically to align with cash flow peaks.</li>
-                </ul>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  4. Control Operational Expenses
-                </h4>
-                <p style={{ marginBottom: '16px' }}>
-                  Every dollar saved is a dollar added to your liquidity. Regularly audit your operational expenses and look for areas where you can cut costs without sacrificing quality. Consider adopting zero-based budgeting, where all expenses must be justified rather than relying on past budgets.
-                </p>
-                <p style={{ marginBottom: '16px' }}>
-                  Focus on reducing discretionary spending, renegotiating supplier contracts, and switching to cost-efficient alternatives. Even small adjustments can have a significant impact on your overall cash flow.
-                </p>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  5. Improve Inventory Management
-                </h4>
-                <p style={{ marginBottom: '16px' }}>
-                  Inventory ties up cash, especially when stock levels are too high. Use data to forecast demand accurately and implement just-in-time (JIT) inventory systems to minimize overstocking. Regularly review inventory levels to ensure that slow-moving or obsolete stock isn't draining your resources.
-                </p>
-                <p style={{ marginBottom: '16px' }}>
-                  Efficient inventory management not only frees up cash but also reduces storage and insurance costs.
-                </p>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  6. Establish a Cash Reserve
-                </h4>
-                <p style={{ marginBottom: '16px' }}>
-                  A strong cash reserve acts as a buffer during challenging times. Set aside a portion of profits regularly to build an emergency fund that can cover at least three to six months of operating expenses. This reserve will protect your business from unexpected events like economic downturns, supply chain disruptions, or market fluctuations.
-                </p>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  7. Use Short-Term Financing Wisely
-                </h4>
-                <p style={{ marginBottom: '16px' }}>
-                  Short-term financing options, such as lines of credit or invoice financing, can help bridge gaps when cash flow is tight. However, it's essential to use these options strategically. Only borrow what you can comfortably repay, and ensure that repayment terms align with your cash flow forecast to avoid over-leveraging.
-                </p>
-                <p style={{ marginBottom: '16px' }}>
-                  Short-term loans can be particularly helpful during seasonal slowdowns or when expanding inventory to meet rising demand.
-                </p>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  8. Automate Financial Processes
-                </h4>
-                <p style={{ marginBottom: '16px' }}>
-                  Manual financial tracking is time-consuming and prone to errors. Adopting tools for automating cash flow forecasting, invoice management, and financial reporting saves time and improves accuracy. Automation ensures you always have a clear view of your business's financial health.
-                </p>
-
-                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginTop: '20px', marginBottom: '8px' }}>
-                  9. Monitor and Adjust Frequently
-                </h4>
-                <p style={{ marginBottom: '16px' }}>
-                  The financial landscape is ever-changing, and your cash flow strategy should adapt to it. Regularly review your cash flow reports, identify trends, and adjust your plans as needed. This proactive approach helps you avoid surprises and ensures your business stays on solid financial footing.
-                </p>
-                <p style={{ marginBottom: '16px' }}>
-                  Tracking key performance indicators (KPIs), such as days sales outstanding (DSO) and current ratio, can provide deeper insights into your financial health.
-                </p>
-
-                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginTop: '24px', marginBottom: '12px' }}>
-                  Conclusion: Liquidity is the Key to Resilience
-                </h3>
-                <p style={{ marginBottom: '0' }}>
-                  Small businesses thrive when they have strong control over their cash flow. By implementing the strategies outlined above you can stay ahead of cash flow challenges, maintain liquidity, and focus on what matters most - growing your business.
-                </p>
-              </div>
-              </details>
-            </div>
-          </div>
-
-          {(() => {
-            // Calculate cash flow data based on view
-            const dataMonths = cashFlowDisplay === 'quarterly' ? 12 : (cashFlowDisplay === 'annual' ? 36 : 12);
-            const dataSet = monthly.slice(-dataMonths);
-            
-            
-            const cashFlowData = dataSet.map((curr, idx) => {
-              const prev = idx === 0 && monthly.length > dataMonths ? monthly[monthly.length - dataMonths - 1] : (idx > 0 ? dataSet[idx - 1] : curr);
-              
-              // Operating Activities
-              const netIncome = curr.revenue - curr.cogsTotal - curr.expense;
-              const depreciation = curr.depreciationAmortization || 0; // Depreciation and amortization expense
-              const changeInAR = curr.ar - prev.ar;
-              const changeInInventory = curr.inventory - prev.inventory;
-              const changeInAP = curr.ap - prev.ap;
-              const changeInWorkingCapital = -(changeInAR + changeInInventory - changeInAP);
-              const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
-              
-              // Investing Activities
-              const changeInFixedAssets = curr.fixedAssets - prev.fixedAssets;
-              const capitalExpenditures = changeInFixedAssets + depreciation; // Add back depreciation to estimate CapEx
-              const investingCashFlow = -capitalExpenditures;
-              
-              // Financing Activities
-              const changeInDebt = curr.ltd - prev.ltd;
-              const changeInEquity = curr.totalEquity - prev.totalEquity; // Total equity change (net income already in retained earnings)
-              const financingCashFlow = changeInDebt + changeInEquity;
-              
-              // Net Change and Free Cash Flow
-              const netCashChange = operatingCashFlow + investingCashFlow + financingCashFlow;
-              const freeCashFlow = operatingCashFlow - Math.max(0, capitalExpenditures);
-              
-              // Metrics
-              const cashFlowMargin = curr.revenue > 0 ? (operatingCashFlow / curr.revenue) * 100 : 0;
-              const daysCashOnHand = operatingCashFlow > 0 ? (curr.cash / (operatingCashFlow / 30)) : 0;
-              
-              // Working Capital Metrics - using LTM for stability
-              // Calculate LTM revenue and COGS for this month
-              const monthIndex = monthly.findIndex(m => m.month === curr.month);
-              const last12Months = monthIndex >= 11 ? monthly.slice(monthIndex - 11, monthIndex + 1) : monthly.slice(0, monthIndex + 1);
-              const ltmRevenue = last12Months.reduce((sum, m) => sum + (m.revenue || 0), 0);
-              const ltmCOGS = last12Months.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
-              
-              // Average balances (current + prior month / 2)
-              const avgInventory = (curr.inventory + prev.inventory) / 2;
-              const avgAR = (curr.ar + prev.ar) / 2;
-              const avgAP = (curr.ap + prev.ap) / 2;
-              
-              // Turnover ratios
-              const inventoryTurnover = avgInventory > 0 ? ltmCOGS / avgInventory : 0;
-              const receivablesTurnover = avgAR > 0 ? ltmRevenue / avgAR : 0;
-              const payablesTurnover = avgAP > 0 ? ltmCOGS / avgAP : 0;
-              
-              // Days metrics
-              const DIO = inventoryTurnover > 0 ? 365 / inventoryTurnover : 0; // Days Inventory Outstanding
-              const DSO = receivablesTurnover > 0 ? 365 / receivablesTurnover : 0; // Days Sales Outstanding
-              const DPO = payablesTurnover > 0 ? 365 / payablesTurnover : 0; // Days Payables Outstanding
-              const CCC = DIO + DSO - DPO; // Cash Conversion Cycle
-              
-              return {
-                month: curr.month,
-                netIncome,
-                depreciation,
-                changeInWorkingCapital,
-                operatingCashFlow,
-                capitalExpenditures,
-                investingCashFlow,
-                changeInDebt,
-                changeInEquity,
-                financingCashFlow,
-                netCashChange,
-                freeCashFlow,
-                cashFlowMargin,
-                daysCashOnHand,
-                endingCash: curr.cash,
-                DIO,
-                DSO,
-                DPO,
-                CCC
-              };
-            });
-
-            // Aggregate data based on display selection
-            let displayData = cashFlowData;
-            if (cashFlowDisplay === 'quarterly') {
-              // Aggregate into quarters (3 months each)
-              displayData = [];
-              for (let i = 0; i < cashFlowData.length; i += 3) {
-                const quarter = cashFlowData.slice(i, i + 3);
-                const quarterEnd = quarter[quarter.length - 1].month;
-                const aggregated = {
-                  month: quarterEnd,
-                  netIncome: quarter.reduce((sum, d) => sum + d.netIncome, 0),
-                  depreciation: quarter.reduce((sum, d) => sum + d.depreciation, 0),
-                  changeInWorkingCapital: quarter.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
-                  operatingCashFlow: quarter.reduce((sum, d) => sum + d.operatingCashFlow, 0),
-                  capitalExpenditures: quarter.reduce((sum, d) => sum + d.capitalExpenditures, 0),
-                  investingCashFlow: quarter.reduce((sum, d) => sum + d.investingCashFlow, 0),
-                  changeInDebt: quarter.reduce((sum, d) => sum + d.changeInDebt, 0),
-                  changeInEquity: quarter.reduce((sum, d) => sum + d.changeInEquity, 0),
-                  financingCashFlow: quarter.reduce((sum, d) => sum + d.financingCashFlow, 0),
-                  netCashChange: quarter.reduce((sum, d) => sum + d.netCashChange, 0),
-                  freeCashFlow: quarter.reduce((sum, d) => sum + d.freeCashFlow, 0),
-                  cashFlowMargin: quarter.reduce((sum, d) => sum + d.cashFlowMargin, 0) / quarter.length,
-                  daysCashOnHand: quarter[quarter.length - 1].daysCashOnHand,
-                  endingCash: quarter[quarter.length - 1].endingCash,
-                  DIO: quarter[quarter.length - 1].DIO,
-                  DSO: quarter[quarter.length - 1].DSO,
-                  DPO: quarter[quarter.length - 1].DPO,
-                  CCC: quarter[quarter.length - 1].CCC
-                };
-                displayData.push(aggregated);
-              }
-            } else if (cashFlowDisplay === 'annual') {
-              // Aggregate into 3 annual periods (12 months each)
-              displayData = [];
-              const totalMonths = cashFlowData.length;
-              const yearsToShow = Math.min(3, Math.floor(totalMonths / 12));
-              
-              for (let i = 0; i < yearsToShow; i++) {
-                const yearStart = totalMonths - (yearsToShow - i) * 12;
-                const yearEnd = yearStart + 12;
-                const yearData = cashFlowData.slice(yearStart, yearEnd);
-                
-                if (yearData.length > 0) {
-                  const yearEndDate = yearData[yearData.length - 1].month;
-                  displayData.push({
-                    month: yearEndDate,
-                    netIncome: yearData.reduce((sum, d) => sum + d.netIncome, 0),
-                    depreciation: yearData.reduce((sum, d) => sum + d.depreciation, 0),
-                    changeInWorkingCapital: yearData.reduce((sum, d) => sum + d.changeInWorkingCapital, 0),
-                    operatingCashFlow: yearData.reduce((sum, d) => sum + d.operatingCashFlow, 0),
-                    capitalExpenditures: yearData.reduce((sum, d) => sum + d.capitalExpenditures, 0),
-                    investingCashFlow: yearData.reduce((sum, d) => sum + d.investingCashFlow, 0),
-                    changeInDebt: yearData.reduce((sum, d) => sum + d.changeInDebt, 0),
-                    changeInEquity: yearData.reduce((sum, d) => sum + d.changeInEquity, 0),
-                    financingCashFlow: yearData.reduce((sum, d) => sum + d.financingCashFlow, 0),
-                    netCashChange: yearData.reduce((sum, d) => sum + d.netCashChange, 0),
-                    freeCashFlow: yearData.reduce((sum, d) => sum + d.freeCashFlow, 0),
-                    cashFlowMargin: yearData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / yearData.length,
-                    daysCashOnHand: yearData[yearData.length - 1].daysCashOnHand,
-                    endingCash: yearData[yearData.length - 1].endingCash,
-                    DIO: yearData[yearData.length - 1].DIO,
-                    DSO: yearData[yearData.length - 1].DSO,
-                    DPO: yearData[yearData.length - 1].DPO,
-                    CCC: yearData[yearData.length - 1].CCC
-                  });
-                }
-              }
-            }
-
-            // Summary metrics - always use last 12 months for consistency
-            const last12MonthsData = monthly.slice(-12).map((curr, idx) => {
-              const prev = idx === 0 && monthly.length > 12 ? monthly[monthly.length - 13] : (idx > 0 ? monthly.slice(-12)[idx - 1] : curr);
-              const netIncome = curr.revenue - curr.cogsTotal - curr.expense;
-              const depreciation = curr.depreciationAmortization || 0;
-              const changeInAR = curr.ar - prev.ar;
-              const changeInInventory = curr.inventory - prev.inventory;
-              const changeInAP = curr.ap - prev.ap;
-              const changeInWorkingCapital = -(changeInAR + changeInInventory - changeInAP);
-              const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
-              const changeInFixedAssets = curr.fixedAssets - prev.fixedAssets;
-              const capitalExpenditures = changeInFixedAssets + depreciation;
-              const investingCashFlow = -capitalExpenditures;
-              const changeInDebt = curr.ltd - prev.ltd;
-              const changeInEquity = curr.totalEquity - prev.totalEquity; // Total equity change (net income already in retained earnings)
-              const financingCashFlow = changeInDebt + changeInEquity;
-              const freeCashFlow = operatingCashFlow - Math.max(0, capitalExpenditures);
-              const cashFlowMargin = curr.revenue > 0 ? (operatingCashFlow / curr.revenue) * 100 : 0;
-              return { operatingCashFlow, investingCashFlow, financingCashFlow, freeCashFlow, cashFlowMargin };
-            });
-            const totalOperatingCF = last12MonthsData.reduce((sum, d) => sum + d.operatingCashFlow, 0);
-            const totalInvestingCF = last12MonthsData.reduce((sum, d) => sum + d.investingCashFlow, 0);
-            const totalFinancingCF = last12MonthsData.reduce((sum, d) => sum + d.financingCashFlow, 0);
-            const totalFreeCF = last12MonthsData.reduce((sum, d) => sum + d.freeCashFlow, 0);
-            const avgCashFlowMargin = last12MonthsData.reduce((sum, d) => sum + d.cashFlowMargin, 0) / last12MonthsData.length;
-
-            return (
-              <>
-                {/* Summary Cards */}
-                <div className="cf-summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '32px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Operating Cash Flow (12mo)</div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
-                      ${totalOperatingCF.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Cash from operations</div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Investing Cash Flow (12mo)</div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#ef4444' }}>
-                      ${totalInvestingCF.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>CapEx & investments</div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Financing Cash Flow (12mo)</div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#3b82f6' }}>
-                      ${totalFinancingCF.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Debt & equity changes</div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Free Cash Flow (12mo)</div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: totalFreeCF >= 0 ? '#10b981' : '#ef4444' }}>
-                      ${totalFreeCF.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>OCF - CapEx</div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>Avg Cash Flow Margin</div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
-                      {avgCashFlowMargin.toFixed(1)}%
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>OCF / Revenue</div>
-                  </div>
-                </div>
-
-                {/* Cash Flow Statement Table */}
-                <div className="cf-table-container" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Statement of Cash Flows</h2>
-                  
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: '600', color: '#64748b', position: 'sticky', left: 0, background: 'white', minWidth: '200px' }}>Cash Flow Item</th>
-                          {displayData.map((cf, i) => (
-                            <th key={i} style={{ textAlign: 'right', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '90px' }}>
-                              {cf.month}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {/* Operating Activities */}
-                        <tr style={{ background: '#f0fdf4' }}>
-                          <td colSpan={13} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#065f46' }}>
-                            OPERATING ACTIVITIES
-                          </td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Net Income</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              ${Math.round(cf.netIncome).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>+ Depreciation</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              ${Math.round(cf.depreciation).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>+ Change in Working Capital</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInWorkingCapital >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              ${Math.round(cf.changeInWorkingCapital).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '2px solid #10b981', background: '#f0fdf4' }}>
-                          <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#065f46' }}>Operating Cash Flow</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#065f46', textAlign: 'right' }}>
-                              ${Math.round(cf.operatingCashFlow).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        
-                        {/* Investing Activities */}
-                        <tr style={{ background: '#fef2f2' }}>
-                          <td colSpan={13} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#991b1b' }}>
-                            INVESTING ACTIVITIES
-                          </td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Capital Expenditures</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>
-                              (${Math.round(cf.capitalExpenditures).toLocaleString()})
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '2px solid #ef4444', background: '#fef2f2' }}>
-                          <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#991b1b' }}>Investing Cash Flow</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#991b1b', textAlign: 'right' }}>
-                              ${Math.round(cf.investingCashFlow).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        
-                        {/* Financing Activities */}
-                        <tr style={{ background: '#eff6ff' }}>
-                          <td colSpan={13} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#1e40af' }}>
-                            FINANCING ACTIVITIES
-                          </td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Long-Term Debt</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInDebt >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              ${Math.round(cf.changeInDebt).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Equity</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInEquity >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              ${Math.round(cf.changeInEquity).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '2px solid #3b82f6', background: '#eff6ff' }}>
-                          <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#1e40af' }}>Financing Cash Flow</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>
-                              ${Math.round(cf.financingCashFlow).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        
-                        {/* Net Change */}
-                        <tr style={{ borderBottom: '3px double #1e293b', background: '#f8fafc' }}>
-                          <td style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>Net Change in Cash</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '12px 10px', fontSize: '14px', fontWeight: '700', color: cf.netCashChange >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              ${Math.round(cf.netCashChange).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ background: '#fef3c7' }}>
-                          <td style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: '#92400e' }}>Free Cash Flow</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '700', color: cf.freeCashFlow >= 0 ? '#065f46' : '#991b1b', textAlign: 'right' }}>
-                              ${Math.round(cf.freeCashFlow).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <td style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Ending Cash Balance</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '10px', fontSize: '13px', fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>
-                              ${Math.round(cf.endingCash).toLocaleString()}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Cash Flow Metrics */}
-                <div className="cf-metrics-section" style={{ background: 'white', borderRadius: '12px', padding: '32px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Cash Flow Metrics</h2>
-                  
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: '600', color: '#64748b', position: 'sticky', left: 0, background: 'white', minWidth: '180px' }}>Metric</th>
-                          {displayData.map((cf, i) => (
-                            <th key={i} style={{ textAlign: 'right', padding: '10px', fontSize: '11px', fontWeight: '600', color: '#64748b', minWidth: '90px' }}>
-                              {cf.month}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>Cash Flow Margin (%)</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {cf.cashFlowMargin.toFixed(1)}%
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>Days Cash on Hand</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {cf.daysCashOnHand.toFixed(0)} days
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>Cash Conversion Rate</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {cf.netIncome > 0 ? ((cf.operatingCashFlow / cf.netIncome) * 100).toFixed(0) : 'N/A'}%
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>DIO (Days Inventory Outstanding)</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {cf.DIO ? cf.DIO.toFixed(0) : 'N/A'} days
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>DSO (Days Sales Outstanding)</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {cf.DSO ? cf.DSO.toFixed(0) : 'N/A'} days
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569' }}>DPO (Days Payables Outstanding)</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                              {cf.DPO ? cf.DPO.toFixed(0) : 'N/A'} days
-                            </td>
-                          ))}
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', fontWeight: '600' }}>Cash Conversion Cycle (CCC)</td>
-                          {displayData.map((cf, i) => (
-                            <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.CCC < 30 ? '#10b981' : (cf.CCC > 60 ? '#ef4444' : '#1e293b'), textAlign: 'right', fontWeight: '600' }}>
-                              {cf.CCC ? cf.CCC.toFixed(0) : 'N/A'} days
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Key Insights */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Cash Flow Insights</h2>
-                  
-                  <div style={{ display: 'grid', gap: '16px' }}>
-                    {totalOperatingCF > 0 ? (
-                      <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>? Positive Operating Cash Flow</div>
-                        <div style={{ fontSize: '13px', color: '#047857' }}>
-                          The company generated ${(totalOperatingCF / 1000).toFixed(0)}K in cash from operations over the last 12 months, indicating healthy operational performance.
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Negative Operating Cash Flow</div>
-                        <div style={{ fontSize: '13px', color: '#dc2626' }}>
-                          The company consumed ${Math.abs(totalOperatingCF / 1000).toFixed(0)}K in cash from operations, which may indicate operational challenges.
-                        </div>
-                      </div>
-                    )}
-                    
-                    {totalFreeCF > 0 ? (
-                      <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>? Positive Free Cash Flow</div>
-                        <div style={{ fontSize: '13px', color: '#047857' }}>
-                          After capital expenditures, the company has ${(totalFreeCF / 1000).toFixed(0)}K in free cash flow available for growth, debt reduction, or distributions.
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>⚠️ Negative Free Cash Flow</div>
-                        <div style={{ fontSize: '13px', color: '#b45309' }}>
-                          Capital expenditures exceed operating cash flow by ${Math.abs(totalFreeCF / 1000).toFixed(0)}K, requiring external financing.
-                        </div>
-                      </div>
-                    )}
-                    
-                    {avgCashFlowMargin > 15 ? (
-                      <div style={{ padding: '16px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '4px' }}>? Strong Cash Flow Margin</div>
-                        <div style={{ fontSize: '13px', color: '#047857' }}>
-                          Average cash flow margin of {avgCashFlowMargin.toFixed(1)}% indicates the company efficiently converts revenue into cash.
-                        </div>
-                      </div>
-                    ) : avgCashFlowMargin < 5 ? (
-                      <div style={{ padding: '16px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>⚠️ Low Cash Flow Margin</div>
-                        <div style={{ fontSize: '13px', color: '#dc2626' }}>
-                          Cash flow margin of {avgCashFlowMargin.toFixed(1)}% suggests challenges in converting revenue to cash. Review receivables collection and expense timing.
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-        </div>
+      {currentView === 'cash-flow' && selectedCompanyId && (
+        <CashFlowTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+        />
       )}
-
-      {/* CSV Trial Balance Data Mapping View - Show when CSV data is loaded OR when there are saved mappings */}
-      {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && (csvTrialBalanceData?._companyId === selectedCompanyId || (aiMappings.length > 0 && showMappingSection))) && (() => {
-        const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
-
-        // Get accounts for mapping from CSV data (if available)
-        const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
-        const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
-
-        return (
-          <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
-              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-            </div>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              {hasCsvData
-                ? `Map Trial Balance accounts to your standardized financial fields - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} - ${csvTrialBalanceData.dates?.length || 0} periods`
-                : `${aiMappings.length} saved account mappings loaded from database`
-              }
-            </p>
-
-
-            {/* AI-Assisted Mapping Section for CSV */}
-            {hasCsvData && (
-            <div style={{ marginBottom: '32px' }}>
-              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div>
-                    <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                      AI-Assisted Account Mapping
-                    </h2>
-                    <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                      Use AI to automatically suggest mappings from Trial Balance accounts ({csvAccountsForMapping.length} accounts) to your standardized financial fields
-                    </p>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      setIsGeneratingMappings(true);
-                      try {
-                        // Convert CSV accounts to format expected by AI mapping
-                        const qbAccountsWithClass = csvAccountsForMapping.map(acc => ({
-                          name: acc.name,
-                          classification: acc.classification,
-                          accountCode: acc.acctId,  // Include account code for better AI mapping
-                          accountType: acc.acctType,
-                        }));
-
-                        console.log('?? CSV accounts to map:', qbAccountsWithClass.length);
-                        console.log('?? First 10 accounts:', qbAccountsWithClass.slice(0, 10));
-
-                        const response = await fetch('/api/ai-mapping/enhanced', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ 
-                            qbAccountsWithClass,
-                            companyId: selectedCompanyId,
-                            targetFields: []
-                          })
-                        });
-
-                        if (!response.ok) {
-                          throw new Error('Failed to generate mappings');
-                        }
-
-                        const data = await response.json();
-                        setAiMappings(data.mappings || []);
-                        setShowMappingSection(true);
-                      } catch (error: any) {
-                        console.error('Error generating mappings:', error);
-                        alert('Failed to generate AI mappings: ' + error.message);
-                      } finally {
-                        setIsGeneratingMappings(false);
-                      }
-                    }}
-                    disabled={isGeneratingMappings || csvAccountsForMapping.length === 0}
-                    style={{
-                      padding: '12px 24px',
-                      background: isGeneratingMappings ? '#94a3b8' : '#10b981',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: isGeneratingMappings ? 'not-allowed' : 'pointer',
-                      boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    {isGeneratingMappings ? (
-                      <>
-                        <span>?</span>
-                        <span>Generating Mappings...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>🤖</span>
-                        <span>Generate AI Mappings</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Account Summary by Type */}
-                <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Type:</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {Object.entries(csvTrialBalanceData.accountsByType || {}).map(([type, accounts]: [string, any]) => (
-                      <span key={type} style={{
-                        padding: '4px 12px',
-                        background: 'white',
-                        borderRadius: '16px',
-                        fontSize: '12px',
-                        color: '#065f46',
-                        border: '1px solid #86efac'
-                      }}>
-                        {type}: {accounts.length}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-            )}
-
-            {/* Mapping Results Section */}
-            {showMappingSection && aiMappings.length > 0 && (
-              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '32px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                    Account Mappings ({aiMappings.length} accounts)
-                  </h2>
-                </div>
-
-                <AccountMappingTable
-                  mappings={aiMappings}
-                  linesOfBusiness={linesOfBusiness}
-                  userDefinedAllocations={userDefinedAllocations}
-                  onMappingChange={(index, updates) => {
-                    const updated = [...aiMappings];
-                    updated[index] = { ...updated[index], ...updates };
-                    setAiMappings(updated);
-                  }}
-                />
-
-                {/* Save Mappings Section */}
-                <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div>
-                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
-                      <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>Save your mappings to use them for future data processing.</p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                      <button
-                        onClick={async () => {
-                          if (!aiMappings || aiMappings.length === 0) {
-                            alert('Please save account mappings first!');
-                            return;
-                          }
-
-                          if (!csvTrialBalanceData || csvTrialBalanceData._companyId !== selectedCompanyId) {
-                            alert('No CSV/Trial Balance data available!');
-                            return;
-                          }
-
-                          if (!currentUser) {
-                            alert('User not logged in!');
-                            return;
-                          }
-
-                          setIsProcessingMonthlyData(true);
-                          try {
-                            console.log('?? Processing CSV/Trial Balance data using mappings...');
-                            console.log('?? Total mappings:', aiMappings.length);
-
-                            // Process the CSV data using mappings
-                            const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
-
-                            // Save to database
-                            const response = await fetch('/api/financials', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                companyId: selectedCompanyId,
-                                uploadedByUserId: currentUser.id,
-                                fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
-                                rawData: csvTrialBalanceData,
-                                columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
-                                monthlyData: processedData
-                              })
-                            });
-
-                            if (!response.ok) {
-                              throw new Error('Failed to save processed data');
-                            }
-
-                            const result = await response.json();
-                            console.log(`? Processed and saved ${processedData.length} months of CSV data`);
-
-                            // Update local state
-                            setLoadedMonthlyData(processedData);
-
-                            alert(`? Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
-                          } catch (error: any) {
-                            console.error('Error processing CSV data:', error);
-                            alert('Failed to process CSV data: ' + error.message);
-                          } finally {
-                            setIsProcessingMonthlyData(false);
-                          }
-                        }}
-                        disabled={isProcessingMonthlyData || aiMappings.length === 0}
-                        style={{
-                          padding: '8px 16px',
-                          background: isProcessingMonthlyData || aiMappings.length === 0 ? '#9ca3af' : '#3b82f6',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          fontWeight: '600',
-                          cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
-                          boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
-                        }}
-                      >
-                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            console.log('🔍 Save Mappings Debug:', {
-                              currentCompany,
-                              currentCompanyId: currentCompany?.id,
-                              selectedCompanyId,
-                              aiMappingsCount: aiMappings?.length,
-                              aiMappingsSample: aiMappings?.slice(0, 2),
-                              linesOfBusinessCount: linesOfBusiness?.length
-                            });
-
-                            if (!currentCompany?.id) {
-                              alert(`Cannot save mappings: Company not found. Selected: ${selectedCompanyId}, Available companies: ${companies?.length || 0}`);
-                              return;
-                            }
-
-                            if (!aiMappings || aiMappings.length === 0) {
-                              alert('No mappings to save. Please generate AI mappings first.');
-                              return;
-                            }
-
-                            setIsSavingMappings(true);
-                            const response = await fetch('/api/account-mappings', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                companyId: currentCompany.id,
-                                mappings: aiMappings,
-                                linesOfBusiness: linesOfBusiness
-                              })
-                            });
-
-                            if (response.ok) {
-                              toast.success('Account mappings saved successfully!');
-                            } else {
-                              toast.error('Failed to save account mappings');
-                            }
-                          } catch (error) {
-                            console.error('Error saving mappings:', error);
-                            toast.error('Failed to save account mappings');
-                          } finally {
-                            setIsSavingMappings(false);
-                          }
-                        }}
-                        disabled={isSavingMappings}
-                        style={{
-                          padding: '8px 16px',
-                          background: isSavingMappings ? '#9ca3af' : '#10b981',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '14px',
-                          fontWeight: '500',
-                          cursor: isSavingMappings ? 'not-allowed' : 'pointer',
-                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
-                        }}
-                      >
-                        {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Account Preview Section */}
-            {hasCsvData && csvTrialBalanceData && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                Account Preview (First 20 accounts)
-              </h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#f8fafc' }}>
-                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>Type</th>
-                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>ID</th>
-                      <th style={{ textAlign: 'left', padding: '10px', fontWeight: '600', color: '#475569' }}>Description</th>
-                      <th style={{ textAlign: 'right', padding: '10px', fontWeight: '600', color: '#475569' }}>Latest Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {csvTrialBalanceData.accounts?.slice(0, 20).map((account: any, idx: number) => {
-                      const latestDate = csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1];
-                      const latestValue = latestDate ? account.values[latestDate] : 0;
-                      return (
-                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '12px' }}>{account.acctType}</td>
-                          <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '12px' }}>{account.acctId}</td>
-                          <td style={{ padding: '8px 10px', color: '#1e293b' }}>{account.description}</td>
-                          <td style={{ padding: '8px 10px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600' }}>
-                            ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            {latestValue < 0 && ' (CR)'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {csvTrialBalanceData.accounts?.length > 20 && (
-                <p style={{ fontSize: '13px', color: '#64748b', marginTop: '12px', textAlign: 'center' }}>
-                  ... and {csvTrialBalanceData.accounts.length - 20} more accounts
-                </p>
-              )}
-            </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* Data Mapping View - AI-Assisted Mapping Interface */}
-      {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && qbRawData) && (() => {
-        // CRITICAL SECURITY CHECK: Ensure qbRawData matches the selected company
-        if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
-          console.error(`🚨 SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
-          return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>⏳ Loading company data...</div>
-            <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
-          </div>;
-        }
-        
-        const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
-        const currentCompanyName = currentCompany?.name || 'Unknown';
-        console.log(`🔄 ========================================`);
-        console.log(`🔄 DATA MAPPING RENDERING (Refresh Key: ${dataRefreshKey})`);
-        console.log(`🔄 Selected Company: "${currentCompanyName}" (ID: ${selectedCompanyId})`);
-        console.log(`🔄 QB Data sync date:`, qbRawData.syncDate);
-        console.log(`🔄 Data belongs to company:`, qbRawData._companyId);
-        console.log(`🔄 Record ID:`, qbRawData._recordId);
-        console.log(`🔄 ========================================`);
-        
-        // Helper function to recursively extract all rows from QB report
-        // Extract from the last month column, not the total column
-        // Calculate totals by summing detail rows instead of using QB's Summary rows
-        const extractRows = (data: any, level: number = 0, parentSection: string = ''): any[] => {
-          const result: any[] = [];
-          
-          if (!data) return result;
-          
-          // Check if this is a multi-column report (monthly breakdown)
-          const columns = data.Columns?.Column || [];
-          const hasMultipleMonths = columns.length > 2; // More than just account name + one value column
-          
-          const rows = Array.isArray(data?.Rows) ? data.Rows : (data?.Rows?.Row ? (Array.isArray(data.Rows.Row) ? data.Rows.Row : [data.Rows.Row]) : []);
-          
-          for (const row of rows) {
-            if (row.type === 'Section') {
-              // Add section header
-              const sectionName = row.Header?.ColData?.[0]?.value || parentSection;
-              if (sectionName) {
-                result.push({
-                  type: 'section',
-                  name: sectionName,
-                  level,
-                  isHeader: true,
-                  section: sectionName
-                });
-              }
-              
-              // Track index before nested rows for calculating section total
-              const beforeNestedIndex = result.length;
-              
-              // Recursively process nested rows WITH section tracking
-              if (row.Rows?.Row) {
-                const nested = extractRows({ Rows: { Row: row.Rows.Row } }, level + 1, sectionName);
-                result.push(...nested);
-              }
-              
-              // Calculate section total by summing ONLY data rows (not subtotals) in this section
-              const nestedRows = result.slice(beforeNestedIndex);
-              let calculatedTotal = 0;
-              nestedRows.forEach(r => {
-                if (r.type === 'data') {  // Only sum detail rows, not subtotal rows
-                  const numValue = parseFloat(r.value) || 0;
-                  calculatedTotal += numValue;
-                }
-              });
-              
-              // Add section summary/total with calculated value
-              if (row.Summary?.ColData) {
-                const name = row.Summary.ColData[0]?.value || '';
-                if (name) {
-                  result.push({
-                    type: 'total',
-                    name,
-                    value: calculatedTotal,
-                    level,
-                    isTotal: true
-                  });
-                }
-              }
-            } else if (row.type === 'Data' && row.ColData) {
-              // Add data row (individual account)
-              const name = row.ColData[0]?.value || '';
-              // Extract from appropriate column: last month if multi-month, otherwise last column
-              let value = '0';
-              for (let i = row.ColData.length - 1; i >= 1; i--) {
-                const colValue = row.ColData[i]?.value;
-                if (colValue !== undefined && colValue !== '' && !isNaN(parseFloat(colValue))) {
-                  value = colValue;
-                  break;
-                }
-              }
-              if (name) {
-                result.push({
-                  type: 'data',
-                  name,
-                  value,
-                  level,
-                  section: parentSection  // Track which section this account belongs to
-                });
-              }
-            }
-          }
-          
-          return result;
-        };
-        
-        const plRows = extractRows(qbRawData.profitAndLoss);
-        const bsRows = extractRows(qbRawData.balanceSheet);
-        
-        // Debug: Log all total rows to identify the Total Income discrepancy
-        console.log('=== P&L Total Rows ===');
-        plRows.filter(r => r.isTotal).forEach(r => {
-          console.log(`${r.name}: ${r.value}`);
-        });
-        
-        return (
-          <div key={`data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>🔗 Account Mapping</h1>
-              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-            </div>
-            <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-              Map QuickBooks accounts to your standardized financial fields - Synced: {qbRawData.syncDate ? new Date(qbRawData.syncDate).toLocaleString() : 'Unknown'}
-            </p>
-
-
-            {/* AI-Assisted Mapping Section */}
-            <div style={{ marginBottom: '32px' }}>
-              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div>
-                    <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                      AI-Assisted Account Mapping
-                    </h2>
-                    <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                      Use AI to automatically suggest mappings from QuickBooks accounts to your standardized financial fields
-                    </p>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      setIsGeneratingMappings(true);
-                      try {
-                        // Build account classification lookup from Chart of Accounts
-                        const accountClassifications: Record<string, string> = {};
-                        const chartOfAccounts = qbRawData?.chartOfAccounts?.QueryResponse?.Account || [];
-                        
-                        console.log('🔍 Chart of Accounts sample:', chartOfAccounts.slice(0, 5));
-                        console.log('🔍 Total accounts in chart:', chartOfAccounts.length);
-                        
-                        chartOfAccounts.forEach((account: any) => {
-                          const accountName = account.Name;
-                          const accountType = account.AccountType || '';
-                          
-                          // DEBUG: Log first 10 accounts to see the data structure
-                          if (chartOfAccounts.indexOf(account) < 10) {
-                            console.log(`Account: "${accountName}" | Type: "${accountType}" | Full:`, account);
-                          }
-                          
-                          // Map QB AccountType to our simplified classifications
-                          let classification = '';
-                          if (accountType === 'Income' || accountType === 'Other Income') {
-                            classification = 'Revenue';
-                          } else if (accountType === 'Cost of Goods Sold') {
-                            classification = 'Cost of Goods Sold';
-                          } else if (accountType === 'Expense' || accountType === 'Other Expense') {
-                            classification = 'Expense';
-                          } else if (
-                            accountType === 'Bank' || 
-                            accountType === 'Accounts Receivable' || 
-                            accountType === 'Other Current Asset' || 
-                            accountType === 'Fixed Asset' || 
-                            accountType === 'Other Asset' ||
-                            accountType.includes('Asset')
-                          ) {
-                            classification = 'Asset';
-                          } else if (
-                            accountType === 'Accounts Payable' || 
-                            accountType === 'Credit Card' || 
-                            accountType === 'Other Current Liability' || 
-                            accountType === 'Long Term Liability' ||
-                            accountType.includes('Liability')
-                          ) {
-                            classification = 'Liability';
-                          } else if (accountType === 'Equity') {
-                            classification = 'Equity';
-                          }
-                          
-                          if (accountName && classification) {
-                            accountClassifications[accountName] = classification;
-                          }
-                        });
-                        
-                        if (Object.keys(accountClassifications).length === 0) {
-                          console.error('?? No Chart of Accounts data found! Classifications will be incorrect.');
-                        }
-                        
-                        // Extract all account names WITH classifications from QB data
-                        const qbAccountsWithClass: Array<{name: string, classification: string}> = [];
-                        
-                        // Use the SAME extractRows function that works for display
-                        const plRows = extractRows(qbRawData.profitAndLoss);
-                        const bsRows = extractRows(qbRawData.balanceSheet);
-                        
-                        // For P&L: Get individual REVENUE items AND individual EXPENSE items (not totals)
-                        const revenueDataRows = plRows.filter(r => {
-                          if (r.type !== 'data' || r.isHeader || r.isTotal) return false;
-                          const section = (r.section || '').toLowerCase();
-                          return section.includes('income') || section.includes('revenue');
-                        });
-                        const expenseDataRows = plRows.filter(r => {
-                          if (r.type !== 'data' || r.isHeader || r.isTotal) return false;
-                          const section = (r.section || '').toLowerCase();
-                          return section.includes('expense') || section.includes('cost');
-                        });
-                        
-                        // For Balance Sheet: Get individual items (all detail accounts)
-                        const bsDataRows = bsRows.filter(r => r.type === 'data' && !r.isHeader && !r.isTotal);
-                        
-                        console.log('🔍 Revenue individual items:', revenueDataRows.length);
-                        console.log('🔍 Expense individual items:', expenseDataRows.length);
-                        console.log('🔍 BS individual items:', bsDataRows.length);
-                        
-                        // DEBUG: Pick first revenue account to track through entire process
-                        const testAccount = revenueDataRows[0]?.name || expenseDataRows[0]?.name || bsDataRows[0]?.name;
-                        console.log(`\n🔬 TRACKING TEST ACCOUNT: "${testAccount}"`);
-                        if (testAccount) {
-                          const testRow = plRows.find(r => r.name === testAccount) || bsRows.find(r => r.name === testAccount);
-                          console.log('Test account raw data:', testRow);
-                        }
-                        
-                        // Add revenue individual items
-                        revenueDataRows.forEach(row => {
-                          const classification = accountClassifications[row.name] || 'Revenue';
-                          qbAccountsWithClass.push({ name: row.name, classification });
-                        });
-                        
-                        // Add expense individual items
-                        expenseDataRows.forEach(row => {
-                          const classification = accountClassifications[row.name] || 'Expense';
-                          qbAccountsWithClass.push({ name: row.name, classification });
-                        });
-                        
-                        // Add BS individual items
-                        let assetCount = 0, liabilityCount = 0, equityCount = 0;
-                        bsDataRows.forEach((row, idx) => {
-                          // Try to get classification from Chart of Accounts first
-                          let classification = accountClassifications[row.name];
-                          
-                          // If not found, determine from Balance Sheet section
-                          if (!classification && row.section) {
-                            const section = row.section.toLowerCase();
-                            if (section.includes('asset')) {
-                              classification = 'Asset';
-                              assetCount++;
-                            } else if (section.includes('liabilit')) {
-                              classification = 'Liability';
-                              liabilityCount++;
-                            } else if (section.includes('equity')) {
-                              classification = 'Equity';
-                              equityCount++;
-                            } else {
-                              // Default to Asset only if we really can't determine
-                              classification = 'Asset';
-                              assetCount++;
-                            }
-                            
-                            // Debug first 5 accounts
-                            if (idx < 5) {
-                              console.log(`BS Account ${idx}: "${row.name}" | Section: "${row.section}" ? ${classification}`);
-                            }
-                          } else if (!classification) {
-                            classification = 'Asset'; // Last resort default
-                            assetCount++;
-                          } else {
-                            // Count from Chart of Accounts lookup
-                            if (classification === 'Asset') assetCount++;
-                            else if (classification === 'Liability') liabilityCount++;
-                            else if (classification === 'Equity') equityCount++;
-                          }
-                          
-                          qbAccountsWithClass.push({ name: row.name, classification });
-                        });
-                        
-                        console.log(`📊 BS Classification breakdown: Assets=${assetCount}, Liabilities=${liabilityCount}, Equity=${equityCount}`);
-                        
-                        console.log('🔍 TOTAL accounts to map:', qbAccountsWithClass.length);
-                        console.log('🔍 First 10 accounts:', qbAccountsWithClass.slice(0, 10).map(a => a.name));
-
-                        const response = await fetch('/api/ai-mapping/enhanced', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ 
-                            qbAccountsWithClass,
-                            companyId: selectedCompanyId,
-                            targetFields: []
-                          })
-                        });
-
-                        if (!response.ok) {
-                          throw new Error('Failed to generate mappings');
-                        }
-
-                        const data = await response.json();
-                        setAiMappings(data.mappings || []);
-                        
-                        // DEBUG: Track test account through mapping
-                        if (testAccount) {
-                          const testMapping = data.mappings.find((m: any) => m.qbAccount === testAccount);
-                          console.log(`\n🔬 TEST ACCOUNT MAPPING:`, testMapping);
-                        }
-                        
-                        setShowMappingSection(true);
-                      } catch (error: any) {
-                        console.error('Error generating mappings:', error);
-                        alert('Failed to generate AI mappings: ' + error.message);
-                      } finally {
-                        setIsGeneratingMappings(false);
-                      }
-                    }}
-                    disabled={isGeneratingMappings || plRows.length === 0}
-                    style={{
-                      padding: '12px 24px',
-                      background: isGeneratingMappings ? '#94a3b8' : '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: isGeneratingMappings ? 'not-allowed' : 'pointer',
-                      boxShadow: '0 2px 6px rgba(102, 126, 234, 0.3)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    {isGeneratingMappings ? (
-                      <>
-                        <span>🤖</span>
-                        <span>Generating Mappings...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>🤖</span>
-                        <span>Generate AI Mappings</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {showMappingSection && aiMappings.length > 0 && (
-                  <div>
-                    <div style={{ marginBottom: '16px', padding: '16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#0369a1', marginBottom: '4px' }}>
-                        ? AI Suggestions Generated
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#0c4a6e' }}>
-                        Review the suggested mappings below. You can edit any mapping before saving. Mappings will be used to automatically populate your standardized financial statements from QuickBooks data.
-                      </div>
-                    </div>
-
-                    <div style={{ maxHeight: '500px', overflowY: 'auto', marginBottom: '16px' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                        <thead style={{ position: 'sticky', top: 0, background: 'white', zIndex: 1 }}>
-                          <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                            <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#1e293b', width: '10%' }}>Classification</th>
-                            <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#1e293b', width: '20%' }}>QuickBooks Account</th>
-                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', color: '#1e293b', width: '10%' }}>Amount</th>
-                            <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#1e293b', width: '15%' }}>Target Field</th>
-                            <th colSpan={linesOfBusiness.filter(lob => lob.name.trim() !== '').length || 1} style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#1e293b', borderLeft: '2px solid #e2e8f0', borderRight: '2px solid #e2e8f0' }}>
-                              Line of Business Allocation (%)
-                            </th>
-                            <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#1e293b', width: '7%' }}>Total %</th>
-                            <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#1e293b', width: '10%' }}>Confidence</th>
-                          </tr>
-                          <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                            <th colSpan={4}></th>
-                            {linesOfBusiness.filter(lob => lob.name.trim() !== '').length > 0 ? (
-                              linesOfBusiness.filter(lob => lob.name.trim() !== '').map((lob, idx) => (
-                                <th key={idx} style={{ padding: '8px 4px', textAlign: 'center', fontSize: '11px', fontWeight: '600', color: '#475569', borderLeft: idx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: idx === linesOfBusiness.filter(l => l.name.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none', background: '#f8fafc' }}>
-                                  {lob.name}
-                                </th>
-                              ))
-                            ) : (
-                              <th style={{ padding: '8px 4px', textAlign: 'center', fontSize: '11px', fontWeight: '600', color: '#94a3b8', borderLeft: '2px solid #e2e8f0', borderRight: '2px solid #e2e8f0', background: '#f8fafc' }}>
-                                Define LOBs above
-                              </th>
-                            )}
-                            <th></th>
-                            <th></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(() => {
-                            // Sort mappings by classification
-                            const classificationOrder = ['Revenue', 'Cost of Goods Sold', 'COGS', 'Expense', 'Asset', 'Current Asset', 'Fixed Asset', 'Other Asset', 'Liability', 'Current Liability', 'Long Term Liability', 'Equity'];
-                            const sortedMappings = [...aiMappings].sort((a, b) => {
-                              const aClass = a.qbAccountClassification || '';
-                              const bClass = b.qbAccountClassification || '';
-                              const aIdx = classificationOrder.findIndex(c => aClass.includes(c) || c.includes(aClass));
-                              const bIdx = classificationOrder.findIndex(c => bClass.includes(c) || c.includes(bClass));
-                              if (aIdx === -1 && bIdx === -1) return 0;
-                              if (aIdx === -1) return 1;
-                              if (bIdx === -1) return -1;
-                              return aIdx - bIdx;
-                            });
-                            
-                            return sortedMappings.map((mapping, idx) => {
-                              // Get amount from already-extracted plRows and bsRows
-                              let amount = null;
-                              if (plRows && bsRows) {
-                                const allRows = [...plRows, ...bsRows];
-                                const accountRow = allRows.find((row: any) => row.name === mapping.qbAccount);
-                                if (accountRow) {
-                                  amount = parseFloat(accountRow.value) || 0;
-                                }
-                              }
-                              
-                              return (
-                                <tr key={`${mapping.qbAccount}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                  <td style={{ padding: '12px', color: '#475569', fontSize: '12px', fontWeight: '600' }}>
-                                    {mapping.qbAccountClassification || '-'}
-                                  </td>
-                                  <td style={{ padding: '12px', color: '#475569' }}>{mapping.qbAccount}</td>
-                                  <td style={{ padding: '12px', color: '#475569', textAlign: 'right', fontFamily: 'monospace' }}>
-                                    {amount !== null && amount !== undefined ? `$${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-'}
-                                  </td>
-                                  <td style={{ padding: '12px' }}>
-                                    <select
-                                      value={mapping.targetField || ''}
-                                      onChange={(e) => {
-                                        const newValue = e.target.value;
-                                        const updated = aiMappings.map(m => 
-                                          m.qbAccount === mapping.qbAccount 
-                                            ? { ...m, targetField: newValue }
-                                            : m
-                                        );
-                                        setAiMappings(updated);
-                                      }}
-                                      style={{
-                                        width: '100%',
-                                        padding: '6px 10px',
-                                        border: '1px solid #cbd5e1',
-                                        borderRadius: '6px',
-                                        fontSize: '13px',
-                                        color: '#1e293b',
-                                        cursor: 'pointer'
-                                      }}
-                                    >
-                                      <option value="">-- Select Field --</option>
-                                      <optgroup label="Income Statement">
-                                        <option value="revenue">Revenue</option>
-                                        <option value="expense">Total Expense</option>
-                                        <option value="cogsPayroll">COGS - Payroll</option>
-                                        <option value="cogsOwnerPay">COGS - Owner Pay</option>
-                                        <option value="cogsContractors">COGS - Contractors</option>
-                                        <option value="cogsMaterials">COGS - Materials</option>
-                                        <option value="cogsCommissions">COGS - Commissions</option>
-                                        <option value="cogsOther">COGS - Other</option>
-                                        <option value="cogsTotal">COGS - Total</option>
-                                        <option value="payroll">Payroll</option>
-                                        <option value="ownerBasePay">Owner Base Pay</option>
-                                        <option value="benefits">Benefits</option>
-                                        <option value="insurance">Insurance</option>
-                                        <option value="professionalFees">Professional Fees</option>
-                                        <option value="subcontractors">Subcontractors</option>
-                                        <option value="rent">Rent</option>
-                                        <option value="taxLicense">Tax & License</option>
-                                        <option value="phoneComm">Phone & Communication</option>
-                                        <option value="infrastructure">Infrastructure/Utilities</option>
-                                        <option value="autoTravel">Auto & Travel</option>
-                                        <option value="salesExpense">Sales & Marketing</option>
-                                        <option value="marketing">Marketing</option>
-                                        <option value="trainingCert">Training & Certification</option>
-                                        <option value="mealsEntertainment">Meals & Entertainment</option>
-                                        <option value="interestExpense">Interest Expense</option>
-                                        <option value="depreciationAmortization">Depreciation & Amortization</option>
-                                        <option value="otherExpense">Other Expense</option>
-                                        <option value="nonOperatingIncome">Non-Operating Income</option>
-                                        <option value="extraordinaryItems">Extraordinary Items</option>
-                                      </optgroup>
-                                      <optgroup label="Balance Sheet - Assets">
-                                        <option value="cash">Cash</option>
-                                        <option value="ar">Accounts Receivable</option>
-                                        <option value="inventory">Inventory</option>
-                                        <option value="otherCA">Other Current Assets</option>
-                                        <option value="tca">Total Current Assets</option>
-                                        <option value="fixedAssets">Fixed Assets</option>
-                                        <option value="otherAssets">Other Assets</option>
-                                        <option value="totalAssets">Total Assets</option>
-                                      </optgroup>
-                                      <optgroup label="Balance Sheet - Liabilities">
-                                        <option value="ap">Accounts Payable</option>
-                                        <option value="otherCL">Other Current Liabilities</option>
-                                        <option value="tcl">Total Current Liabilities</option>
-                                        <option value="ltd">Long Term Debt</option>
-                                        <option value="totalLiab">Total Liabilities</option>
-                                      </optgroup>
-                                      <optgroup label="Balance Sheet - Equity">
-                                        <option value="ownersCapital">Owner's Capital</option>
-                                        <option value="ownersDraw">Owner's Draw</option>
-                                        <option value="commonStock">Common Stock</option>
-                                        <option value="preferredStock">Preferred Stock</option>
-                                        <option value="retainedEarnings">Retained Earnings</option>
-                                        <option value="additionalPaidInCapital">Additional Paid-In Capital</option>
-                                        <option value="treasuryStock">Treasury Stock</option>
-                                        <option value="totalEquity">Total Equity</option>
-                                        <option value="totalLAndE">Total Liabilities & Equity</option>
-                                      </optgroup>
-                                    </select>
-                                  </td>
-                                  {linesOfBusiness.filter(lob => lob.name.trim() !== '').length > 0 ? (
-                                    linesOfBusiness.filter(lob => lob.name.trim() !== '').map((lob, lobIdx) => {
-                                      const lobAllocations = mapping.lobAllocations || {};
-                                      const currentPercent = lobAllocations[lob.name] !== undefined ? lobAllocations[lob.name] : 0;
-                                      const allAllocations = lobAllocations;
-                                      const total = Object.values(allAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
-                                      const isOverAllocated = total > 100;
-                                      const isUnderAllocated = total < 100 && total > 0;
-                                      
-                                      return (
-                                        <td key={lobIdx} style={{ padding: '8px 4px', borderLeft: lobIdx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9', borderRight: lobIdx === linesOfBusiness.filter(l => l.trim() !== '').length - 1 ? '2px solid #e2e8f0' : 'none', background: '#fafafa' }}>
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={currentPercent}
-                                            onChange={(e) => {
-                                              const newValue = parseInt(e.target.value) || 0;
-                                              const clamped = Math.min(Math.max(newValue, 0), 100);
-                                              const updated = aiMappings.map(m =>
-                                                m.qbAccount === mapping.qbAccount
-                                                  ? {
-                                                      ...m,
-                                                      lobAllocations: {
-                                                        ...(m.lobAllocations || {}),
-                                                        [lob]: clamped
-                                                      }
-                                                    }
-                                                  : m
-                                              );
-                                              setAiMappings(updated);
-                                            }}
-                                            style={{
-                                              width: '50px',
-                                              padding: '4px 6px',
-                                              border: isOverAllocated ? '2px solid #ef4444' : isUnderAllocated ? '2px solid #f59e0b' : '1px solid #cbd5e1',
-                                              borderRadius: '4px',
-                                              fontSize: '12px',
-                                              color: '#1e293b',
-                                              textAlign: 'center',
-                                              background: 'white'
-                                            }}
-                                            title={isOverAllocated ? `Total allocation is ${total}% (exceeds 100%)` : isUnderAllocated ? `Total allocation is ${total}% (less than 100%)` : `Total allocation: ${total}%`}
-                                          />
-                                        </td>
-                                      );
-                                    })
-                                  ) : (
-                                    <td style={{ padding: '12px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', borderLeft: '2px solid #e2e8f0', borderRight: '2px solid #e2e8f0', background: '#fafafa' }}>
-                                      -
-                                    </td>
-                                  )}
-                                  <td style={{ padding: '12px', textAlign: 'center' }}>
-                                    {(() => {
-                                      const lobAllocations = mapping.lobAllocations || {};
-                                      const total = Object.values(lobAllocations).reduce((sum: number, val: any) => sum + (val || 0), 0);
-                                      const isOverAllocated = total > 100;
-                                      const isUnderAllocated = total < 100 && total > 0;
-                                      const isPerfect = total === 100;
-                                      
-                                      return (
-                                        <span style={{
-                                          padding: '4px 8px',
-                                          borderRadius: '4px',
-                                          fontSize: '12px',
-                                          fontWeight: '600',
-                                          background: isOverAllocated ? '#fee2e2' : isUnderAllocated ? '#fef3c7' : isPerfect ? '#dcfce7' : '#f1f5f9',
-                                          color: isOverAllocated ? '#dc2626' : isUnderAllocated ? '#d97706' : isPerfect ? '#16a34a' : '#64748b'
-                                        }}>
-                                          {total}%
-                                        </span>
-                                      );
-                                    })()}
-                                  </td>
-                                  <td style={{ padding: '12px' }}>
-                                    <select
-                                      value={mapping.confidence}
-                                      onChange={(e) => {
-                                        const newValue = e.target.value;
-                                        const updated = aiMappings.map(m => 
-                                          m.qbAccount === mapping.qbAccount 
-                                            ? { ...m, confidence: newValue }
-                                            : m
-                                        );
-                                        setAiMappings(updated);
-                                      }}
-                                      style={{
-                                        padding: '6px 10px',
-                                        border: '1px solid #cbd5e1',
-                                        borderRadius: '6px',
-                                        fontSize: '13px',
-                                        color: '#1e293b',
-                                        background: mapping.confidence === 'high' ? '#dcfce7' : (mapping.confidence === 'medium' ? '#fef3c7' : '#fee2e2')
-                                      }}
-                                    >
-                                      <option value="high">High</option>
-                                      <option value="medium">Medium</option>
-                                      <option value="low">Low</option>
-                                    </select>
-                                  </td>
-                                </tr>
-                              );
-                            });
-                          })()}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Action Buttons Section */}
-                    <div style={{ marginTop: '24px', padding: '20px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      {/* Row 1: Mapping Controls */}
-                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
-                        <div>
-                          <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Account Mapping Controls</h3>
-                          <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Save your mappings before processing data</p>
-                        </div>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                          <button
-                            onClick={async () => {
-                              if (confirm('Are you sure you want to clear all mappings? This will delete saved mappings from the database.')) {
-                                try {
-                                  // Delete from database
-                                  const response = await fetch(`/api/account-mappings?companyId=${selectedCompanyId}`, {
-                                    method: 'DELETE'
-                                  });
-                                  if (!response.ok) throw new Error('Failed to delete mappings');
-                                  
-                                  // Clear from state
-                                  setAiMappings([]);
-                                  alert('All mappings cleared! ?');
-                                } catch (error: any) {
-                                  alert('Failed to clear mappings: ' + error.message);
-                                }
-                              }
-                            }}
-                            disabled={aiMappings.length === 0}
-                            style={{
-                              padding: '10px 20px',
-                              background: aiMappings.length === 0 ? '#f1f5f9' : '#fee2e2',
-                              color: aiMappings.length === 0 ? '#94a3b8' : '#dc2626',
-                              border: '1px solid #fecaca',
-                              borderRadius: '6px',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              cursor: aiMappings.length === 0 ? 'not-allowed' : 'pointer'
-                            }}
-                          >
-                            🧹 Clear All
-                          </button>
-                          <button
-                            onClick={() => {
-                              setShowMappingSection(false);
-                              setAiMappings([]);
-                            }}
-                            style={{
-                              padding: '10px 20px',
-                              background: 'white',
-                              color: '#64748b',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '6px',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={async () => {
-                              setIsSavingMappings(true);
-                              try {
-                                // Deduplicate mappings by qbAccount (keep first occurrence)
-                                const uniqueMappings = aiMappings.filter((m, index, self) =>
-                                  index === self.findIndex((t) => t.qbAccount === m.qbAccount)
-                                );
-                                
-                                console.log(`Deduplicating mappings: ${aiMappings.length} -> ${uniqueMappings.length}`);
-                                
-                                const response = await fetch('/api/account-mappings', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    companyId: selectedCompanyId,
-                                    mappings: uniqueMappings,
-                                    linesOfBusiness: linesOfBusiness.filter(lob => lob.name.trim() !== '')
-                                  })
-                                });
-
-                                if (!response.ok) {
-                                  const errorData = await response.json();
-                                  throw new Error(errorData.details || 'Failed to save mappings');
-                                }
-
-                                // Update local state to reflect deduplicated mappings
-                                setAiMappings(uniqueMappings);
-                                
-                                alert('Mappings saved successfully! ?');
-                                // Keep the section visible after saving so users can see their saved mappings
-                              } catch (error: any) {
-                                console.error('Error saving mappings:', error);
-                                alert('Failed to save mappings: ' + error.message);
-                              } finally {
-                                setIsSavingMappings(false);
-                              }
-                            }}
-                            disabled={isSavingMappings}
-                            style={{
-                              padding: '10px 24px',
-                              background: isSavingMappings ? '#94a3b8' : '#10b981',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              cursor: isSavingMappings ? 'not-allowed' : 'pointer',
-                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
-                            }}
-                          >
-                            {isSavingMappings ? 'Saving...' : '💾 Save Mappings'}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Row 2: Data Processing */}
-                      <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Data Processing</h3>
-                          <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Process QuickBooks data using your saved mappings</p>
-                        </div>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                      <button
-                        onClick={async () => {
-                          if (!aiMappings || aiMappings.length === 0) {
-                            alert('Please save account mappings first!');
-                            return;
-                          }
-                          
-                          if (!qbRawData || !qbRawData.profitAndLoss) {
-                            alert('No QuickBooks data available!');
-                            return;
-                          }
-                          
-                          setIsProcessingMonthlyData(true);
-                          try {
-                            console.log('🔄 Processing 36 months of data using mappings...');
-                            console.log('📋 Total mappings:', aiMappings.length);
-                            
-                            // DEBUG: Track Professional Services expense account
-                            const testMapping = aiMappings.find(m => 
-                              m.qbAccount?.toLowerCase().includes('professional') || 
-                              m.qbAccount?.toLowerCase().includes('accounting') ||
-                              m.qbAccount?.toLowerCase().includes('legal')
-                            );
-                            const testAccountName = testMapping?.qbAccount;
-                            console.log(`🔬 TRACKING PROFESSIONAL SERVICES: "${testAccountName}"`, testMapping);
-                            
-                            // Get column information from QB report
-                            const plColumns = qbRawData.profitAndLoss.Columns?.Column || [];
-                            const bsColumns = qbRawData.balanceSheet?.Columns?.Column || [];
-                            
-                            console.log('QB P&L Columns:', plColumns.map((c: any) => c.ColTitle || c.ColType));
-                            
-                            // The first column is account names, rest are data columns
-                            // Filter out "Total" column if present (usually the last one)
-                            const monthColumns = plColumns.slice(1).filter((col: any) => {
-                              const title = col.ColTitle || '';
-                              return title && title.toLowerCase() !== 'total';
-                            });
-                            console.log(`Found ${monthColumns.length} month columns in P&L`);
-                            console.log('Month column headers:', monthColumns.map((c: any) => c.ColTitle));
-                            
-                            // Helper function to extract all account values for a specific column index
-                            // Uses the SAME recursive logic as the working P&L display extraction
-                            const extractColumnData = (reportData: any, columnIndex: number, isFirstCall = false) => {
-                              const accountValues: { [accountName: string]: number } = {};
-                              
-                              const processRows = (rows: any[], depth = 0) => {
-                                for (const row of rows) {
-                                  if (row.type === 'Section') {
-                                    // Process nested rows first
-                                    if (row.Rows?.Row) {
-                                      const subRows = Array.isArray(row.Rows.Row) ? row.Rows.Row : [row.Rows.Row];
-                                      processRows(subRows, depth + 1);
-                                    }
-                                    
-                                    // Get section total from Summary row
-                                    if (row.Summary?.ColData) {
-                                      const accountName = row.Summary.ColData[0]?.value || '';
-                                      const value = row.Summary.ColData[columnIndex]?.value;
-                                      
-                                      if (accountName) {
-                                        const numValue = value === '' || value === undefined ? 0 : parseFloat(value);
-                                        accountValues[accountName] = isNaN(numValue) ? 0 : numValue;
-                                        
-                                        if (isFirstCall && accountName.toLowerCase().includes('legal')) {
-                                          console.log(`\n💰 Found Section Summary "${accountName}":`, {
-                                      columnIndex,
-                                      value,
-                                            numValue
-                                          });
-                                        }
-                                      }
-                                    }
-                                  } else if (row.type === 'Data' && row.ColData) {
-                                    // Get detail account value
-                                    const accountName = row.ColData[0]?.value || '';
-                                    const value = row.ColData[columnIndex]?.value;
-                                    
-                                  if (accountName) {
-                                    const numValue = value === '' || value === undefined ? 0 : parseFloat(value);
-                                    accountValues[accountName] = isNaN(numValue) ? 0 : numValue;
-                                  }
-                                }
-                                }
-                              };
-                              
-                              const rows = Array.isArray(reportData?.Rows) ? reportData.Rows : 
-                                          (reportData?.Rows?.Row ? (Array.isArray(reportData.Rows.Row) ? reportData.Rows.Row : [reportData.Rows.Row]) : []);
-                              
-                              processRows(rows, 0);
-                              
-                              if (isFirstCall) {
-                                console.log(`\n📊 Extraction results: Found ${Object.keys(accountValues).length} accounts`);
-                              }
-                              
-                              return accountValues;
-                            };
-                            
-                            // Process each month's data
-                            const monthlyData: any[] = [];
-                            
-                            for (let i = 1; i <= monthColumns.length; i++) {
-                              // Extract data for this column (enable debug logging for first month)
-                              const plData = extractColumnData(qbRawData.profitAndLoss, i, i === 1);
-                              const bsData = qbRawData.balanceSheet ? extractColumnData(qbRawData.balanceSheet, i, false) : {};
-                              
-                              // Debug logging for first few months
-                              if (i <= 3) {
-                                console.log(`\n🔍 Month ${i} extraction debug:`);
-                                console.log(`P&L data keys:`, Object.keys(plData).slice(0, 10));
-                                console.log(`P&L sample values:`, Object.entries(plData).slice(0, 5));
-                                console.log(`BS data keys:`, Object.keys(bsData).slice(0, 10));
-                              }
-                              
-                              // Debug mappings for first month
-                              if (i === 1) {
-                                console.log(`\n🗺️ Total mappings: ${aiMappings.length}`);
-                                const targetFieldCounts: Record<string, number> = {};
-                                aiMappings.forEach(m => {
-                                  targetFieldCounts[m.targetField] = (targetFieldCounts[m.targetField] || 0) + 1;
-                                });
-                                console.log(`Target field distribution:`, targetFieldCounts);
-                                const revenueMappings = aiMappings.filter(m => m.targetField === 'revenue');
-                                console.log(`Revenue mappings (${revenueMappings.length}):`, revenueMappings.map(m => m.qbAccount));
-                              }
-                              
-                              // Initialize month record
-                              const monthRecord: any = {
-                                revenue: 0,
-                                expense: 0,
-                                cogsPayroll: 0,
-                                cogsOwnerPay: 0,
-                                cogsContractors: 0,
-                                cogsMaterials: 0,
-                                cogsCommissions: 0,
-                                cogsOther: 0,
-                                cogsTotal: 0,
-                                payroll: 0,
-                                ownerBasePay: 0,
-                                benefits: 0,
-                                insurance: 0,
-                                professionalFees: 0,
-                                subcontractors: 0,
-                                rent: 0,
-                                taxLicense: 0,
-                                phoneComm: 0,
-                                infrastructure: 0,
-                                autoTravel: 0,
-                                salesExpense: 0,
-                                marketing: 0,
-                                trainingCert: 0,
-                                mealsEntertainment: 0,
-                                interestExpense: 0,
-                                depreciationAmortization: 0,
-                                otherExpense: 0,
-                                nonOperatingIncome: 0,
-                                extraordinaryItems: 0,
-                                cash: 0,
-                                ar: 0,
-                                inventory: 0,
-                                otherCA: 0,
-                                tca: 0,
-                                fixedAssets: 0,
-                                otherAssets: 0,
-                                totalAssets: 0,
-                                ap: 0,
-                                otherCL: 0,
-                                tcl: 0,
-                                ltd: 0,
-                                totalLiab: 0,
-                                ownersCapital: 0,
-                                ownersDraw: 0,
-                                commonStock: 0,
-                                preferredStock: 0,
-                                retainedEarnings: 0,
-                                additionalPaidInCapital: 0,
-                                treasuryStock: 0,
-                                totalEquity: 0,
-                                totalLAndE: 0
-                              };
-                              
-                              // Apply mappings to populate the month record
-                              aiMappings.forEach((mapping, idx) => {
-                                const qbAccount = mapping.qbAccount;
-                                const targetField = mapping.targetField;
-                                const classification = mapping.qbAccountClassification || '';
-                                
-                                // Get value from appropriate data source
-                                const isBalanceSheet = classification.includes('Asset') || 
-                                                      classification.includes('Liability') || 
-                                                      classification.includes('Equity');
-                                const value = isBalanceSheet ? (bsData[qbAccount] || 0) : (plData[qbAccount] || 0);
-                                
-                                // DEBUG: Track test account through every month
-                                if (qbAccount === testAccountName) {
-                                  console.log(`\n🔬 MONTH ${i} - TEST ACCOUNT "${testAccountName}":`, {
-                                    targetField,
-                                    classification,
-                                    isBalanceSheet,
-                                    foundInPLData: qbAccount in plData,
-                                    foundInBSData: qbAccount in bsData,
-                                    extractedValue: value,
-                                    plDataKeys: Object.keys(plData).slice(0, 5),
-                                    bsDataKeys: Object.keys(bsData).slice(0, 5)
-                                  });
-                                }
-                                
-                                // Map to target field
-                                if (targetField === 'revenue') monthRecord.revenue += value;
-                                else if (targetField === 'expense') monthRecord.expense += value;
-                                else if (targetField === 'cogsPayroll') monthRecord.cogsPayroll += value;
-                                else if (targetField === 'cogsOwnerPay') monthRecord.cogsOwnerPay += value;
-                                else if (targetField === 'cogsContractors') monthRecord.cogsContractors += value;
-                                else if (targetField === 'cogsMaterials') monthRecord.cogsMaterials += value;
-                                else if (targetField === 'cogsCommissions') monthRecord.cogsCommissions += value;
-                                else if (targetField === 'cogsOther') monthRecord.cogsOther += value;
-                                else if (targetField === 'payroll') monthRecord.payroll += value;
-                                else if (targetField === 'ownerBasePay') monthRecord.ownerBasePay += value;
-                                else if (targetField === 'benefits') monthRecord.benefits += value;
-                                else if (targetField === 'insurance') monthRecord.insurance += value;
-                                else if (targetField === 'professionalFees') monthRecord.professionalFees += value;
-                                else if (targetField === 'subcontractors') monthRecord.subcontractors += value;
-                                else if (targetField === 'rent') monthRecord.rent += value;
-                                else if (targetField === 'taxLicense') monthRecord.taxLicense += value;
-                                else if (targetField === 'phoneComm') monthRecord.phoneComm += value;
-                                else if (targetField === 'infrastructure') monthRecord.infrastructure += value;
-                                else if (targetField === 'autoTravel') monthRecord.autoTravel += value;
-                                else if (targetField === 'salesExpense') monthRecord.salesExpense += value;
-                                else if (targetField === 'marketing') monthRecord.marketing += value;
-                                else if (targetField === 'trainingCert') monthRecord.trainingCert += value;
-                                else if (targetField === 'mealsEntertainment') monthRecord.mealsEntertainment += value;
-                                else if (targetField === 'interestExpense') monthRecord.interestExpense += value;
-                                else if (targetField === 'depreciationAmortization') monthRecord.depreciationAmortization += value;
-                                else if (targetField === 'otherExpense') monthRecord.otherExpense += value;
-                                else if (targetField === 'nonOperatingIncome') monthRecord.nonOperatingIncome += value;
-                                else if (targetField === 'extraordinaryItems') monthRecord.extraordinaryItems += value;
-                                else if (targetField === 'cash') monthRecord.cash += value;
-                                else if (targetField === 'ar') monthRecord.ar += value;
-                                else if (targetField === 'inventory') monthRecord.inventory += value;
-                                else if (targetField === 'otherCA') monthRecord.otherCA += value;
-                                else if (targetField === 'tca') monthRecord.tca += value;
-                                else if (targetField === 'fixedAssets') monthRecord.fixedAssets += value;
-                                else if (targetField === 'otherAssets') monthRecord.otherAssets += value;
-                                else if (targetField === 'totalAssets') monthRecord.totalAssets += value;
-                                else if (targetField === 'ap') monthRecord.ap += value;
-                                else if (targetField === 'otherCL') monthRecord.otherCL += value;
-                                else if (targetField === 'tcl') monthRecord.tcl += value;
-                                else if (targetField === 'ltd') monthRecord.ltd += value;
-                                else if (targetField === 'totalLiab') monthRecord.totalLiab += value;
-                                else if (targetField === 'ownersCapital') monthRecord.ownersCapital += value;
-                                else if (targetField === 'ownersDraw') monthRecord.ownersDraw += value;
-                                else if (targetField === 'commonStock') monthRecord.commonStock += value;
-                                else if (targetField === 'preferredStock') monthRecord.preferredStock += value;
-                                else if (targetField === 'retainedEarnings') monthRecord.retainedEarnings += value;
-                                else if (targetField === 'additionalPaidInCapital') monthRecord.additionalPaidInCapital += value;
-                                else if (targetField === 'treasuryStock') monthRecord.treasuryStock += value;
-                                else if (targetField === 'totalEquity') monthRecord.totalEquity += value;
-                                else if (targetField === 'totalLAndE') monthRecord.totalLAndE += value;
-                              });
-                              
-                              // Calculate totals
-                              monthRecord.cogsTotal = monthRecord.cogsPayroll + monthRecord.cogsOwnerPay + 
-                                                     monthRecord.cogsContractors + monthRecord.cogsMaterials + 
-                                                     monthRecord.cogsCommissions + monthRecord.cogsOther;
-                              monthRecord.expense = monthRecord.payroll + monthRecord.ownerBasePay + 
-                                                   monthRecord.benefits + monthRecord.insurance + 
-                                                   monthRecord.professionalFees + monthRecord.subcontractors + 
-                                                   monthRecord.rent + monthRecord.taxLicense + 
-                                                   monthRecord.phoneComm + monthRecord.infrastructure + 
-                                                   monthRecord.autoTravel + monthRecord.salesExpense + 
-                                                   monthRecord.marketing + monthRecord.trainingCert + 
-                                                   monthRecord.mealsEntertainment + monthRecord.interestExpense + 
-                                                   monthRecord.depreciationAmortization + monthRecord.otherExpense;
-                              monthRecord.tca = monthRecord.cash + monthRecord.ar + monthRecord.inventory + monthRecord.otherCA;
-                              monthRecord.totalAssets = monthRecord.tca + monthRecord.fixedAssets + monthRecord.otherAssets;
-                              monthRecord.tcl = monthRecord.ap + monthRecord.otherCL;
-                              monthRecord.totalLiab = monthRecord.tcl + monthRecord.ltd;
-                              monthRecord.totalEquity = monthRecord.ownersCapital + monthRecord.ownersDraw + 
-                                                       monthRecord.commonStock + monthRecord.preferredStock + 
-                                                       monthRecord.retainedEarnings + monthRecord.additionalPaidInCapital + 
-                                                       monthRecord.treasuryStock;
-                              monthRecord.totalLAndE = monthRecord.totalLiab + monthRecord.totalEquity;
-                              
-                              // Get month date from column header
-                              const columnHeader = monthColumns[i - 1]?.ColTitle || '';
-                              let monthDate = new Date();
-                              let parsedSuccessfully = false;
-                              
-                              // Try to parse month from column header (e.g., "Sep 30, 2022", "Oct 2022", "Sep-2025")
-                              if (columnHeader) {
-                                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                                const fullMonthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-                                
-                                // Remove commas and split on spaces/dashes
-                                const cleanHeader = columnHeader.replace(/,/g, '');
-                                const parts = cleanHeader.split(/[-\s]+/);
-                                
-                                // Find month name (could be at any position)
-                                let monthIndex = -1;
-                                let monthPart = '';
-                                for (const part of parts) {
-                                  monthIndex = monthNames.indexOf(part);
-                                  if (monthIndex === -1) {
-                                    monthIndex = fullMonthNames.indexOf(part);
-                                  }
-                                  if (monthIndex >= 0) {
-                                    monthPart = part;
-                                    break;
-                                  }
-                                }
-                                
-                                // Find year (4-digit number)
-                                let year = 0;
-                                for (const part of parts) {
-                                  const num = parseInt(part);
-                                  if (!isNaN(num) && num >= 2000 && num <= 2100) {
-                                    year = num;
-                                    break;
-                                  }
-                                }
-                                
-                                if (monthIndex >= 0 && year > 0) {
-                                  monthDate = new Date(year, monthIndex, 1);
-                                  parsedSuccessfully = true;
-                                }
-                              }
-                              
-                              if (!parsedSuccessfully) {
-                                console.warn(`Failed to parse date from column header: "${columnHeader}"`);
-                              }
-                              
-                              monthRecord.monthDate = monthDate.toISOString();
-                              monthlyData.push(monthRecord);
-                              
-                              // Log first few months for debugging
-                              if (i <= 3) {
-                                console.log(`Month ${i}: Column="${columnHeader}", Date=${monthDate.toISOString().substring(0, 7)}, Revenue=${monthRecord.revenue}`);
-                              }
-                            }
-                            
-                            console.log(`? Processed ${monthlyData.length} months of data`);
-                            console.log('First month:', monthlyData[0]);
-                            console.log('Last month:', monthlyData[monthlyData.length - 1]);
-                            console.log('Date range:', monthlyData[0]?.monthDate?.substring(0, 7), 'to', monthlyData[monthlyData.length - 1]?.monthDate?.substring(0, 7));
-                            
-                            // DEBUG: Final summary of test account
-                            if (testAccountName) {
-                              const testMapping = aiMappings.find(m => m.qbAccount === testAccountName);
-                              const targetField = testMapping?.targetField;
-                              console.log(`\n🔬 FINAL SUMMARY - TEST ACCOUNT "${testAccountName}":`);
-                              console.log(`Mapped to field: ${targetField}`);
-                              console.log('Values across all months:');
-                              monthlyData.forEach((month, idx) => {
-                                if (targetField && month[targetField]) {
-                                  console.log(`  Month ${idx + 1}: ${month[targetField]}`);
-                                }
-                              });
-                            }
-                            
-                            // Check if we have less than expected months
-                            if (monthlyData.length < 12) {
-                              console.warn(`?? WARNING: Only ${monthlyData.length} months of data found. Expected at least 12 months for proper reporting.`);
-                              if (monthlyData.length === 1) {
-                                alert(`?? Only 1 month of data was processed!\n\nQuickBooks may have returned a single-column report instead of monthly breakdown.\n\nThe reports need at least 12 months of data to function properly.\n\nTip: Check the QuickBooks sync settings or try re-syncing.`);
-                              } else {
-                                alert(`?? Only ${monthlyData.length} months of data processed.\n\nReports work best with at least 12 months of data.`);
-                              }
-                            }
-
-                            // Calculate total expenses for QuickBooks data (same as CSV processing)
-                            monthlyData.forEach(monthRecord => {
-                              monthRecord.expense = monthRecord.payroll + monthRecord.ownerBasePay +
-                                                   monthRecord.benefits + monthRecord.insurance +
-                                                   monthRecord.professionalFees + monthRecord.subcontractors +
-                                                   monthRecord.rent + monthRecord.taxLicense +
-                                                   monthRecord.phoneComm + monthRecord.infrastructure +
-                                                   monthRecord.autoTravel + monthRecord.salesExpense +
-                                                   monthRecord.marketing + monthRecord.trainingCert +
-                                                   monthRecord.mealsEntertainment + monthRecord.interestExpense +
-                                                   monthRecord.depreciationAmortization + monthRecord.otherExpense;
-                            });
-
-                            // Save to database
-                            if (!currentUser) {
-                              throw new Error('User not logged in');
-                            }
-                            
-                            const saveResponse = await fetch('/api/financials', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                companyId: selectedCompanyId,
-                                uploadedByUserId: currentUser.id,
-                                fileName: 'QuickBooks Sync Data',
-                                rawData: qbRawData,
-                                columnMapping: { source: 'quickbooks', mappings: aiMappings },
-                                monthlyData
-                              })
-                            });
-                            
-                            if (!saveResponse.ok) {
-                              throw new Error('Failed to save monthly data');
-                            }
-                            
-                            // Convert and load the monthly data into state so Data Review tab shows it immediately
-                            const convertedMonthly = monthlyData.map((m: any) => ({
-                              date: new Date(m.monthDate),
-                              month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
-                              revenue: m.revenue || 0,
-                              expense: m.expense || 0,
-                              cogsPayroll: m.cogsPayroll || 0,
-                              cogsOwnerPay: m.cogsOwnerPay || 0,
-                              cogsContractors: m.cogsContractors || 0,
-                              cogsMaterials: m.cogsMaterials || 0,
-                              cogsCommissions: m.cogsCommissions || 0,
-                              cogsOther: m.cogsOther || 0,
-                              cogsTotal: m.cogsTotal || 0,
-                              payroll: m.payroll || 0,
-                              ownerBasePay: m.ownerBasePay || 0,
-                              benefits: m.benefits || 0,
-                              insurance: m.insurance || 0,
-                              professionalFees: m.professionalFees || 0,
-                              subcontractors: m.subcontractors || 0,
-                              rent: m.rent || 0,
-                              taxLicense: m.taxLicense || 0,
-                              phoneComm: m.phoneComm || 0,
-                              infrastructure: m.infrastructure || 0,
-                              autoTravel: m.autoTravel || 0,
-                              salesExpense: m.salesExpense || 0,
-                              marketing: m.marketing || 0,
-                              trainingCert: m.trainingCert || 0,
-                              mealsEntertainment: m.mealsEntertainment || 0,
-                              interestExpense: m.interestExpense || 0,
-                              depreciationAmortization: m.depreciationAmortization || 0,
-                              otherExpense: m.otherExpense || 0,
-                              nonOperatingIncome: m.nonOperatingIncome || 0,
-                              extraordinaryItems: m.extraordinaryItems || 0,
-                              cash: m.cash || 0,
-                              ar: m.ar || 0,
-                              inventory: m.inventory || 0,
-                              otherCA: m.otherCA || 0,
-                              tca: m.tca || 0,
-                              fixedAssets: m.fixedAssets || 0,
-                              otherAssets: m.otherAssets || 0,
-                              totalAssets: m.totalAssets || 0,
-                              ap: m.ap || 0,
-                              otherCL: m.otherCL || 0,
-                              tcl: m.tcl || 0,
-                              ltd: m.ltd || 0,
-                              totalLiab: m.totalLiab || 0,
-                              ownersCapital: m.ownersCapital || 0,
-                              ownersDraw: m.ownersDraw || 0,
-                              commonStock: m.commonStock || 0,
-                              preferredStock: m.preferredStock || 0,
-                              retainedEarnings: m.retainedEarnings || 0,
-                              additionalPaidInCapital: m.additionalPaidInCapital || 0,
-                              treasuryStock: m.treasuryStock || 0,
-                              totalEquity: m.totalEquity || 0,
-                              totalLAndE: m.totalLAndE || 0
-                            }));
-                            setLoadedMonthlyData(convertedMonthly);
-                            console.log('? Updated loadedMonthlyData state with', convertedMonthly.length, 'months');
-                            
-                            alert(`? Successfully processed and saved ${monthlyData.length} months of financial data!`);
-                          } catch (error: any) {
-                            console.error('Error processing monthly data:', error);
-                            alert('Failed to process monthly data: ' + error.message);
-                          } finally {
-                            setIsProcessingMonthlyData(false);
-                          }
-                        }}
-                        disabled={isProcessingMonthlyData || aiMappings.length === 0}
-                        style={{
-                          padding: '10px 24px',
-                          background: isProcessingMonthlyData || aiMappings.length === 0 ? '#94a3b8' : '#3b82f6',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          fontWeight: '600',
-                          cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
-                          boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
-                        }}
-                      >
-                        {isProcessingMonthlyData ? 'Processing...' : '⚙️ Process & Save Monthly Data'}
-                      </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                // Fetch the saved monthly data from the API
-                                const response = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
-                                if (!response.ok) {
-                                  throw new Error('Failed to load financial data');
-                                }
-                                
-                                const data = await response.json();
-                                const monthlyData = data.records?.[0]?.monthlyData || [];
-                                
-                                if (!monthlyData || monthlyData.length === 0) {
-                                  alert('No financial data found. Please process the monthly data first.');
-                                  return;
-                                }
-                                
-                                // Convert to CSV
-                                const headers = Object.keys(monthlyData[0]).filter(key => key !== 'id' && key !== 'companyId' && key !== 'createdAt' && key !== 'updatedAt');
-                                const csvContent = [
-                                  headers.join(','),
-                                  ...monthlyData.map((row: any) => 
-                                    headers.map(header => {
-                                      const value = row[header];
-                                      // Format dates nicely
-                                      if (header === 'monthDate' && value) {
-                                        return new Date(value).toISOString().substring(0, 7); // YYYY-MM format
-                                      }
-                                      // Handle numbers
-                                      if (typeof value === 'number') {
-                                        return value;
-                                      }
-                                      // Escape commas in strings
-                                      if (typeof value === 'string' && value.includes(',')) {
-                                        return `"${value}"`;
-                                      }
-                                      return value || 0;
-                                    }).join(',')
-                                  )
-                                ].join('\n');
-                                
-                                // Create download link
-                                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                                const link = document.createElement('a');
-                                const url = URL.createObjectURL(blob);
-                                const companyName = (Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined)?.name || 'Company';
-                                const fileName = `${companyName.replace(/[^a-zA-Z0-9]/g, '_')}_Financial_Data_${new Date().toISOString().substring(0, 10)}.csv`;
-                                
-                                link.setAttribute('href', url);
-                                link.setAttribute('download', fileName);
-                                link.style.visibility = 'hidden';
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                                
-                              } catch (error: any) {
-                                console.error('Error downloading data:', error);
-                                alert('Failed to download data: ' + error.message);
-                              }
-                            }}
-                            style={{
-                              padding: '10px 24px',
-                              background: '#10b981',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
-                            }}
-                          >
-                            ?? Download Mapped Data (CSV)
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* QB-SPECIFIC SECTION REMOVED - Now using unified monthly array approach */}
 
@@ -15709,2827 +9144,41 @@ function FinancialScorePage() {
             </div>
 
             {/* Statement Content Area */}
-            {(() => {
-              console.log('📊 Financial Statement Render Check:', {
-                statementType,
-                statementPeriod,
-                monthlyLength: monthly?.length || 0,
-                loadedMonthlyDataLength: loadedMonthlyData?.length || 0,
-                hasMonthly: !!monthly,
-                monthlyFirst: monthly?.[0],
-                condition: statementType === 'income-statement' && statementPeriod === 'current-month' && monthly.length > 0
-              });
-              
-              if (statementType === 'income-statement' && statementPeriod === 'current-month' && monthly.length > 0) {
-                const currentMonth = monthly[monthly.length - 1];
-                const monthDate = new Date(currentMonth.date || currentMonth.month);
-                const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-                // Revenue
-                const revenue = currentMonth.revenue || 0;
-
-                // Cost of Goods Sold
-                const cogsPayroll = currentMonth.cogsPayroll || 0;
-                const cogsOwnerPay = currentMonth.cogsOwnerPay || 0;
-                const cogsContractors = currentMonth.cogsContractors || 0;
-                const cogsMaterials = currentMonth.cogsMaterials || 0;
-                const cogsCommissions = currentMonth.cogsCommissions || 0;
-                const cogsOther = currentMonth.cogsOther || 0;
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-
-                const grossProfit = revenue - cogs;
-                const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
-
-                // Operating Expenses - All fields that have data from DataReviewTab
-                const payroll = currentMonth.payroll || 0;
-                const benefits = currentMonth.benefits || 0;
-                const insurance = currentMonth.insurance || 0;
-                const professionalFees = currentMonth.professionalFees || 0;
-                const subcontractors = currentMonth.subcontractors || 0;
-                const rent = currentMonth.rent || 0;
-                const taxLicense = currentMonth.taxLicense || 0;
-                const phoneComm = currentMonth.phoneComm || 0;
-                const infrastructure = currentMonth.infrastructure || 0;
-                const autoTravel = currentMonth.autoTravel || 0;
-                const salesExpense = currentMonth.salesExpense || 0;
-                const marketing = currentMonth.marketing || 0;
-                const mealsEntertainment = currentMonth.mealsEntertainment || 0;
-                const otherExpense = currentMonth.otherExpense || 0;
-
-                // Calculate total operating expenses including all expense fields from DataReviewTab
-                const totalOpex = payroll + benefits + insurance + professionalFees + subcontractors +
-                                 rent + taxLicense + phoneComm + infrastructure + autoTravel +
-                                 salesExpense + marketing + mealsEntertainment + otherExpense;
-
-                const operatingIncome = grossProfit - totalOpex;
-                const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
-                
-                // Other Income/Expense
-                const interestExpense = currentMonth.interestExpense || 0;
-                const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
-                const extraordinaryItems = currentMonth.extraordinaryItems || 0;
-                
-                const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
-                
-                return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                      <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName}</div>
-                      </div>
-
-                      {/* Revenue Section */}
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* COGS Section */}
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
-                        {cogsPayroll > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                            <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsOwnerPay > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                            <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsContractors > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                            <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsMaterials > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Materials</span>
-                            <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsCommissions > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                            <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsOther > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Other</span>
-                            <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Gross Profit */}
-                      <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                          <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
-                          {grossMargin.toFixed(1)}% margin
-                        </div>
-                      </div>
-
-                      {/* Operating Expenses */}
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                        {payroll > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Payroll</span>
-                            <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {benefits > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Benefits</span>
-                            <span style={{ color: '#475569' }}>${benefits.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {insurance > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Insurance</span>
-                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {professionalFees > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Professional Services</span>
-                            <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {subcontractors > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Subcontractors</span>
-                            <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {rent > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Rent/Lease</span>
-                            <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {taxLicense > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Tax & License</span>
-                            <span style={{ color: '#475569' }}>${taxLicense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {phoneComm > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Phone & Communication</span>
-                            <span style={{ color: '#475569' }}>${phoneComm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {infrastructure > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Infrastructure/Utilities</span>
-                            <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {autoTravel > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Auto & Travel</span>
-                            <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {salesExpense > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                            <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {marketing > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Marketing</span>
-                            <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {mealsEntertainment > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Meals & Entertainment</span>
-                            <span style={{ color: '#475569' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {otherExpense > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Other Expenses</span>
-                            <span style={{ color: '#475569' }}>${otherExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Operating Income */}
-                      <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
-                          <span style={{ fontWeight: '700', color: '#166534' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#166534', textAlign: 'right' }}>
-                          {operatingMargin.toFixed(1)}% margin
-                        </div>
-                      </div>
-
-                      {/* Other Income/Expense */}
-                      {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
-                          {nonOperatingIncome > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Non-Operating Income</span>
-                              <span style={{ color: '#10b981' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {interestExpense > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Interest Expense</span>
-                              <span style={{ color: '#ef4444' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
-                            </div>
-                          )}
-                          {extraordinaryItems !== 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Extraordinary Items</span>
-                              <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444' }}>
-                                {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Net Income */}
-                      <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
-                          <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                            ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
-                          {netMargin.toFixed(1)}% net margin
-                        </div>
-                      </div>
-                  </div>
-                );
-              } else if (statementType === 'income-statement-percent' && statementPeriod === 'current-month') {
-                const currentMonth = monthly[monthly.length - 1];
-                const monthDate = new Date(currentMonth.date || currentMonth.month);
-                const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-                // Revenue
-                const revenue = currentMonth.revenue || 0;
-
-                // Cost of Goods Sold
-                const cogsPayroll = currentMonth.cogsPayroll || 0;
-                const cogsOwnerPay = currentMonth.cogsOwnerPay || 0;
-                const cogsContractors = currentMonth.cogsContractors || 0;
-                const cogsMaterials = currentMonth.cogsMaterials || 0;
-                const cogsCommissions = currentMonth.cogsCommissions || 0;
-                const cogsOther = currentMonth.cogsOther || 0;
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-
-                const grossProfit = revenue - cogs;
-                const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
-
-                // Operating Expenses - All fields that have data from DataReviewTab
-                const payroll = currentMonth.payroll || 0;
-                const benefits = currentMonth.benefits || 0;
-                const insurance = currentMonth.insurance || 0;
-                const professionalFees = currentMonth.professionalFees || 0;
-                const subcontractors = currentMonth.subcontractors || 0;
-                const rent = currentMonth.rent || 0;
-                const taxLicense = currentMonth.taxLicense || 0;
-                const phoneComm = currentMonth.phoneComm || 0;
-                const infrastructure = currentMonth.infrastructure || 0;
-                const autoTravel = currentMonth.autoTravel || 0;
-                const salesExpense = currentMonth.salesExpense || 0;
-                const marketing = currentMonth.marketing || 0;
-                const mealsEntertainment = currentMonth.mealsEntertainment || 0;
-                const otherExpense = currentMonth.otherExpense || 0;
-
-                // Calculate total operating expenses including all expense fields from DataReviewTab
-                const totalOpex = payroll + benefits + insurance + professionalFees + subcontractors +
-                                 rent + taxLicense + phoneComm + infrastructure + autoTravel +
-                                 salesExpense + marketing + mealsEntertainment + otherExpense;
-
-                const operatingIncome = grossProfit - totalOpex;
-                const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
-                
-                // Other Income/Expense
-                const interestExpense = currentMonth.interestExpense || 0;
-                const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
-                const extraordinaryItems = currentMonth.extraordinaryItems || 0;
-                
-                const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
-                
-                // Helper function to calculate percentage
-                const pct = (amount: number) => revenue > 0 ? (amount / revenue) * 100 : 0;
-                
-                return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
-                      <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} - All items shown as % of Revenue</div>
-                    </div>
-
-                    {/* Column Headers */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderBottom: '2px solid #cbd5e1', marginBottom: '12px', fontWeight: '600', fontSize: '13px', color: '#475569' }}>
-                      <div>Line Item</div>
-                      <div style={{ textAlign: 'right' }}>Amount</div>
-                      <div style={{ textAlign: 'right' }}>% of Revenue</div>
-                    </div>
-
-                    {/* Revenue Section */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                        <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>100.0%</span>
-                      </div>
-                    </div>
-
-                    {/* COGS Section */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Cost of Goods Sold</div>
-                      {cogsPayroll > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Payroll</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsPayroll).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsOwnerPay > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Owner Pay</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsOwnerPay).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsContractors > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Contractors</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsContractors).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsMaterials > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Materials</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsMaterials).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsCommissions > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Commissions</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsCommissions).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {cogsOther > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Other</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsOther).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                        <span style={{ fontWeight: '600', color: '#1e293b', paddingLeft: '20px' }}>Total COGS</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>{pct(cogs).toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    {/* Gross Profit */}
-                    <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
-                        <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                        <span style={{ fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '700', color: '#1e40af', textAlign: 'right' }}>{grossMargin.toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    {/* Operating Expenses */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Operating Expenses</div>
-                      {payroll > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Payroll</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(payroll).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {benefits > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Benefits</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${benefits.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(benefits).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {insurance > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Insurance</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(insurance).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {professionalFees > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Professional Services</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {subcontractors > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Subcontractors</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {rent > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Rent/Lease</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(rent).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {taxLicense > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Tax & License</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${taxLicense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(taxLicense).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {phoneComm > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Phone & Communication</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${phoneComm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(phoneComm).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {infrastructure > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure/Utilities</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(infrastructure).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {autoTravel > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Auto & Travel</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(autoTravel).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {salesExpense > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Sales & Marketing</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(salesExpense).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {marketing > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Marketing</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(marketing).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {mealsEntertainment > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Meals & Entertainment</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(mealsEntertainment).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {otherExpense > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Other Expenses</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>${otherExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#475569', textAlign: 'right' }}>{pct(otherExpense).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                        <span style={{ fontWeight: '600', color: '#1e293b', paddingLeft: '20px' }}>Total Operating Expenses</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>{pct(totalOpex).toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    {/* Operating Income */}
-                    <div style={{ marginBottom: '12px', background: '#f0fdf4', padding: '12px', borderRadius: '8px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
-                        <span style={{ fontWeight: '700', color: '#166534' }}>Operating Income</span>
-                        <span style={{ fontWeight: '700', color: '#166534', textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ fontWeight: '700', color: '#166534', textAlign: 'right' }}>{operatingMargin.toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    {/* Other Income/Expense */}
-                    {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                      <div style={{ marginBottom: '12px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Other Income/(Expense)</div>
-                        {nonOperatingIncome > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                            <span style={{ color: '#475569', paddingLeft: '20px' }}>Non-Operating Income</span>
-                            <span style={{ color: '#10b981', textAlign: 'right' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            <span style={{ color: '#10b981', textAlign: 'right' }}>{pct(nonOperatingIncome).toFixed(1)}%</span>
-                          </div>
-                        )}
-                        {interestExpense > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                            <span style={{ color: '#475569', paddingLeft: '20px' }}>Interest Expense</span>
-                            <span style={{ color: '#ef4444', textAlign: 'right' }}>($  {interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
-                            <span style={{ color: '#ef4444', textAlign: 'right' }}>({pct(interestExpense).toFixed(1)}%)</span>
-                          </div>
-                        )}
-                        {extraordinaryItems !== 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                            <span style={{ color: '#475569', paddingLeft: '20px' }}>Extraordinary Items</span>
-                            <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
-                            </span>
-                            <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
-                              {extraordinaryItems >= 0 ? '' : '('}{pct(Math.abs(extraordinaryItems)).toFixed(1)}%{extraordinaryItems < 0 ? ')' : ''}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Net Income */}
-                    <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
-                          ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </span>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
-                          {netMargin.toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              } else if (statementType === 'balance-sheet' && statementPeriod === 'current-month') {
-                const currentMonth = monthly[monthly.length - 1];
-                const monthDate = new Date(currentMonth.date || currentMonth.month);
-                const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                
-                // Assets - Use imported values directly (do not calculate)
-                const cash = currentMonth.cash || 0;
-                const ar = currentMonth.ar || 0;
-                const inventory = currentMonth.inventory || 0;
-                const otherCA = currentMonth.otherCA || 0;
-                const tca = currentMonth.tca || 0;
-                
-                const fixedAssets = currentMonth.fixedAssets || 0;
-                const otherAssets = currentMonth.otherAssets || 0;
-                const totalAssets = currentMonth.totalAssets || 0;
-                
-                // Liabilities - Use imported values directly (do not calculate)
-                const ap = currentMonth.ap || 0;
-                const otherCL = currentMonth.otherCL || 0;
-                const tcl = currentMonth.tcl || 0;
-                
-                const ltd = currentMonth.ltd || 0;
-                const totalLiabilities = currentMonth.totalLiab || 0;
-                
-                // Equity - Get detail fields
-                const ownersCapital = currentMonth.ownersCapital || 0;
-                const ownersDraw = currentMonth.ownersDraw || 0;
-                const commonStock = currentMonth.commonStock || 0;
-                const preferredStock = currentMonth.preferredStock || 0;
-                const retainedEarnings = currentMonth.retainedEarnings || 0;
-                const additionalPaidInCapital = currentMonth.additionalPaidInCapital || 0;
-                const treasuryStock = currentMonth.treasuryStock || 0;
-                
-                // Calculate total equity from components or use imported value
-                const totalEquity = currentMonth.totalEquity || (ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock);
-                
-                // Total L&E - Use imported value if available, otherwise calculate
-                const totalLAndE = currentMonth.totalLAndE || (totalLiabilities + totalEquity);
-                
-                return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Balance Sheet</h2>
-                      <div style={{ fontSize: '14px', color: '#64748b' }}>As of {monthName}</div>
-                    </div>
-
-                    {/* ASSETS */}
-                    <div style={{ marginBottom: '32px' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #667eea' }}>ASSETS</div>
-                      
-                      {/* Current Assets */}
-                      <div style={{ marginBottom: '20px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Assets</div>
-                        {cash !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Cash</span>
-                            <span style={{ color: '#475569' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {ar !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Accounts Receivable</span>
-                            <span style={{ color: '#475569' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {inventory !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Inventory</span>
-                            <span style={{ color: '#475569' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {otherCA !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Other Current Assets</span>
-                            <span style={{ color: '#475569' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 20px', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Current Assets</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Non-Current Assets */}
-                      {fixedAssets !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Fixed Assets</span>
-                          <span style={{ color: '#475569' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {otherAssets !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Other Assets</span>
-                          <span style={{ color: '#475569' }}>${otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #667eea', marginTop: '8px', background: '#f8fafc' }}>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL ASSETS</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    </div>
-
-                    {/* LIABILITIES */}
-                    <div style={{ marginBottom: '32px' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #f59e0b' }}>LIABILITIES</div>
-                      
-                      {/* Current Liabilities */}
-                      <div style={{ marginBottom: '20px' }}>
-                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Current Liabilities</div>
-                        {ap !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Accounts Payable</span>
-                            <span style={{ color: '#475569' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {otherCL !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Other Current Liabilities</span>
-                            <span style={{ color: '#475569' }}>${otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 20px', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Current Liabilities</span>
-                          <span style={{ fontWeight: '600', color: '#1e293b' }}>${tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      </div>
-
-                      {/* Long-term Debt */}
-                      {ltd !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Long-term Debt</span>
-                          <span style={{ color: '#475569' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #f59e0b', marginTop: '8px', background: '#fef3c7' }}>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL LIABILITIES</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    </div>
-
-                    {/* EQUITY */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '16px', paddingBottom: '8px', borderBottom: '2px solid #10b981' }}>EQUITY</div>
-                      
-                      {/* Equity Detail Fields */}
-                      {ownersCapital !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Owner's Capital</span>
-                          <span style={{ color: '#475569' }}>${ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {ownersDraw !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Owner's Draw</span>
-                          <span style={{ color: '#475569' }}>${ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {commonStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Common Stock</span>
-                          <span style={{ color: '#475569' }}>${commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {preferredStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Preferred Stock</span>
-                          <span style={{ color: '#475569' }}>${preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {retainedEarnings !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Retained Earnings</span>
-                          <span style={{ color: '#475569' }}>${retainedEarnings.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {additionalPaidInCapital !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Additional Paid-In Capital</span>
-                          <span style={{ color: '#475569' }}>${additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      {treasuryStock !== 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                          <span style={{ color: '#475569' }}>Treasury Stock</span>
-                          <span style={{ color: '#475569' }}>${treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        </div>
-                      )}
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderTop: '2px solid #10b981', marginTop: '4px', background: '#d1fae5' }}>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>TOTAL EQUITY</span>
-                        <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    </div>
-
-                    {/* TOTAL LIABILITIES & EQUITY */}
-                    <div style={{ background: '#f1f5f9', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</span>
-                        <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>
-                          ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </span>
-                      </div>
-                      {Math.abs(totalAssets - totalLAndE) > 0.01 && (
-                        <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                          ?? Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-              
-              // Multi-period logic (Current Quarter, Last 12 Months, YTD, Last Year, Last 3 Years)
-              else if (monthly.length > 0 && statementPeriod !== 'current-month') {
-                // Helper function to get months for the selected period
-                const getMonthsForPeriod = () => {
-                  const now = new Date();
-                  const currentYear = now.getFullYear();
-                  const currentMonth = now.getMonth(); // 0-11
-                  
-                  switch (statementPeriod) {
-                    case 'current-quarter':
-                      // Last 3 months
-                      return monthly.slice(-3);
-                    
-                    case 'last-12-months':
-                      // Last 12 months
-                      return monthly.slice(-12);
-                    
-                    case 'ytd':
-                      // Year to date - from January of current year to now
-                      return monthly.filter(m => {
-                        const mDate = new Date(m.date || m.month);
-                        return mDate.getFullYear() === currentYear;
-                      });
-                    
-                    case 'last-year':
-                      // Full previous year
-                      return monthly.filter(m => {
-                        const mDate = new Date(m.date || m.month);
-                        return mDate.getFullYear() === currentYear - 1;
-                      });
-                    
-                    case 'last-3-years':
-                      // Last 36 months
-                      return monthly.slice(-36);
-                    
-                    default:
-                      return [];
-                  }
-                };
-                
-                const periodMonths = getMonthsForPeriod();
-                
-                if (periodMonths.length === 0) {
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                        📊 No Data Available
-                      </div>
-                      <p style={{ fontSize: '14px', color: '#94a3b8' }}>
-                        No financial data available for the selected period.
-                      </p>
-                    </div>
-                  );
-                }
-                
-                // Get period label
-                const getPeriodLabel = () => {
-                  const firstMonth = periodMonths[0];
-                  const lastMonth = periodMonths[periodMonths.length - 1];
-                  const firstDate = new Date(firstMonth.date || firstMonth.month);
-                  const lastDate = new Date(lastMonth.date || lastMonth.month);
-                  
-                  switch (statementPeriod) {
-                    case 'current-quarter':
-                      return `Current Quarter (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
-                    case 'last-12-months':
-                      return `Last 12 Months (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
-                    case 'ytd':
-                      return `Year to Date ${lastDate.getFullYear()} (Jan - ${lastDate.toLocaleDateString('en-US', { month: 'short' })})`;
-                    case 'last-year':
-                      return `Fiscal Year ${firstDate.getFullYear()}`;
-                    case 'last-3-years':
-                      return `Last 3 Years (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
-                    default:
-                      return '';
-                  }
-                };
-                
-              const periodLabel = getPeriodLabel();
-              const latestMonth = periodMonths[periodMonths.length - 1];
-              
-              // Helper function to group months by display period
-              const groupMonthsByDisplay = () => {
-                if (statementDisplay === 'monthly') {
-                  return periodMonths.map(m => {
-                    const dateValue = m.date || m.month;
-                    const dateObj = dateValue ? new Date(dateValue) : new Date();
-                    const label = !isNaN(dateObj.getTime()) 
-                      ? dateObj.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-                      : 'Unknown';
-                    return { label, months: [m] };
-                  });
-                } else if (statementDisplay === 'quarterly') {
-                  const quarters: { [key: string]: any[] } = {};
-                  periodMonths.forEach(m => {
-                    const dateValue = m.date || m.month;
-                    const date = dateValue ? new Date(dateValue) : new Date();
-                    if (!isNaN(date.getTime())) {
-                      const year = date.getFullYear();
-                      const quarter = Math.floor(date.getMonth() / 3) + 1;
-                      const key = `Q${quarter} ${year}`;
-                      if (!quarters[key]) quarters[key] = [];
-                      quarters[key].push(m);
-                    }
-                  });
-                  return Object.entries(quarters).map(([key, months]) => ({
-                    label: key,
-                    months
-                  }));
-                } else {
-                  const years: { [key: string]: any[] } = {};
-                  periodMonths.forEach(m => {
-                    const dateValue = m.date || m.month;
-                    const date = dateValue ? new Date(dateValue) : new Date();
-                    if (!isNaN(date.getTime())) {
-                      const year = date.getFullYear().toString();
-                      if (!years[year]) years[year] = [];
-                      years[year].push(m);
-                    }
-                  });
-                  return Object.entries(years).map(([year, months]) => ({
-                    label: year,
-                    months
-                  }));
-                }
-              };
-              
-              const displayPeriods = groupMonthsByDisplay();
-
-              // INCOME STATEMENT - Aggregate across period
-              if (statementType === 'income-statement' || statementType === 'income-statement-percent') {
-                // Check if showing multiple periods side-by-side
-                if (displayPeriods.length > 1) {
-                  const calc = (months: any[], field: string) => months.reduce((sum, m) => sum + (m[field] || 0), 0);
-                  const periodsData = displayPeriods.map(p => {
-                    const m = p.months;
-
-                    // Calculate revenue and COGS
-                    const revenue = calc(m, 'revenue');
-                    const cogsPayroll = calc(m, 'cogsPayroll');
-                    const cogsOwnerPay = calc(m, 'cogsOwnerPay');
-                    const cogsContractors = calc(m, 'cogsContractors');
-                    const cogsMaterials = calc(m, 'cogsMaterials');
-                    const cogsCommissions = calc(m, 'cogsCommissions');
-                    const cogsOther = calc(m, 'cogsOther');
-                    const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                    const grossProfit = revenue - cogs;
-
-                    // Dynamically calculate operating expense fields only
-                    const expenseFields = [
-                      'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
-                      'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
-                      'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
-                    ];
-
-                    const expenses: { [key: string]: number } = {};
-                    expenseFields.forEach(field => {
-                      expenses[field] = calc(m, field);
-                    });
-
-                    // Calculate total operating expenses dynamically
-                    const totalOpex = Object.values(expenses).reduce((sum, value) => sum + value, 0);
-
-                    const operatingIncome = grossProfit - totalOpex;
-                    const interestExpense = calc(m, 'interestExpense');
-                    const nonOperatingIncome = calc(m, 'nonOperatingIncome');
-                    const extraordinaryItems = calc(m, 'extraordinaryItems');
-                    const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-
-                    return {
-                      label: p.label,
-                      revenue, cogs, grossProfit,
-                      ...expenses, // Include all expense fields dynamically
-                      totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome
-                    };
-                  });
-
-                  // Helper function for percentage calculations
-                  const isPercentMode = statementType === 'income-statement-percent';
-                  const formatValue = (value: number, revenue: number) => {
-                    if (isPercentMode) {
-                      const pct = revenue > 0 ? (value / revenue) * 100 : 0;
-                      return `${pct.toFixed(1)}%`;
-                    }
-                    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-                  };
-
-                  const Row = ({ label, values, indent = 0, bold = false }: any) => (
-                    <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
-                      <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
-                      {values.map((v: number, i: number) => {
-                        const revenue = periodsData[i].revenue;
-                        return (
-                          <div key={i} style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>
-                            {formatValue(v, revenue)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                      <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                          {isPercentMode ? 'Comparative Income Statement - Common Size Analysis' : 'Comparative Income Statement'}
-                        </h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>
-                          {periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}
-                          {isPercentMode ? ' - All items shown as % of Revenue' : ''}
-                        </div>
-                      </div>
-                      <div style={{ minWidth: `${200 + (periodsData.length * 110)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', fontSize: '13px' }}>
-                          <div>Line Item</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>{p.label || 'N/A'}</div>)}
-                        </div>
-                        <Row label="Revenue" values={periodsData.map(p => p.revenue)} bold />
-                        <Row label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
-                          <div>Gross Profit</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{formatValue(p.grossProfit, p.revenue)}</div>)}
-                        </div>
-                        <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                        {(() => {
-                          // Define all possible expense fields with their display names
-                          const expenseFieldDefinitions = [
-                            // Operating Expenses - Complete list in correct order
-                            { key: 'payroll', label: 'Payroll' },
-                            { key: 'benefits', label: 'Benefits' },
-                            { key: 'insurance', label: 'Insurance' },
-                            { key: 'professionalFees', label: 'Professional Services' },
-                            { key: 'subcontractors', label: 'Subcontractors' },
-                            { key: 'rent', label: 'Rent/Lease' },
-                            { key: 'taxLicense', label: 'Tax & License' },
-                            { key: 'phoneComm', label: 'Phone & Communication' },
-                            { key: 'infrastructure', label: 'Infrastructure/Utilities' },
-                            { key: 'autoTravel', label: 'Auto & Travel' },
-                            { key: 'salesExpense', label: 'Sales & Marketing' },
-                            { key: 'marketing', label: 'Marketing' },
-                            { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
-                            { key: 'otherExpense', label: 'Other Expenses' }
-                          ];
-
-                          // Render only fields that have values in at least one period
-                          return expenseFieldDefinitions.map(fieldDef => {
-                            const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) > 0);
-                            if (hasValue) {
-                              return (
-                                <Row
-                                  key={fieldDef.key}
-                                  label={fieldDef.label}
-                                  values={periodsData.map(p => p[fieldDef.key as keyof typeof p] as number)}
-                                  indent={20}
-                                />
-                              );
-                            }
-                            return null;
-                          });
-                        })()}
-                        <Row label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
-                          <div>Operating Income</div>
-                          {periodsData.map((p, i) => <div key={i} style={{ textAlign: 'right' }}>{formatValue(p.operatingIncome, p.revenue)}</div>)}
-                        </div>
-                        {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
-                          <>
-                            <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Other Income/(Expense)</div>
-                            {periodsData.some(p => p.interestExpense > 0) && <Row label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
-                            {periodsData.some(p => p.nonOperatingIncome > 0) && <Row label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
-                            {periodsData.some(p => p.extraordinaryItems !== 0) && <Row label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
-                          </>
-                        )}
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
-                          <div style={{ color: '#166534' }}>Net Income</div>
-                          {periodsData.map((p, i) => {
-                            const formattedValue = formatValue(Math.abs(p.netIncome), p.revenue);
-                            return (
-                              <div key={i} style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                                {p.netIncome >= 0 ? (isPercentMode ? formattedValue : '$' + formattedValue.slice(1)) : `(${formattedValue})`}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-                
-                // Sum all income statement items
-                const revenue = periodMonths.reduce((sum, m) => sum + (m.revenue || 0), 0);
-
-                const cogsPayroll = periodMonths.reduce((sum, m) => sum + (m.cogsPayroll || 0), 0);
-                const cogsOwnerPay = periodMonths.reduce((sum, m) => sum + (m.cogsOwnerPay || 0), 0);
-                const cogsContractors = periodMonths.reduce((sum, m) => sum + (m.cogsContractors || 0), 0);
-                const cogsMaterials = periodMonths.reduce((sum, m) => sum + (m.cogsMaterials || 0), 0);
-                const cogsCommissions = periodMonths.reduce((sum, m) => sum + (m.cogsCommissions || 0), 0);
-                const cogsOther = periodMonths.reduce((sum, m) => sum + (m.cogsOther || 0), 0);
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-
-                const grossProfit = revenue - cogs;
-                const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
-
-                // Dynamically calculate all expense fields
-                const expenseFields = [
-                  'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-                  'payroll', 'ownerBasePay', 'ownersRetirement', 'subcontractors',
-                  'salesExpense', 'rent', 'infrastructure', 'autoTravel',
-                  'professionalFees', 'insurance', 'marketing', 'interestExpense',
-                  'depreciationAmortization', 'otherExpense'
-                ];
-
-                const expenses: { [key: string]: number } = {};
-                expenseFields.forEach(field => {
-                  expenses[field] = periodMonths.reduce((sum, m) => sum + (m[field] || 0), 0);
-                });
-
-                // Calculate total operating expenses dynamically
-                const totalOpex = Object.values(expenses).reduce((sum, value) => sum + value, 0);
-                  
-                  const operatingIncome = grossProfit - totalOpex;
-                  const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
-                  
-                  const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                  const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
-                  const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                  
-                  const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                  const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
-                  
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                        <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {periodLabel}</div>
-                        </div>
-
-                        {/* Revenue Section */}
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* COGS Section */}
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
-                          {cogsPayroll > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                              <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsOwnerPay > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                              <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsContractors > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                              <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsMaterials > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Materials</span>
-                              <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsCommissions > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                              <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {cogsOther > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>COGS - Other</span>
-                              <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* Gross Profit */}
-                        <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>Gross Profit</span>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                          <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
-                            {grossMargin.toFixed(1)}% margin
-                          </div>
-                        </div>
-
-                        {/* Operating Expenses */}
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                          {payroll > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Payroll</span>
-                              <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {ownerBasePay > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                              <span style={{ color: '#475569' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {ownersRetirement > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Owner's Retirement</span>
-                              <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {professionalFees > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Professional Services</span>
-                              <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {rent > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Rent/Lease</span>
-                              <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {infrastructure > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Infrastructure</span>
-                              <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {autoTravel > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Auto & Travel</span>
-                              <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {insurance > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Insurance</span>
-                              <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {salesExpense > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                              <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {subcontractors > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Contractors - Distribution</span>
-                              <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {depreciationAmortization > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                              <span style={{ color: '#475569' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {marketing > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                              <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* Operating Income */}
-                        <div style={{ marginBottom: '12px', background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>Operating Income</span>
-                            <span style={{ fontWeight: '700', color: '#1e40af' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                          <div style={{ fontSize: '13px', color: '#1e40af', textAlign: 'right' }}>
-                            {operatingMargin.toFixed(1)}% operating margin
-                          </div>
-                        </div>
-
-                        {/* Other Income/Expense */}
-                        <div style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
-                          {interestExpense > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Interest Expense</span>
-                              <span style={{ color: '#475569' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
-                            </div>
-                          )}
-                          {nonOperatingIncome > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Non-Operating Income</span>
-                              <span style={{ color: '#475569' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {extraordinaryItems !== 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#475569' }}>Extraordinary Items</span>
-                              <span style={{ color: '#475569' }}>{extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Net Income */}
-                        <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '24px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>Net Income</span>
-                            <span style={{ fontWeight: '700', fontSize: '18px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                              {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '14px', color: netIncome >= 0 ? '#166534' : '#991b1b', textAlign: 'right' }}>
-                            {netMargin.toFixed(1)}% net margin
-                          </div>
-                        </div>
-                    </div>
-                  );
-                }
-                
-                // COMMON SIZE INCOME STATEMENT - Aggregate with percentages
-                else if (statementType === 'income-statement-percent') {
-                  // Check if showing multiple periods side-by-side
-                  if (displayPeriods.length > 1) {
-                    const calc = (months: any[], field: string) => months.reduce((sum, m) => sum + (m[field] || 0), 0);
-                    const periodsData = displayPeriods.map(p => {
-                      const m = p.months;
-
-                      // Calculate revenue and COGS
-                      const revenue = calc(m, 'revenue');
-                      const cogsPayroll = calc(m, 'cogsPayroll');
-                      const cogsOwnerPay = calc(m, 'cogsOwnerPay');
-                      const cogsContractors = calc(m, 'cogsContractors');
-                      const cogsMaterials = calc(m, 'cogsMaterials');
-                      const cogsCommissions = calc(m, 'cogsCommissions');
-                      const cogsOther = calc(m, 'cogsOther');
-                      const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                      const grossProfit = revenue - cogs;
-
-                      // Dynamically calculate operating expense fields only
-                      const expenseFields = [
-                        'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
-                        'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
-                        'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
-                      ];
-
-                      const expenses: { [key: string]: number } = {};
-                      expenseFields.forEach(field => {
-                        expenses[field] = calc(m, field);
-                      });
-
-                      // Calculate total operating expenses dynamically
-                      const totalOpex = Object.values(expenses).reduce((sum, value) => sum + value, 0);
-
-                      const operatingIncome = grossProfit - totalOpex;
-                      const interestExpense = calc(m, 'interestExpense');
-                      const nonOperatingIncome = calc(m, 'nonOperatingIncome');
-                      const extraordinaryItems = calc(m, 'extraordinaryItems');
-                      const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-
-                      return {
-                        label: p.label,
-                        revenue, cogs, grossProfit,
-                        ...expenses, // Include all expense fields dynamically
-                        totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome
-                      };
-                    });
-                    const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
-                      <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
-                        <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
-                        {values.map((v: number, i: number) => {
-                          const pct = periodsData[i].revenue > 0 ? (v / periodsData[i].revenue) * 100 : 0;
-                          return (
-                            <div key={i} style={{ display: 'contents' }}>
-                              <div style={{ textAlign: 'right', color: bold ? '#475569' : '#64748b' }}>${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                    return (
-                      <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                        <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Common Size Income Statement</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
-                        </div>
-                        <div style={{ minWidth: `${200 + (periodsData.length * 150)}px` }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b' }}>
-                          <div>Line Item</div>
-                          {periodsData.map((p, i) => (
-                            <div key={i} style={{ display: 'contents' }}>
-                              <div style={{ textAlign: 'right' }}>{p.label}</div>
-                              <div style={{ textAlign: 'right', fontSize: '12px' }}>% of Rev</div>
-                            </div>
-                          ))}
-                          </div>
-                          <RowWithPercent label="Revenue" values={periodsData.map(p => p.revenue)} bold />
-                          <RowWithPercent label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
-                            <div>Gross Profit</div>
-                            {periodsData.map((p, i) => {
-                              const pct = p.revenue > 0 ? (p.grossProfit / p.revenue) * 100 : 0;
-                              return (
-                                <div key={i} style={{ display: 'contents' }}>
-                                  <div style={{ textAlign: 'right' }}>${p.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                                  <div style={{ textAlign: 'right', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Operating Expenses</div>
-                          {(() => {
-                            // Define all possible expense fields with their display names
-                            const expenseFieldDefinitions = [
-                              // Operating Expenses - Complete list in correct order
-                              { key: 'payroll', label: 'Payroll' },
-                              { key: 'benefits', label: 'Benefits' },
-                              { key: 'insurance', label: 'Insurance' },
-                              { key: 'professionalFees', label: 'Professional Services' },
-                              { key: 'subcontractors', label: 'Subcontractors' },
-                              { key: 'rent', label: 'Rent/Lease' },
-                              { key: 'taxLicense', label: 'Tax & License' },
-                              { key: 'phoneComm', label: 'Phone & Communication' },
-                              { key: 'infrastructure', label: 'Infrastructure/Utilities' },
-                              { key: 'autoTravel', label: 'Auto & Travel' },
-                              { key: 'salesExpense', label: 'Sales & Marketing' },
-                              { key: 'marketing', label: 'Marketing' },
-                              { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
-                              { key: 'otherExpense', label: 'Other Expenses' }
-                            ];
-
-                            // Render only fields that have values in at least one period
-                            return expenseFieldDefinitions.map(fieldDef => {
-                              const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) > 0);
-                              if (hasValue) {
-                                return (
-                                  <RowWithPercent
-                                    key={fieldDef.key}
-                                    label={fieldDef.label}
-                                    values={periodsData.map(p => p[fieldDef.key as keyof typeof p] as number)}
-                                    indent={20}
-                                  />
-                                );
-                              }
-                              return null;
-                            });
-                          })()}
-                          <RowWithPercent label="Total Operating Expenses" values={periodsData.map(p => p.totalOpex)} bold />
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
-                            <div>Operating Income</div>
-                            {periodsData.map((p, i) => {
-                              const pct = p.revenue > 0 ? (p.operatingIncome / p.revenue) * 100 : 0;
-                              return (
-                                <div key={i} style={{ display: 'contents' }}>
-                                  <div style={{ textAlign: 'right' }}>${p.operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                                  <div style={{ textAlign: 'right', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
-                            <>
-                              <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Other Income/(Expense)</div>
-                              {periodsData.some(p => p.interestExpense > 0) && <RowWithPercent label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
-                              {periodsData.some(p => p.nonOperatingIncome > 0) && <RowWithPercent label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
-                              {periodsData.some(p => p.extraordinaryItems !== 0) && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
-                            </>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
-                            <div style={{ color: '#166534' }}>Net Income</div>
-                            {periodsData.map((p, i) => {
-                              const pct = p.revenue > 0 ? (p.netIncome / p.revenue) * 100 : 0;
-                              return (
-                                <div key={i} style={{ display: 'contents' }}>
-                                  <div style={{ textAlign: 'right', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                                    {p.netIncome >= 0 ? '$' : '($'}{Math.abs(p.netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.netIncome < 0 ? ')' : ''}
-                                  </div>
-                                  <div style={{ textAlign: 'right', fontSize: '12px', color: p.netIncome >= 0 ? '#166534' : '#991b1b' }}>{pct.toFixed(1)}%</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  const revenue = periodMonths.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                  
-                  const cogsPayroll = periodMonths.reduce((sum, m) => sum + (m.cogsPayroll || 0), 0);
-                  const cogsOwnerPay = periodMonths.reduce((sum, m) => sum + (m.cogsOwnerPay || 0), 0);
-                  const cogsContractors = periodMonths.reduce((sum, m) => sum + (m.cogsContractors || 0), 0);
-                  const cogsMaterials = periodMonths.reduce((sum, m) => sum + (m.cogsMaterials || 0), 0);
-                  const cogsCommissions = periodMonths.reduce((sum, m) => sum + (m.cogsCommissions || 0), 0);
-                  const cogsOther = periodMonths.reduce((sum, m) => sum + (m.cogsOther || 0), 0);
-                  const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                  
-                  const grossProfit = revenue - cogs;
-                  
-                  const payroll = periodMonths.reduce((sum, m) => sum + (m.payroll || 0), 0);
-                  const ownerBasePay = periodMonths.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
-                  const ownersRetirement = periodMonths.reduce((sum, m) => sum + (m.ownersRetirement || 0), 0);
-                  const professionalFees = periodMonths.reduce((sum, m) => sum + (m.professionalFees || 0), 0);
-                  const rent = periodMonths.reduce((sum, m) => sum + (m.rent || 0), 0);
-                  const infrastructure = periodMonths.reduce((sum, m) => sum + (m.infrastructure || 0), 0);
-                  const autoTravel = periodMonths.reduce((sum, m) => sum + (m.autoTravel || 0), 0);
-                  const insurance = periodMonths.reduce((sum, m) => sum + (m.insurance || 0), 0);
-                  const salesExpense = periodMonths.reduce((sum, m) => sum + (m.salesExpense || 0), 0);
-                  const subcontractors = periodMonths.reduce((sum, m) => sum + (m.subcontractors || 0), 0);
-                  const depreciationAmortization = periodMonths.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
-                  const marketing = periodMonths.reduce((sum, m) => sum + (m.marketing || 0), 0);
-                  
-                  const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
-                                   rent + infrastructure + autoTravel + insurance + 
-                                   salesExpense + subcontractors + depreciationAmortization + marketing;
-                  
-                  const operatingIncome = grossProfit - totalOpex;
-                  
-                  const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
-                  const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
-                  const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                  
-                  const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                  
-                  const calcPercent = (value: number) => revenue > 0 ? ((value / revenue) * 100).toFixed(1) + '%' : '0.0%';
-                  
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                        <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Common Size Income Statement</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {periodLabel}</div>
-                        </div>
-
-                        {/* Header Row */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 0', borderBottom: '2px solid #1e293b', marginBottom: '16px', fontWeight: '600', color: '#1e293b' }}>
-                          <div>Line Item</div>
-                          <div style={{ textAlign: 'right' }}>Amount</div>
-                          <div style={{ textAlign: 'right' }}>% of Revenue</div>
-                        </div>
-
-                        {/* Revenue */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderBottom: '1px solid #e2e8f0', fontWeight: '600' }}>
-                          <div style={{ color: '#1e293b' }}>Revenue</div>
-                          <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                          <div style={{ textAlign: 'right', color: '#1e293b' }}>100.0%</div>
-                        </div>
-
-                        {/* COGS */}
-                        <div style={{ marginTop: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Cost of Goods Sold</div>
-                          {cogsPayroll > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Payroll</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsPayroll)}</div>
-                            </div>
-                          )}
-                          {cogsOwnerPay > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Owner Pay</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOwnerPay)}</div>
-                            </div>
-                          )}
-                          {cogsContractors > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Contractors</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsContractors)}</div>
-                            </div>
-                          )}
-                          {cogsMaterials > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Materials</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsMaterials)}</div>
-                            </div>
-                          )}
-                          {cogsCommissions > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Commissions</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsCommissions)}</div>
-                            </div>
-                          )}
-                          {cogsOther > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>COGS - Other</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOther)}</div>
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <div style={{ color: '#475569' }}>Total COGS</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(cogs)}</div>
-                          </div>
-                        </div>
-
-                        {/* Gross Profit */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
-                          <div>Gross Profit</div>
-                          <div style={{ textAlign: 'right' }}>${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                          <div style={{ textAlign: 'right' }}>{calcPercent(grossProfit)}</div>
-                        </div>
-
-                        {/* Operating Expenses */}
-                        <div style={{ marginTop: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Operating Expenses</div>
-                          {payroll > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Payroll</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(payroll)}</div>
-                            </div>
-                          )}
-                          {ownerBasePay > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Owner's Base Pay</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownerBasePay)}</div>
-                            </div>
-                          )}
-                          {ownersRetirement > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Owner's Retirement</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(ownersRetirement)}</div>
-                            </div>
-                          )}
-                          {professionalFees > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Professional Services</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(professionalFees)}</div>
-                            </div>
-                          )}
-                          {rent > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Rent/Lease</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(rent)}</div>
-                            </div>
-                          )}
-                          {infrastructure > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Infrastructure</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(utilities)}</div>
-                            </div>
-                          )}
-                          {infrastructure > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Infrastructure</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(equipment)}</div>
-                            </div>
-                          )}
-                          {autoTravel > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Auto & Travel</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(travel)}</div>
-                            </div>
-                          )}
-                          {insurance > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Insurance</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(insurance)}</div>
-                            </div>
-                          )}
-                          {salesExpense > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Sales & Marketing</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(salesExpense)}</div>
-                            </div>
-                          )}
-                          {subcontractors > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Contractors - Distribution</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(subcontractors)}</div>
-                            </div>
-                          )}
-                          {depreciationAmortization > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Depreciation & Amortization</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(depreciationAmortization)}</div>
-                            </div>
-                          )}
-                          {marketing > 0 && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Other Operating Expenses</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(marketing)}</div>
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <div style={{ color: '#475569' }}>Total Operating Expenses</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#475569' }}>{calcPercent(totalOpex)}</div>
-                          </div>
-                        </div>
-
-                        {/* Operating Income */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#dbeafe', borderRadius: '6px', margin: '16px 0', fontWeight: '700', color: '#1e40af' }}>
-                          <div>Operating Income</div>
-                          <div style={{ textAlign: 'right' }}>${operatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                          <div style={{ textAlign: 'right' }}>{calcPercent(operatingIncome)}</div>
-                        </div>
-
-                        {/* Other Income/Expense */}
-                        {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
-                          <div style={{ marginTop: '16px' }}>
-                            <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Other Income/(Expense)</div>
-                            {interestExpense > 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                                <div style={{ color: '#64748b' }}>Interest Expense</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>(${ interestExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(interestExpense)})</div>
-                              </div>
-                            )}
-                            {nonOperatingIncome > 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                                <div style={{ color: '#64748b' }}>Non-Operating Income</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(nonOperatingIncome)}</div>
-                              </div>
-                            )}
-                            {extraordinaryItems !== 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                                <div style={{ color: '#64748b' }}>Extraordinary Items</div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>
-                                  {extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}
-                                </div>
-                                <div style={{ textAlign: 'right', color: '#64748b' }}>
-                                  {extraordinaryItems >= 0 ? calcPercent(extraordinaryItems) : `(${calcPercent(Math.abs(extraordinaryItems))})`}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Net Income */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '16px 8px', background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', borderRadius: '6px', marginTop: '24px', fontWeight: '700', fontSize: '16px', color: netIncome >= 0 ? '#166534' : '#991b1b' }}>
-                          <div>Net Income</div>
-                          <div style={{ textAlign: 'right' }}>
-                            {netIncome >= 0 ? '$' : '($'}{Math.abs(netIncome).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{netIncome < 0 ? ')' : ''}
-                          </div>
-                          <div style={{ textAlign: 'right' }}>{calcPercent(netIncome)}</div>
-                        </div>
-                    </div>
-                  );
-                }
-                
-                // BALANCE SHEET - Latest point in time
-                else if (statementType === 'balance-sheet') {
-                  // Check if we're showing multiple periods side-by-side
-                  if (displayPeriods.length > 1) {
-                    // Multi-column comparative balance sheet
-                    const calculateBalanceData = (months: any[]) => {
-                      // For balance sheet, use the latest month's values (point-in-time)
-                      const latest = months[months.length - 1];
-                      // Assets - Use Data Review fields and imported totals
-                      const cash = latest.cash || 0;
-                      const ar = latest.ar || 0;
-                      const inventory = latest.inventory || 0;
-                      const otherCA = latest.otherCA || 0;
-                      const tca = latest.tca || 0;  // Use imported total
-                      
-                      const fixedAssets = latest.fixedAssets || 0;
-                      const otherAssets = latest.otherAssets || 0;
-                      const totalAssets = latest.totalAssets || 0;  // Use imported total
-                      
-                      // Liabilities - Use Data Review fields and imported totals
-                      const ap = latest.ap || 0;
-                      const otherCL = latest.otherCL || 0;
-                      const tcl = latest.tcl || 0;  // Use imported total
-                      
-                      const ltd = latest.ltd || 0;
-                      const totalLiabilities = latest.totalLiab || 0;  // Use imported total
-                      
-                      // All equity detail fields
-                      const ownersCapital = latest.ownersCapital || 0;
-                      const ownersDraw = latest.ownersDraw || 0;
-                      const commonStock = latest.commonStock || 0;
-                      const preferredStock = latest.preferredStock || 0;
-                      const retainedEarnings = latest.retainedEarnings || 0;
-                      const additionalPaidInCapital = latest.additionalPaidInCapital || 0;
-                      const treasuryStock = latest.treasuryStock || 0;
-                      const paidInCapital = latest.paidInCapital || 0;
-                      const totalEquity = latest.totalEquity || (ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock + paidInCapital);
-                      
-                      const totalLAndE = latest.totalLAndE || (totalLiabilities + totalEquity);
-                      
-                      return {
-                        cash, ar, inventory, otherCA, tca,
-                        fixedAssets, otherAssets, totalAssets,
-                        ap, otherCL, tcl,
-                        ltd, totalLiabilities,
-                        ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity,
-                        totalLAndE
-                      };
-                    };
-                    
-                    const balanceData = displayPeriods.map(p => ({
-                      label: p.label,
-                      ...calculateBalanceData(p.months)
-                    }));
-                    
-                    return (
-                      <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-                        <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Balance Sheet</h2>
-                          <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
-                        </div>
-                        
-                        {/* Table with multiple columns */}
-                        <div style={{ minWidth: `${200 + (balanceData.length * 110)}px` }}>
-                          {/* Header Row */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0', borderBottom: '2px solid #1e293b', fontWeight: '600', color: '#1e293b', position: 'sticky', top: 0, background: 'white' }}>
-                            <div>Line Item</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right' }}>{p.label}</div>
-                            ))}
-                          </div>
-                          
-                          {/* ASSETS Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '8px' }}>
-                            <div style={{ color: '#1e293b' }}>ASSETS</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {/* Current Assets Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
-                            <div style={{ color: '#475569' }}>Current Assets</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {/* Current Assets Details */}
-                          {balanceData.some(p => p.cash > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Cash & Cash Equivalents</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.ar > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Receivable</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.inventory > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Inventory</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.otherCA > 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Assets</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
-                            <div style={{ color: '#475569' }}>Total Current Assets</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                          
-                          {/* Non-Current Assets */}
-                          {balanceData.some(p => p.fixedAssets !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Fixed Assets</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.otherAssets !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Other Assets</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* TOTAL ASSETS */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
-                            <div style={{ color: '#1e40af' }}>TOTAL ASSETS</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#1e40af' }}>${p.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                          
-                          {/* LIABILITIES Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '16px' }}>
-                            <div style={{ color: '#1e293b' }}>LIABILITIES</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {/* Current Liabilities Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '8px 0 4px 0', fontSize: '14px', fontWeight: '600' }}>
-                            <div style={{ color: '#475569' }}>Current Liabilities</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {balanceData.some(p => p.ap !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Accounts Payable</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.otherCL !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Other Current Liabilities</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.otherCL.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
-                            <div style={{ color: '#475569' }}>Total Current Liabilities</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#475569' }}>${p.tcl.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                          
-                          {/* Long-Term Debt */}
-                          {balanceData.some(p => p.ltd !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b' }}>Long-Term Debt</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* TOTAL LIABILITIES */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#fef3c7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
-                            <div style={{ color: '#92400e' }}>TOTAL LIABILITIES</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#92400e' }}>${p.totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                          
-                          {/* EQUITY Section Header */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '15px', fontWeight: '700', marginTop: '16px' }}>
-                            <div style={{ color: '#1e293b' }}>EQUITY</div>
-                            {balanceData.map((p, i) => <div key={i}></div>)}
-                          </div>
-                          
-                          {balanceData.some(p => p.ownersCapital !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Capital</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownersCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.ownersDraw !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Owner's Draw</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.ownersDraw.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.commonStock !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Common Stock</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.commonStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.preferredStock !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Preferred Stock</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.preferredStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.retainedEarnings !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Retained Earnings</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
-                                  {p.retainedEarnings >= 0 ? '$' : '($'}{Math.abs(p.retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.retainedEarnings < 0 ? ')' : ''}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.additionalPaidInCapital !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Additional Paid-In Capital</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.additionalPaidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.treasuryStock !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Treasury Stock</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.treasuryStock.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          {balanceData.some(p => p.paidInCapital !== 0) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                              <div style={{ color: '#64748b', paddingLeft: '20px' }}>Paid-in Capital</div>
-                              {balanceData.map((p, i) => (
-                                <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${(p.paidInCapital || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* TOTAL EQUITY */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '8px', fontWeight: '700' }}>
-                            <div style={{ color: '#166534' }}>TOTAL EQUITY</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: p.totalEquity >= 0 ? '#166534' : '#991b1b' }}>
-                                {p.totalEquity >= 0 ? '$' : '($'}{Math.abs(p.totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{p.totalEquity < 0 ? ')' : ''}
-                              </div>
-                            ))}
-                          </div>
-                          
-                          {/* TOTAL LIABILITIES & EQUITY */}
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#f1f5f9', borderRadius: '4px', marginTop: '16px', fontWeight: '700' }}>
-                            <div style={{ color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>
-                                ${p.totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  // Single period balance sheet (original logic)
-                  const cash = latestMonth.cash || 0;
-                  const ar = latestMonth.ar || 0;
-                  const inventory = latestMonth.inventory || 0;
-                  const otherCA = latestMonth.otherCA || 0;
-                  const tca = cash + ar + inventory + otherCA;
-                  
-                  const fixedAssets = latestMonth.fixedAssets || 0;
-                  const intangibleAssets = latestMonth.intangibleAssets || 0;
-                  const otherNonCurrentAssets = latestMonth.otherNonCurrentAssets || 0;
-                  const nonCurrentAssets = fixedAssets + intangibleAssets + otherNonCurrentAssets;
-                  
-                  const totalAssets = tca + nonCurrentAssets;
-                  
-                  const ap = latestMonth.ap || 0;
-                  const shortTermDebt = latestMonth.shortTermDebt || 0;
-                  const currentPortionLTD = latestMonth.currentPortionLTD || 0;
-                  const otherCurrentLiabilities = latestMonth.otherCurrentLiabilities || 0;
-                  const totalCurrentLiabilities = ap + shortTermDebt + currentPortionLTD + otherCurrentLiabilities;
-                  
-                  const ltd = latestMonth.ltd || 0;
-                  const otherLongTermLiabilities = latestMonth.otherLongTermLiabilities || 0;
-                  const totalLongTermLiabilities = ltd + otherLongTermLiabilities;
-                  
-                  const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
-                  
-                  const paidInCapital = latestMonth.paidInCapital || 0;
-                  const retainedEarnings = latestMonth.retainedEarnings || 0;
-                  const totalEquity = paidInCapital + retainedEarnings;
-                  
-                  const totalLAndE = totalLiabilities + totalEquity;
-                  
-                  const latestDate = new Date(latestMonth.date || latestMonth.month);
-                  const asOfDate = latestDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                  
-                  return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                      <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Balance Sheet</h2>
-                        <div style={{ fontSize: '14px', color: '#64748b' }}>As of {asOfDate} (Period: {periodLabel})</div>
-                      </div>
-
-                      {/* ASSETS */}
-                      <div style={{ marginBottom: '32px' }}>
-                        <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>ASSETS</div>
-                        
-                        {/* Current Assets */}
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Assets</div>
-                          {cash > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Cash & Cash Equivalents</span>
-                              <span style={{ color: '#64748b' }}>${cash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {ar > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Accounts Receivable</span>
-                              <span style={{ color: '#64748b' }}>${ar.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {inventory > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Inventory</span>
-                              <span style={{ color: '#64748b' }}>${inventory.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {otherCA > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Other Current Assets</span>
-                              <span style={{ color: '#64748b' }}>${otherCA.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <span style={{ color: '#475569' }}>Total Current Assets</span>
-                            <span style={{ color: '#475569' }}>${tca.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* Non-Current Assets */}
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Non-Current Assets</div>
-                          {fixedAssets > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Property, Plant & Equipment</span>
-                              <span style={{ color: '#64748b' }}>${fixedAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {intangibleAssets > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Intangible Assets</span>
-                              <span style={{ color: '#64748b' }}>${intangibleAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {otherNonCurrentAssets > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Other Non-Current Assets</span>
-                              <span style={{ color: '#64748b' }}>${otherNonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <span style={{ color: '#475569' }}>Total Non-Current Assets</span>
-                            <span style={{ color: '#475569' }}>${nonCurrentAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* TOTAL ASSETS */}
-                        <div style={{ background: '#dbeafe', padding: '12px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e40af' }}>TOTAL ASSETS</span>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#1e40af' }}>
-                              ${totalAssets.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* LIABILITIES */}
-                      <div style={{ marginBottom: '32px' }}>
-                        <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>LIABILITIES</div>
-                        
-                        {/* Current Liabilities */}
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Current Liabilities</div>
-                          {ap > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Accounts Payable</span>
-                              <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {shortTermDebt > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Short-Term Debt</span>
-                              <span style={{ color: '#64748b' }}>${shortTermDebt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {currentPortionLTD > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Current Portion of LT Debt</span>
-                              <span style={{ color: '#64748b' }}>${currentPortionLTD.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {otherCurrentLiabilities > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Other Current Liabilities</span>
-                              <span style={{ color: '#64748b' }}>${otherCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <span style={{ color: '#475569' }}>Total Current Liabilities</span>
-                            <span style={{ color: '#475569' }}>${totalCurrentLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* Long-Term Liabilities */}
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Long-Term Liabilities</div>
-                          {ltd > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Long-Term Debt</span>
-                              <span style={{ color: '#64748b' }}>${ltd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          {otherLongTermLiabilities > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                              <span style={{ color: '#64748b' }}>Other Long-Term Liabilities</span>
-                              <span style={{ color: '#64748b' }}>${otherLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 8px 10px', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
-                            <span style={{ color: '#475569' }}>Total Long-Term Liabilities</span>
-                            <span style={{ color: '#475569' }}>${totalLongTermLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        </div>
-
-                        {/* TOTAL LIABILITIES */}
-                        <div style={{ background: '#fef3c7', padding: '12px', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#92400e' }}>TOTAL LIABILITIES</span>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#92400e' }}>
-                              ${totalLiabilities.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* EQUITY */}
-                      <div style={{ marginBottom: '32px' }}>
-                        <div style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b', marginBottom: '12px' }}>EQUITY</div>
-                        {paidInCapital > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Paid-in Capital</span>
-                            <span style={{ color: '#64748b' }}>${paidInCapital.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {retainedEarnings !== 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Retained Earnings</span>
-                            <span style={{ color: '#64748b' }}>
-                              {retainedEarnings >= 0 ? '$' : '($'}{Math.abs(retainedEarnings).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{retainedEarnings < 0 ? ')' : ''}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* TOTAL EQUITY */}
-                        <div style={{ background: '#dcfce7', padding: '12px', borderRadius: '8px', marginTop: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>TOTAL EQUITY</span>
-                            <span style={{ fontWeight: '700', fontSize: '16px', color: '#166534' }}>
-                              {totalEquity >= 0 ? '$' : '($'}{Math.abs(totalEquity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{totalEquity < 0 ? ')' : ''}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* TOTAL LIABILITIES & EQUITY */}
-                      <div style={{ background: '#f1f5f9', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>TOTAL LIABILITIES & EQUITY</span>
-                          <span style={{ fontWeight: '700', fontSize: '18px', color: '#1e293b' }}>
-                            ${totalLAndE.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </span>
-                        </div>
-                        {Math.abs(totalAssets - totalLAndE) > 0.01 && (
-                          <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '8px', textAlign: 'right' }}>
-                            ?? Balance check: Assets - (Liabilities + Equity) = ${(totalAssets - totalLAndE).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
-              }
-              
-              else {
-                return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-                      📊 Financial Statement Viewer
-                    </div>
-                    <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
-                      {monthly.length === 0 
-                        ? 'No financial data available. Please import financial data or sync from QuickBooks.'
-                        : 'Select options above to view financial statements.'}
-                    </p>
-                  </div>
-                );
-              }
-            })()}
-
-            {/* Hidden: Old P&L and Balance Sheet containers - will be removed in future update */}
-            <div style={{ display: 'none' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-              {/* Left: QuickBooks Raw Data */}
-              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              {/* Profit & Loss Report */}
-              <div style={{ marginBottom: '48px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px', paddingBottom: '12px', borderBottom: '3px solid #667eea' }}>Profit & Loss</h2>
-                {plRows.length > 0 ? (
-                  <div>
-                    {plRows.map((row, idx) => (
-                      <div 
-                        key={idx} 
-                        style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          padding: row.isHeader ? '12px 8px 8px' : (row.isTotal ? '10px 8px' : '6px 8px'),
-                          paddingLeft: `${8 + (row.level * 20)}px`,
-                          borderBottom: row.isTotal ? '2px solid #e2e8f0' : (row.isHeader ? '1px solid #e2e8f0' : 'none'),
-                          background: row.isHeader ? '#f8fafc' : (row.isTotal ? '#f1f5f9' : 'transparent'),
-                          fontWeight: row.isHeader || row.isTotal ? '600' : '400',
-                          fontSize: row.isHeader ? '15px' : (row.isTotal ? '14px' : '13px'),
-                          color: row.isHeader ? '#1e293b' : (row.isTotal ? '#0f172a' : '#475569')
-                        }}
-                      >
-                        <span>{row.name}</span>
-                        {!row.isHeader && <span style={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.value}</span>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>No Profit & Loss data available</div>
-                )}
-              </div>
-
-              {/* Balance Sheet Report */}
-              <div>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px', paddingBottom: '12px', borderBottom: '3px solid #667eea' }}>Balance Sheet</h2>
-                {bsRows.length > 0 ? (
-                  <div>
-                    {bsRows.map((row, idx) => (
-                      <div 
-                        key={idx} 
-                        style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          padding: row.isHeader ? '12px 8px 8px' : (row.isTotal ? '10px 8px' : '6px 8px'),
-                          paddingLeft: `${8 + (row.level * 20)}px`,
-                          borderBottom: row.isTotal ? '2px solid #e2e8f0' : (row.isHeader ? '1px solid #e2e8f0' : 'none'),
-                          background: row.isHeader ? '#f8fafc' : (row.isTotal ? '#f1f5f9' : 'transparent'),
-                          fontWeight: row.isHeader || row.isTotal ? '600' : '400',
-                          fontSize: row.isHeader ? '15px' : (row.isTotal ? '14px' : '13px'),
-                          color: row.isHeader ? '#1e293b' : (row.isTotal ? '#0f172a' : '#475569')
-                        }}
-                      >
-                        <span>{row.name}</span>
-                        {!row.isHeader && <span style={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.value}</span>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>No Balance Sheet data available</div>
-                )}
-              </div>
-              </div>
-
-              {/* Right: Your Minimal Viable Financial Statement Structure */}
-              <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                {/* Income Statement Structure */}
-                <div style={{ marginBottom: '48px' }}>
-                  <div style={{ marginBottom: '20px' }}>
-                    <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px', paddingBottom: '12px', borderBottom: '3px solid #10b981' }}>Income Statement Fields</h2>
-                    {qbRawData?.profitAndLoss?.Header && (() => {
-                      const columns = qbRawData.profitAndLoss.Columns?.Column || [];
-                      const hasMultipleMonths = columns.length > 2;
-                      const lastMonthColumn = hasMultipleMonths && columns.length >= 2 ? columns[columns.length - 2] : null;
-                      const monthLabel = lastMonthColumn?.ColTitle || qbRawData.profitAndLoss.Header.EndPeriod;
-                      
-                      return (
-                        <div style={{ fontSize: '13px', marginTop: '8px' }}>
-                          <div style={{ color: '#64748b' }}>
-                            <strong>Report Period:</strong> {qbRawData.profitAndLoss.Header.StartPeriod || 'N/A'} to {qbRawData.profitAndLoss.Header.EndPeriod || 'N/A'}
-                          </div>
-                          <div style={{ color: '#10b981', fontWeight: '600', marginTop: '4px', padding: '8px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
-                            📅 Displaying: {hasMultipleMonths ? `Monthly data for ${monthLabel}` : `Period total for ${monthLabel}`}
-                          </div>
-                          {!hasMultipleMonths && (
-                            <div style={{ color: '#f59e0b', fontWeight: '500', fontSize: '12px', marginTop: '4px', padding: '6px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #fcd34d' }}>
-                              ?? Note: This appears to be cumulative for the entire period, not monthly breakdowns
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  
-                  {aiMappings.length > 0 ? (
-                    <div style={{ fontSize: '13px' }}>
-                      {/* Group mappings by category */}
-                      {(() => {
-                        // Deduplicate mappings by QB account name (keep first occurrence)
-                        const uniqueMappings = aiMappings.filter((m, index, self) =>
-                          index === self.findIndex((t) => t.qbAccount === m.qbAccount)
-                        );
-                        
-                        const revenueMappings = uniqueMappings.filter(m => ['Revenue', 'Income'].some(c => m.qbAccountClassification?.includes(c)));
-                        const cogsMappings = uniqueMappings.filter(m => ['Cost of Goods Sold', 'COGS'].some(c => m.qbAccountClassification?.includes(c)));
-                        const expenseMappings = uniqueMappings.filter(m => m.qbAccountClassification?.includes('Expense'));
-                        
-                        // Helper to get amount - extract from the appropriate column
-                        const getAmount = (qbAccountName: string) => {
-                          if (!qbRawData) return 0;
-                          const extractRows = (reportData: any) => {
-                            const result: any[] = [];
-                            if (!reportData || !reportData.Rows || !reportData.Rows.Row) return result;
-                            
-                            const processRow = (row: any) => {
-                              if (row.type === 'Data' && row.ColData) {
-                                const name = row.ColData[0]?.value || '';
-                                if (name) {
-                                  // Try to find a numeric value from the columns
-                                  // Start from the end and work backwards to find the first valid number
-                                  let value = 0;
-                                  for (let i = row.ColData.length - 1; i >= 1; i--) {
-                                    const colValue = row.ColData[i]?.value;
-                                    if (colValue !== undefined && colValue !== '' && !isNaN(parseFloat(colValue))) {
-                                      value = parseFloat(colValue);
-                                      break;
-                                    }
-                                  }
-                                  result.push({ name, value });
-                                }
-                              }
-                              if (row.Rows && row.Rows.Row) {
-                                const subRows = Array.isArray(row.Rows.Row) ? row.Rows.Row : [row.Rows.Row];
-                                subRows.forEach((r: any) => processRow(r));
-                              }
-                            };
-                            const rows = Array.isArray(reportData.Rows.Row) ? reportData.Rows.Row : [reportData.Rows.Row];
-                            rows.forEach((r: any) => processRow(r));
-                            return result;
-                          };
-                          const plRows = extractRows(qbRawData.profitAndLoss);
-                          const accountRow = plRows.find((row: any) => row.name === qbAccountName);
-                          return accountRow ? accountRow.value : 0;
-                        };
-                        
-                        // Calculate totals
-                        const totalRevenue = revenueMappings.reduce((sum, m) => sum + getAmount(m.qbAccount), 0);
-                        const totalCOGS = cogsMappings.reduce((sum, m) => sum + getAmount(m.qbAccount), 0);
-                        const totalExpenses = expenseMappings.reduce((sum, m) => sum + getAmount(m.qbAccount), 0);
-                        const grossProfit = totalRevenue - totalCOGS;
-                        const netIncome = grossProfit - totalExpenses;
-                        
-                        return (
-                          <>
-                            {/* REVENUE SECTION */}
-                            {revenueMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '8px', background: '#f8fafc', fontWeight: '600', borderBottom: '1px solid #e2e8f0' }}>REVENUE</div>
-                                {revenueMappings.map((m, i) => {
-                                  const amount = getAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {/* COGS SECTION */}
-                            {cogsMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '8px', background: '#f8fafc', fontWeight: '600', borderBottom: '1px solid #e2e8f0', marginTop: '12px' }}>COST OF GOODS SOLD</div>
-                                {cogsMappings.map((m, i) => {
-                                  const amount = getAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                                <div style={{ padding: '10px 16px', background: '#fee2e2', borderBottom: '2px solid #ef4444', display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
-                                  <span style={{ color: '#991b1b' }}>Total COGS</span>
-                                  <span style={{ color: '#991b1b', fontFamily: 'monospace' }}>
-                                    ${totalCOGS.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                                <div style={{ padding: '10px 16px', background: '#dbeafe', borderBottom: '3px solid #3b82f6', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '4px' }}>
-                                  <span style={{ color: '#1e40af' }}>GROSS PROFIT</span>
-                                  <span style={{ color: '#1e40af', fontFamily: 'monospace' }}>
-                                    ${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                            
-                            {/* EXPENSES SECTION */}
-                            {expenseMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '8px', background: '#f8fafc', fontWeight: '600', borderBottom: '1px solid #e2e8f0', marginTop: '12px' }}>OPERATING EXPENSES</div>
-                                {expenseMappings.map((m, i) => {
-                                  const amount = getAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                                <div style={{ padding: '10px 16px', background: '#fef3c7', borderBottom: '2px solid #f59e0b', display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
-                                  <span style={{ color: '#92400e' }}>Total Operating Expenses</span>
-                                  <span style={{ color: '#92400e', fontFamily: 'monospace' }}>
-                                    ${totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                                <div style={{ padding: '12px 16px', background: '#dcfce7', borderBottom: '4px solid #10b981', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '4px' }}>
-                                  <span style={{ color: '#166534', fontSize: '16px' }}>NET INCOME</span>
-                                  <span style={{ color: '#166534', fontFamily: 'monospace', fontSize: '16px' }}>
-                                    ${netIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-                      No mappings saved yet. Generate and save mappings above to see them here.
-                    </div>
-                  )}
-                </div>
-
-                {/* Balance Sheet Structure */}
-                <div>
-                  <div style={{ marginBottom: '20px' }}>
-                    <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px', paddingBottom: '12px', borderBottom: '3px solid #10b981' }}>Balance Sheet Fields</h2>
-                    {qbRawData?.balanceSheet?.Header && (
-                      <div style={{ fontSize: '13px', marginTop: '8px' }}>
-                        <div style={{ color: '#64748b' }}>
-                          As of: {qbRawData.balanceSheet.Header.Time || qbRawData.balanceSheet.Header.EndPeriod || 'N/A'}
-                        </div>
-                        <div style={{ color: '#3b82f6', fontWeight: '500', fontSize: '12px', marginTop: '4px' }}>
-                          📊 Balance Sheet shows point-in-time snapshot as of the date above
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {aiMappings.length > 0 ? (
-                    <div style={{ fontSize: '13px' }}>
-                      {/* Group mappings by category */}
-                      {(() => {
-                        // Deduplicate mappings by QB account name (keep first occurrence)
-                        const uniqueMappings = aiMappings.filter((m, index, self) =>
-                          index === self.findIndex((t) => t.qbAccount === m.qbAccount)
-                        );
-                        
-                        const assetMappings = uniqueMappings.filter(m => m.qbAccountClassification?.includes('Asset'));
-                        const currentAssetMappings = assetMappings.filter(m => m.qbAccountClassification?.includes('Current'));
-                        const fixedAssetMappings = assetMappings.filter(m => m.qbAccountClassification?.includes('Fixed') || m.qbAccountClassification?.includes('Property'));
-                        const otherAssetMappings = assetMappings.filter(m => !m.qbAccountClassification?.includes('Current') && !m.qbAccountClassification?.includes('Fixed') && !m.qbAccountClassification?.includes('Property'));
-                        
-                        const liabilityMappings = uniqueMappings.filter(m => m.qbAccountClassification?.includes('Liability'));
-                        const currentLiabMappings = liabilityMappings.filter(m => m.qbAccountClassification?.includes('Current'));
-                        const longTermLiabMappings = liabilityMappings.filter(m => m.qbAccountClassification?.includes('Long') || !m.qbAccountClassification?.includes('Current'));
-                        
-                        const equityMappings = uniqueMappings.filter(m => m.qbAccountClassification?.includes('Equity'));
-                        
-                        // Helper to get amount from balance sheet - extract from the appropriate column
-                        const getBSAmount = (qbAccountName: string) => {
-                          if (!qbRawData) return 0;
-                          const extractRows = (reportData: any) => {
-                            const result: any[] = [];
-                            if (!reportData || !reportData.Rows || !reportData.Rows.Row) return result;
-                            
-                            const processRow = (row: any) => {
-                              if (row.type === 'Data' && row.ColData) {
-                                const name = row.ColData[0]?.value || '';
-                                if (name) {
-                                  // Try to find a numeric value from the columns
-                                  // Start from the end and work backwards to find the first valid number
-                                  let value = 0;
-                                  for (let i = row.ColData.length - 1; i >= 1; i--) {
-                                    const colValue = row.ColData[i]?.value;
-                                    if (colValue !== undefined && colValue !== '' && !isNaN(parseFloat(colValue))) {
-                                      value = parseFloat(colValue);
-                                      break;
-                                    }
-                                  }
-                                  result.push({ name, value });
-                                }
-                              }
-                              if (row.Rows && row.Rows.Row) {
-                                const subRows = Array.isArray(row.Rows.Row) ? row.Rows.Row : [row.Rows.Row];
-                                subRows.forEach((r: any) => processRow(r));
-                              }
-                            };
-                            const rows = Array.isArray(reportData.Rows.Row) ? reportData.Rows.Row : [reportData.Rows.Row];
-                            rows.forEach((r: any) => processRow(r));
-                            return result;
-                          };
-                          const bsRows = extractRows(qbRawData.balanceSheet);
-                          const accountRow = bsRows.find((row: any) => row.name === qbAccountName);
-                          return accountRow ? accountRow.value : 0;
-                        };
-                        
-                        // Calculate totals
-                        const totalCurrentAssets = currentAssetMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalFixedAssets = fixedAssetMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalOtherAssets = otherAssetMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalAssets = totalCurrentAssets + totalFixedAssets + totalOtherAssets;
-                        
-                        const totalCurrentLiab = currentLiabMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalLongTermLiab = longTermLiabMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalLiabilities = totalCurrentLiab + totalLongTermLiab;
-                        
-                        const totalEquity = equityMappings.reduce((sum, m) => sum + getBSAmount(m.qbAccount), 0);
-                        const totalLiabAndEquity = totalLiabilities + totalEquity;
-                        
-                        return (
-                          <>
-                            {/* ASSETS SECTION */}
-                            <div style={{ padding: '8px', background: '#1e40af', fontWeight: '700', borderBottom: '2px solid #1e3a8a', color: 'white' }}>ASSETS</div>
-                            
-                            {currentAssetMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#eff6ff', fontWeight: '600', borderBottom: '1px solid #dbeafe', color: '#1e40af' }}>Current Assets</div>
-                                {currentAssetMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {fixedAssetMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#eff6ff', fontWeight: '600', borderBottom: '1px solid #dbeafe', color: '#1e40af', marginTop: '8px' }}>Fixed Assets</div>
-                                {fixedAssetMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {otherAssetMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#eff6ff', fontWeight: '600', borderBottom: '1px solid #dbeafe', color: '#1e40af', marginTop: '8px' }}>Other Assets</div>
-                                {otherAssetMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {/* LIABILITIES SECTION */}
-                            <div style={{ padding: '8px', background: '#991b1b', fontWeight: '700', borderBottom: '2px solid #7f1d1d', color: 'white', marginTop: '16px' }}>LIABILITIES</div>
-                            
-                            {currentLiabMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#fef2f2', fontWeight: '600', borderBottom: '1px solid #fee2e2', color: '#991b1b' }}>Current Liabilities</div>
-                                {currentLiabMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {longTermLiabMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '6px 16px', background: '#fef2f2', fontWeight: '600', borderBottom: '1px solid #fee2e2', color: '#991b1b', marginTop: '8px' }}>Long-Term Liabilities</div>
-                                {longTermLiabMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {/* EQUITY SECTION */}
-                            {equityMappings.length > 0 && (
-                              <>
-                                <div style={{ padding: '8px', background: '#166534', fontWeight: '700', borderBottom: '2px solid #14532d', color: 'white', marginTop: '16px' }}>EQUITY</div>
-                                {equityMappings.map((m, i) => {
-                                  const amount = getBSAmount(m.qbAccount);
-                                  return (
-                                    <div key={i} style={{ padding: '6px 16px 6px 32px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <div style={{ color: '#475569', fontSize: '13px' }}>{m.qbAccount}</div>
-                                        <div style={{ color: '#94a3b8', fontSize: '11px' }}>? {m.targetField}</div>
-                                      </div>
-                                      <span style={{ color: '#0f172a', fontFamily: 'monospace', fontWeight: '600' }}>
-                                        ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            
-                            {/* TOTAL LIABILITIES & EQUITY */}
-                            <div style={{ padding: '12px 16px', background: '#8b5cf6', borderBottom: '4px solid #6b21a8', display: 'flex', justifyContent: 'space-between', fontWeight: '700', marginTop: '8px' }}>
-                              <span style={{ color: 'white', fontSize: '16px' }}>TOTAL LIABILITIES & EQUITY</span>
-                              <span style={{ color: 'white', fontFamily: 'monospace', fontSize: '16px' }}>
-                                ${totalLiabAndEquity.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </span>
-                            </div>
-                            
-                            {/* Balance Check */}
-                            {Math.abs(totalAssets - totalLiabAndEquity) > 0.01 && (
-                              <div style={{ padding: '10px 16px', background: '#fef2f2', border: '2px solid #ef4444', marginTop: '8px', borderRadius: '6px' }}>
-                                <span style={{ color: '#991b1b', fontWeight: '600' }}>?? Balance Check: Assets and Liabilities+Equity do not match!</span>
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-                      No mappings saved yet. Generate and save mappings above to see them here.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            </div>
-            {/* End hidden section */}
+            <AggregatedFinancialsTab
+              selectedCompanyId={selectedCompanyId}
+              statementType={statementType}
+              statementPeriod={statementPeriod}
+              statementDisplay={statementDisplay}
+            />
             </>
-            )}
+          )}
+
+          {/* Line of Business Reporting Tab */}
+          {financialStatementsTab === 'line-of-business' && (
+            <LOBReportingTab
+              company={company}
+              selectedCompanyId={selectedCompanyId}
+              accountMappings={aiMappings}
+              statementType={statementType}
+              selectedLineOfBusiness={selectedLineOfBusiness}
+              statementPeriod={statementPeriod}
+              statementDisplay={statementDisplay}
+              onStatementTypeChange={setStatementType}
+              onLineOfBusinessChange={setSelectedLineOfBusiness}
+              onPeriodChange={setStatementPeriod}
+              onDisplayChange={setStatementDisplay}
+              onNavigateToAccountMappings={() => {
+                setCurrentView('admin');
+                setAdminDashboardTab('data-mapping');
+              }}
+            />
+          )}
 
             {/* Line of Business Reporting Tab */}
             {financialStatementsTab === 'line-of-business' && (
               <LOBReportingTab
                 company={company}
-                monthly={monthly}
-                qbRawData={qbRawData}
+                selectedCompanyId={selectedCompanyId}
                 accountMappings={aiMappings}
                 statementType={statementType}
                 selectedLineOfBusiness={selectedLineOfBusiness}
@@ -18813,7 +9462,13 @@ function FinancialScorePage() {
             });
             
             if (statementType === 'income-statement' && statementPeriod === 'current-month') {
-              const currentMonth = monthly[monthly.length - 1];
+              // Sort by date to ensure we get the most recent month (in case data isn't sorted)
+              const sortedMonthly = [...monthly].sort((a, b) => {
+                const dateA = new Date(a.date || a.month || 0).getTime();
+                const dateB = new Date(b.date || b.month || 0).getTime();
+                return dateA - dateB;
+              });
+              const currentMonth = sortedMonthly[sortedMonthly.length - 1];
               const monthDate = new Date(currentMonth.date || currentMonth.month);
               const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
@@ -18861,7 +9516,11 @@ function FinancialScorePage() {
               const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
               const extraordinaryItems = currentMonth.extraordinaryItems || 0;
               
-              const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              // Parse as numbers in case they come as strings
+              const stateIncomeTaxes = Number(currentMonth.stateIncomeTaxes) || 0;
+              const federalIncomeTaxes = Number(currentMonth.federalIncomeTaxes) || 0;
+              const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
               const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
               
               return (
@@ -19024,6 +9683,37 @@ function FinancialScorePage() {
                     </div>
                   )}
 
+                  {/* Income Before Tax */}
+                  <div style={{ marginBottom: '12px', background: '#f1f5f9', padding: '12px', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: '700', color: '#0f172a' }}>Income Before Tax</span>
+                      <span style={{ fontWeight: '700', color: '#0f172a' }}>${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    </div>
+                  </div>
+
+                  {/* Income Taxes */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Taxes</div>
+                    {stateIncomeTaxes > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>State Income Taxes</span>
+                        <span style={{ color: '#ef4444' }}>($  {stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                      </div>
+                    )}
+                    {federalIncomeTaxes > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>Federal Income Taxes</span>
+                        <span style={{ color: '#ef4444' }}>($  {federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                      </div>
+                    )}
+                    {stateIncomeTaxes === 0 && federalIncomeTaxes === 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px', color: '#94a3b8', fontStyle: 'italic' }}>
+                        <span>No income taxes recorded</span>
+                        <span>$0</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Net Income */}
                   <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '32px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -19074,9 +9764,15 @@ function FinancialScorePage() {
               const marketing = currentMonth.marketing || 0;
               const mealsEntertainment = currentMonth.mealsEntertainment || 0;
               const otherExpense = currentMonth.otherExpense || 0;
+              const ownerBasePay = currentMonth.ownerBasePay || 0;
+              const ownersRetirement = currentMonth.ownersRetirement || 0;
+              const depreciationAmortization = currentMonth.depreciationAmortization || 0;
 
-              // totalOpex is now calculated dynamically in the expense rendering section
-              const totalOpex = 0; // Placeholder - calculated dynamically below
+              // Calculate total operating expenses - include all expense fields
+              const totalOpex = payroll + ownerBasePay + ownersRetirement + benefits + insurance + 
+                               professionalFees + subcontractors + rent + taxLicense + phoneComm + 
+                               infrastructure + autoTravel + salesExpense + marketing + 
+                               mealsEntertainment + depreciationAmortization + otherExpense;
               
               const operatingIncome = grossProfit - totalOpex;
               const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -19086,7 +9782,10 @@ function FinancialScorePage() {
               const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
               const extraordinaryItems = currentMonth.extraordinaryItems || 0;
               
-              const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const stateIncomeTaxes = currentMonth.stateIncomeTaxes || 0;
+              const federalIncomeTaxes = currentMonth.federalIncomeTaxes || 0;
+              const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
               const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
               
               // Helper function to calculate percentage
@@ -19179,42 +9878,56 @@ function FinancialScorePage() {
                   {/* Operating Expenses */}
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Operating Expenses</div>
-                    {payroll > 0 && (
+                    {(payroll && payroll > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Payroll</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(payroll).toFixed(1)}%</span>
                       </div>
                     )}
-                    {benefits > 0 && (
+                    {ownerBasePay > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner Base Pay</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownerBasePay).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {ownersRetirement > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner's Retirement</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(ownersRetirement).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {(benefits && benefits > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Benefits</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${benefits.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(benefits).toFixed(1)}%</span>
                       </div>
                     )}
-                    {insurance > 0 && (
+                    {(insurance && insurance > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Insurance</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(insurance).toFixed(1)}%</span>
                       </div>
                     )}
-                    {professionalFees > 0 && (
+                    {(professionalFees && professionalFees > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Professional Services</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
                       </div>
                     )}
-                    {subcontractors > 0 && (
+                    {(subcontractors && subcontractors > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Subcontractors</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(subcontractors).toFixed(1)}%</span>
                       </div>
                     )}
-                    {rent > 0 && (
+                    {(rent && rent > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Rent/Lease</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -19235,21 +9948,21 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(phoneComm).toFixed(1)}%</span>
                       </div>
                     )}
-                    {infrastructure > 0 && (
+                    {(infrastructure && infrastructure > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Infrastructure/Utilities</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(infrastructure).toFixed(1)}%</span>
                       </div>
                     )}
-                    {autoTravel > 0 && (
+                    {(autoTravel && autoTravel > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Auto & Travel</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(autoTravel).toFixed(1)}%</span>
                       </div>
                     )}
-                    {salesExpense > 0 && (
+                    {(salesExpense && salesExpense > 0) && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Sales & Marketing</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -19268,6 +9981,13 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Meals & Entertainment</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${mealsEntertainment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(mealsEntertainment).toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {(depreciationAmortization && depreciationAmortization > 0) && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Depreciation & Amortization</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(depreciationAmortization).toFixed(1)}%</span>
                       </div>
                     )}
                     {otherExpense > 0 && (
@@ -19320,6 +10040,36 @@ function FinancialScorePage() {
                           <span style={{ color: extraordinaryItems >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
                             {extraordinaryItems >= 0 ? '' : '('}{pct(Math.abs(extraordinaryItems)).toFixed(1)}%{extraordinaryItems < 0 ? ')' : ''}
                           </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Income Before Tax */}
+                  <div style={{ marginBottom: '12px', background: '#f1f5f9', padding: '12px', borderRadius: '8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr' }}>
+                      <span style={{ fontWeight: '700', color: '#0f172a' }}>Income Before Tax</span>
+                      <span style={{ fontWeight: '700', color: '#0f172a', textAlign: 'right' }}>${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      <span style={{ fontWeight: '700', color: '#0f172a', textAlign: 'right' }}>{pct(incomeBeforeTax).toFixed(1)}%</span>
+                    </div>
+                  </div>
+
+                  {/* Income Taxes */}
+                  {(stateIncomeTaxes > 0 || federalIncomeTaxes > 0) && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Income Taxes</div>
+                      {stateIncomeTaxes > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>State Income Taxes</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>($  {stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>({pct(stateIncomeTaxes).toFixed(1)}%)</span>
+                        </div>
+                      )}
+                      {federalIncomeTaxes > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Federal Income Taxes</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>($  {federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>({pct(federalIncomeTaxes).toFixed(1)}%)</span>
                         </div>
                       )}
                     </div>
@@ -19735,7 +10485,21 @@ function FinancialScorePage() {
                   const interestExpense = months.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                   const nonOperatingIncome = months.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                   const extraordinaryItems = months.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                  const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                  const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                  // Parse income taxes - handle null, undefined, strings, and numbers
+                  const stateIncomeTaxes = months.reduce((sum, m) => {
+                    const val = m.stateIncomeTaxes;
+                    if (val === null || val === undefined) return sum;
+                    const numVal = typeof val === 'number' ? val : (typeof val === 'string' ? parseFloat(val) : 0);
+                    return sum + (isNaN(numVal) ? 0 : numVal);
+                  }, 0);
+                  const federalIncomeTaxes = months.reduce((sum, m) => {
+                    const val = m.federalIncomeTaxes;
+                    if (val === null || val === undefined) return sum;
+                    const numVal = typeof val === 'number' ? val : (typeof val === 'string' ? parseFloat(val) : 0);
+                    return sum + (isNaN(numVal) ? 0 : numVal);
+                  }, 0);
+                  const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
                   
                   return {
                     revenue,
@@ -19745,6 +10509,9 @@ function FinancialScorePage() {
                     totalOpex,
                     operatingIncome,
                     interestExpense, nonOperatingIncome, extraordinaryItems,
+                    incomeBeforeTax,
+                    stateIncomeTaxes,
+                    federalIncomeTaxes,
                     netIncome
                   };
                 };
@@ -19945,6 +10712,65 @@ function FinancialScorePage() {
                           </>
                         )}
                         
+                        {/* Income Before Tax */}
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '10px 8px', background: '#f1f5f9', borderRadius: '4px', marginTop: '12px', fontWeight: '700' }}>
+                          <div style={{ color: '#0f172a' }}>Income Before Tax</div>
+                          {periodsData.map((p, i) => (
+                            <div key={i} style={{ textAlign: 'right', color: '#0f172a' }}>
+                              ${p.incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Income Taxes */}
+                        {periodsData.some(p => {
+                          const stateTax = Number(p.stateIncomeTaxes) || 0;
+                          const federalTax = Number(p.federalIncomeTaxes) || 0;
+                          return stateTax !== 0 || federalTax !== 0;
+                        }) ? (
+                          <>
+                            <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '12px' }}>
+                              <div style={{ color: '#475569' }}>Income Taxes</div>
+                              {periodsData.map((p, i) => <div key={i}></div>)}
+                            </div>
+                            {periodsData.some(p => {
+                              const stateTax = Number(p.stateIncomeTaxes) || 0;
+                              return stateTax !== 0;
+                            }) && (
+                              <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                                <div style={{ color: '#64748b', paddingLeft: '20px' }}>State Income Taxes</div>
+                                {periodsData.map((p, i) => {
+                                  const stateTax = Number(p.stateIncomeTaxes) || 0;
+                                  return (
+                                    <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${Math.abs(stateTax).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {periodsData.some(p => {
+                              const federalTax = Number(p.federalIncomeTaxes) || 0;
+                              return federalTax !== 0;
+                            }) && (
+                              <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                                <div style={{ color: '#64748b', paddingLeft: '20px' }}>Federal Income Taxes</div>
+                                {periodsData.map((p, i) => {
+                                  const federalTax = Number(p.federalIncomeTaxes) || 0;
+                                  return (
+                                    <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${Math.abs(federalTax).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', marginTop: '12px' }}>
+                            <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>Income Taxes</div>
+                            {periodsData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#94a3b8', fontStyle: 'italic' }}>No income taxes recorded</div>
+                            ))}
+                          </div>
+                        )}
+                        
                         {/* Net Income */}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', marginTop: '12px', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
@@ -19996,8 +10822,10 @@ function FinancialScorePage() {
                 const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                 const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                 const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                
-                const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const stateIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+                const federalIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
                 const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
                 
                 return (
@@ -20221,8 +11049,8 @@ function FinancialScorePage() {
                     const ownersRetirement = calc(m, 'ownersRetirement');
                     const professionalFees = calc(m, 'professionalFees');
                     const rent = calc(m, 'rent');
-                    const infrastructure = calc(m, 'utilities');
-                    const autoTravel = calc(m, 'travel');
+                    const infrastructure = calc(m, 'infrastructure');
+                    const autoTravel = calc(m, 'autoTravel');
                     const insurance = calc(m, 'insurance');
                     const salesExpense = calc(m, 'salesExpense');
                     const subcontractors = calc(m, 'subcontractors');
@@ -20232,11 +11060,21 @@ function FinancialScorePage() {
                     const nonOperatingIncome = calc(m, 'nonOperatingIncome');
                     const extraordinaryItems = calc(m, 'extraordinaryItems');
                     const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
-                    const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing;
+                    // Calculate all operating expenses - include all expense fields
+                    const benefits = calc(m, 'benefits');
+                    const taxLicense = calc(m, 'taxLicense');
+                    const stateIncomeTaxes = calc(m, 'stateIncomeTaxes');
+                    const federalIncomeTaxes = calc(m, 'federalIncomeTaxes');
+                    const phoneComm = calc(m, 'phoneComm');
+                    const mealsEntertainment = calc(m, 'mealsEntertainment');
+                    const otherExpense = calc(m, 'otherExpense');
+                    const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing + benefits + taxLicense + phoneComm + mealsEntertainment + otherExpense;
                     const grossProfit = revenue - cogs;
                     const operatingIncome = grossProfit - totalOpex;
-                    const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, netIncome };
+                    const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                    const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
+                    const netIncome = incomeBeforeTax - totalIncomeTaxes;
+                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, benefits, taxLicense, phoneComm, mealsEntertainment, otherExpense, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, incomeBeforeTax, stateIncomeTaxes, federalIncomeTaxes, totalIncomeTaxes, netIncome };
                   });
                   const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -20347,6 +11185,50 @@ function FinancialScorePage() {
                             {periodsData.some(p => p.extraordinaryItems !== 0) && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
                           </>
                         )}
+                        <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#f1f5f9', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', color: '#0f172a' }}>
+                          <div>Income Before Tax</div>
+                          {periodsData.map((p, i) => {
+                            const pct = p.revenue > 0 ? (p.incomeBeforeTax / p.revenue) * 100 : 0;
+                            return (
+                              <div key={i} style={{ display: 'contents' }}>
+                                <div style={{ textAlign: 'right' }}>${p.incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                                <div style={{ textAlign: 'right', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {periodsData.some(p => {
+                          const stateTax = Number(p.stateIncomeTaxes) || 0;
+                          const federalTax = Number(p.federalIncomeTaxes) || 0;
+                          return stateTax !== 0 || federalTax !== 0;
+                        }) ? (
+                          <>
+                            <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Income Taxes</div>
+                            {periodsData.some(p => {
+                              const stateTax = Number(p.stateIncomeTaxes) || 0;
+                              return stateTax !== 0;
+                            }) && <RowWithPercent label="State Income Taxes" values={periodsData.map(p => {
+                              const stateTax = Number(p.stateIncomeTaxes) || 0;
+                              return -Math.abs(stateTax);
+                            })} indent={20} />}
+                            {periodsData.some(p => {
+                              const federalTax = Number(p.federalIncomeTaxes) || 0;
+                              return federalTax !== 0;
+                            }) && <RowWithPercent label="Federal Income Taxes" values={periodsData.map(p => {
+                              const federalTax = Number(p.federalIncomeTaxes) || 0;
+                              return -Math.abs(federalTax);
+                            })} indent={20} />}
+                          </>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', marginTop: '12px' }}>
+                            <div style={{ color: '#94a3b8', fontStyle: 'italic' }}>Income Taxes</div>
+                            {periodsData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#94a3b8', fontStyle: 'italic' }}>No income taxes recorded</div>
+                            ))}
+                          </div>
+                        )}
+
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '12px 8px', background: '#dcfce7', borderRadius: '4px', margin: '12px 0 0', fontWeight: '700', fontSize: '15px' }}>
                           <div style={{ color: '#166534' }}>Net Income</div>
                           {periodsData.map((p, i) => {
@@ -20380,9 +11262,10 @@ function FinancialScorePage() {
 
                 // Dynamically calculate operating expense fields only - Complete list matching DataReviewTab
                 const expenseFields = [
-                  'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
-                  'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
-                  'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
+                  'payroll', 'ownerBasePay', 'ownersRetirement', 'benefits', 'insurance', 
+                  'professionalFees', 'subcontractors', 'rent', 'taxLicense', 'phoneComm', 
+                  'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 
+                  'mealsEntertainment', 'depreciationAmortization', 'otherExpense'
                 ];
 
                 const expenses: { [key: string]: number } = {};
@@ -20399,7 +11282,11 @@ function FinancialScorePage() {
                 const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                 const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
                 
-                const netIncome = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const stateIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+                const federalIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
+                const netIncome = incomeBeforeTax - totalIncomeTaxes;
                 
                 const calcPercent = (value: number) => revenue > 0 ? ((value / revenue) * 100).toFixed(1) + '%' : '0.0%';
                 
@@ -20562,6 +11449,34 @@ function FinancialScorePage() {
                               <div style={{ textAlign: 'right', color: '#64748b' }}>
                                 {extraordinaryItems >= 0 ? calcPercent(extraordinaryItems) : `(${calcPercent(Math.abs(extraordinaryItems))})`}
                               </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Income Before Tax */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '12px 8px', background: '#f1f5f9', borderRadius: '6px', marginTop: '16px', fontWeight: '700', color: '#0f172a' }}>
+                        <div>Income Before Tax</div>
+                        <div style={{ textAlign: 'right' }}>${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                        <div style={{ textAlign: 'right' }}>{calcPercent(incomeBeforeTax)}</div>
+                      </div>
+
+                      {/* Income Taxes */}
+                      {(stateIncomeTaxes > 0 || federalIncomeTaxes > 0) && (
+                        <div style={{ marginTop: '16px' }}>
+                          <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Income Taxes</div>
+                          {stateIncomeTaxes > 0 && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b' }}>State Income Taxes</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>(${stateIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(stateIncomeTaxes)})</div>
+                            </div>
+                          )}
+                          {federalIncomeTaxes > 0 && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b' }}>Federal Income Taxes</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>(${federalIncomeTaxes.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(federalIncomeTaxes)})</div>
                             </div>
                           )}
                         </div>
@@ -20955,8 +11870,7 @@ function FinancialScorePage() {
           {financialStatementsTab === 'line-of-business' && (
             <LOBReportingTab
               company={company}
-              monthly={monthly}
-              qbRawData={qbRawData}
+              selectedCompanyId={selectedCompanyId}
               accountMappings={aiMappings}
               statementType={statementType}
               selectedLineOfBusiness={selectedLineOfBusiness}
@@ -20966,6 +11880,10 @@ function FinancialScorePage() {
               onLineOfBusinessChange={setSelectedLineOfBusiness}
               onPeriodChange={setStatementPeriod}
               onDisplayChange={setStatementDisplay}
+              onNavigateToAccountMappings={() => {
+                setCurrentView('admin');
+                setAdminDashboardTab('data-mapping');
+              }}
             />
           )}
         </div>
@@ -21652,7 +12570,7 @@ function FinancialScorePage() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>🗑️</div>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒ï¸</div>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Delete Company</h2>
               <p style={{ fontSize: '16px', color: '#64748b', lineHeight: '1.6' }}>
                 Are you sure you want to delete <strong style={{ color: '#ef4444' }}>"{companyToDelete.companyName}"</strong>?

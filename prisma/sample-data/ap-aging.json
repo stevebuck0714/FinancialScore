@@ -1,0 +1,118 @@
+{
+  "totalAP": 65000,
+  "current": 35000,
+  "days1to30": 18000,
+  "days31to60": 8000,
+  "days61to90": 3000,
+  "days90plus": 1000,
+  "breakdown": [
+    {
+      "vendorName": "Office Supplies Inc",
+      "totalDue": 12000,
+      "current": 8000,
+      "days1to30": 3000,
+      "days31to60": 1000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "Tech Equipment Supplier",
+      "totalDue": 10000,
+      "current": 6000,
+      "days1to30": 3000,
+      "days31to60": 1000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "Wholesale Materials",
+      "totalDue": 8500,
+      "current": 5000,
+      "days1to30": 2500,
+      "days31to60": 1000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "Maintenance Services",
+      "totalDue": 7000,
+      "current": 4000,
+      "days1to30": 2000,
+      "days31to60": 1000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "Marketing Agency",
+      "totalDue": 6000,
+      "current": 3000,
+      "days1to30": 2000,
+      "days31to60": 1000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "Utilities Provider",
+      "totalDue": 5500,
+      "current": 3000,
+      "days1to30": 1500,
+      "days31to60": 1000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "Insurance Company",
+      "totalDue": 5000,
+      "current": 2000,
+      "days1to30": 2000,
+      "days31to60": 1000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "Freight & Logistics",
+      "totalDue": 4000,
+      "current": 2000,
+      "days1to30": 1000,
+      "days31to60": 1000,
+      "days61to90": 0,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "Professional Services",
+      "totalDue": 3500,
+      "current": 1000,
+      "days1to30": 1000,
+      "days31to60": 1000,
+      "days61to90": 500,
+      "days90plus": 0
+    },
+    {
+      "vendorName": "IT Support Services",
+      "totalDue": 2500,
+      "current": 1000,
+      "days1to30": 0,
+      "days31to60": 0,
+      "days61to90": 1000,
+      "days90plus": 500
+    },
+    {
+      "vendorName": "Cleaning Services",
+      "totalDue": 1000,
+      "current": 0,
+      "days1to30": 0,
+      "days31to60": 0,
+      "days61to90": 500,
+      "days90plus": 500
+    }
+  ]
+}
+
+
+
+
+
+
+
+
+

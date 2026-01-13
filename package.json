@@ -7,7 +7,7 @@
     "dev": "node server.js",
     "dev:vercel": "node scripts/clean-dev-servers.js && next dev",
     "dev:clean": "node scripts/clean-dev-servers.js",
-    "build": "next build",
+    "build": "prisma generate && node scripts/check-deploy-block.js && next build",
     "start": "node server.js",
     "start:vercel": "next start",
     "lint": "next lint",
@@ -17,12 +17,14 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:operational": "tsx prisma/seed-operational-data.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "db:clear-users": "tsx scripts/clear-users.ts",
     "db:clear-all": "tsx scripts/clear-all-users.ts",
     "db:update-admin": "tsx scripts/update-admin-email.ts",
-    "import:benchmarks": "tsx scripts/import-benchmarks.ts"
+    "import:benchmarks": "tsx scripts/import-benchmarks.ts",
+    "cleanup:devices": "tsx scripts/cleanup-expired-devices.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -45,13 +47,18 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hot-toast": "^2.6.0",
+    "recharts": "^3.6.0",
     "resend": "^6.3.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "speakeasy": "^2.0.0",
-    "xlsx": "^0.18.5"
+    "xero-node": "^13.3.0",
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.4"
   },
   "devDependencies": {
+    "@babel/parser": "^7.28.5",
+    "@babel/types": "^7.28.5",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",

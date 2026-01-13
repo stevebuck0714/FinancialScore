@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireCompanyAccess } from '@/lib/tenant-security';
+import { auditFinancialAccess, auditForbiddenAccess } from '@/lib/audit-logger';
+import { financialQuerySchema, validateInput } from '@/lib/validation-schemas';
 
 // GET financial records for a company
 export async function GET(request: NextRequest) {
@@ -7,6 +10,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('companyId');
 
+    // Validate input
     if (!companyId) {
       return NextResponse.json(
         { error: 'Company ID required' },
@@ -14,6 +18,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // SECURITY: Validate tenant access
+    try {
+      await requireCompanyAccess(companyId);
+    } catch (error) {
+      await auditForbiddenAccess('FinancialRecord', companyId, 'READ');
+      return NextResponse.json(
+        { error: 'Forbidden: Access to this company denied' },
+        { status: 403 }
+      );
+    }
+
+    // Fetch records (user has validated access)
     const records = await prisma.financialRecord.findMany({
       where: { companyId },
       include: {
@@ -23,6 +39,11 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: 'desc' }
     });
+
+    // AUDIT: Log financial data access
+    if (records.length > 0) {
+      await auditFinancialAccess('FINANCIAL_RECORD_VIEWED', records[0].id, companyId);
+    }
 
     return NextResponse.json({ records });
   } catch (error) {
@@ -37,12 +58,34 @@ export async function GET(request: NextRequest) {
 // POST create/upload new financial record
 export async function POST(request: NextRequest) {
   try {
-    const { companyId, uploadedByUserId, fileName, rawData, columnMapping, monthlyData } = await request.json();
+    const body = await request.json();
+    const { companyId, uploadedByUserId, fileName, rawData, columnMapping, monthlyData } = body;
 
+    // Validate required fields
     if (!companyId || !uploadedByUserId || !fileName || !rawData || !columnMapping) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
+      );
+    }
+
+    // SECURITY: Validate tenant access
+    try {
+      await requireCompanyAccess(companyId);
+    } catch (error) {
+      await auditForbiddenAccess('FinancialRecord', companyId, 'CREATE');
+      return NextResponse.json(
+        { error: 'Forbidden: Access to this company denied' },
+        { status: 403 }
+      );
+    }
+
+    // SECURITY: Validate uploaded by user matches authenticated user
+    const context = await requireCompanyAccess(companyId);
+    if (uploadedByUserId !== context.userId && context.role !== 'SITEADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden: Cannot upload as another user' },
+        { status: 403 }
       );
     }
 
@@ -94,6 +137,8 @@ export async function POST(request: NextRequest) {
             subcontractors: month.subcontractors || 0,
             rent: month.rent || 0,
             taxLicense: month.taxLicense || 0,
+            stateIncomeTaxes: month.stateIncomeTaxes || 0,
+            federalIncomeTaxes: month.federalIncomeTaxes || 0,
             phoneComm: month.phoneComm || 0,
             infrastructure: month.infrastructure || 0,
             autoTravel: month.autoTravel || 0,
@@ -139,6 +184,14 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // AUDIT: Log financial record creation
+    await auditFinancialAccess('FINANCIAL_RECORD_CREATED', financialRecord.id, companyId, {
+      fileName,
+      monthCount: financialRecord.monthlyData.length,
+    });
+
+    console.log(`✅ Financial record created with ${financialRecord.monthlyData.length} months of data`);
+
     return NextResponse.json({ record: financialRecord }, { status: 201 });
   } catch (error) {
     console.error('Error creating financial record:', error);
@@ -162,8 +215,38 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // SECURITY: First, check if record exists and get its companyId
+    const record = await prisma.financialRecord.findUnique({
+      where: { id },
+      select: { id: true, companyId: true, fileName: true }
+    });
+
+    if (!record) {
+      return NextResponse.json(
+        { error: 'Record not found' },
+        { status: 404 }
+      );
+    }
+
+    // SECURITY: Validate tenant access to the company
+    try {
+      await requireCompanyAccess(record.companyId);
+    } catch (error) {
+      await auditForbiddenAccess('FinancialRecord', id, 'DELETE');
+      return NextResponse.json(
+        { error: 'Forbidden: Access to this company denied' },
+        { status: 403 }
+      );
+    }
+
+    // Delete the record (cascading delete will handle monthly data)
     await prisma.financialRecord.delete({
       where: { id }
+    });
+
+    // AUDIT: Log deletion
+    await auditFinancialAccess('FINANCIAL_RECORD_DELETED', id, record.companyId, {
+      fileName: record.fileName,
     });
 
     return NextResponse.json({ success: true });

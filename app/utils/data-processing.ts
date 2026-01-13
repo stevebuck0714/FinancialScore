@@ -5,28 +5,52 @@ import type { Mappings, NormalRow } from '../types';
 import { KPI_TO_BENCHMARK_MAP } from '../constants';
 
 export function getBenchmarkValue(benchmarks: any[], metricName: string): number | null {
-  if (!benchmarks || benchmarks.length === 0) return null;
+  if (!benchmarks || benchmarks.length === 0) {
+    console.log(`[getBenchmarkValue] No benchmarks array for "${metricName}"`);
+    return null;
+  }
   
-  // Try exact match first
-  const exactMatch = benchmarks.find(b => b.metricName === metricName);
-  if (exactMatch && exactMatch.fiveYearValue != null) {
+  // Normalize metric name (trim whitespace)
+  const normalizedMetricName = metricName.trim();
+  
+  // Try exact match first (case-insensitive)
+  const exactMatch = benchmarks.find(b => 
+    b.metricName && b.metricName.trim().toLowerCase() === normalizedMetricName.toLowerCase()
+  );
+  if (exactMatch && exactMatch.fiveYearValue != null && !isNaN(exactMatch.fiveYearValue)) {
+    console.log(`[getBenchmarkValue] Found exact match for "${metricName}": ${exactMatch.fiveYearValue}`);
     return exactMatch.fiveYearValue;
   }
   
   // Try all possible mapped names
   const possibleNames = KPI_TO_BENCHMARK_MAP[metricName];
-  if (possibleNames) {
+  if (possibleNames && Array.isArray(possibleNames)) {
     for (const name of possibleNames) {
-      const match = benchmarks.find(b => b.metricName === name);
-      if (match && match.fiveYearValue != null) {
+      const match = benchmarks.find(b => 
+        b.metricName && b.metricName.trim().toLowerCase() === name.trim().toLowerCase()
+      );
+      if (match && match.fiveYearValue != null && !isNaN(match.fiveYearValue)) {
+        console.log(`[getBenchmarkValue] Found mapped match for "${metricName}" via "${name}": ${match.fiveYearValue}`);
         return match.fiveYearValue;
       }
     }
   }
   
+  // Try case-insensitive partial match as fallback
+  const partialMatch = benchmarks.find(b => 
+    b.metricName && b.metricName.trim().toLowerCase().includes(normalizedMetricName.toLowerCase()) ||
+    normalizedMetricName.toLowerCase().includes(b.metricName?.trim().toLowerCase() || '')
+  );
+  if (partialMatch && partialMatch.fiveYearValue != null && !isNaN(partialMatch.fiveYearValue)) {
+    console.log(`[getBenchmarkValue] Found partial match for "${metricName}" via "${partialMatch.metricName}": ${partialMatch.fiveYearValue}`);
+    return partialMatch.fiveYearValue;
+  }
+  
   // Log missing benchmark for debugging
   if (benchmarks.length > 0) {
-    console.log(`No benchmark found for "${metricName}". Available: ${benchmarks.map(b => b.metricName).slice(0, 5).join(', ')}...`);
+    const availableNames = benchmarks.map(b => b.metricName).filter(Boolean).slice(0, 10);
+    console.warn(`[getBenchmarkValue] No benchmark found for "${metricName}". Available metrics (first 10):`, availableNames);
+    console.warn(`[getBenchmarkValue] Total benchmarks loaded: ${benchmarks.length}`);
   }
   
   return null;

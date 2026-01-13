@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { requireAuth, validateCompanyAccess, validateConsultantAccess, getCompanyAccessFilter } from "@/lib/tenant-security";
+import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger";
 
 // GET all companies (optionally filtered by consultant or company ID)
 export async function GET(request: NextRequest) {
   try {
     console.log("🔍 Companies API called");
+    
+    // SECURITY: Require authentication
+    const context = await requireAuth();
+    
     const { searchParams } = new URL(request.url);
     const consultantId = searchParams.get("consultantId");
     const companyId = searchParams.get("companyId");
@@ -12,13 +18,32 @@ export async function GET(request: NextRequest) {
       ? parseInt(searchParams.get("limit")!)
       : undefined;
 
-    let where: any = {};
+    // SECURITY: Build where clause based on user access
+    let where: any = await getCompanyAccessFilter();
 
+    // SECURITY: Validate consultant access if consultantId filter is requested
     if (consultantId) {
+      const hasAccess = await validateConsultantAccess(consultantId);
+      if (!hasAccess) {
+        await auditForbiddenAccess('Company', consultantId, 'READ_BY_CONSULTANT');
+        return NextResponse.json(
+          { error: 'Forbidden: Access to this consultant denied' },
+          { status: 403 }
+        );
+      }
       where.consultantId = consultantId;
     }
 
+    // SECURITY: Validate company access if specific companyId is requested
     if (companyId) {
+      const hasAccess = await validateCompanyAccess(companyId);
+      if (!hasAccess) {
+        await auditForbiddenAccess('Company', companyId, 'READ');
+        return NextResponse.json(
+          { error: 'Forbidden: Access to this company denied' },
+          { status: 403 }
+        );
+      }
       where.id = companyId;
     }
 
@@ -37,23 +62,26 @@ export async function GET(request: NextRequest) {
         linesOfBusiness: true,
         userDefinedAllocations: true,
         createdAt: true,
-        // Skip problematic fields in production
+        // Always include pricing fields - they're needed for payment logic
+        subscriptionMonthlyPrice: true,
+        subscriptionQuarterlyPrice: true,
+        subscriptionAnnualPrice: true,
+        // Skip affiliateCode in production (not needed)
         ...(process.env.NODE_ENV === "production"
           ? {}
           : {
               affiliateCode: true,
-              subscriptionMonthlyPrice: true,
-              subscriptionQuarterlyPrice: true,
-              subscriptionAnnualPrice: true,
             }),
       },
       orderBy: { createdAt: "desc" },
       take: limit,
     });
 
-    console.log(`Retrieved ${companies.length} companies`);
-    if (companies.length > 0) {
-      console.log("First company:", companies[0]);
+    console.log(`Retrieved ${companies.length} companies for user ${context.email}`);
+
+    // AUDIT: Log company access (only log if viewing specific company)
+    if (companyId && companies.length > 0) {
+      await auditCompanyOperation('COMPANY_VIEWED', companyId);
     }
 
     return NextResponse.json({ companies });
@@ -72,6 +100,19 @@ export async function POST(request: NextRequest) {
   console.log("🔍 NODE_ENV:", process.env.NODE_ENV);
   try {
     console.log("🔍 ===== STARTING COMPANY CREATION =====");
+
+    // SECURITY: Require authentication
+    let context;
+    try {
+      context = await requireAuth();
+      console.log("🔍 Authenticated user:", context.email, "Role:", context.role, "ConsultantId:", context.consultantId);
+    } catch (authError) {
+      console.error("❌ Authentication failed:", authError);
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication required" },
+        { status: 401 },
+      );
+    }
 
     let requestBody;
     try {
@@ -142,6 +183,47 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Consultant not found" },
         { status: 404 },
+      );
+    }
+
+    // SECURITY: Validate consultant access - ensure user can create companies for this consultant
+    console.log("🔍 Validating consultant access:");
+    console.log("   User role:", context.role);
+    console.log("   User consultantId:", context.consultantId);
+    console.log("   Target consultantId:", consultantId);
+    
+    // Site admins can create companies for any consultant
+    if (context.role === 'SITEADMIN') {
+      console.log("✅ Site admin access - validation passed");
+    } 
+    // Consultants can only create companies for themselves
+    else if (context.role === 'CONSULTANT') {
+      if (context.consultantId !== consultantId) {
+        console.error("❌ Consultant trying to create company for different consultant");
+        console.error("   User consultantId:", context.consultantId);
+        console.error("   Requested consultantId:", consultantId);
+        await auditForbiddenAccess('Company', consultantId, 'CREATE_FOR_CONSULTANT');
+        return NextResponse.json(
+          { 
+            error: 'Forbidden: You can only create companies for yourself',
+            debug: {
+              userRole: context.role,
+              userConsultantId: context.consultantId,
+              targetConsultantId: consultantId
+            }
+          },
+          { status: 403 }
+        );
+      }
+      console.log("✅ Consultant access validated - creating company for self");
+    } 
+    // Other roles cannot create companies
+    else {
+      console.error("❌ User role cannot create companies:", context.role);
+      await auditForbiddenAccess('Company', consultantId, 'CREATE_FOR_CONSULTANT');
+      return NextResponse.json(
+        { error: 'Forbidden: Only consultants and site admins can create companies' },
+        { status: 403 }
       );
     }
 
@@ -262,10 +344,10 @@ export async function POST(request: NextRequest) {
           data: { currentUses: affiliateCodeBasic.currentUses + 1 },
         });
 
-        // Use affiliate pricing
-        monthlyPrice = affiliateCodeBasic.monthlyPrice;
-        quarterlyPrice = affiliateCodeBasic.quarterlyPrice;
-        annualPrice = affiliateCodeBasic.annualPrice;
+        // Use affiliate pricing - ensure $0 values are stored as 0, not null
+        monthlyPrice = affiliateCodeBasic.monthlyPrice ?? 0;
+        quarterlyPrice = affiliateCodeBasic.quarterlyPrice ?? 0;
+        annualPrice = affiliateCodeBasic.annualPrice ?? 0;
         affiliateId = affiliateCodeBasic.affiliateId;
         validatedAffiliateCode = affiliateCodeBasic.code;
         useAffiliatePricing = true;
@@ -416,29 +498,31 @@ export async function POST(request: NextRequest) {
           industrySector,
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES WORK IN BOTH ENVIRONMENTS
           // Always store pricing fields regardless of environment for affiliate codes
-          subscriptionMonthlyPrice: monthlyPrice,
-          subscriptionQuarterlyPrice: quarterlyPrice,
-          subscriptionAnnualPrice: annualPrice,
+          // Ensure $0 values are stored as 0, not null
+          subscriptionMonthlyPrice: monthlyPrice ?? 0,
+          subscriptionQuarterlyPrice: quarterlyPrice ?? 0,
+          subscriptionAnnualPrice: annualPrice ?? 0,
           subscriptionStatus:
             monthlyPrice === 0 &&
             quarterlyPrice === 0 &&
             annualPrice === 0
               ? "free"
               : "active",
-          // Store pricing in userDefinedAllocations for affiliate codes (works in all environments)
-          userDefinedAllocations: {
+          // Store pricing in userDefinedAllocations (only for affiliate codes, not for default pricing)
+          // Only store userDefinedAllocations if affiliate code was used
+          userDefinedAllocations: useAffiliatePricing ? {
             subscriptionPricing: {
-              monthly: monthlyPrice,
-              quarterly: quarterlyPrice,
-              annual: annualPrice,
+              monthly: monthlyPrice ?? 0,
+              quarterly: quarterlyPrice ?? 0,
+              annual: annualPrice ?? 0,
               isFree:
-                monthlyPrice === 0 &&
-                quarterlyPrice === 0 &&
-                annualPrice === 0,
+                (monthlyPrice ?? 0) === 0 &&
+                (quarterlyPrice ?? 0) === 0 &&
+                (annualPrice ?? 0) === 0,
               source: "affiliate_code",
               createdAt: new Date().toISOString(),
             },
-          },
+          } : undefined,
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },
@@ -464,6 +548,9 @@ export async function POST(request: NextRequest) {
       });
 
       console.log("🔍 Company created successfully:", company);
+
+      // AUDIT: Log company creation
+      await auditCompanyOperation('COMPANY_CREATED', company.id);
 
       // Transform the response to include consultantId (pricing is now stored in DB)
       const transformedCompany = {
@@ -533,6 +620,11 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     console.log("🔄 ===== PATCH REQUEST RECEIVED =====");
+    
+    // SECURITY: Require authentication
+    const context = await requireAuth();
+    console.log("🔄 Authenticated user:", context.email, "Role:", context.role);
+    
     const body = await request.json();
     console.log("🔄 Request body:", body);
 
@@ -545,6 +637,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(
         { error: "Company ID required" },
         { status: 400 },
+      );
+    }
+
+    // SECURITY: Validate company access
+    const hasAccess = await validateCompanyAccess(targetCompanyId);
+    if (!hasAccess) {
+      console.error("❌ User does not have access to company:", targetCompanyId);
+      await auditForbiddenAccess('Company', targetCompanyId, 'UPDATE');
+      return NextResponse.json(
+        { error: 'Forbidden: You do not have permission to update this company' },
+        { status: 403 }
       );
     }
 
@@ -613,6 +716,10 @@ export async function PATCH(request: NextRequest) {
     });
 
     console.log("✅ Company updated successfully:", company);
+    
+    // AUDIT: Log company update
+    await auditCompanyOperation('COMPANY_UPDATED', targetCompanyId);
+    
     return NextResponse.json({ company }, { status: 200 });
   } catch (error: any) {
     console.error("❌ ===== PATCH ERROR =====");
@@ -633,8 +740,20 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE company
 export async function DELETE(request: NextRequest) {
-  return NextResponse.json(
-    { error: "DELETE function temporarily disabled" },
-    { status: 500 },
-  );
+  try {
+    // SECURITY: Require authentication
+    const context = await requireAuth();
+    console.log("🗑️ Authenticated user:", context.email, "Role:", context.role);
+    
+    return NextResponse.json(
+      { error: "DELETE function temporarily disabled" },
+      { status: 500 },
+    );
+  } catch (error: any) {
+    console.error("❌ DELETE error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete company", details: error.message },
+      { status: 500 }
+    );
+  }
 }

@@ -1,0 +1,131 @@
+[
+  {
+    "customerName": "Tech Innovations Inc",
+    "revenue": 125000,
+    "invoiceCount": 8,
+    "avgInvoiceSize": 15625
+  },
+  {
+    "customerName": "Global Manufacturing Corp",
+    "revenue": 95000,
+    "invoiceCount": 12,
+    "avgInvoiceSize": 7916.67
+  },
+  {
+    "customerName": "Retail Solutions Ltd",
+    "revenue": 78000,
+    "invoiceCount": 15,
+    "avgInvoiceSize": 5200
+  },
+  {
+    "customerName": "Healthcare Systems Inc",
+    "revenue": 62000,
+    "invoiceCount": 6,
+    "avgInvoiceSize": 10333.33
+  },
+  {
+    "customerName": "Education Partners",
+    "revenue": 48000,
+    "invoiceCount": 10,
+    "avgInvoiceSize": 4800
+  },
+  {
+    "customerName": "Financial Services Group",
+    "revenue": 42000,
+    "invoiceCount": 7,
+    "avgInvoiceSize": 6000
+  },
+  {
+    "customerName": "Construction Co",
+    "revenue": 35000,
+    "invoiceCount": 5,
+    "avgInvoiceSize": 7000
+  },
+  {
+    "customerName": "Transport Logistics",
+    "revenue": 28000,
+    "invoiceCount": 9,
+    "avgInvoiceSize": 3111.11
+  },
+  {
+    "customerName": "Restaurant Group LLC",
+    "revenue": 22000,
+    "invoiceCount": 11,
+    "avgInvoiceSize": 2000
+  },
+  {
+    "customerName": "Legal Associates",
+    "revenue": 18000,
+    "invoiceCount": 4,
+    "avgInvoiceSize": 4500
+  },
+  {
+    "customerName": "Marketing Agency",
+    "revenue": 15000,
+    "invoiceCount": 6,
+    "avgInvoiceSize": 2500
+  },
+  {
+    "customerName": "Software Startup",
+    "revenue": 12000,
+    "invoiceCount": 8,
+    "avgInvoiceSize": 1500
+  },
+  {
+    "customerName": "Real Estate Developers",
+    "revenue": 9500,
+    "invoiceCount": 3,
+    "avgInvoiceSize": 3166.67
+  },
+  {
+    "customerName": "Insurance Brokers",
+    "revenue": 6800,
+    "invoiceCount": 4,
+    "avgInvoiceSize": 1700
+  },
+  {
+    "customerName": "Professional Services",
+    "revenue": 4200,
+    "invoiceCount": 5,
+    "avgInvoiceSize": 840
+  },
+  {
+    "customerName": "Energy Solutions",
+    "revenue": 3500,
+    "invoiceCount": 2,
+    "avgInvoiceSize": 1750
+  },
+  {
+    "customerName": "Telecom Partners",
+    "revenue": 2800,
+    "invoiceCount": 3,
+    "avgInvoiceSize": 933.33
+  },
+  {
+    "customerName": "Consulting Firm",
+    "revenue": 2200,
+    "invoiceCount": 4,
+    "avgInvoiceSize": 550
+  },
+  {
+    "customerName": "Media Company",
+    "revenue": 1500,
+    "invoiceCount": 2,
+    "avgInvoiceSize": 750
+  },
+  {
+    "customerName": "Other Customers (Combined)",
+    "revenue": 8500,
+    "invoiceCount": 22,
+    "avgInvoiceSize": 386.36
+  }
+]
+
+
+
+
+
+
+
+
+

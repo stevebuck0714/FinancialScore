@@ -460,6 +460,96 @@ export async function POST(request: NextRequest) {
         data: monthlyRecords,
       });
       recordsImported = monthlyRecords.length;
+
+      // NEW: Save to Master Data API for unified reporting
+      console.log('💾 Saving processed data to Master Data API...');
+      try {
+        const masterDataPayload = {
+          companyId,
+          monthlyData: monthlyRecords.map(record => ({
+            date: record.monthDate.toISOString().split('T')[0], // YYYY-MM-DD format
+            revenue: record.revenue,
+            expense: record.expense,
+            cogsTotal: record.cogsTotal,
+            payroll: 0, // Will be allocated from expense
+            ownerBasePay: 0,
+            benefits: 0,
+            insurance: 0,
+            professionalFees: 0,
+            subcontractors: 0,
+            rent: 0,
+            taxLicense: 0,
+            phoneComm: 0,
+            infrastructure: 0,
+            autoTravel: 0,
+            salesExpense: 0,
+            marketing: 0,
+            trainingCert: 0,
+            mealsEntertainment: 0,
+            interestExpense: 0,
+            depreciationAmortization: 0,
+            otherExpense: 0,
+            nonOperatingIncome: 0,
+            extraordinaryItems: 0,
+            netProfit: 0,
+            cash: record.cash,
+            ar: record.ar,
+            inventory: record.inventory,
+            otherCA: record.otherCA,
+            tca: record.tca,
+            fixedAssets: record.fixedAssets,
+            otherAssets: record.otherAssets,
+            totalAssets: record.totalAssets,
+            ap: record.ap,
+            otherCL: record.otherCL,
+            tcl: record.tcl,
+            ltd: record.ltd,
+            totalLiab: record.totalLiab,
+            ownersCapital: record.ownersCapital,
+            ownersDraw: record.ownersDraw,
+            commonStock: record.commonStock,
+            preferredStock: record.preferredStock,
+            retainedEarnings: record.retainedEarnings,
+            additionalPaidInCapital: record.additionalPaidInCapital,
+            treasuryStock: record.treasuryStock,
+            totalEquity: record.totalEquity,
+            totalLAndE: record.totalLAndE,
+            revenueBreakdown: record.revenueBreakdown,
+            expenseBreakdown: record.expenseBreakdown,
+            cogsBreakdown: record.cogsBreakdown,
+            lobBreakdowns: record.lobBreakdowns
+          })),
+          metadata: {
+            source: 'quickbooks',
+            externalId: realmId,
+            syncDate: new Date().toISOString(),
+            lastSync: new Date().toISOString(),
+            version: '1.0',
+            intuitTid: intuitTid,
+            recordsProcessed: recordsImported
+          }
+        };
+
+        const masterDataResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/master-data`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(masterDataPayload)
+        });
+
+        if (masterDataResponse.ok) {
+          const masterDataResult = await masterDataResponse.json();
+          console.log('✅ Master data saved successfully:', masterDataResult);
+        } else {
+          const errorText = await masterDataResponse.text();
+          console.error('❌ Failed to save master data:', masterDataResponse.status, errorText);
+          // Don't fail the entire sync if master data save fails
+        }
+      } catch (masterDataError) {
+        console.error('❌ Error saving to master data:', masterDataError);
+        // Don't fail the entire sync if master data save fails
+      }
     }
 
     // Update connection status

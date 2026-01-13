@@ -3,11 +3,10 @@
 import React from 'react';
 import TeamManagementTab from '../dashboard/TeamManagementTab';
 import CompanyListTab from './CompanyListTab';
+// import CovenantsTab from '../../covenants/components/CovenantsTab'; // Removed - covenants only in Company Management
 
 interface ConsultantDashboardProps {
-  currentUser: {
-    isPrimaryContact?: boolean;
-  };
+  currentUser: any;
   consultantDashboardTab: string;
   setConsultantDashboardTab: (tab: string) => void;
   consultantTeamMembers: any[];
@@ -31,6 +30,9 @@ interface ConsultantDashboardProps {
   setCompanyToDelete: (company: { companyId: string; businessId: string; companyName: string }) => void;
   setShowDeleteConfirmation: (show: boolean) => void;
   isLoading: boolean;
+  selectedCompanyId?: string;
+  monthly?: any[];
+  companyName?: string;
 }
 
 export default function ConsultantDashboard({
@@ -51,7 +53,10 @@ export default function ConsultantDashboard({
   setCompanyManagementSubTab,
   setCompanyToDelete,
   setShowDeleteConfirmation,
-  isLoading
+  isLoading,
+  selectedCompanyId,
+  monthly,
+  companyName
 }: ConsultantDashboardProps) {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
@@ -63,6 +68,23 @@ export default function ConsultantDashboard({
 
       {/* Tab Navigation */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
+        <button
+          onClick={() => setConsultantDashboardTab('company-list')}
+          style={{
+            padding: '12px 24px',
+            background: consultantDashboardTab === 'company-list' ? '#667eea' : 'transparent',
+            color: consultantDashboardTab === 'company-list' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: consultantDashboardTab === 'company-list' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '8px 8px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Company List
+        </button>
         {currentUser?.isPrimaryContact && (
           <button
             onClick={() => setConsultantDashboardTab('team-management')}
@@ -82,24 +104,20 @@ export default function ConsultantDashboard({
             Team Management
           </button>
         )}
-        <button
-          onClick={() => setConsultantDashboardTab('company-list')}
-          style={{
-            padding: '12px 24px',
-            background: consultantDashboardTab === 'company-list' ? '#667eea' : 'transparent',
-            color: consultantDashboardTab === 'company-list' ? 'white' : '#64748b',
-            border: 'none',
-            borderBottom: consultantDashboardTab === 'company-list' ? '3px solid #667eea' : '3px solid transparent',
-            fontSize: '16px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
-            transition: 'all 0.2s'
-          }}
-        >
-          Company List
-        </button>
       </div>
+
+      {/* Company List Tab */}
+      {consultantDashboardTab === 'company-list' && (
+        <CompanyListTab
+          companies={companies}
+          setCurrentView={setCurrentView}
+          setSelectedCompanyId={setSelectedCompanyId}
+          setAdminDashboardTab={setAdminDashboardTab}
+          setCompanyManagementSubTab={setCompanyManagementSubTab}
+          setCompanyToDelete={setCompanyToDelete}
+          setShowDeleteConfirmation={setShowDeleteConfirmation}
+        />
+      )}
 
       {/* Team Management Tab */}
       {consultantDashboardTab === 'team-management' && currentUser?.isPrimaryContact && (
@@ -115,18 +133,6 @@ export default function ConsultantDashboard({
         />
       )}
 
-      {/* Company List Tab */}
-      {consultantDashboardTab === 'company-list' && (
-        <CompanyListTab
-          companies={companies}
-          setCurrentView={setCurrentView}
-          setSelectedCompanyId={setSelectedCompanyId}
-          setAdminDashboardTab={setAdminDashboardTab}
-          setCompanyManagementSubTab={setCompanyManagementSubTab}
-          setCompanyToDelete={setCompanyToDelete}
-          setShowDeleteConfirmation={setShowDeleteConfirmation}
-        />
-      )}
     </div>
   );
 }

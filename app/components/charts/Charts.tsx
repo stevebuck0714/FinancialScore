@@ -69,25 +69,35 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
     <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', margin: 0 }}>{title}</h3>
-        {showFormulaButton && (
+        {showFormulaButton && onFormulaClick && (
           <button
             onClick={onFormulaClick}
             style={{
-              background: 'none',
-              border: 'none',
+              background: '#ede9fe',
+              border: '1px solid #c4b5fd',
+              borderRadius: '6px',
               cursor: 'pointer',
-              padding: '4px 8px',
+              padding: '6px 12px',
               color: '#667eea',
-              fontSize: '14px',
+              fontSize: '13px',
               fontWeight: '600',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px',
-              transition: 'all 0.2s'
+              gap: '6px',
+              transition: 'all 0.2s',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
             }}
-            onMouseOver={(e) => e.currentTarget.style.color = '#4f46e5'}
-            onMouseOut={(e) => e.currentTarget.style.color = '#667eea'}
-            title="View formula"
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = '#ddd6fe';
+              e.currentTarget.style.borderColor = '#a78bfa';
+              e.currentTarget.style.color = '#4f46e5';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = '#ede9fe';
+              e.currentTarget.style.borderColor = '#c4b5fd';
+              e.currentTarget.style.color = '#667eea';
+            }}
+            title="Click to view formula"
           >
             <span style={{ fontSize: '16px' }}>ℹ️</span> Formula
           </button>
@@ -326,8 +336,43 @@ export function ProjectionChart({ title, historicalData, projectedData, valueKey
 }) {
   if (!historicalData || historicalData.length === 0) return null;
   
+  // Format month as MM-YYYY
+  const formatMonth = (monthValue: any): string => {
+    if (!monthValue) return '';
+    
+    // If already in MM-YYYY format, return as is
+    if (typeof monthValue === 'string' && /^\d{2}-\d{4}$/.test(monthValue)) {
+      return monthValue;
+    }
+    
+    // If already in MM/YYYY format, convert to MM-YYYY
+    if (typeof monthValue === 'string' && /^\d{1,2}\/\d{4}$/.test(monthValue)) {
+      const [month, year] = monthValue.split('/');
+      return `${month.padStart(2, '0')}-${year}`;
+    }
+    
+    // If it's a projection month like "+1mo", return as is
+    if (typeof monthValue === 'string' && monthValue.startsWith('+')) {
+      return monthValue;
+    }
+    
+    // Try to parse as date
+    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // If it's a string that doesn't match expected formats, return as is
+      return String(monthValue);
+    }
+    
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${month}-${year}`;
+  };
+  
   const formatter = formatValue || ((v: number) => v.toFixed(1));
-  const hist = historicalData.slice(-12).map(d => ({ month: d.month, value: d[valueKey], type: 'historical' }));
+  const hist = historicalData.slice(-12).map(d => ({ month: formatMonth(d.month), value: d[valueKey], type: 'historical' }));
   const mostLikely = projectedData.mostLikely.map(d => ({ month: d.month, value: d[valueKey], type: 'mostLikely' }));
   const bestCase = projectedData.bestCase.map(d => ({ month: d.month, value: d[valueKey], type: 'bestCase' }));
   const worstCase = projectedData.worstCase.map(d => ({ month: d.month, value: d[valueKey], type: 'worstCase' }));

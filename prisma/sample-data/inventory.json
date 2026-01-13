@@ -1,0 +1,95 @@
+[
+  {
+    "itemName": "Widget Pro - Model A",
+    "sku": "WGT-PRO-A",
+    "qtyOnHand": 1200,
+    "assetValue": 85000,
+    "avgCost": 70.83
+  },
+  {
+    "itemName": "Widget Basic - Model B",
+    "sku": "WGT-BAS-B",
+    "qtyOnHand": 2400,
+    "assetValue": 96000,
+    "avgCost": 40.00
+  },
+  {
+    "itemName": "Hardware Device - Standard",
+    "sku": "HWR-STD-200",
+    "qtyOnHand": 450,
+    "assetValue": 63000,
+    "avgCost": 140.00
+  },
+  {
+    "itemName": "Materials & Supplies",
+    "sku": "MAT-GEN-001",
+    "qtyOnHand": 5000,
+    "assetValue": 60000,
+    "avgCost": 12.00
+  },
+  {
+    "itemName": "Component Part - Type A",
+    "sku": "CMP-A-001",
+    "qtyOnHand": 3200,
+    "assetValue": 44800,
+    "avgCost": 14.00
+  },
+  {
+    "itemName": "Component Part - Type B",
+    "sku": "CMP-B-001",
+    "qtyOnHand": 2800,
+    "assetValue": 39200,
+    "avgCost": 14.00
+  },
+  {
+    "itemName": "Packaging Materials",
+    "sku": "PKG-STD-001",
+    "qtyOnHand": 8000,
+    "assetValue": 16000,
+    "avgCost": 2.00
+  },
+  {
+    "itemName": "Hardware Device - Premium",
+    "sku": "HWR-PRM-300",
+    "qtyOnHand": 180,
+    "assetValue": 43200,
+    "avgCost": 240.00
+  },
+  {
+    "itemName": "Replacement Parts - Set A",
+    "sku": "RPL-SET-A",
+    "qtyOnHand": 600,
+    "assetValue": 18000,
+    "avgCost": 30.00
+  },
+  {
+    "itemName": "Replacement Parts - Set B",
+    "sku": "RPL-SET-B",
+    "qtyOnHand": 450,
+    "assetValue": 13500,
+    "avgCost": 30.00
+  },
+  {
+    "itemName": "Tools & Equipment",
+    "sku": "TLS-EQP-001",
+    "qtyOnHand": 120,
+    "assetValue": 24000,
+    "avgCost": 200.00
+  },
+  {
+    "itemName": "Safety Equipment",
+    "sku": "SFT-EQP-001",
+    "qtyOnHand": 800,
+    "assetValue": 12000,
+    "avgCost": 15.00
+  }
+]
+
+
+
+
+
+
+
+
+
