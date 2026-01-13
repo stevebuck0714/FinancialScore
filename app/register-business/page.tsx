@@ -133,6 +133,16 @@ export default function RegisterBusinessWelcome() {
         return;
       }
 
+      // Use the registration response data directly (already has user info)
+      // Clear any existing session storage
+      sessionStorage.clear();
+      
+      // Store user data in sessionStorage for immediate access after redirect
+      sessionStorage.setItem('pendingLogin', JSON.stringify({
+        user: data.user,
+        timestamp: Date.now()
+      }));
+      
       // Sign in the user after successful registration
       const signInResponse = await fetch('/api/auth/login', {
         method: 'POST',
@@ -143,25 +153,11 @@ export default function RegisterBusinessWelcome() {
         })
       });
 
-      if (signInResponse.ok) {
-        const loginData = await signInResponse.json();
-        // Clear any existing session storage
-        sessionStorage.clear();
-        // Store user data in sessionStorage for immediate access after redirect
-        sessionStorage.setItem('pendingLogin', JSON.stringify({
-          user: loginData.user,
-          timestamp: Date.now()
-        }));
-        // Force logout of any existing session and redirect to main page
-        await fetch('/api/auth/logout', { method: 'POST' });
-        // Redirect to main page (which will show the new Business Dashboard)
-        window.location.href = '/';
-      } else {
-        setError('Registration successful! Please sign in.');
-        setTimeout(() => {
-          router.push('/');
-        }, 2000);
-      }
+      // Force logout of any existing session and redirect to main page
+      await fetch('/api/auth/logout', { method: 'POST' });
+      
+      // Redirect to main page (which will show the new Business Dashboard)
+      window.location.href = '/';
     } catch (err) {
       console.error('Registration error:', err);
       setError('An error occurred. Please try again.');

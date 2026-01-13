@@ -358,7 +358,7 @@ function FinancialScorePage() {
           // Normalize role and userType to lowercase
           const normalizedUser = {
             ...user,
-            role: user.role.toLowerCase(),
+            role: user.role?.toLowerCase() || 'user',
             userType: user.userType?.toLowerCase(),
             consultantType: user.consultantType, // Preserve consultantType
             consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
