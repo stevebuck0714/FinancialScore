@@ -265,6 +265,9 @@ function FinancialScorePage() {
   const [companyAddressZip, setCompanyAddressZip] = useState('');
   const [companyAddressCountry, setCompanyAddressCountry] = useState('USA');
   const [companyIndustrySector, setCompanyIndustrySector] = useState<number | ''>('');
+  const [accountingSystem, setAccountingSystem] = useState('');
+  const [companySizeCategory, setCompanySizeCategory] = useState('DEFAULT');
+  const [industrySectorCategory, setIndustrySectorCategory] = useState('DEFAULT');
   const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
   const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false);
@@ -3450,7 +3453,10 @@ function FinancialScorePage() {
         addressState: companyAddressState,
         addressZip: companyAddressZip,
         addressCountry: companyAddressCountry,
-        industrySector: companyIndustrySector as number
+        industrySector: companyIndustrySector as number,
+        accountingSystem: accountingSystem || null,
+        companySizeCategory: companySizeCategory || null,
+        industrySectorCategory: industrySectorCategory || null
       });
       safeSetCompanies(Array.isArray(companies) ? companies.map(c => c.id === editingCompanyId ? { ...c, ...company } : c) : [company]);
       setSelectedCompanyId(editingCompanyId);
@@ -3466,6 +3472,9 @@ function FinancialScorePage() {
       setCompanyAddressZip('');
       setCompanyAddressCountry('USA');
       setCompanyIndustrySector('');
+      setAccountingSystem('');
+      setCompanySizeCategory('DEFAULT');
+      setIndustrySectorCategory('DEFAULT');
       
       // Stay on Consultant Dashboard
       setCurrentView('admin');
@@ -6054,6 +6063,9 @@ function FinancialScorePage() {
               setSelectedAffiliateCodeForNewCompany={setSelectedAffiliateCodeForNewCompany}
               setCompanyAddressCountry={setCompanyAddressCountry}
               setCompanyIndustrySector={setCompanyIndustrySector}
+              setAccountingSystem={setAccountingSystem}
+              setCompanySizeCategory={setCompanySizeCategory}
+              setIndustrySectorCategory={setIndustrySectorCategory}
               setShowCompanyDetailsModal={setShowCompanyDetailsModal}
               deleteUser={deleteUser}
               newCompanyUserName={newCompanyUserName}
@@ -8309,6 +8321,12 @@ function FinancialScorePage() {
         setCompanyAddressCountry={setCompanyAddressCountry}
         companyIndustrySector={companyIndustrySector}
         setCompanyIndustrySector={setCompanyIndustrySector}
+        accountingSystem={accountingSystem}
+        setAccountingSystem={setAccountingSystem}
+        companySizeCategory={companySizeCategory}
+        setCompanySizeCategory={setCompanySizeCategory}
+        industrySectorCategory={industrySectorCategory}
+        setIndustrySectorCategory={setIndustrySectorCategory}
         onSave={saveCompanyDetails}
       />
 

@@ -44,7 +44,10 @@ model Company {
   addressState               String?
   addressZip                 String?
   addressCountry             String?
-  industrySector             Int?
+  industrySector             Int?                   // Existing industry classification for benchmarks (keep as "Industry Group" in UI)
+  accountingSystem           String?                // QuickBooks, Xero, NetSuite, Sage, etc.
+  companySizeCategory        String?                // DEFAULT, SMB, MID_MARKET, ENTERPRISE
+  industrySectorCategory     String?                // For specialized reporting (Agriculture, Mining, Construction, etc.)
   subscriptionMonthlyPrice   Float?
   subscriptionQuarterlyPrice Float?
   subscriptionAnnualPrice    Float?

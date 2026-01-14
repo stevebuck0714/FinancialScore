@@ -26,6 +26,9 @@ interface CompanyManagementTabProps {
   setCompanyAddressZip: (zip: string) => void;
   setCompanyAddressCountry: (country: string) => void;
   setCompanyIndustrySector: (sector: string) => void;
+  setAccountingSystem: (system: string) => void;
+  setCompanySizeCategory: (size: string) => void;
+  setIndustrySectorCategory: (sector: string) => void;
   setShowCompanyDetailsModal: (show: boolean) => void;
   deleteUser: (id: string) => void;
   newCompanyUserName: string;
@@ -132,6 +135,9 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
               setCompanyAddressZip={props.setCompanyAddressZip}
               setCompanyAddressCountry={props.setCompanyAddressCountry}
               setCompanyIndustrySector={props.setCompanyIndustrySector}
+              setAccountingSystem={props.setAccountingSystem}
+              setCompanySizeCategory={props.setCompanySizeCategory}
+              setIndustrySectorCategory={props.setIndustrySectorCategory}
               setShowCompanyDetailsModal={props.setShowCompanyDetailsModal}
             />
           )}
