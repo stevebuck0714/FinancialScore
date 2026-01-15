@@ -33,7 +33,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Format monthly data to match expected structure
-    const monthlyData = latestRecord.monthlyData.map((month: any) => ({
+    const monthlyData = latestRecord.monthlyData.map((month: any) => {
+      const cash = month.cash || 0;
+      const ar = month.ar || 0;
+      const inventory = month.inventory || 0;
+      const otherCA = month.otherCA || 0;
+      const ap = month.ap || 0;
+      const otherCL = month.otherCL || 0;
+
+      // Some legacy master-data shapes omitted tca/tcl; provide explicit fields with safe fallbacks.
+      const tca = month.tca ?? (cash + ar + inventory + otherCA);
+      const tcl = month.tcl ?? (ap + otherCL);
+
+      return {
       date: month.monthDate,
       month: month.monthDate,
       revenue: month.revenue || 0,
@@ -65,15 +77,17 @@ export async function GET(request: NextRequest) {
       interestExpense: month.interestExpense || 0,
       depreciationAmortization: month.depreciationAmortization || 0,
       otherExpense: month.otherExpense || 0,
-      cash: month.cash || 0,
-      ar: month.ar || 0,
-      inventory: month.inventory || 0,
-      otherCA: month.otherCA || 0,
+      cash,
+      ar,
+      inventory,
+      otherCA,
+      tca,
       fixedAssets: month.fixedAssets || 0,
       otherAssets: month.otherAssets || 0,
       totalAssets: month.totalAssets || 0,
-      ap: month.ap || 0,
-      otherCL: month.otherCL || 0,
+      ap,
+      otherCL,
+      tcl,
       ltd: month.ltd || 0,
       totalLiab: month.totalLiab || 0,
       ownersCapital: month.ownersCapital || 0,
@@ -87,7 +101,8 @@ export async function GET(request: NextRequest) {
       revenueBreakdown: month.revenueBreakdown,
       expenseBreakdown: month.expenseBreakdown,
       cogsBreakdown: month.cogsBreakdown
-    }));
+      };
+    });
 
     console.log(`✅ Master data loaded from database for company: ${companyId}`);
     console.log(`📊 Loaded ${monthlyData.length} months of Master data`);

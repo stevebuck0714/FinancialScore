@@ -90,7 +90,10 @@ export async function middleware(request: NextRequest) {
       )
     }
     
-    console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining);
+    // Only log rate limit for non-session endpoints (session checks are very frequent)
+    if (!pathname.includes('/api/auth/session')) {
+      console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining);
+    }
   }
   
   // Public API routes that don't require authentication

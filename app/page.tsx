@@ -785,6 +785,53 @@ function FinancialScorePage() {
   
   // State - CSV Trial Balance Data
   const [csvTrialBalanceData, setCsvTrialBalanceData] = useState<any>(null);
+  const [latestFinancialSource, setLatestFinancialSource] = useState<string | null>(null);
+  const [hasSavedCsvInLocalStorage, setHasSavedCsvInLocalStorage] = useState(false);
+
+  const handleTrialBalanceCsvSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('?? CSV File selected');
+    const file = e.target.files?.[0];
+    if (!file) {
+      console.log('? No file selected');
+      return;
+    }
+
+    console.log('? File:', file.name, 'Size:', file.size, 'Company:', selectedCompanyId);
+    console.log('?? Current User:', currentUser?.email || 'NOT SET');
+
+    try {
+      console.log('?? Reading file text...');
+      const text = await file.text();
+      console.log('? File read, length:', text.length);
+
+      console.log('?? Parsing Trial Balance CSV...');
+      const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
+      console.log('? Parsed successfully:', parsed);
+
+      const csvData = {
+        ...parsed,
+        _companyId: selectedCompanyId,
+        fileName: file.name,
+      };
+
+      console.log('?? Setting csvTrialBalanceData state...');
+      setCsvTrialBalanceData(csvData);
+
+      console.log('?? Saving to localStorage...');
+      localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
+      setHasSavedCsvInLocalStorage(true);
+
+      setError(null);
+      console.log('? CSV upload complete!');
+    } catch (err: any) {
+      console.error('? Error parsing CSV:', err);
+      setError(`Failed to parse Trial Balance CSV: ${err.message}`);
+      setCsvTrialBalanceData(null);
+    } finally {
+      // allow re-selecting the same file
+      e.target.value = '';
+    }
+  };
 
   // State - QuickBooks Connection
   const [qbConnected, setQbConnected] = useState(false);
@@ -1327,6 +1374,7 @@ function FinancialScorePage() {
       
       // Load CSV Trial Balance data from localStorage
       const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
+      setHasSavedCsvInLocalStorage(!!savedCsvData);
       if (savedCsvData && !csvTrialBalanceData) {
         try {
           const parsed = JSON.parse(savedCsvData);
@@ -1616,7 +1664,7 @@ function FinancialScorePage() {
           return newUsers;
         });
         
-        // Load financial records
+          // Load financial records
         const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const companyName = selectedCompany?.name || 'Unknown';
         console.log(`?? LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
@@ -1628,9 +1676,18 @@ function FinancialScorePage() {
         if (!records || records.length === 0) {
           console.log(`?? No records found - clearing aiMappings too`);
           setAiMappings([]);
+          setLatestFinancialSource(null);
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
           console.log(`?? Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
+          // Track data source for UI branching (CSV vs API connections).
+          // Prefer explicit columnMapping.source; fallback to heuristics for older records.
+          const inferredCsv =
+            latestRecord?.rawData &&
+            typeof latestRecord.rawData === 'object' &&
+            !Array.isArray(latestRecord.rawData) &&
+            (latestRecord.rawData.accountsByType || latestRecord.rawData.accounts || latestRecord.rawData.dates);
+          setLatestFinancialSource(latestRecord?.columnMapping?.source || (inferredCsv ? 'csv_trial_balance' : null));
           
           // Check if this is QuickBooks data and extract raw QB financial statements
           if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
@@ -1648,6 +1705,7 @@ function FinancialScorePage() {
               _companyId: selectedCompanyId,
               _recordId: latestRecord.id
             });
+            setLatestFinancialSource(latestRecord?.columnMapping?.source || 'quickbooks');
             console.log(`?? Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
             // Force re-render of Financial Statements view
             setDataRefreshKey(prev => prev + 1);
@@ -6850,7 +6908,7 @@ function FinancialScorePage() {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                       onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
                     >
-                      <span>??</span>
+                      <FileSpreadsheet size={16} />
                       <span>Proceed to AI Account Mapping ?</span>
                     </button>
                   </div>
@@ -7679,46 +7737,7 @@ function FinancialScorePage() {
                   <input 
                     type="file" 
                     accept=".csv" 
-                    onChange={async (e) => {
-                      console.log('?? CSV File selected');
-                      const file = e.target.files?.[0];
-                      if (!file) {
-                        console.log('? No file selected');
-                        return;
-                      }
-                      
-                      console.log('? File:', file.name, 'Size:', file.size, 'Company:', selectedCompanyId);
-                      console.log('?? Current User:', currentUser?.email || 'NOT SET');
-                      
-                      try {
-                        console.log('?? Reading file text...');
-                        const text = await file.text();
-                        console.log('? File read, length:', text.length);
-                        
-                        console.log('?? Parsing Trial Balance CSV...');
-                        const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
-                        console.log('? Parsed successfully:', parsed);
-                        
-                        const csvData = {
-                          ...parsed,
-                          _companyId: selectedCompanyId,
-                          fileName: file.name,
-                        };
-                        
-                        console.log('?? Setting csvTrialBalanceData state...');
-                        setCsvTrialBalanceData(csvData);
-                        
-                        console.log('?? Saving to localStorage...');
-                        localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
-                        
-                        setError(null);
-                        console.log('? CSV upload complete!');
-                      } catch (err: any) {
-                        console.error('? Error parsing CSV:', err);
-                        setError(`Failed to parse Trial Balance CSV: ${err.message}`);
-                        setCsvTrialBalanceData(null);
-                      }
-                    }} 
+                    onChange={handleTrialBalanceCsvSelected} 
                     style={{ 
                       padding: '12px', 
                       border: '2px dashed #10b981', 
@@ -7744,11 +7763,14 @@ function FinancialScorePage() {
             // Get accounts for mapping from CSV data (if available)
             const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
             const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
+            const shouldShowCsvReupload =
+              !qbRawData &&
+              (hasCsvData || hasSavedCsvInLocalStorage || latestFinancialSource === 'csv_trial_balance');
 
             return (
               <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>?? Account Mapping</h1>
+                  <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Account Mapping</h1>
                   {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
                 </div>
                 <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
@@ -7757,6 +7779,36 @@ function FinancialScorePage() {
                     : `${aiMappings.length} saved account mappings loaded from database`
                   }
                 </p>
+
+                {/* Compact CSV Re-Upload (CSV Trial Balance only; API connections re-sync from Connections tab) */}
+                {shouldShowCsvReupload && (
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ background: '#f0fdf4', borderRadius: '10px', padding: '12px 14px', border: '1px solid #bbf7d0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: '220px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#065f46' }}>Trial Balance CSV</div>
+                          <div style={{ fontSize: '12px', color: '#047857' }}>
+                            {hasCsvData ? `Current: ${csvTrialBalanceData.fileName || 'CSV Upload'}` : 'Upload a corrected CSV to re-run mapping.'}
+                          </div>
+                        </div>
+                        <input
+                          type="file"
+                          accept=".csv"
+                          onChange={handleTrialBalanceCsvSelected}
+                          style={{
+                            fontSize: '12px',
+                            padding: '8px 10px',
+                            background: 'white',
+                            borderRadius: '8px',
+                            border: '1px dashed #10b981',
+                            cursor: 'pointer',
+                            maxWidth: '360px'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
 
                 {/* AI-Assisted Mapping Section for CSV */}
@@ -7829,12 +7881,12 @@ function FinancialScorePage() {
                       >
                         {isGeneratingMappings ? (
                           <>
-                            <span>??</span>
+                            <Upload size={16} />
                             <span>Generating Mappings...</span>
                           </>
                         ) : (
                           <>
-                            <span>??</span>
+                            <TrendingUp size={16} />
                             <span>Generate AI Mappings</span>
                           </>
                         )}
@@ -7931,12 +7983,12 @@ function FinancialScorePage() {
                       >
                         {isGeneratingMappings ? (
                           <>
-                            <span>??</span>
+                            <Upload size={16} />
                             <span>Generating Mappings...</span>
                           </>
                         ) : (
                           <>
-                            <span>??</span>
+                            <TrendingUp size={16} />
                             <span>Generate AI Mappings</span>
                           </>
                         )}
@@ -7996,7 +8048,7 @@ function FinancialScorePage() {
                       {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
                         <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #93c5fd' }}>
                           <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
-                            <span style={{ fontSize: '16px' }}>??</span>
+                            <span style={{ fontSize: '16px' }}></span>
                             <div>
                               <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>Xero/QuickBooks Data Detected</div>
                               <p style={{ fontSize: '12px', color: '#1e40af', margin: 0 }}>
@@ -8106,7 +8158,7 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                             }}
                           >
-                            {isProcessingMonthlyData ? 'Processing...' : '?? Process & Save Monthly Data'}
+                            {isProcessingMonthlyData ? 'Processing...' : 'Process & Save Monthly Data'}
                           </button>
                           )}
                           
@@ -8163,7 +8215,7 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isProcessingMonthlyData ? 'Processing...' : '?? Apply Mappings to Data'}
+                            {isProcessingMonthlyData ? 'Processing...' : 'Apply Mappings to Data'}
                           </button>
                           )}
                           
@@ -8225,7 +8277,7 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isSavingMappings ? 'Saving...' : '?? Save Mappings'}
+                            {isSavingMappings ? 'Saving...' : 'Save Mappings'}
                           </button>
                         </div>
                       </div>
