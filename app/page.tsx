@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
@@ -57,6 +57,7 @@ const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: fal
 const WorkingCapitalTab = dynamic(() => import('./components/WorkingCapitalTab'), { ssr: false });
 const ProjectionsTab = dynamic(() => import('./components/ProjectionsTab'), { ssr: false });
 const MDAView = dynamic(() => import('./components/MDAView'), { ssr: false });
+const AIAnalysisView = dynamic(() => import('./components/AIAnalysisView'), { ssr: false });
 const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
 const FinancialScoreView = dynamic(() => import('./components/FinancialScoreView'), { ssr: false });
 import GoalsView from './components/GoalsView';
@@ -300,7 +301,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -4962,7 +4963,7 @@ function FinancialScorePage() {
       <Header
         currentUser={currentUser}
         currentView={currentView}
-        setCurrentView={setCurrentView}
+        setCurrentView={setCurrentView as any}
         handleLogout={handleLogout}
         handleNavigation={handleNavigation}
       />
@@ -8670,6 +8671,15 @@ function FinancialScorePage() {
           worstCaseRevMultiplier={worstCaseRevMultiplier}
           worstCaseExpMultiplier={worstCaseExpMultiplier}
           onExportToWord={handleExportMdaToWord}
+        />
+      )}
+
+      {/* AI Analysis View */}
+      {currentView === 'ai-analysis' && selectedCompanyId && (
+        <AIAnalysisView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+          monthly={monthly as any}
         />
       )}
 
