@@ -347,6 +347,8 @@ export async function POST(request: NextRequest) {
       'You must produce an objective period review with emphasis on negative operational trend changes.',
       'If you use external context, cite it by listing the sources in appendix.sources and keep peerAndMarketContext explicitly sourced.',
       'Do not invent numbers or sources. Use only provided internal summaries and provided external sources list.',
+      'Focus strictly on financial and operational analysis.',
+      'Do NOT reference internal Payments tab data or subscription/billing plan terms.',
     ].join('\n');
 
     const internalSummary = {
@@ -420,6 +422,7 @@ export async function POST(request: NextRequest) {
       '- Keep operationalTrends.negativeTrendAlerts exactly as provided (you may reorder, but do not delete and do not invent new ones).',
       '- If there are 0 alerts, explain that and still provide a narrative focusing on monitoring and leading indicators.',
       '- Opportunities must include (a) acquisition archetypes and (b) at least one capital deployment scenario with example allocation.',
+      '- Exclude internal Payments tab data or subscription/billing plan terms.',
     ].join('\n');
 
     const completion = await openai.chat.completions.create({

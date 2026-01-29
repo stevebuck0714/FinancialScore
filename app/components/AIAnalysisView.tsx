@@ -68,6 +68,7 @@ export default function AIAnalysisView(props: {
   const [askLoading, setAskLoading] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [askResponse, setAskResponse] = useState<AskResponse | null>(null);
+  const [useExternalSources, setUseExternalSources] = useState(false);
 
   // Period review
   const defaultPeriodLabel = useMemo(() => {
@@ -85,7 +86,7 @@ export default function AIAnalysisView(props: {
     return {
       Company: [
         `What are the top drivers of margin change this period for ${name}?`,
-        `Which KPIs are most off-target vs our goals for ${name}, and what are the likely causes?`,
+        `Which KPIs are below our peer group KPIs for ${name}, and what are the likely causes?`,
         `What are the top 3 risks to performance over the next 90 days for ${name}?`,
       ],
       'Daily Operations': [
@@ -130,6 +131,7 @@ export default function AIAnalysisView(props: {
           companyId: selectedCompanyId,
           companyName,
           question: trimmed,
+          useExternalSources,
         }),
       });
       const data = await res.json();
@@ -297,6 +299,19 @@ export default function AIAnalysisView(props: {
                 >
                   {askLoading ? 'Searching…' : 'Search & Answer'}
                 </button>
+              </div>
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={useExternalSources}
+                    onChange={(e) => setUseExternalSources(e.target.checked)}
+                  />
+                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Use external web sources</span>
+                </label>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Off = internal financial/operational data only.
+                </span>
               </div>
 
               {askError && (
