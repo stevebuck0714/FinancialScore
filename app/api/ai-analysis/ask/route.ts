@@ -202,6 +202,11 @@ function hasValidCitations(
   return true;
 }
 
+function hasNonEmptyBullets(citedBullets: AskOutput['citedBullets']): boolean {
+  if (!Array.isArray(citedBullets) || citedBullets.length === 0) return false;
+  return citedBullets.every((b) => String(b?.text || '').trim().length >= 3);
+}
+
 function extractCompanyCandidates(
   sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>,
 ): Array<{ name: string; sourceUrl: string; sourceTitle?: string }> {
@@ -761,6 +766,18 @@ export async function POST(request: NextRequest) {
 
       if (strictRetry.finish_reason === 'length' || isListInvalid(parsed, requestedCount) || !citationsOk) {
         parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount });
+      }
+    }
+
+    citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
+    if (!hasNonEmptyBullets(citedBullets)) {
+      parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount });
+      citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
+      if (!hasNonEmptyBullets(citedBullets)) {
+        return NextResponse.json(
+          { error: 'Unable to build a cited list from available sources. Try a more specific query or location.' },
+          { status: 422 },
+        );
       }
     }
 

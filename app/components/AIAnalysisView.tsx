@@ -55,6 +55,8 @@ type MonthlyDataLike = {
   expense?: number;
 };
 
+type QuestionsByCategory = Record<string, string[]>;
+
 export default function AIAnalysisView(props: {
   selectedCompanyId: string;
   companyName?: string;
@@ -69,6 +71,11 @@ export default function AIAnalysisView(props: {
   const [askError, setAskError] = useState<string | null>(null);
   const [askResponse, setAskResponse] = useState<AskResponse | null>(null);
   const [useExternalSources, setUseExternalSources] = useState(false);
+  const [isEditingQuestions, setIsEditingQuestions] = useState(false);
+  const [questionsDirty, setQuestionsDirty] = useState(false);
+  const [questionsSavedAt, setQuestionsSavedAt] = useState<string | null>(null);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
+  const [newQuestionByCategory, setNewQuestionByCategory] = useState<Record<string, string>>({});
 
   // Period review
   const defaultPeriodLabel = useMemo(() => {
@@ -81,7 +88,7 @@ export default function AIAnalysisView(props: {
   const [periodError, setPeriodError] = useState<string | null>(null);
   const [periodResponse, setPeriodResponse] = useState<PeriodReviewResponse | null>(null);
 
-  const presetQuestions = useMemo(() => {
+  const defaultPresetQuestions = useMemo(() => {
     const name = companyName?.trim() || 'the company';
     return {
       Company: [
@@ -110,10 +117,83 @@ export default function AIAnalysisView(props: {
     } as const;
   }, [companyName]);
 
+  const storageKey = useMemo(() => {
+    return selectedCompanyId ? `ai_analysis_questions_${selectedCompanyId}` : 'ai_analysis_questions_default';
+  }, [selectedCompanyId]);
+
+  const [presetQuestions, setPresetQuestions] = useState<QuestionsByCategory>(defaultPresetQuestions);
+
+  function isValidQuestions(value: any): value is QuestionsByCategory {
+    if (!value || typeof value !== 'object') return false;
+    return Object.values(value).every((list) => Array.isArray(list) && list.every((q) => typeof q === 'string'));
+  }
+
+  useEffect(() => {
+    setQuestionsError(null);
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (isValidQuestions(parsed)) {
+          setPresetQuestions(parsed);
+          setQuestionsDirty(false);
+          setQuestionsSavedAt(null);
+          return;
+        }
+      }
+      setPresetQuestions(defaultPresetQuestions);
+      setQuestionsDirty(false);
+      setQuestionsSavedAt(null);
+    } catch (e: any) {
+      console.error('Failed to load saved AI questions:', e);
+      setQuestionsError('Failed to load saved questions. Using defaults.');
+      setPresetQuestions(defaultPresetQuestions);
+    }
+  }, [storageKey, defaultPresetQuestions]);
+
   useEffect(() => {
     // Keep default period aligned when company changes / data loads
     if (defaultPeriodLabel && !periodLabel) setPeriodLabel(defaultPeriodLabel);
   }, [defaultPeriodLabel, periodLabel]);
+
+  function addQuestion(category: string) {
+    const draft = newQuestionByCategory[category]?.trim();
+    if (!draft) return;
+    setPresetQuestions((prev) => ({
+      ...prev,
+      [category]: [...(prev[category] || []), draft],
+    }));
+    setNewQuestionByCategory((prev) => ({ ...prev, [category]: '' }));
+    setQuestionsDirty(true);
+    setQuestionsSavedAt(null);
+  }
+
+  function deleteQuestion(category: string, index: number) {
+    setPresetQuestions((prev) => ({
+      ...prev,
+      [category]: (prev[category] || []).filter((_, idx) => idx !== index),
+    }));
+    setQuestionsDirty(true);
+    setQuestionsSavedAt(null);
+  }
+
+  function saveQuestions() {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(presetQuestions));
+      setQuestionsDirty(false);
+      setQuestionsSavedAt(new Date().toLocaleTimeString());
+      setQuestionsError(null);
+    } catch (e: any) {
+      console.error('Failed to save AI questions:', e);
+      setQuestionsError('Failed to save questions.');
+    }
+  }
+
+  function resetQuestions() {
+    setPresetQuestions(defaultPresetQuestions);
+    setQuestionsDirty(true);
+    setQuestionsSavedAt(null);
+  }
 
   async function runAsk(q: string) {
     const trimmed = q.trim();
@@ -223,7 +303,70 @@ export default function AIAnalysisView(props: {
       <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '16px' }}>
         {/* Presets */}
         <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', height: 'fit-content' }}>
-          <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginBottom: '10px' }}>Suggested questions</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>Suggested questions</div>
+            <button
+              onClick={() => setIsEditingQuestions((prev) => !prev)}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                background: isEditingQuestions ? '#0ea5e9' : '#fff',
+                color: isEditingQuestions ? '#fff' : '#0f172a',
+                fontSize: '12px',
+                fontWeight: '700',
+                cursor: 'pointer',
+              }}
+            >
+              {isEditingQuestions ? 'Done' : 'Edit'}
+            </button>
+          </div>
+          {isEditingQuestions && (
+            <div style={{ display: 'grid', gap: '8px', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={saveQuestions}
+                  disabled={!questionsDirty}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: questionsDirty ? '#16a34a' : '#94a3b8',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: questionsDirty ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  onClick={resetQuestions}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    background: '#fff',
+                    color: '#0f172a',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Reset
+                </button>
+              </div>
+              <div style={{ fontSize: '12px', color: questionsDirty ? '#b45309' : '#64748b' }}>
+                {questionsError
+                  ? questionsError
+                  : questionsDirty
+                    ? 'Unsaved changes'
+                    : questionsSavedAt
+                      ? `Saved at ${questionsSavedAt}`
+                      : 'Saved'}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gap: '12px' }}>
             {Object.entries(presetQuestions).map(([category, questions]) => (
               <div key={category}>
@@ -231,28 +374,79 @@ export default function AIAnalysisView(props: {
                   {category}
                 </div>
                 <div style={{ display: 'grid', gap: '6px' }}>
-                  {questions.map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => {
-                        setQuestion(q);
-                        setTab('ask');
-                      }}
-                      style={{
-                        textAlign: 'left',
-                        padding: '10px 12px',
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '10px',
-                        cursor: 'pointer',
-                        color: '#0f172a',
-                        fontSize: '13px',
-                        lineHeight: '1.35',
-                      }}
-                    >
-                      {q}
-                    </button>
+                  {questions.map((q, idx) => (
+                    <div key={`${category}-${idx}`} style={{ display: 'flex', gap: '6px', alignItems: 'stretch' }}>
+                      <button
+                        onClick={() => {
+                          setQuestion(q);
+                          setTab('ask');
+                        }}
+                        style={{
+                          textAlign: 'left',
+                          padding: '10px 12px',
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '10px',
+                          cursor: 'pointer',
+                          color: '#0f172a',
+                          fontSize: '13px',
+                          lineHeight: '1.35',
+                          flex: 1,
+                        }}
+                      >
+                        {q}
+                      </button>
+                      {isEditingQuestions && (
+                        <button
+                          onClick={() => deleteQuestion(category, idx)}
+                          title="Delete"
+                          style={{
+                            padding: '0 10px',
+                            borderRadius: '10px',
+                            border: '1px solid #fecaca',
+                            background: '#fff',
+                            color: '#b91c1c',
+                            fontWeight: '800',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   ))}
+                  {isEditingQuestions && (
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        value={newQuestionByCategory[category] || ''}
+                        onChange={(e) =>
+                          setNewQuestionByCategory((prev) => ({ ...prev, [category]: e.target.value }))
+                        }
+                        placeholder="Add a question…"
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '12px',
+                        }}
+                      />
+                      <button
+                        onClick={() => addQuestion(category)}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: '#0ea5e9',
+                          color: '#fff',
+                          fontWeight: '800',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
