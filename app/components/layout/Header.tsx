@@ -11,7 +11,8 @@ interface User {
 interface HeaderProps {
   currentUser: User | null;
   currentView: string;
-  setCurrentView: (view: string) => void;
+  // currentView is a large union in app/page.tsx; keep this flexible for reuse.
+  setCurrentView: (view: any) => void;
   handleLogout: () => void;
   handleNavigation: (view: string) => void;
 }
@@ -89,6 +90,7 @@ export default function Header({
         <nav style={{ display: 'flex', gap: '24px' }}>
           <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'dashboard' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #667eea' : '3px solid transparent' }}>DASHBOARD</button>
           <button onClick={() => handleNavigation('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'mda' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #667eea' : '3px solid transparent' }}>MD&A</button>
+          <button onClick={() => handleNavigation('ai-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'ai-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'ai-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>AI ANALYSIS</button>
           <button onClick={() => handleNavigation('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>RATIOS</button>
           <button onClick={() => handleNavigation('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>TREND ANALYSIS</button>
           <button onClick={() => handleNavigation('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>PROJECTIONS</button>

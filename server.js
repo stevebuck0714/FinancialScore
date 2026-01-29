@@ -2,10 +2,34 @@ const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
 const { Server: SocketIOServer } = require('socket.io');
+const fs = require('fs');
+const dotenv = require('dotenv');
 
 // Load environment variables - .env.local takes precedence for development
-require('dotenv').config({ path: '.env.local' });
-require('dotenv').config(); // Fallback to .env for any missing vars
+// IMPORTANT: Use override=true so a blank host env var doesn't mask .env.local
+dotenv.config({ path: '.env.local', override: true });
+// Fallback to .env for any missing vars, but DO NOT override .env.local
+dotenv.config({ path: '.env', override: false });
+
+// Debug (safe): show whether keys are present (no secrets)
+let serpApiFileLen = 0;
+let serpApiFilePrefix = '';
+try {
+  const raw = fs.readFileSync('.env.local', 'utf8');
+  const parsedEnv = dotenv.parse(raw);
+  const fileKey = String(parsedEnv.SERPAPI_API_KEY || '');
+  serpApiFileLen = fileKey.length;
+  serpApiFilePrefix = fileKey.slice(0, 8);
+} catch (e) {
+  // ignore
+}
+console.log('🔐 ENV loaded:', {
+  hasOpenAI: !!process.env.OPENAI_API_KEY,
+  hasSerpApi: !!process.env.SERPAPI_API_KEY,
+  serpApiLen: (process.env.SERPAPI_API_KEY || '').length,
+  serpApiFileLen,
+  serpApiFilePrefix,
+});
 
 // SAFETY CHECK: Local/dev/preview should NEVER connect to production database (orange-poetry)
 // CRITICAL: Even if NODE_ENV is "production" locally, this must be blocked.

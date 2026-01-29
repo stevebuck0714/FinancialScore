@@ -160,6 +160,9 @@ export interface Company {
   addressZip?: string;
   addressCountry?: string;
   industrySector?: number;
+  accountingSystem?: string;
+  companySizeCategory?: string;
+  industrySectorCategory?: string;
   subscriptionMonthlyPrice?: number;
   subscriptionQuarterlyPrice?: number;
   subscriptionAnnualPrice?: number;

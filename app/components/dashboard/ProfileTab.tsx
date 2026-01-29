@@ -22,6 +22,9 @@ interface ProfileTabProps {
   setCompanyAddressZip?: (zip: string) => void;
   setCompanyAddressCountry?: (country: string) => void;
   setCompanyIndustrySector?: (sector: string) => void;
+  setAccountingSystem?: (system: string) => void;
+  setCompanySizeCategory?: (size: string) => void;
+  setIndustrySectorCategory?: (sector: string) => void;
   setShowCompanyDetailsModal?: (show: boolean) => void;
 }
 
@@ -42,6 +45,9 @@ export default function ProfileTab({
   setCompanyAddressZip,
   setCompanyAddressCountry,
   setCompanyIndustrySector,
+  setAccountingSystem,
+  setCompanySizeCategory,
+  setIndustrySectorCategory,
   setShowCompanyDetailsModal
 }: ProfileTabProps) {
   // State for LOB management
@@ -276,6 +282,9 @@ export default function ProfileTab({
                     setCompanyAddressZip(company.addressZip || '');
                     setCompanyAddressCountry(company.addressCountry || 'USA');
                     setCompanyIndustrySector(company.industrySector || '');
+                    if (setAccountingSystem) setAccountingSystem(company.accountingSystem || '');
+                    if (setCompanySizeCategory) setCompanySizeCategory(company.companySizeCategory || 'DEFAULT');
+                    if (setIndustrySectorCategory) setIndustrySectorCategory(company.industrySectorCategory || 'DEFAULT');
                     setShowCompanyDetailsModal(true);
                   }
                 }}
