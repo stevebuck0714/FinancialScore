@@ -379,6 +379,9 @@ export async function POST(request: NextRequest) {
       const prior = lastSix.slice(0, 3);
       const recent = lastSix.slice(3, 6);
       const { recentDays, priorDays } = daysInPeriod(recent, prior);
+      const revenuePriorAvg = average(prior.map((m: any) => m.revenue || 0));
+      const revenueRecentAvg = average(recent.map((m: any) => m.revenue || 0));
+      const revenueChange = percentChange(revenueRecentAvg, revenuePriorAvg);
 
       const metrics = [
         { key: 'revenue', label: 'Revenue', value: (m: any) => m.revenue || 0 },
@@ -399,9 +402,6 @@ export async function POST(request: NextRequest) {
           const inventoryPrior = average(prior.map((m: any) => m.inventory || 0));
           const inventoryRecent = average(recent.map((m: any) => m.inventory || 0));
           const inventoryDelta = inventoryRecent - inventoryPrior;
-          const revenuePriorAvg = average(prior.map((m: any) => m.revenue || 0));
-          const revenueRecentAvg = average(recent.map((m: any) => m.revenue || 0));
-          const revenueChange = percentChange(revenueRecentAvg, revenuePriorAvg);
 
           let driverSummary = '';
           if (metric.label === 'COGS') {
