@@ -4,6 +4,8 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getOpsMetricProfile } from '@/lib/performance-analytics/ops-metric-profiles';
 
+export const dynamic = 'force-dynamic';
+
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
 
 function getDefaultDateRange(frequency: string) {

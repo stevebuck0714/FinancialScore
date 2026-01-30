@@ -16,12 +16,34 @@ type Finding = {
    companyId: string;
  }
  
- const BUCKETS = [
-   { id: 'fix-now', label: 'Fix Now', types: ['anomaly'] },
-   { id: 'investigate', label: 'Investigate', types: ['trend', 'driver', 'focus'] },
-   { id: 'monitor', label: 'Monitor', types: ['trend'] },
-   { id: 'opportunities', label: 'Opportunities', types: ['opportunity'] },
- ];
+const BUCKETS = [
+  { id: 'fix-now', label: 'Fix Now' },
+  { id: 'investigate', label: 'Investigate' },
+  { id: 'monitor', label: 'Monitor' },
+  { id: 'opportunities', label: 'Opportunities' },
+];
+
+const BUCKET_PRIORITY: Record<string, number> = {
+  'fix-now': 3,
+  investigate: 2,
+  monitor: 1,
+  opportunities: 0,
+};
+
+const getBucketId = (finding: Finding) => {
+  const override = finding.payload?.boardBucket;
+  if (override === 'investigate' || override === 'monitor' || override === 'fix-now') {
+    return override;
+  }
+  if (finding.type === 'opportunity') return 'opportunities';
+  if (finding.type === 'anomaly') {
+    if (finding.severity === 'high' || finding.severity === 'medium') return 'fix-now';
+    return 'monitor';
+  }
+  const severity = finding.severity || 'low';
+  if (severity === 'high' || severity === 'medium') return 'investigate';
+  return 'monitor';
+};
  
  export default function FocusBoard({ companyId }: FocusBoardProps) {
    const [findings, setFindings] = useState<Finding[]>([]);
@@ -67,13 +89,35 @@ type Finding = {
      };
    }, [companyId]);
  
-   const findingsByBucket = useMemo(() => {
-     const grouped: Record<string, Finding[]> = {};
-     BUCKETS.forEach((bucket) => {
-       grouped[bucket.id] = findings.filter((finding) => bucket.types.includes(finding.type));
-     });
-     return grouped;
-   }, [findings]);
+  const findingsByBucket = useMemo(() => {
+    const grouped: Record<string, Finding[]> = {};
+    BUCKETS.forEach((bucket) => {
+      grouped[bucket.id] = [];
+    });
+
+    const deduped = new Map<string, { finding: Finding; bucketId: string }>();
+
+    findings.forEach((finding) => {
+      const bucketId = getBucketId(finding);
+      const key = `${finding.type}:${finding.metric || finding.payload?.title || finding.id}`;
+      const existing = deduped.get(key);
+      if (!existing) {
+        deduped.set(key, { finding, bucketId });
+        return;
+      }
+      const existingPriority = BUCKET_PRIORITY[existing.bucketId] ?? 0;
+      const nextPriority = BUCKET_PRIORITY[bucketId] ?? 0;
+      if (nextPriority > existingPriority) {
+        deduped.set(key, { finding, bucketId });
+      }
+    });
+
+    deduped.forEach(({ finding, bucketId }) => {
+      grouped[bucketId].push(finding);
+    });
+
+    return grouped;
+  }, [findings]);
  
   if (loading) {
     return <div style={{ padding: '32px', color: '#334155' }}>Loading focus board…</div>;

@@ -31,45 +31,15 @@ interface CovenantsTabProps {
   companyName: string;
 }
 
-// Mock alerts for demonstration
-const mockAlerts = [
-  {
-    id: '1',
-    title: 'Debt-to-Equity Ratio Breach',
-    description: 'Current ratio of 1.8 exceeds the maximum threshold of 2.0',
-    severity: 'critical',
-    status: 'active',
-    covenantName: 'Debt-to-Equity Ratio',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2 hours ago
-  },
-  {
-    id: '2',
-    title: 'Minimum Liquidity Warning',
-    description: 'Cash balance of $450,000 is approaching the minimum requirement of $250,000',
-    severity: 'warning',
-    status: 'active',
-    covenantName: 'Minimum Liquidity',
-    timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) // 1 day ago
-  },
-  {
-    id: '3',
-    title: 'Interest Coverage Ratio Alert',
-    description: 'Coverage ratio dropped to 3.2, very close to the minimum requirement of 3.0',
-    severity: 'warning',
-    status: 'active',
-    covenantName: 'Interest Coverage Ratio',
-    timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
-  },
-  {
-    id: '4',
-    title: 'Capex Limit Exceeded',
-    description: 'Annual capital expenditures have reached $1.2M, exceeding the $1M limit',
-    severity: 'critical',
-    status: 'resolved',
-    covenantName: 'Capex Limitation',
-    timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // 1 week ago
-  }
-];
+type CovenantAlert = {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'critical' | 'warning';
+  status: 'active' | 'resolved';
+  covenantName: string;
+  timestamp: string;
+};
 
 // Mock data for demonstration - All Comprehensive Covenants
 const mockCovenantData = [
@@ -533,8 +503,24 @@ export default function CovenantsTab({
         console.error('Error fetching loans:', err);
       }
     };
+    const fetchAlerts = async () => {
+      try {
+        setAlertsLoading(true);
+        setAlertsError(null);
+        const response = await fetch(`/api/covenants/alerts?companyId=${selectedCompanyId}`);
+        if (!response.ok) throw new Error('Failed to load covenant alerts');
+        const data = await response.json();
+        setAlerts(data.alerts || []);
+      } catch (err: any) {
+        setAlertsError(err.message || 'Failed to load covenant alerts');
+        setAlerts([]);
+      } finally {
+        setAlertsLoading(false);
+      }
+    };
     if (selectedCompanyId) {
       fetchLoans();
+      fetchAlerts();
     }
   }, [selectedCompanyId]);
 
@@ -544,7 +530,9 @@ export default function CovenantsTab({
     setActiveTab('overview');
   };
   const [alertFilter, setAlertFilter] = useState<'all' | 'critical' | 'warning'>('all');
-  const [alerts, setAlerts] = useState(mockAlerts);
+  const [alerts, setAlerts] = useState<CovenantAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
   const [configCategory, setConfigCategory] = useState<'all' | 'financial' | 'maintenance' | 'negative' | 'affirmative' | 'incurrence'>('all');
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
@@ -1393,7 +1381,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#EF4444' }}>
-                  {mockAlerts.filter(a => a.severity === 'critical' && a.status === 'active').length}
+                  {alerts.filter(a => a.severity === 'critical' && a.status === 'active').length}
                 </div>
               </div>
             </div>
@@ -1408,7 +1396,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#F59E0B' }}>
-                  {mockAlerts.filter(a => a.severity === 'warning' && a.status === 'active').length}
+                  {alerts.filter(a => a.severity === 'warning' && a.status === 'active').length}
                 </div>
               </div>
             </div>
@@ -1423,7 +1411,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#10B981' }}>
-                  {mockAlerts.filter(a => a.status === 'resolved').length}
+                  {alerts.filter(a => a.status === 'resolved').length}
                 </div>
               </div>
             </div>
@@ -1482,7 +1470,7 @@ export default function CovenantsTab({
             </div>
 
             <div style={{ spaceY: '12px' }}>
-              {mockAlerts
+              {alerts
                 .filter(alert => alertFilter === 'all' || alert.severity === alertFilter)
                 .filter(alert => alert.status === 'active')
                 .map((alert) => (
@@ -1510,7 +1498,7 @@ export default function CovenantsTab({
                         {alert.description}
                       </div>
                       <div style={{ fontSize: '11px', color: '#9ca3af' }}>
-                        {alert.timestamp.toLocaleDateString()} • {alert.covenantName}
+                        {new Date(alert.timestamp).toLocaleDateString()} • {alert.covenantName}
                       </div>
                     </div>
                   </div>
@@ -1544,12 +1532,14 @@ export default function CovenantsTab({
                 </div>
               ))}
 
-              {mockAlerts.filter(alert => alertFilter === 'all' || alert.severity === alertFilter).filter(alert => alert.status === 'active').length === 0 && (
+              {alerts.filter(alert => alertFilter === 'all' || alert.severity === alertFilter).filter(alert => alert.status === 'active').length === 0 && (
                 <div style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
                   <CheckCircle size={32} style={{ margin: '0 auto 12px', color: '#10b981' }} />
-                  <div style={{ fontSize: '14px' }}>No active alerts</div>
+                  <div style={{ fontSize: '14px' }}>
+                    {alertsLoading ? 'Loading alerts...' : alertsError ? 'Failed to load alerts' : 'No active alerts'}
+                  </div>
                   <div style={{ fontSize: '12px', marginTop: '6px' }}>
-                    All covenants are within acceptable ranges
+                    {alertsLoading || alertsError ? 'Please try again or refresh.' : 'All covenants are within acceptable ranges'}
                   </div>
                 </div>
               )}

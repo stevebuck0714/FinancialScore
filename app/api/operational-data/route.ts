@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/operational-data
  * 
