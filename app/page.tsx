@@ -63,6 +63,7 @@ const PerformanceAnalyticsOverview = dynamic(() => import('./components/performa
 const FocusBoard = dynamic(() => import('./components/performance-analytics/FocusBoard'), { ssr: false });
 const TrendExplorer = dynamic(() => import('./components/performance-analytics/TrendExplorer'), { ssr: false });
 const AnomalyInbox = dynamic(() => import('./components/performance-analytics/AnomalyInbox'), { ssr: false });
+const OpportunityWorkspace = dynamic(() => import('./components/performance-analytics/OpportunityWorkspace'), { ssr: false });
 const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
 const FinancialScoreView = dynamic(() => import('./components/FinancialScoreView'), { ssr: false });
 import GoalsView from './components/GoalsView';
@@ -5035,10 +5036,35 @@ function FinancialScorePage() {
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {currentUser?.userType !== 'assessment' && (
-              <PerformanceAnalyticsNav
-                currentView={currentView}
-                setCurrentView={setCurrentView}
-              />
+              <>
+                {/* Ask Corey Section */}
+                <div style={{ marginBottom: '1px' }}>
+                  <h3
+                    onClick={() => handleNavigation('ai-analysis')}
+                    style={{
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      color: currentView === 'ai-analysis' ? '#667eea' : '#1e293b',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      padding: '1px 24px',
+                      marginBottom: '1px',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                      borderLeft: currentView === 'ai-analysis' ? '4px solid #667eea' : '4px solid transparent'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'ai-analysis' ? '#667eea' : '#1e293b'}
+                  >
+                    Ask Corey
+                  </h3>
+                </div>
+
+                <PerformanceAnalyticsNav
+                  currentView={currentView}
+                  setCurrentView={setCurrentView}
+                />
+              </>
             )}
 
             {/* Valuation Section */}
@@ -8683,12 +8709,7 @@ function FinancialScorePage() {
       )}
 
       {currentView === 'pa-opportunity-workspace' && selectedCompanyId && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Opportunity Workspace</h1>
-          <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
-            Opportunity hypotheses with expected impact, risks, and prerequisites will be listed here.
-          </p>
-        </div>
+        <OpportunityWorkspace companyId={selectedCompanyId} />
       )}
 
       {/* Valuation View */}

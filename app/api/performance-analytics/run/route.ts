@@ -260,6 +260,18 @@ export async function POST(request: NextRequest) {
 
     const findings: FindingInput[] = [];
 
+    const recentRevenue = monthlyFinancials.slice(-3).reduce((sum: number, m: any) => sum + (m.revenue || 0), 0);
+    const priorRevenue = monthlyFinancials.slice(-6, -3).reduce((sum: number, m: any) => sum + (m.revenue || 0), 0);
+    const revenueDelta = recentRevenue - priorRevenue;
+
+    const recentAR = arSnapshots.slice(-3).reduce((sum: number, r: any) => sum + (r.totalAR || 0), 0);
+    const priorAR = arSnapshots.slice(-6, -3).reduce((sum: number, r: any) => sum + (r.totalAR || 0), 0);
+    const arDelta = recentAR - priorAR;
+
+    const recentCash = cashSnapshots.slice(-3).reduce((sum: number, r: any) => sum + (r.cashBalance || 0), 0);
+    const priorCash = cashSnapshots.slice(-6, -3).reduce((sum: number, r: any) => sum + (r.cashBalance || 0), 0);
+    const cashDelta = recentCash - priorCash;
+
     // Trend & Change-Point Agent (simple 3 vs 3 rolling check)
     const lastSix = monthlyFinancials.slice(-6);
     if (lastSix.length >= 6) {
@@ -302,6 +314,12 @@ export async function POST(request: NextRequest) {
       const values = cashSnapshots.map((r: any) => r.cashBalance || 0);
       const score = zScore(latestCash.cashBalance || 0, values);
       if (Math.abs(score) >= 2) {
+        const likelyCause =
+          cashDelta < 0 && arDelta > 0
+            ? 'Cash is down while receivables are rising, which often signals slower collections.'
+            : cashDelta < 0
+              ? 'Cash is down without a matching AR increase; investigate expense spikes or timing issues.'
+              : 'Cash is up sharply; confirm one-time inflows or timing effects.';
         findings.push({
           type: 'anomaly',
           metric: 'Cash Balance',
@@ -310,6 +328,12 @@ export async function POST(request: NextRequest) {
           payload: {
             title: `Cash balance ${score > 0 ? 'spike' : 'drop'}`,
             summary: `Latest cash balance deviates by ${score.toFixed(1)}σ from recent history.`,
+            likelyCause,
+            nextSteps: [
+              'Review large payments or transfers in the period.',
+              'Check AR collections and aging trends.',
+              'Confirm any one-time inflows or timing effects.',
+            ],
             zScore: score,
             latest: latestCash.cashBalance,
           },
@@ -322,6 +346,12 @@ export async function POST(request: NextRequest) {
       const values = arSnapshots.map((r: any) => r.totalAR || 0);
       const score = zScore(latestAR.totalAR || 0, values);
       if (Math.abs(score) >= 2) {
+        const likelyCause =
+          arDelta > 0 && revenueDelta <= 0
+            ? 'Receivables grew while revenue slowed, indicating slower payment behavior.'
+            : arDelta > 0
+              ? 'Receivables rose alongside revenue growth; monitor collection speed.'
+              : 'Receivables declined sharply; confirm payment timing or write-offs.';
         findings.push({
           type: 'anomaly',
           metric: 'Total AR',
@@ -330,6 +360,12 @@ export async function POST(request: NextRequest) {
           payload: {
             title: `AR balance ${score > 0 ? 'spike' : 'drop'}`,
             summary: `Total AR deviates by ${score.toFixed(1)}σ from recent history.`,
+            likelyCause,
+            nextSteps: [
+              'Identify top customers with aging over 60 days.',
+              'Compare recent billing volume to collections.',
+              'Check for payment term changes or disputes.',
+            ],
             zScore: score,
             latest: latestAR.totalAR,
           },
@@ -424,9 +460,26 @@ export async function POST(request: NextRequest) {
             summary: 'Revenue is accelerating while margin is at/above peer benchmarks.',
             expectedImpact: 'Sustain growth without margin erosion.',
             prerequisites: ['Validate capacity', 'Confirm working capital headroom'],
+            risks: 'Over-expansion could pressure service levels or working capital.',
           },
         });
       }
+    }
+
+    if (!findings.some((finding) => finding.type === 'opportunity')) {
+      findings.push({
+        type: 'opportunity',
+        metric: 'Opportunity Scan',
+        severity: 'low',
+        confidence: 0.3,
+        payload: {
+          title: 'No qualified opportunities detected',
+          summary: 'Current signals do not meet opportunity thresholds (growth + margin + capacity).',
+          expectedImpact: 'Establish baseline opportunities once signals strengthen.',
+          prerequisites: ['Confirm growth trend stability', 'Verify margin vs peers', 'Assess liquidity headroom'],
+          risks: 'Pursuing initiatives without signal confirmation could dilute focus.',
+        },
+      });
     }
 
     if (!findings.length) {
@@ -438,6 +491,34 @@ export async function POST(request: NextRequest) {
         payload: {
           title: 'No material findings detected',
           summary: 'Current data does not show significant shifts or anomalies.',
+        },
+      });
+    }
+
+    if (!findings.some((finding) => finding.type === 'anomaly')) {
+      const coverage = [
+        { label: 'cash', count: cashSnapshots.length },
+        { label: 'AR', count: arSnapshots.length },
+        { label: 'AP', count: apSnapshots.length },
+        { label: 'customers', count: customerSnapshots.length },
+        { label: 'products', count: productSnapshots.length },
+        { label: 'inventory', count: inventorySnapshots.length },
+      ];
+      const coverageSummary = coverage.map((item) => `${item.label}: ${item.count}`).join(', ');
+      findings.push({
+        type: 'anomaly',
+        metric: 'Anomaly Scan',
+        severity: 'low',
+        confidence: 0.3,
+        payload: {
+          title: 'No anomaly signals detected',
+          summary: `No anomalies were flagged in the current window. Coverage: ${coverageSummary}.`,
+          likelyCause: 'Current patterns are within expected ranges.',
+          nextSteps: [
+            'Confirm data freshness and frequency.',
+            'Expand the window if seasonality is expected.',
+            'Monitor for emerging changes over the next cycle.',
+          ],
         },
       });
     }

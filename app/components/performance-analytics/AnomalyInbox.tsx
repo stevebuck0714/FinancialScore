@@ -260,13 +260,36 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
               <div style={{ marginTop: '12px', fontSize: '13px', color: '#475569' }}>
                 {selectedFinding.payload?.summary || 'No summary available yet.'}
               </div>
-              {selectedFinding.payload && (
-                <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Evidence</div>
-                  <pre style={{ marginTop: '8px', fontSize: '11px', color: '#475569', whiteSpace: 'pre-wrap' }}>
-                    {JSON.stringify(selectedFinding.payload, null, 2)}
-                  </pre>
+              {selectedFinding.payload?.likelyCause && (
+                <div style={{ marginTop: '12px', fontSize: '13px', color: '#1e293b' }}>
+                  <strong>Likely cause:</strong> {selectedFinding.payload.likelyCause}
                 </div>
+              )}
+              {Array.isArray(selectedFinding.payload?.nextSteps) && selectedFinding.payload.nextSteps.length > 0 && (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Suggested checks</div>
+                  <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#64748b' }}>
+                    {selectedFinding.payload.nextSteps.map((step: string) => (
+                      <li key={step} style={{ marginBottom: '4px' }}>
+                        {step}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {selectedFinding.payload?.title === 'No anomaly signals detected' ? (
+                <div style={{ marginTop: '16px', fontSize: '12px', color: '#94a3b8' }}>
+                  This is a placeholder entry until an anomaly is detected.
+                </div>
+              ) : (
+                selectedFinding.payload && (
+                  <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Evidence bundle</div>
+                    <pre style={{ marginTop: '8px', fontSize: '11px', color: '#475569', whiteSpace: 'pre-wrap' }}>
+                      {JSON.stringify(selectedFinding.payload, null, 2)}
+                    </pre>
+                  </div>
+                )
               )}
             </>
           ) : (

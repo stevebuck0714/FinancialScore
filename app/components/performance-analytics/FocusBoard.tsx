@@ -75,9 +75,9 @@ type Finding = {
      return grouped;
    }, [findings]);
  
-   if (loading) {
-     return <div style={{ padding: '32px', color: '#475569' }}>Loading focus board…</div>;
-   }
+  if (loading) {
+    return <div style={{ padding: '32px', color: '#334155' }}>Loading focus board…</div>;
+  }
  
    if (error) {
      return <div style={{ padding: '32px', color: '#b91c1c' }}>{error}</div>;
@@ -86,7 +86,7 @@ type Finding = {
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Focus Board</h1>
-       <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
+      <p style={{ marginTop: '12px', fontSize: '15px', color: '#334155' }}>
          Findings will appear here as agents write to the performance analytics store.
        </p>
  
@@ -99,16 +99,16 @@ type Finding = {
              {findingsByBucket[bucket.id]?.length ? (
                findingsByBucket[bucket.id].map((finding) => (
                  <div key={finding.id} style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', marginBottom: '10px' }}>
-                   <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
                      {finding.metric || finding.payload?.title || 'Untitled Finding'}
                    </div>
-                   <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                  <div style={{ fontSize: '13px', color: '#334155', marginTop: '6px' }}>
                      {finding.payload?.summary || 'No summary provided yet.'}
                    </div>
                  </div>
                ))
              ) : (
-               <div style={{ fontSize: '12px', color: '#94a3b8' }}>No findings yet.</div>
+              <div style={{ fontSize: '13px', color: '#64748b' }}>No findings yet.</div>
              )}
            </div>
          ))}
