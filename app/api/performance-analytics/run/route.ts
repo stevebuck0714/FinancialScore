@@ -158,7 +158,36 @@ async function loadCovenants(companyId: string) {
         applicableValue: row.isApplicable,
       }));
     } catch (error) {
-      console.warn('Performance analytics run: threshold columns unavailable', error);
+      console.warn('Performance analytics run: threshold/current columns unavailable', error);
+      try {
+        const rows = await prisma.$queryRaw<Array<any>>`
+          SELECT
+            c."id" as "covenantId",
+            c."covenantName",
+            c."covenantType",
+            c."threshold",
+            c."warningThreshold",
+            c."breachThreshold",
+            c."status",
+            c."isApplicable",
+            c."description",
+            c."updatedAt",
+            l."id" as "loanId",
+            l."loanName",
+            l."lenderName"
+          FROM "Covenant" c
+          JOIN "Loan" l ON l."id" = c."loanId"
+          WHERE l."companyId" = ${companyId}
+        `;
+        return rows.map((row) => ({
+          ...row,
+          currentValue: null,
+          statusValue: row.status,
+          applicableValue: row.isApplicable,
+        }));
+      } catch (innerError) {
+        console.warn('Performance analytics run: currentValue column unavailable', innerError);
+      }
     }
   } catch (error) {
     console.warn('Performance analytics run: fallback covenant query used', error);
@@ -168,7 +197,6 @@ async function loadCovenants(companyId: string) {
         c."covenantName",
         c."covenantType",
         c."threshold",
-        NULL as "currentValue",
         c."alertLevel" as "status",
         c."applicable" as "isApplicable",
         c."notes" as "description",
@@ -182,6 +210,7 @@ async function loadCovenants(companyId: string) {
     `;
     return rows.map((row) => ({
       ...row,
+      currentValue: null,
       statusValue: row.status,
       applicableValue: row.isApplicable,
     }));
@@ -193,9 +222,6 @@ async function loadCovenants(companyId: string) {
       c."covenantName",
       c."covenantType",
       c."threshold",
-      NULL as "warningThreshold",
-      NULL as "breachThreshold",
-      c."currentValue",
       c."status",
       c."isApplicable",
       c."description",
@@ -209,6 +235,9 @@ async function loadCovenants(companyId: string) {
   `;
   return rows.map((row) => ({
     ...row,
+    warningThreshold: null,
+    breachThreshold: null,
+    currentValue: null,
     statusValue: row.status,
     applicableValue: row.isApplicable,
   }));
