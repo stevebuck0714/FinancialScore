@@ -336,11 +336,11 @@ function GettingStartedContent() {
         </p>
 
         <div style={{ marginBottom: '20px' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#667eea', marginBottom: '12px' }}>Dashboard – Customizable KPI's</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1F70C1', marginBottom: '12px' }}>Dashboard – Customizable KPI's</h4>
         </div>
 
         <div style={{ marginBottom: '20px' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#667eea', marginBottom: '12px' }}>MD&A - An AI generated analysis of your monthly financial performance</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1F70C1', marginBottom: '12px' }}>MD&A - An AI generated analysis of your monthly financial performance</h4>
           <ul style={{ marginLeft: '24px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
             <li>Management Discussion & Analysis</li>
             <li>Performance commentary</li>
@@ -350,7 +350,7 @@ function GettingStartedContent() {
         </div>
 
         <div style={{ marginBottom: '20px' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#667eea', marginBottom: '12px' }}>📈 Financial Ratios</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1F70C1', marginBottom: '12px' }}>📈 Financial Ratios</h4>
           <ul style={{ marginLeft: '24px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
             <li>Liquidity Ratios (Current, Quick)</li>
             <li>Profitability Ratios (Margins, ROA, ROE)</li>
@@ -360,7 +360,7 @@ function GettingStartedContent() {
         </div>
 
         <div style={{ marginBottom: '20px' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#667eea', marginBottom: '12px' }}>💰 Working Capital</h4>
+          <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1F70C1', marginBottom: '12px' }}>💰 Working Capital</h4>
           <ul style={{ marginLeft: '24px', fontSize: '14px', color: '#475569', lineHeight: '1.8' }}>
             <li>Cash conversion cycle</li>
             <li>Days sales outstanding (DSO)</li>

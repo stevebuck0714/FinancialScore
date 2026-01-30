@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
@@ -349,7 +349,7 @@ export default function DashboardView({
                 
               {/* Ratios Section */}
               <div>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   📊 Financial Ratios
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
@@ -567,7 +567,7 @@ export default function DashboardView({
 
                 {/* Trend Analysis Section */}
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     📈 Trend Analysis
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
@@ -703,7 +703,7 @@ export default function DashboardView({
 
                 {/* Working Capital Metrics */}
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     💼 Working Capital Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
@@ -741,7 +741,7 @@ export default function DashboardView({
 
                 {/* Cash Flow Metrics */}
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     💰 Cash Flow
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
@@ -779,7 +779,7 @@ export default function DashboardView({
 
                 {/* Valuation Metrics */}
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     💎 Valuation Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>

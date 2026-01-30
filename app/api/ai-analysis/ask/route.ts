@@ -3,6 +3,108 @@ import OpenAI from 'openai';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
+import { getBenchmarkValue } from '@/app/utils/data-processing';
+
+type RatioSnapshot = {
+  name: string;
+  value: number | null;
+  benchmark: number | null;
+  unit: 'ratio' | 'percent' | 'days';
+};
+
+function buildRatioSnapshot(month: any, benchmarks: any[]): RatioSnapshot[] {
+  if (!month) return [];
+
+  const revenue = month.revenue || 0;
+  const cogs = month.cogsTotal || 0;
+  const grossProfit = revenue - cogs;
+
+  const operatingExpenses = (month.payroll || 0) + (month.ownerBasePay || 0) + (month.benefits || 0) +
+    (month.insurance || 0) + (month.professionalFees || 0) + (month.subcontractors || 0) +
+    (month.rent || 0) + (month.taxLicense || 0) + (month.phoneComm || 0) + (month.infrastructure || 0) +
+    (month.autoTravel || 0) + (month.salesExpense || 0) + (month.marketing || 0) +
+    (month.trainingCert || 0) + (month.mealsEntertainment || 0) + (month.otherExpense || 0);
+
+  const ebit = grossProfit - operatingExpenses;
+  const ebitda = ebit + (month.depreciationAmortization || 0);
+  const netProfit = ebit - (month.interestExpense || 0);
+
+  const cash = month.cash || 0;
+  const ar = month.ar || 0;
+  const inventory = month.inventory || 0;
+  const otherCA = month.otherCA || 0;
+  const tca = month.tca || (cash + ar + inventory + otherCA);
+
+  const fixedAssets = month.fixedAssets || 0;
+  const otherNCA = month.otherNCA || 0;
+  const totalAssets = month.totalAssets || (tca + fixedAssets + otherNCA);
+
+  const ap = month.ap || 0;
+  const otherCL = month.otherCL || 0;
+  const tcl = month.tcl || (ap + otherCL);
+
+  const ltDebt = month.ltDebt || 0;
+  const otherLTL = month.otherLTL || 0;
+  const totalLiabilities = month.totalLiabilities || (tcl + ltDebt + otherLTL);
+
+  const equity = month.equity || (totalAssets - totalLiabilities);
+
+  const currentRatio = tcl > 0 ? tca / tcl : 0;
+  const quickRatio = tcl > 0 ? (tca - inventory) / tcl : 0;
+  const workingCapital = tca - tcl;
+
+  const invTurnover = inventory > 0 ? cogs / inventory : 0;
+  const arTurnover = ar > 0 ? revenue / ar : 0;
+  const apTurnover = ap > 0 ? cogs / ap : 0;
+  const daysInv = invTurnover > 0 ? 365 / invTurnover : 0;
+  const daysAR = arTurnover > 0 ? 365 / arTurnover : 0;
+  const daysAP = apTurnover > 0 ? 365 / apTurnover : 0;
+  const salesWC = workingCapital > 0 ? revenue / workingCapital : 0;
+
+  const interestCov = (month.interestExpense || 0) > 0 ? ebit / (month.interestExpense || 0) : 0;
+  const debtSvcCov = (ltDebt + tcl) > 0 ? (netProfit + (month.depreciationAmortization || 0)) / (ltDebt + tcl) : 0;
+  const cfToDebt = (ltDebt + tcl) > 0 ? netProfit / (ltDebt + tcl) : 0;
+
+  const debtToNW = equity > 0 ? totalLiabilities / equity : 0;
+  const fixedToNW = equity > 0 ? fixedAssets / equity : 0;
+  const leverage = equity > 0 ? totalAssets / equity : 0;
+
+  const totalAssetTO = totalAssets > 0 ? revenue / totalAssets : 0;
+  const roe = equity > 0 ? netProfit / equity : 0;
+  const roa = totalAssets > 0 ? netProfit / totalAssets : 0;
+  const ebitdaMargin = revenue > 0 ? ebitda / revenue : 0;
+  const ebitMargin = revenue > 0 ? ebit / revenue : 0;
+
+  const rows: Array<{ name: string; value: number; unit: RatioSnapshot['unit'] }> = [
+    { name: 'Current Ratio', value: currentRatio, unit: 'ratio' },
+    { name: 'Quick Ratio', value: quickRatio, unit: 'ratio' },
+    { name: 'Inventory Turnover', value: invTurnover, unit: 'ratio' },
+    { name: 'Receivables Turnover', value: arTurnover, unit: 'ratio' },
+    { name: 'Payables Turnover', value: apTurnover, unit: 'ratio' },
+    { name: 'Days Inventory', value: daysInv, unit: 'days' },
+    { name: 'Days Receivables', value: daysAR, unit: 'days' },
+    { name: 'Days Payables', value: daysAP, unit: 'days' },
+    { name: 'Sales/Working Capital', value: salesWC, unit: 'ratio' },
+    { name: 'Interest Coverage', value: interestCov, unit: 'ratio' },
+    { name: 'Debt Service Coverage', value: debtSvcCov, unit: 'ratio' },
+    { name: 'Cash Flow to Debt', value: cfToDebt, unit: 'ratio' },
+    { name: 'Debt/Net Worth', value: debtToNW, unit: 'ratio' },
+    { name: 'Fixed Assets/Net Worth', value: fixedToNW, unit: 'ratio' },
+    { name: 'Leverage Ratio', value: leverage, unit: 'ratio' },
+    { name: 'Total Asset Turnover', value: totalAssetTO, unit: 'ratio' },
+    { name: 'ROE', value: roe, unit: 'percent' },
+    { name: 'ROA', value: roa, unit: 'percent' },
+    { name: 'EBITDA/Revenue', value: ebitdaMargin, unit: 'percent' },
+    { name: 'EBIT/Revenue', value: ebitMargin, unit: 'percent' },
+  ];
+
+  return rows.map((row) => ({
+    name: row.name,
+    value: Number.isFinite(row.value) ? row.value : null,
+    benchmark: getBenchmarkValue(benchmarks, row.name),
+    unit: row.unit,
+  }));
+}
 
 type SerperOrganicResult = {
   title?: string;
@@ -356,6 +458,7 @@ async function generateAskJson(params: {
     'Focus strictly on financial and operational analysis.',
     'Do NOT reference internal Payments tab data or subscription/billing plan terms.',
     'Do NOT invent metrics or KPIs that are not present in the internal summary.',
+    'In this app, KPIs are the same as ratio metrics shown in the Ratios view. Treat KPI questions as ratio questions.',
     'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
   ].join('\n');
 
@@ -558,6 +661,20 @@ export async function POST(request: NextRequest) {
       orderBy: { monthDate: 'desc' },
     });
 
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { industrySector: true },
+    });
+    const industryGroupId = company?.industrySector ? String(company.industrySector) : null;
+    const benchmarks = industryGroupId
+      ? await prisma.industryBenchmark.findMany({
+          where: { industryId: industryGroupId },
+          select: { metricName: true, fiveYearValue: true, industryName: true },
+          take: 200,
+        })
+      : [];
+    const ratioSnapshot = buildRatioSnapshot(latestMonth, benchmarks);
+
     const internalSummary = {
       generatedAt: now.toISOString(),
       company: { id: companyId, name: companyName || null },
@@ -649,9 +766,18 @@ export async function POST(request: NextRequest) {
             }
           : null,
       },
+      kpiDefinitions: {
+        alias: ['kpi', 'kpis', 'ratios'],
+        note: 'In this app, KPIs are the ratio metrics shown in the Ratios view.',
+        asOfMonth: latestMonth?.monthDate || null,
+        industryGroupId,
+        benchmarksAvailable: benchmarks.length,
+        ratios: ratioSnapshot,
+      },
       notes: [
         'Daily operational trends are computed using the most recent available daily snapshot date as the reference.',
         'If dataPoints are low or change values are null, there may be insufficient daily history to assess trends.',
+        'KPI requests should be interpreted as ratio metrics; use kpiDefinitions.ratios when available.',
       ],
     };
 

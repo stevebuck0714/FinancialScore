@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 
 interface User {
   name: string | null;
@@ -24,6 +24,10 @@ export default function Header({
   handleLogout,
   handleNavigation
 }: HeaderProps) {
+  const [showCashMenu, setShowCashMenu] = useState(false);
+  const [showRatiosMenu, setShowRatiosMenu] = useState(false);
+  const [showProjectionsMenu, setShowProjectionsMenu] = useState(false);
+
   if (!currentUser) return null;
 
   // Site Admin Header
@@ -32,7 +36,7 @@ export default function Header({
       <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '80px' }}>
           <div 
-            style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', cursor: 'pointer', letterSpacing: '-0.5px' }} 
+            style={{ fontSize: '28px', fontWeight: '700', color: '#1F70C1', cursor: 'pointer', letterSpacing: '-0.5px' }} 
             onClick={() => setCurrentView('siteadmin')}
           >
             Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
@@ -70,7 +74,7 @@ export default function Header({
   if (currentUser.userType === 'assessment') {
     return (
       <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
-        <div style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', letterSpacing: '-0.5px' }}>
+        <div style={{ fontSize: '28px', fontWeight: '700', color: '#1F70C1', letterSpacing: '-0.5px' }}>
           Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup> - MANAGEMENT ASSESSMENT
         </div>
       </header>
@@ -79,25 +83,310 @@ export default function Header({
 
   // Regular User Header (with navigation)
   return (
-    <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '80px' }}>
+    <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 48px 16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '128px', width: '100%' }}>
         <div 
-          style={{ fontSize: '28px', fontWeight: '700', color: '#4338ca', cursor: 'pointer', letterSpacing: '-0.5px' }} 
+          style={{ fontSize: '28px', fontWeight: '700', color: '#1F70C1', cursor: 'pointer', letterSpacing: '-0.5px' }} 
           onClick={() => currentUser.role === 'consultant' ? setCurrentView('consultant-dashboard') : setCurrentView('fs-score')}
         >
           Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
         </div>
-        <nav style={{ display: 'flex', gap: '24px' }}>
-          <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'dashboard' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #667eea' : '3px solid transparent' }}>DASHBOARD</button>
-          <button onClick={() => handleNavigation('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'mda' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #667eea' : '3px solid transparent' }}>MD&A</button>
-          <button onClick={() => handleNavigation('kpis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'kpis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'kpis' ? '3px solid #667eea' : '3px solid transparent' }}>RATIOS</button>
-          <button onClick={() => handleNavigation('trend-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'trend-analysis' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'trend-analysis' ? '3px solid #667eea' : '3px solid transparent' }}>TREND ANALYSIS</button>
-          <button onClick={() => handleNavigation('projections')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'projections' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'projections' ? '3px solid #667eea' : '3px solid transparent' }}>PROJECTIONS</button>
-          <button onClick={() => handleNavigation('goals')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'goals' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'goals' ? '3px solid #667eea' : '3px solid transparent' }}>GOALS</button>
-          <button onClick={() => handleNavigation('cash-flow')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'cash-flow' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'cash-flow' ? '3px solid #667eea' : '3px solid transparent' }}>CASH FLOW</button>
-          <button onClick={() => handleNavigation('working-capital')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'working-capital' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'working-capital' ? '3px solid #667eea' : '3px solid transparent' }}>WORKING CAPITAL</button>
-          <button onClick={() => handleNavigation('covenants')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'covenants' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'covenants' ? '3px solid #667eea' : '3px solid transparent' }}>COVENANTS</button>
-          <button onClick={() => handleNavigation('operations')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: currentView === 'operations' ? '#667eea' : '#64748b', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'operations' ? '3px solid #667eea' : '3px solid transparent' }}>OPERATIONS</button>
+        <nav style={{ display: 'flex', gap: '24px', marginLeft: 'auto', marginRight: 'auto' }}>
+          <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #000' : '3px solid transparent' }}>Dashboard</button>
+          <button onClick={() => handleNavigation('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #000' : '3px solid transparent' }}>MD&A</button>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowRatiosMenu((prev) => !prev)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '16px',
+                fontWeight: '600',
+                color: '#000',
+                cursor: 'pointer',
+                padding: '8px 12px',
+                paddingRight: '26px',
+                borderBottom: (currentView === 'kpis' || currentView === 'trend-analysis') ? '3px solid #000' : '3px solid transparent',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                lineHeight: '1.1',
+                position: 'relative'
+              }}
+              aria-haspopup="menu"
+              aria-expanded={showRatiosMenu}
+            >
+              <span>Ratios and</span>
+              <span style={{ display: 'block', textAlign: 'center' }}>Trends</span>
+              <span style={{ fontSize: '12px', position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)' }}>▾</span>
+            </button>
+            {showRatiosMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  background: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                  padding: '6px',
+                  minWidth: '180px',
+                  zIndex: 1100
+                }}
+                onMouseLeave={() => setShowRatiosMenu(false)}
+              >
+                <button
+                  onClick={() => {
+                    handleNavigation('kpis');
+                    setShowRatiosMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#000',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f1f5f9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  Ratios
+                </button>
+                <button
+                  onClick={() => {
+                    handleNavigation('trend-analysis');
+                    setShowRatiosMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#000',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f1f5f9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  Trend Analysis
+                </button>
+              </div>
+            )}
+          </div>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowProjectionsMenu((prev) => !prev)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '16px',
+                fontWeight: '600',
+                color: '#000',
+                cursor: 'pointer',
+                padding: '8px 12px',
+                paddingRight: '26px',
+                borderBottom: (currentView === 'projections' || currentView === 'goals') ? '3px solid #000' : '3px solid transparent',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                lineHeight: '1.1',
+                position: 'relative'
+              }}
+              aria-haspopup="menu"
+              aria-expanded={showProjectionsMenu}
+            >
+              <span>Goals and</span>
+              <span style={{ display: 'block', textAlign: 'center' }}>Projections</span>
+              <span style={{ fontSize: '12px', position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)' }}>▾</span>
+            </button>
+            {showProjectionsMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  background: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                  padding: '6px',
+                  minWidth: '180px',
+                  zIndex: 1100
+                }}
+                onMouseLeave={() => setShowProjectionsMenu(false)}
+              >
+                <button
+                  onClick={() => {
+                    handleNavigation('projections');
+                    setShowProjectionsMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#000',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f1f5f9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  Projections
+                </button>
+                <button
+                  onClick={() => {
+                    handleNavigation('goals');
+                    setShowProjectionsMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#000',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f1f5f9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  Goals
+                </button>
+              </div>
+            )}
+          </div>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowCashMenu((prev) => !prev)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '16px',
+                fontWeight: '600',
+                color: '#000',
+                cursor: 'pointer',
+                padding: '8px 12px',
+                paddingRight: '26px',
+                borderBottom: (currentView === 'cash-flow' || currentView === 'working-capital') ? '3px solid #000' : '3px solid transparent',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                lineHeight: '1.1',
+                position: 'relative'
+              }}
+              aria-haspopup="menu"
+              aria-expanded={showCashMenu}
+            >
+              <span>Cash Flow and</span>
+              <span style={{ display: 'block', textAlign: 'center' }}>Working Capital</span>
+              <span style={{ fontSize: '12px', position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)' }}>▾</span>
+            </button>
+            {showCashMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  background: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                  padding: '6px',
+                  minWidth: '200px',
+                  zIndex: 1100
+                }}
+                onMouseLeave={() => setShowCashMenu(false)}
+              >
+                <button
+                  onClick={() => {
+                    handleNavigation('cash-flow');
+                    setShowCashMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#000',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f1f5f9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  Cash Flow
+                </button>
+                <button
+                  onClick={() => {
+                    handleNavigation('working-capital');
+                    setShowCashMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#000',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f1f5f9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  Working Capital
+                </button>
+              </div>
+            )}
+          </div>
+          <button onClick={() => handleNavigation('covenants')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'covenants' ? '3px solid #000' : '3px solid transparent' }}>Covenants</button>
+          <button onClick={() => handleNavigation('operations')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent' }}>Operations</button>
         </nav>
       </div>
     </header>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { INDUSTRY_SECTORS } from '../../../data/industrySectors';
 
 type ContextResponse = {
    company: {
@@ -136,12 +137,22 @@ type ContextResponse = {
      return <div style={{ padding: '32px', color: '#475569' }}>No performance analytics context available.</div>;
    }
  
+  const industryGroupId = context.company.industryGroupId;
+  const industryGroupName =
+    context.company.industryGroupName ||
+    (industryGroupId
+      ? INDUSTRY_SECTORS.find((sector) => String(sector.id) === String(industryGroupId))?.name
+      : null);
+  const industryGroupDisplay = industryGroupId && industryGroupName
+    ? `${industryGroupId} - ${industryGroupName}`
+    : industryGroupName || industryGroupId || 'Not set';
+
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Performance Analytics</h1>
-       <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
-         Benchmarks use Industry Group data. Operational analysis uses the Industry Sector profile.
-       </p>
+      <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
+        Benchmarks and analysis use Industry Group data. Operational profile is shown separately.
+      </p>
 
       <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -180,18 +191,18 @@ type ContextResponse = {
       </div>
  
        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginTop: '24px' }}>
-         <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white' }}>
-           <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Industry Group</div>
-           <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginTop: '6px' }}>
-             {context.company.industryGroupName || context.company.industryGroupId || 'Not set'}
-           </div>
-         </div>
-         <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white' }}>
-           <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Industry Sector</div>
-           <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginTop: '6px' }}>
-             {context.operationalProfile.label}
-           </div>
-         </div>
+        <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white' }}>
+          <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Industry</div>
+          <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginTop: '6px' }}>
+            {industryGroupDisplay}
+          </div>
+        </div>
+        <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white' }}>
+          <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Operational Profile</div>
+          <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginTop: '6px' }}>
+            {context.operationalProfile.label}
+          </div>
+        </div>
          <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white' }}>
            <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Benchmarks Loaded</div>
            <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '6px' }}>

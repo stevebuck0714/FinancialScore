@@ -5014,8 +5014,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.border = '1px solid #bae6fd';
                 }}
               >
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Company</div>
-                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e40af' }}>
+                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1F70C1' }}>
                   {companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || 'Loading...' : '')}
                 </div>
                 {/* Show Advisor Name for Company Users */}
@@ -5023,7 +5022,7 @@ function FinancialScorePage() {
                   const consultant = consultants.find(c => c.id === currentUser.consultantId);
                   if (consultant?.companyName) {
                     return (
-                      <div style={{ fontSize: '12px', color: '#667eea', marginTop: '6px', fontWeight: '500' }}>
+                      <div style={{ fontSize: '12px', color: '#1F70C1', marginTop: '6px', fontWeight: '500' }}>
                         {consultant.companyName}
                       </div>
                     );
@@ -5044,17 +5043,17 @@ function FinancialScorePage() {
                     style={{
                       fontSize: '14px',
                       fontWeight: '700',
-                      color: currentView === 'ai-analysis' ? '#667eea' : '#1e293b',
+                      color: currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
                       padding: '1px 24px',
                       marginBottom: '1px',
                       cursor: 'pointer',
                       transition: 'color 0.2s',
-                      borderLeft: currentView === 'ai-analysis' ? '4px solid #667eea' : '4px solid transparent'
+                      borderLeft: currentView === 'ai-analysis' ? '4px solid #1F70C1' : '4px solid transparent'
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'ai-analysis' ? '#667eea' : '#1e293b'}
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#1F70C1'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b'}
                   >
                     Ask Corelytics
                   </h3>
@@ -5074,17 +5073,17 @@ function FinancialScorePage() {
                 style={{ 
                   fontSize: '14px', 
                   fontWeight: '700', 
-                  color: currentView === 'valuation' ? '#667eea' : '#1e293b',
+                  color: currentView === 'valuation' ? '#1F70C1' : '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
                   padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
-                  borderLeft: currentView === 'valuation' ? '4px solid #667eea' : '4px solid transparent'
+                  borderLeft: currentView === 'valuation' ? '4px solid #1F70C1' : '4px solid transparent'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
-                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'valuation' ? '#667eea' : '#1e293b'}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#1F70C1'}
+                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'valuation' ? '#1F70C1' : '#1e293b'}
               >
                 Valuation
               </h3>
@@ -5097,17 +5096,17 @@ function FinancialScorePage() {
                 style={{ 
                   fontSize: '14px', 
                   fontWeight: '700', 
-                  color: currentView === 'financial-statements' ? '#667eea' : '#1e293b',
+                  color: currentView === 'financial-statements' ? '#1F70C1' : '#1e293b',
                   textTransform: 'uppercase', 
                   letterSpacing: '0.5px',
                   padding: '1px 24px',
                   marginBottom: '1px',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
-                  borderLeft: currentView === 'financial-statements' ? '4px solid #667eea' : '4px solid transparent'
+                  borderLeft: currentView === 'financial-statements' ? '4px solid #1F70C1' : '4px solid transparent'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
-                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'financial-statements' ? '#667eea' : '#1e293b'}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#1F70C1'}
+                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'financial-statements' ? '#1F70C1' : '#1e293b'}
               >
                 Financial Statements
               </h3>
@@ -5132,13 +5131,13 @@ function FinancialScorePage() {
                   transition: 'color 0.2s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.style.color = '#1F70C1';
                   e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
                 }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
                 <span>Financial Score</span>
-                <span style={{ fontSize: '12px', color: '#667eea' }}>{isFinancialScoreExpanded ? '-' : '+'}</span>
+                <span style={{ fontSize: '12px', color: '#1F70C1' }}>{isFinancialScoreExpanded ? '-' : '+'}</span>
               </h3>
               {isFinancialScoreExpanded && (
                 <div style={{ paddingLeft: '28px' }}>
@@ -5146,19 +5145,19 @@ function FinancialScorePage() {
                     onClick={() => setCurrentView('fs-intro')}
                     style={{
                       fontSize: '14px',
-                      color: currentView === 'fs-intro' ? '#667eea' : '#475569',
+                      color: currentView === 'fs-intro' ? '#1F70C1' : '#475569',
                       padding: '4px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'fs-intro' ? '#ede9fe' : 'transparent',
+                      background: currentView === 'fs-intro' ? '#e0f2fe' : 'transparent',
                       fontWeight: currentView === 'fs-intro' ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
                       if (currentView !== 'fs-intro') {
                         e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
+                        e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -5174,19 +5173,19 @@ function FinancialScorePage() {
                     onClick={() => setCurrentView('fs-score')}
                     style={{
                       fontSize: '14px',
-                      color: currentView === 'fs-score' ? '#667eea' : '#475569',
+                      color: currentView === 'fs-score' ? '#1F70C1' : '#475569',
                       padding: '8px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'fs-score' ? '#ede9fe' : 'transparent',
+                      background: currentView === 'fs-score' ? '#e0f2fe' : 'transparent',
                       fontWeight: currentView === 'fs-score' ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
                       if (currentView !== 'fs-score') {
                         e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
+                        e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -5222,13 +5221,13 @@ function FinancialScorePage() {
                   transition: 'color 0.2s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.style.color = '#1F70C1';
                   e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
                 }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
                 <span>Management Assessment</span>
-                <span style={{ fontSize: '12px', color: '#667eea' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
+                <span style={{ fontSize: '12px', color: '#1F70C1' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
               </h3>
               {isManagementAssessmentExpanded && (
                 <div style={{ paddingLeft: '28px' }}>
@@ -5236,19 +5235,19 @@ function FinancialScorePage() {
                   onClick={() => setCurrentView('ma-welcome')}
                   style={{
                     fontSize: '14px',
-                    color: currentView === 'ma-welcome' ? '#667eea' : '#475569',
+                    color: currentView === 'ma-welcome' ? '#1F70C1' : '#475569',
                     padding: '8px 12px',
                     cursor: 'pointer',
                     borderRadius: '6px',
                     marginBottom: '4px',
-                    background: currentView === 'ma-welcome' ? '#ede9fe' : 'transparent',
+                    background: currentView === 'ma-welcome' ? '#e0f2fe' : 'transparent',
                     fontWeight: currentView === 'ma-welcome' ? '600' : '400',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
                     if (currentView !== 'ma-welcome') {
                       e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
+                      e.currentTarget.style.color = '#1F70C1';
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -5264,19 +5263,19 @@ function FinancialScorePage() {
                   onClick={() => setCurrentView('ma-questionnaire')}
                   style={{
                     fontSize: '14px',
-                    color: currentView === 'ma-questionnaire' ? '#667eea' : '#475569',
+                    color: currentView === 'ma-questionnaire' ? '#1F70C1' : '#475569',
                     padding: '8px 12px',
                     cursor: 'pointer',
                     borderRadius: '6px',
                     marginBottom: '4px',
-                    background: currentView === 'ma-questionnaire' ? '#ede9fe' : 'transparent',
+                    background: currentView === 'ma-questionnaire' ? '#e0f2fe' : 'transparent',
                     fontWeight: currentView === 'ma-questionnaire' ? '600' : '400',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
                     if (currentView !== 'ma-questionnaire') {
                       e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
+                      e.currentTarget.style.color = '#1F70C1';
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -5292,19 +5291,19 @@ function FinancialScorePage() {
                   onClick={() => setCurrentView('ma-your-results')}
                   style={{
                     fontSize: '14px',
-                    color: currentView === 'ma-your-results' ? '#667eea' : '#475569',
+                    color: currentView === 'ma-your-results' ? '#1F70C1' : '#475569',
                     padding: '8px 12px',
                     cursor: 'pointer',
                     borderRadius: '6px',
                     marginBottom: '4px',
-                    background: currentView === 'ma-your-results' ? '#ede9fe' : 'transparent',
+                    background: currentView === 'ma-your-results' ? '#e0f2fe' : 'transparent',
                     fontWeight: currentView === 'ma-your-results' ? '600' : '400',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
                     if (currentView !== 'ma-your-results') {
                       e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
+                      e.currentTarget.style.color = '#1F70C1';
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -5320,19 +5319,19 @@ function FinancialScorePage() {
                   onClick={() => setCurrentView('ma-scores-summary')}
                   style={{
                     fontSize: '14px',
-                    color: currentView === 'ma-scores-summary' ? '#667eea' : '#475569',
+                    color: currentView === 'ma-scores-summary' ? '#1F70C1' : '#475569',
                     padding: '8px 12px',
                     cursor: 'pointer',
                     borderRadius: '6px',
                     marginBottom: '4px',
-                    background: currentView === 'ma-scores-summary' ? '#ede9fe' : 'transparent',
+                    background: currentView === 'ma-scores-summary' ? '#e0f2fe' : 'transparent',
                     fontWeight: currentView === 'ma-scores-summary' ? '600' : '400',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
                     if (currentView !== 'ma-scores-summary') {
                       e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
+                      e.currentTarget.style.color = '#1F70C1';
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -5348,19 +5347,19 @@ function FinancialScorePage() {
                   onClick={() => setCurrentView('ma-scoring-guide')}
                   style={{
                     fontSize: '14px',
-                    color: currentView === 'ma-scoring-guide' ? '#667eea' : '#475569',
+                    color: currentView === 'ma-scoring-guide' ? '#1F70C1' : '#475569',
                     padding: '8px 12px',
                     cursor: 'pointer',
                     borderRadius: '6px',
                     marginBottom: '4px',
-                    background: currentView === 'ma-scoring-guide' ? '#ede9fe' : 'transparent',
+                    background: currentView === 'ma-scoring-guide' ? '#e0f2fe' : 'transparent',
                     fontWeight: currentView === 'ma-scoring-guide' ? '600' : '400',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
                     if (currentView !== 'ma-scoring-guide') {
                       e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
+                      e.currentTarget.style.color = '#1F70C1';
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -5376,19 +5375,19 @@ function FinancialScorePage() {
                   onClick={() => setCurrentView('ma-charts')}
                   style={{
                     fontSize: '14px',
-                    color: currentView === 'ma-charts' ? '#667eea' : '#475569',
+                    color: currentView === 'ma-charts' ? '#1F70C1' : '#475569',
                     padding: '8px 12px',
                     cursor: 'pointer',
                     borderRadius: '6px',
                     marginBottom: '4px',
-                    background: currentView === 'ma-charts' ? '#ede9fe' : 'transparent',
+                    background: currentView === 'ma-charts' ? '#e0f2fe' : 'transparent',
                     fontWeight: currentView === 'ma-charts' ? '600' : '400',
                     transition: 'all 0.2s'
                   }}
                   onMouseEnter={(e) => {
                     if (currentView !== 'ma-charts') {
                       e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
+                      e.currentTarget.style.color = '#1F70C1';
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -5413,20 +5412,20 @@ function FinancialScorePage() {
                   style={{ 
                     fontSize: '14px', 
                     fontWeight: '700', 
-                    color: currentView === 'custom-print' ? '#667eea' : '#1e293b',
+                    color: currentView === 'custom-print' ? '#1F70C1' : '#1e293b',
                     textTransform: 'uppercase', 
                     letterSpacing: '0.5px',
                     padding: '1px 24px',
                     marginBottom: '1px',
                     cursor: 'pointer',
                     transition: 'color 0.2s',
-                    borderLeft: currentView === 'custom-print' ? '4px solid #667eea' : '4px solid transparent'
+                    borderLeft: currentView === 'custom-print' ? '4px solid #1F70C1' : '4px solid transparent'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#667eea';
+                    e.currentTarget.style.color = '#1F70C1';
                     e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
                   }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#667eea' : '#1e293b'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#1F70C1' : '#1e293b'}
                 >
                   Custom Print
                 </h3>
@@ -5448,20 +5447,20 @@ function FinancialScorePage() {
                   style={{ 
                     fontSize: '14px', 
                     fontWeight: '700', 
-                    color: (currentView === 'dashboard' || currentView === 'admin') ? '#667eea' : '#1e293b',
+                    color: (currentView === 'dashboard' || currentView === 'admin') ? '#1F70C1' : '#1e293b',
                     textTransform: 'uppercase', 
                     letterSpacing: '0.5px',
                     padding: '8px 24px',
                     marginBottom: '8px',
                     cursor: 'pointer',
                     transition: 'color 0.2s',
-                    borderLeft: (currentView === 'dashboard' || currentView === 'admin') ? '4px solid #667eea' : '4px solid transparent'
+                    borderLeft: (currentView === 'dashboard' || currentView === 'admin') ? '4px solid #1F70C1' : '4px solid transparent'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#667eea';
+                    e.currentTarget.style.color = '#1F70C1';
                     e.currentTarget.title = 'Company Dashboard';
                   }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'dashboard' || currentView === 'admin') ? '#667eea' : '#1e293b'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'dashboard' || currentView === 'admin') ? '#1F70C1' : '#1e293b'}
                 >
                   Company Dashboard
                 </h3>
@@ -5504,7 +5503,7 @@ function FinancialScorePage() {
               <div style={{ 
                 fontSize: '14px', 
                 fontWeight: '600', 
-                color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b',
+                color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#1F70C1' : '#1e293b',
                 paddingLeft: '24px',
                 transition: 'color 0.2s'
               }}>
@@ -5515,31 +5514,40 @@ function FinancialScorePage() {
             {/* User Info and Logout Section */}
             <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
               <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Logged in as
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Logged in as
+                  </div>
+                  <button 
+                    onClick={handleLogout} 
+                    style={{ 
+                      padding: '6px 12px', 
+                      background: '#f8fafc', 
+                      color: '#334155', 
+                      border: '1px solid #cbd5e1', 
+                      borderRadius: '8px', 
+                      fontSize: '12px', 
+                      fontWeight: '600', 
+                      cursor: 'pointer',
+                      transition: 'background 0.2s, color 0.2s, border-color 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#e2e8f0';
+                      e.currentTarget.style.borderColor = '#94a3b8';
+                      e.currentTarget.style.color = '#1e293b';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#f8fafc';
+                      e.currentTarget.style.borderColor = '#cbd5e1';
+                      e.currentTarget.style.color = '#334155';
+                    }}
+                  >
+                    Log out
+                  </button>
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
                   {currentUser?.name}
                 </div>
-                <button 
-                  onClick={handleLogout} 
-                  style={{ 
-                    width: '100%',
-                    padding: '10px 16px', 
-                    background: '#ef4444', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '8px', 
-                    fontSize: '14px', 
-                    fontWeight: '600', 
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
-                >
-                  🚪 LOGOUT
-                </button>
               </div>
             </div>
 
@@ -5553,7 +5561,7 @@ function FinancialScorePage() {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#667eea',
+                  color: '#1F70C1',
                   textDecoration: 'none',
                   padding: '12px 24px',
                   transition: 'all 0.2s',
@@ -5561,12 +5569,12 @@ function FinancialScorePage() {
                   margin: '0 12px'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
+                  e.currentTarget.style.background = '#e0f2fe';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
               >
                 📞 SUPPORT
@@ -5611,13 +5619,13 @@ function FinancialScorePage() {
                   transition: 'color 0.2s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.style.color = '#1F70C1';
                   e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
                 }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
                 <span>Management Assessment</span>
-                <span style={{ fontSize: '12px', color: '#667eea' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
+                <span style={{ fontSize: '12px', color: '#1F70C1' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
               </h3>
               {isManagementAssessmentExpanded && (
                 <div style={{ paddingLeft: '28px' }}>
@@ -5625,19 +5633,19 @@ function FinancialScorePage() {
                     onClick={() => handleViewChange('ma-welcome')}
                     style={{
                       fontSize: '14px',
-                      color: currentView === 'ma-welcome' ? '#667eea' : '#475569',
+                      color: currentView === 'ma-welcome' ? '#1F70C1' : '#475569',
                       padding: '8px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'ma-welcome' ? '#ede9fe' : 'transparent',
+                      background: currentView === 'ma-welcome' ? '#e0f2fe' : 'transparent',
                       fontWeight: currentView === 'ma-welcome' ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
                       if (currentView !== 'ma-welcome') {
                         e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
+                        e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -5653,19 +5661,19 @@ function FinancialScorePage() {
                     onClick={() => handleViewChange('ma-questionnaire')}
                     style={{
                       fontSize: '14px',
-                      color: currentView === 'ma-questionnaire' ? '#667eea' : '#475569',
+                      color: currentView === 'ma-questionnaire' ? '#1F70C1' : '#475569',
                       padding: '8px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'ma-questionnaire' ? '#ede9fe' : 'transparent',
+                      background: currentView === 'ma-questionnaire' ? '#e0f2fe' : 'transparent',
                       fontWeight: currentView === 'ma-questionnaire' ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
                       if (currentView !== 'ma-questionnaire') {
                         e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
+                        e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -5681,19 +5689,19 @@ function FinancialScorePage() {
                     onClick={() => handleViewChange('ma-your-results')}
                     style={{
                       fontSize: '14px',
-                      color: currentView === 'ma-your-results' ? '#667eea' : '#475569',
+                      color: currentView === 'ma-your-results' ? '#1F70C1' : '#475569',
                       padding: '8px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'ma-your-results' ? '#ede9fe' : 'transparent',
+                      background: currentView === 'ma-your-results' ? '#e0f2fe' : 'transparent',
                       fontWeight: currentView === 'ma-your-results' ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
                       if (currentView !== 'ma-your-results') {
                         e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
+                        e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -5712,31 +5720,40 @@ function FinancialScorePage() {
             {/* User Info and Logout Section */}
             <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
               <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Logged in as
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Logged in as
+                  </div>
+                  <button 
+                    onClick={handleLogout} 
+                    style={{ 
+                      padding: '6px 12px', 
+                      background: '#f8fafc', 
+                      color: '#334155', 
+                      border: '1px solid #cbd5e1', 
+                      borderRadius: '8px', 
+                      fontSize: '12px', 
+                      fontWeight: '600', 
+                      cursor: 'pointer',
+                      transition: 'background 0.2s, color 0.2s, border-color 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#e2e8f0';
+                      e.currentTarget.style.borderColor = '#94a3b8';
+                      e.currentTarget.style.color = '#1e293b';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#f8fafc';
+                      e.currentTarget.style.borderColor = '#cbd5e1';
+                      e.currentTarget.style.color = '#334155';
+                    }}
+                  >
+                    Log out
+                  </button>
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
                   {currentUser?.name}
                 </div>
-                <button 
-                  onClick={handleLogout} 
-                  style={{ 
-                    width: '100%',
-                    padding: '10px 16px', 
-                    background: '#ef4444', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '8px', 
-                    fontSize: '14px', 
-                    fontWeight: '600', 
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
-                >
-                  🚪 LOGOUT
-                </button>
               </div>
             </div>
 
@@ -5750,7 +5767,7 @@ function FinancialScorePage() {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#667eea',
+                  color: '#1F70C1',
                   textDecoration: 'none',
                   padding: '12px 24px',
                   transition: 'all 0.2s',
@@ -5758,12 +5775,12 @@ function FinancialScorePage() {
                   margin: '0 12px'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
+                  e.currentTarget.style.background = '#e0f2fe';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
               >
                 📞 SUPPORT

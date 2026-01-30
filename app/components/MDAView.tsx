@@ -616,7 +616,7 @@ function ExecutiveSummaryTab({
           
           {/* Financial Ratios Analysis */}
           <p style={{ margin: '12px 0' }}>
-            <strong style={{ color: '#667eea' }}>Financial Ratios</strong> analysis provides insight into operational performance and financial health:
+            <strong style={{ color: '#1F70C1' }}>Financial Ratios</strong> analysis provides insight into operational performance and financial health:
             {(() => {
               const ratioAnalysis = [];
               
