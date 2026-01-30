@@ -30,10 +30,15 @@
    return (
      <div style={{ marginBottom: '1px' }}>
        <h3
-         onClick={() => {
-           setIsExpanded(true);
-           setCurrentView('pa-overview');
-         }}
+        onClick={() => {
+          setIsExpanded((prev) => {
+            const next = !prev;
+            if (next && !currentView.startsWith('pa-')) {
+              setCurrentView('pa-overview');
+            }
+            return next;
+          });
+        }}
          style={{
            fontSize: '14px',
            fontWeight: '700',
