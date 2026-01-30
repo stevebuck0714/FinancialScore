@@ -141,11 +141,11 @@ export default function CompanyDetailsTab({
           role: (u as any).companyRole || "user",
           sidebarAccess: (u as any).sidebarAccess || [
             "company-dashboard",
+            "performance-analytics",
             "valuation",
             "financial-statements",
             "financial-score",
             "management-assessment",
-            "digital-presence",
           ],
         };
       });
@@ -426,11 +426,11 @@ export default function CompanyDetailsTab({
                         role: "user",
                         sidebarAccess: [
                           "company-dashboard",
+                          "performance-analytics",
                           "valuation",
                           "financial-statements",
                           "financial-score",
                           "management-assessment",
-                          "digital-presence",
                         ],
                       };
                       const isAdmin = userPerm.role === "admin";
@@ -632,6 +632,10 @@ export default function CompanyDetailsTab({
                                       id: "company-dashboard",
                                       label: "Company Dashboard",
                                     },
+                                    {
+                                      id: "performance-analytics",
+                                      label: "Performance Analytics",
+                                    },
                                     { id: "valuation", label: "Valuation" },
                                     {
                                       id: "financial-statements",
@@ -644,10 +648,6 @@ export default function CompanyDetailsTab({
                                     {
                                       id: "management-assessment",
                                       label: "Management Assessment",
-                                    },
-                                    {
-                                      id: "digital-presence",
-                                      label: "Digital Presence Analysis",
                                     },
                                   ].map((section) => (
                                     <label

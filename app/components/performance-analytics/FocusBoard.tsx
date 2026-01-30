@@ -1,0 +1,118 @@
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
+
+type Finding = {
+   id: string;
+   type: 'trend' | 'anomaly' | 'driver' | 'focus' | 'opportunity';
+   metric?: string | null;
+   severity?: string | null;
+   confidence?: number | null;
+   payload?: any;
+   updatedAt?: string;
+ };
+ 
+ interface FocusBoardProps {
+   companyId: string;
+ }
+ 
+ const BUCKETS = [
+   { id: 'fix-now', label: 'Fix Now', types: ['anomaly'] },
+   { id: 'investigate', label: 'Investigate', types: ['trend', 'driver', 'focus'] },
+   { id: 'monitor', label: 'Monitor', types: ['trend'] },
+   { id: 'opportunities', label: 'Opportunities', types: ['opportunity'] },
+ ];
+ 
+ export default function FocusBoard({ companyId }: FocusBoardProps) {
+   const [findings, setFindings] = useState<Finding[]>([]);
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
+ 
+   useEffect(() => {
+     let isMounted = true;
+     const loadFindings = async () => {
+       setLoading(true);
+       setError(null);
+       try {
+         const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}`);
+         if (!response.ok) {
+           let message = 'Failed to load focus board';
+           try {
+             const payload = await response.json();
+             if (payload?.error) {
+               message = payload.error;
+               if (payload.details) message += ` (${payload.details})`;
+             }
+           } catch {
+             // ignore parse errors
+           }
+           message += ` [${response.status}]`;
+           throw new Error(message);
+         }
+         const data = await response.json();
+         if (isMounted) setFindings(data.findings || []);
+       } catch (err: any) {
+         if (isMounted) setError(err.message || 'Failed to load focus board');
+       } finally {
+         if (isMounted) setLoading(false);
+       }
+     };
+ 
+     if (companyId) {
+       loadFindings();
+     }
+ 
+     return () => {
+       isMounted = false;
+     };
+   }, [companyId]);
+ 
+   const findingsByBucket = useMemo(() => {
+     const grouped: Record<string, Finding[]> = {};
+     BUCKETS.forEach((bucket) => {
+       grouped[bucket.id] = findings.filter((finding) => bucket.types.includes(finding.type));
+     });
+     return grouped;
+   }, [findings]);
+ 
+   if (loading) {
+     return <div style={{ padding: '32px', color: '#475569' }}>Loading focus board…</div>;
+   }
+ 
+   if (error) {
+     return <div style={{ padding: '32px', color: '#b91c1c' }}>{error}</div>;
+   }
+ 
+   return (
+     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+       <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Focus Board</h1>
+       <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
+         Findings will appear here as agents write to the performance analytics store.
+       </p>
+ 
+       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginTop: '24px' }}>
+         {BUCKETS.map((bucket) => (
+           <div key={bucket.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+             <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
+               {bucket.label}
+             </div>
+             {findingsByBucket[bucket.id]?.length ? (
+               findingsByBucket[bucket.id].map((finding) => (
+                 <div key={finding.id} style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', marginBottom: '10px' }}>
+                   <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b' }}>
+                     {finding.metric || finding.payload?.title || 'Untitled Finding'}
+                   </div>
+                   <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                     {finding.payload?.summary || 'No summary provided yet.'}
+                   </div>
+                 </div>
+               ))
+             ) : (
+               <div style={{ fontSize: '12px', color: '#94a3b8' }}>No findings yet.</div>
+             )}
+           </div>
+         ))}
+       </div>
+     </div>
+   );
+ }

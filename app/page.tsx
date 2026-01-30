@@ -40,6 +40,7 @@ const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab')
 const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
 
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
+import PerformanceAnalyticsNav from './components/layout/PerformanceAnalyticsNav';
 const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
 import { saveProjectionDefaults as saveProjectionDefaultsUtil } from './utils/projection-helpers';
@@ -58,6 +59,10 @@ const WorkingCapitalTab = dynamic(() => import('./components/WorkingCapitalTab')
 const ProjectionsTab = dynamic(() => import('./components/ProjectionsTab'), { ssr: false });
 const MDAView = dynamic(() => import('./components/MDAView'), { ssr: false });
 const AIAnalysisView = dynamic(() => import('./components/AIAnalysisView'), { ssr: false });
+const PerformanceAnalyticsOverview = dynamic(() => import('./components/performance-analytics/PerformanceAnalyticsOverview'), { ssr: false });
+const FocusBoard = dynamic(() => import('./components/performance-analytics/FocusBoard'), { ssr: false });
+const TrendExplorer = dynamic(() => import('./components/performance-analytics/TrendExplorer'), { ssr: false });
+const AnomalyInbox = dynamic(() => import('./components/performance-analytics/AnomalyInbox'), { ssr: false });
 const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
 const FinancialScoreView = dynamic(() => import('./components/FinancialScoreView'), { ssr: false });
 import GoalsView from './components/GoalsView';
@@ -301,7 +306,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -5029,6 +5034,13 @@ function FinancialScorePage() {
           )}
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
+            {currentUser?.userType !== 'assessment' && (
+              <PerformanceAnalyticsNav
+                currentView={currentView}
+                setCurrentView={setCurrentView}
+              />
+            )}
+
             {/* Valuation Section */}
             <div style={{ marginBottom: '1px' }}>
               <h3 
@@ -5367,37 +5379,6 @@ function FinancialScorePage() {
             </div>
             )}
 
-            {/* Digital Presence Analysis  Section */}
-            {((currentUser?.role === 'user' && (currentUser?.userType === 'assessment' || currentUser?.userType === 'company')) || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => {
-                  // Navigate to https://www.digi-presence.com
-                  window.open('https://www.digi-presence.com', '_blank');
-                }}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  transition: 'color 0.2s',
-                  borderLeft: '4px solid #f59e0b'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
-                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                }}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
-              >
-                Digital Presence Analysis 
-              </h3>
-            </div>
-            )}
-
             {/* Custom Print Section - For Consultants and Company Users only */}
             {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
               <div style={{ marginBottom: '1px' }}>
@@ -5700,35 +5681,6 @@ function FinancialScorePage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Digital Presence Analysis  Section */}
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => {
-                  // Navigate to https://www.digi-presence.com
-                  window.open('https://www.digi-presence.com', '_blank');
-                }}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  transition: 'color 0.2s',
-                  borderLeft: '4px solid #f59e0b'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
-                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                }}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
-              >
-                Digital Presence Analysis 
-              </h3>
             </div>
 
             {/* User Info and Logout Section */}
@@ -8712,6 +8664,31 @@ function FinancialScorePage() {
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
         />
+      )}
+
+      {currentView === 'pa-overview' && selectedCompanyId && (
+        <PerformanceAnalyticsOverview companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-focus-board' && selectedCompanyId && (
+        <FocusBoard companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-trend-explorer' && selectedCompanyId && (
+        <TrendExplorer companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-anomaly-inbox' && selectedCompanyId && (
+        <AnomalyInbox companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-opportunity-workspace' && selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Opportunity Workspace</h1>
+          <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
+            Opportunity hypotheses with expected impact, risks, and prerequisites will be listed here.
+          </p>
+        </div>
       )}
 
       {/* Valuation View */}
