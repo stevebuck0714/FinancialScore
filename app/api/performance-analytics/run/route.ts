@@ -375,12 +375,22 @@ export async function POST(request: NextRequest) {
 
     // Trend & Change-Point Agent (simple 3 vs 3 rolling check)
     const lastSix = monthlyFinancials.slice(-6);
+    const revenueBaseline = (() => {
+      if (lastSix.length >= 6) {
+        const prior = lastSix.slice(0, 3);
+        const recent = lastSix.slice(3, 6);
+        const priorAvg = average(prior.map((m: any) => m.revenue || 0));
+        const recentAvg = average(recent.map((m: any) => m.revenue || 0));
+        return { priorAvg, recentAvg };
+      }
+      return { priorAvg: 0, recentAvg: 0 };
+    })();
     if (lastSix.length >= 6) {
       const prior = lastSix.slice(0, 3);
       const recent = lastSix.slice(3, 6);
       const { recentDays, priorDays } = daysInPeriod(recent, prior);
-      const revenuePriorAvg = average(prior.map((m: any) => m.revenue || 0));
-      const revenueRecentAvg = average(recent.map((m: any) => m.revenue || 0));
+      const revenuePriorAvg = revenueBaseline.priorAvg;
+      const revenueRecentAvg = revenueBaseline.recentAvg;
       const revenueChange = percentChange(revenueRecentAvg, revenuePriorAvg);
 
       const metrics = [
@@ -523,6 +533,18 @@ export async function POST(request: NextRequest) {
               ? `Revenue moved ${formatPct(revenueChange)} over the same period.`
               : '';
 
+          const deltaAbs = Math.abs(recentAvg - priorAvg);
+          const materialityThreshold = ['Revenue', 'COGS', 'Operating Expense'].includes(metric.label)
+            ? Math.max(0.01 * revenueRecentAvg, 10000)
+            : Math.max(0.02 * revenueRecentAvg, 20000);
+          const material = deltaAbs >= materialityThreshold;
+          const attributionLow = !driverSummary;
+          const changePoint = Math.abs(change) >= 0.1;
+          const persistenceLevel = recent.every((m) => (metric.value(m) - priorAvg) * (change > 0 ? 1 : -1) > 0)
+            ? 'high'
+            : 'medium';
+          const investigate = material || attributionLow || (changePoint && persistenceLevel === 'high');
+
           findings.push({
             type: 'trend',
             metric: metric.label,
@@ -533,9 +555,12 @@ export async function POST(request: NextRequest) {
               summary: `${metric.label} shifted ${formatPct(change)} comparing the last 3 months to the prior 3. ${revenueContext} ${driverSummary}`.trim(),
               magnitude: change,
               onsetDate: recent[0]?.monthDate,
-              persistence: recent.every((m) => (metric.value(m) - priorAvg) * (change > 0 ? 1 : -1) > 0)
-                ? 'high'
-                : 'medium',
+              persistence: persistenceLevel,
+              materiality: deltaAbs,
+              materialityThreshold,
+              attributionConfidence: attributionLow ? 'low' : 'medium',
+              changePoint,
+              boardBucket: investigate ? 'investigate' : 'monitor',
             },
           });
         }
@@ -666,6 +691,74 @@ export async function POST(request: NextRequest) {
             ],
             zScore: score,
             latest: latestAR.totalAR,
+          },
+        });
+      }
+    }
+
+    if (arSnapshots.length >= 6 && lastSix.length >= 6) {
+      const arPrior = arSnapshots.slice(-6, -3);
+      const arRecent = arSnapshots.slice(-3);
+      const priorTotal = average(arPrior.map((r: any) => r.totalAR || 0));
+      const recentTotal = average(arRecent.map((r: any) => r.totalAR || 0));
+      const priorOver60 = average(
+        arPrior.map((r: any) => (r.days31to60 || 0) + (r.days61to90 || 0) + (r.days90plus || 0))
+      );
+      const recentOver60 = average(
+        arRecent.map((r: any) => (r.days31to60 || 0) + (r.days61to90 || 0) + (r.days90plus || 0))
+      );
+      const priorPct = priorTotal ? priorOver60 / priorTotal : 0;
+      const recentPct = recentTotal ? recentOver60 / recentTotal : 0;
+      const pctDelta = recentPct - priorPct;
+
+      const dsoPrior = revenueBaseline.priorAvg ? (priorTotal / revenueBaseline.priorAvg) * 30 : 0;
+      const dsoRecent = revenueBaseline.recentAvg ? (recentTotal / revenueBaseline.recentAvg) * 30 : 0;
+      const dsoDelta = dsoRecent - dsoPrior;
+
+      if (pctDelta >= 0.03 || dsoDelta >= 5) {
+        findings.push({
+          type: 'anomaly',
+          metric: 'AR Aging',
+          severity: 'medium',
+          confidence: 0.7,
+          payload: {
+            title: 'AR aging deterioration',
+            summary: `AR >60 days increased ${(pctDelta * 100).toFixed(1)} pts; DSO up ${dsoDelta.toFixed(1)} days.`,
+            boardBucket: 'investigate',
+            nextSteps: [
+              'Review top overdue customers and payment terms.',
+              'Confirm any billing or dispute delays.',
+              'Assess collections capacity for recent volume.',
+            ],
+          },
+        });
+      }
+    }
+
+    if (cashSnapshots.length >= 2) {
+      const recentCashSnap = cashSnapshots[cashSnapshots.length - 1] as any;
+      const cashChange =
+        recentCashSnap.changeAmount != null
+          ? Number(recentCashSnap.changeAmount)
+          : (recentCashSnap.cashBalance || 0) - (cashSnapshots[cashSnapshots.length - 2]?.cashBalance || 0);
+      const cashOutflows = cashSnapshots
+        .map((r: any) => Number(r.changeAmount || 0))
+        .filter((val) => val < 0)
+        .map((val) => Math.abs(val));
+      const avgOutflow = cashOutflows.length ? average(cashOutflows) : 0;
+      const swingThreshold = Math.max(0.03 * avgOutflow, 25000);
+      if (Math.abs(cashChange) >= swingThreshold) {
+        findings.push({
+          type: 'anomaly',
+          metric: 'Cash Swing',
+          severity: 'medium',
+          confidence: 0.6,
+          payload: {
+            title: 'Cash swing exceeds threshold',
+            summary: `Weekly cash swing of $${Math.abs(cashChange).toLocaleString(undefined, {
+              maximumFractionDigits: 0,
+            })} exceeds threshold of $${Math.round(swingThreshold).toLocaleString()}.`,
+            boardBucket: 'investigate',
           },
         });
       }
