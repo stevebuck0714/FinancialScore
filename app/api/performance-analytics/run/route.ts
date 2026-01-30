@@ -114,6 +114,12 @@ function findBenchmark(benchmarks: Array<{ metricName: string; fiveYearValue: nu
   return match?.fiveYearValue ?? null;
 }
 
+function daysInPeriod(recent: any[], prior: any[]) {
+  const recentDays = recent.length * 30;
+  const priorDays = prior.length * 30;
+  return { recentDays, priorDays };
+}
+
 function getLatest<T extends { snapshotDate?: Date; monthDate?: Date }>(records: T[]) {
   if (!records.length) return null;
   const sorted = [...records].sort((a, b) => {
@@ -158,6 +164,26 @@ function summarizeBreakdown(prior: any[], recent: any[], key: string, totalDelta
   });
 
   return top;
+}
+
+function findBreakdownSpike(prior: any[], recent: any[], key: string) {
+  const priorTotals = aggregateBreakdown(prior, key);
+  const recentTotals = aggregateBreakdown(recent, key);
+  const priorMonths = Math.max(prior.length, 1);
+  const recentMonths = Math.max(recent.length, 1);
+
+  const spikes = Object.keys({ ...priorTotals, ...recentTotals })
+    .map((name) => {
+      const priorAvg = (priorTotals[name] || 0) / priorMonths;
+      const recentAvg = (recentTotals[name] || 0) / recentMonths;
+      const delta = recentAvg - priorAvg;
+      const ratio = priorAvg > 0 ? recentAvg / priorAvg : null;
+      return { name, priorAvg, recentAvg, delta, ratio };
+    })
+    .filter((item) => item.delta > 1000 && item.ratio != null && item.ratio >= 1.5)
+    .sort((a, b) => b.delta - a.delta);
+
+  return spikes[0] || null;
 }
 
 function summarizeContributors(
@@ -319,6 +345,18 @@ export async function POST(request: NextRequest) {
       loadGoals('OperationalGoal', companyId),
     ]);
 
+    const loans = await safeFindMany(
+      'loans',
+      prisma.loan.findMany({
+        where: { companyId },
+        include: {
+          covenants: {
+            where: { isApplicable: true },
+          },
+        },
+      })
+    );
+
     const opsProfile = getOpsMetricProfile(industrySectorCategory);
 
     const findings: FindingInput[] = [];
@@ -340,11 +378,17 @@ export async function POST(request: NextRequest) {
     if (lastSix.length >= 6) {
       const prior = lastSix.slice(0, 3);
       const recent = lastSix.slice(3, 6);
+      const { recentDays, priorDays } = daysInPeriod(recent, prior);
 
       const metrics = [
         { key: 'revenue', label: 'Revenue', value: (m: any) => m.revenue || 0 },
         { key: 'cogsTotal', label: 'COGS', value: (m: any) => m.cogsTotal || 0 },
         { key: 'expense', label: 'Operating Expense', value: (m: any) => m.expense || 0 },
+        { key: 'ar', label: 'Total AR', value: (m: any) => m.ar || 0 },
+        { key: 'ap', label: 'Total AP', value: (m: any) => m.ap || 0 },
+        { key: 'inventory', label: 'Inventory', value: (m: any) => m.inventory || 0 },
+        { key: 'ltd', label: 'Long-term Debt', value: (m: any) => m.ltd || 0 },
+        { key: 'totalLiab', label: 'Total Liabilities', value: (m: any) => m.totalLiab || 0 },
       ];
 
       metrics.forEach((metric) => {
@@ -355,6 +399,9 @@ export async function POST(request: NextRequest) {
           const inventoryPrior = average(prior.map((m: any) => m.inventory || 0));
           const inventoryRecent = average(recent.map((m: any) => m.inventory || 0));
           const inventoryDelta = inventoryRecent - inventoryPrior;
+          const revenuePriorAvg = average(prior.map((m: any) => m.revenue || 0));
+          const revenueRecentAvg = average(recent.map((m: any) => m.revenue || 0));
+          const revenueChange = percentChange(revenueRecentAvg, revenuePriorAvg);
 
           let driverSummary = '';
           if (metric.label === 'COGS') {
@@ -377,6 +424,23 @@ export async function POST(request: NextRequest) {
               driverSummary += ' Inventory rose while COGS fell, suggesting potential stock build or timing effects.';
             } else if (inventoryDelta < 0 && change < 0) {
               driverSummary += ' Inventory fell alongside lower COGS, indicating reduced consumption or volume.';
+            }
+          }
+          if (metric.label === 'Revenue') {
+            const breakdownDrivers = summarizeBreakdown(prior, recent, 'revenueBreakdown', recentAvg - priorAvg);
+            if (breakdownDrivers.length) {
+              driverSummary = `Primary drivers (mix): ${breakdownDrivers.join(', ')}.`;
+            }
+            const priorBreakdown = aggregateBreakdown(prior, 'revenueBreakdown');
+            const recentBreakdown = aggregateBreakdown(recent, 'revenueBreakdown');
+            const totalPrior = Object.values(priorBreakdown).reduce((sum, v) => sum + v, 0);
+            const totalRecent = Object.values(recentBreakdown).reduce((sum, v) => sum + v, 0);
+            const topPrior = Object.entries(priorBreakdown).sort((a, b) => b[1] - a[1])[0];
+            const topRecent = Object.entries(recentBreakdown).sort((a, b) => b[1] - a[1])[0];
+            if (topPrior && topRecent && topPrior[0] !== topRecent[0]) {
+              const priorShare = totalPrior ? topPrior[1] / totalPrior : 0;
+              const recentShare = totalRecent ? topRecent[1] / totalRecent : 0;
+              driverSummary += ` Mix shift: ${topPrior[0]} → ${topRecent[0]} (share ${formatPct(priorShare)} → ${formatPct(recentShare)}).`;
             }
           }
           if (metric.label === 'Operating Expense') {
@@ -406,11 +470,54 @@ export async function POST(request: NextRequest) {
             } else if (formatted.length) {
               driverSummary = `Primary drivers: ${formatted.join(', ')}.`;
             }
+            const spike = findBreakdownSpike(prior, recent, 'expenseBreakdown');
+            if (spike) {
+              driverSummary += ` Possible one-time spike in ${spike.name} (avg ${Math.round(spike.priorAvg)} → ${Math.round(spike.recentAvg)}).`;
+            }
+          }
+          if (metric.label === 'Total AR') {
+            const cashPrior = average(prior.map((m: any) => m.cash || 0));
+            const cashRecent = average(recent.map((m: any) => m.cash || 0));
+            const cashDelta = cashRecent - cashPrior;
+            if (change > 0 && revenueChange <= 0) {
+              driverSummary = 'AR rose while revenue slowed, suggesting slower collections.';
+            } else if (change > 0 && revenueChange > 0) {
+              driverSummary = 'AR rose alongside revenue growth; monitor collection speed.';
+            }
+            if (cashDelta < 0) {
+              driverSummary += ' Cash also declined, increasing collection risk.';
+            }
+          }
+          if (metric.label === 'Total AP') {
+            const cashPrior = average(prior.map((m: any) => m.cash || 0));
+            const cashRecent = average(recent.map((m: any) => m.cash || 0));
+            const cashDelta = cashRecent - cashPrior;
+            if (change > 0 && cashDelta < 0) {
+              driverSummary = 'AP rose while cash declined, suggesting payment delays or liquidity pressure.';
+            }
+          }
+          if (metric.label === 'Long-term Debt') {
+            const cashPrior = average(prior.map((m: any) => m.cash || 0));
+            const cashRecent = average(recent.map((m: any) => m.cash || 0));
+            const cashDelta = cashRecent - cashPrior;
+            driverSummary = 'Debt levels shifted materially; review financing events or amortization changes.';
+            if (cashDelta > 0 && change > 0) {
+              driverSummary += ' Cash increased alongside debt, indicating recent financing.';
+            }
+          }
+          if (metric.label === 'Inventory') {
+            if (change > 0 && revenueChange <= 0) {
+              driverSummary = 'Inventory rose while revenue slowed, indicating potential overstock or demand softening.';
+            } else if (change > 0 && revenueChange > 0) {
+              driverSummary = 'Inventory rose alongside revenue growth; verify turns and replenishment timing.';
+            } else if (change < 0 && revenueChange > 0) {
+              driverSummary = 'Inventory fell while revenue increased, suggesting improved turns or stock drawdown.';
+            }
+            if (change < 0 && inventoryDelta < 0 && revenueChange <= 0) {
+              driverSummary += ' Monitor for stockouts or deferred purchasing.';
+            }
           }
 
-          const revenuePriorAvg = average(prior.map((m: any) => m.revenue || 0));
-          const revenueRecentAvg = average(recent.map((m: any) => m.revenue || 0));
-          const revenueChange = percentChange(revenueRecentAvg, revenuePriorAvg);
           const revenueContext =
             metric.label !== 'Revenue'
               ? `Revenue moved ${formatPct(revenueChange)} over the same period.`
@@ -433,6 +540,70 @@ export async function POST(request: NextRequest) {
           });
         }
       });
+
+      const ocfPrior = average(
+        prior.map((m: any) => (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0) + (m.depreciationAmortization || 0))
+      );
+      const ocfRecent = average(
+        recent.map((m: any) => (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0) + (m.depreciationAmortization || 0))
+      );
+      const ocfChange = percentChange(ocfRecent, ocfPrior);
+      if (Math.abs(ocfChange) >= 0.1) {
+        findings.push({
+          type: 'trend',
+          metric: 'Operating Cash Flow',
+          severity: Math.abs(ocfChange) >= 0.2 ? 'high' : 'medium',
+          confidence: Math.min(0.9, 0.5 + Math.abs(ocfChange)),
+          payload: {
+            title: `Operating Cash Flow ${ocfChange > 0 ? 'up' : 'down'} ${formatPct(ocfChange)}`,
+            summary: `Operating cash flow shifted ${formatPct(ocfChange)} vs the prior 3 months. Compare with revenue and working capital changes for drivers.`,
+            magnitude: ocfChange,
+            onsetDate: recent[0]?.monthDate,
+            persistence: 'medium',
+          },
+        });
+      }
+
+      const arPrior = average(prior.map((m: any) => m.ar || 0));
+      const arRecent = average(recent.map((m: any) => m.ar || 0));
+      const apPrior = average(prior.map((m: any) => m.ap || 0));
+      const apRecent = average(recent.map((m: any) => m.ap || 0));
+      const invPrior = average(prior.map((m: any) => m.inventory || 0));
+      const invRecent = average(recent.map((m: any) => m.inventory || 0));
+      const wcPrior = (arPrior + invPrior) - apPrior;
+      const wcRecent = (arRecent + invRecent) - apRecent;
+      const wcDelta = wcRecent - wcPrior;
+      const wcChange = percentChange(wcRecent, wcPrior);
+
+      if (Math.abs(wcChange) >= 0.1) {
+        const dsoPrior = revenuePriorAvg ? (arPrior / revenuePriorAvg) * (priorDays / 3) : 0;
+        const dsoRecent = revenueRecentAvg ? (arRecent / revenueRecentAvg) * (recentDays / 3) : 0;
+        const dpoPrior = revenuePriorAvg ? (apPrior / revenuePriorAvg) * (priorDays / 3) : 0;
+        const dpoRecent = revenueRecentAvg ? (apRecent / revenueRecentAvg) * (recentDays / 3) : 0;
+        const dioPrior = revenuePriorAvg ? (invPrior / revenuePriorAvg) * (priorDays / 3) : 0;
+        const dioRecent = revenueRecentAvg ? (invRecent / revenueRecentAvg) * (recentDays / 3) : 0;
+        const cccPrior = dsoPrior + dioPrior - dpoPrior;
+        const cccRecent = dsoRecent + dioRecent - dpoRecent;
+        const cccDelta = cccRecent - cccPrior;
+
+        findings.push({
+          type: 'trend',
+          metric: 'Working Capital',
+          severity: Math.abs(wcChange) >= 0.2 ? 'high' : 'medium',
+          confidence: Math.min(0.9, 0.5 + Math.abs(wcChange)),
+          payload: {
+            title: `Working Capital ${wcChange > 0 ? 'up' : 'down'} ${formatPct(wcChange)}`,
+            summary: `Working capital ${wcChange > 0 ? 'increased' : 'decreased'} by $${Math.abs(wcDelta).toLocaleString(undefined, {
+              maximumFractionDigits: 0,
+            })}. Cash conversion cycle changed ${cccDelta > 0 ? '+' : ''}${cccDelta.toFixed(1)} days.`,
+            drivers: {
+              dso: { prior: dsoPrior, recent: dsoRecent, delta: dsoRecent - dsoPrior },
+              dio: { prior: dioPrior, recent: dioRecent, delta: dioRecent - dioPrior },
+              dpo: { prior: dpoPrior, recent: dpoRecent, delta: dpoRecent - dpoPrior },
+            },
+          },
+        });
+      }
     }
 
     // Anomaly & Exception Agent (z-score on last values)
@@ -495,6 +666,121 @@ export async function POST(request: NextRequest) {
             ],
             zScore: score,
             latest: latestAR.totalAR,
+          },
+        });
+      }
+    }
+
+    if (loans.length) {
+      const covenantFindings = loans.flatMap((loan: any) =>
+        (loan.covenants || [])
+          .filter((c: any) => {
+            const status = String(c.status || '').toUpperCase();
+            return status === 'WARNING' || status === 'BREACHED' || status === 'CRITICAL';
+          })
+          .map((c: any) => ({
+            loan,
+            covenant: c,
+          }))
+      );
+
+      const covenantBuffers = loans.flatMap((loan: any) =>
+        (loan.covenants || [])
+          .filter((c: any) => c.isApplicable && c.threshold != null && c.currentValue != null)
+          .map((c: any) => {
+            const threshold = Number(c.threshold);
+            const current = Number(c.currentValue);
+            let bufferPct: number | null = null;
+            if (c.covenantType === 'MINIMUM') {
+              bufferPct = threshold !== 0 ? (current - threshold) / Math.abs(threshold) : null;
+            } else if (c.covenantType === 'MAXIMUM') {
+              bufferPct = threshold !== 0 ? (threshold - current) / Math.abs(threshold) : null;
+            }
+            return {
+              loan,
+              covenant: c,
+              bufferPct,
+            };
+          })
+      );
+
+      covenantFindings.forEach(({ loan, covenant }) => {
+        const status = String(covenant.status || '').toUpperCase();
+        const severity = status === 'BREACHED' || status === 'CRITICAL' ? 'high' : 'medium';
+        let bufferNote = '';
+        if (covenant.threshold != null && covenant.currentValue != null) {
+          const threshold = Number(covenant.threshold);
+          const current = Number(covenant.currentValue);
+          if (covenant.covenantType === 'MINIMUM') {
+            const buffer = threshold !== 0 ? (current - threshold) / Math.abs(threshold) : null;
+            if (buffer != null) bufferNote = ` Buffer: ${(buffer * 100).toFixed(1)}% above minimum.`;
+          }
+          if (covenant.covenantType === 'MAXIMUM') {
+            const buffer = threshold !== 0 ? (threshold - current) / Math.abs(threshold) : null;
+            if (buffer != null) bufferNote = ` Buffer: ${(buffer * 100).toFixed(1)}% below maximum.`;
+          }
+        }
+        findings.push({
+          type: 'anomaly',
+          metric: `Covenant: ${covenant.covenantName}`,
+          severity,
+          confidence: 0.8,
+          payload: {
+            title: `${covenant.covenantName} ${status === 'BREACHED' || status === 'CRITICAL' ? 'breach' : 'warning'}`,
+            summary: `Loan ${loan.loanName} (${loan.lenderName}) is ${status.toLowerCase()} for ${covenant.covenantName}.${bufferNote} Trend history not available.`,
+            currentValue: covenant.currentValue,
+            threshold: covenant.threshold,
+            covenantType: covenant.covenantType,
+            status,
+            loanName: loan.loanName,
+            lenderName: loan.lenderName,
+            updatedAt: covenant.updatedAt,
+            nextSteps: [
+              'Review covenant calculations and inputs.',
+              'Confirm lender reporting timeline.',
+              'Assess remediation options or waiver needs.',
+            ],
+          },
+        });
+      });
+
+      if (!covenantFindings.length) {
+        const atRisk = covenantBuffers
+          .filter((entry) => entry.bufferPct != null && entry.bufferPct <= 0.1)
+          .sort((a, b) => (a.bufferPct ?? 0) - (b.bufferPct ?? 0));
+        if (atRisk.length) {
+          const topRisk = atRisk[0];
+          findings.push({
+            type: 'anomaly',
+            metric: `Covenant: ${topRisk.covenant.covenantName}`,
+            severity: 'medium',
+            confidence: 0.7,
+            payload: {
+              title: `${topRisk.covenant.covenantName} at-risk`,
+              summary: `Loan ${topRisk.loan.loanName} (${topRisk.loan.lenderName}) is within ${(topRisk.bufferPct! * 100).toFixed(1)}% of the threshold.`,
+              currentValue: topRisk.covenant.currentValue,
+              threshold: topRisk.covenant.threshold,
+              covenantType: topRisk.covenant.covenantType,
+              status: topRisk.covenant.status,
+              loanName: topRisk.loan.loanName,
+              lenderName: topRisk.loan.lenderName,
+              updatedAt: topRisk.covenant.updatedAt,
+              nextSteps: [
+                'Monitor ratio trend more frequently.',
+                'Prepare a mitigation plan if trend continues.',
+              ],
+            },
+          });
+        }
+        findings.push({
+          type: 'focus',
+          metric: 'Covenant Compliance',
+          severity: 'low',
+          confidence: 0.6,
+          payload: {
+            title: 'No covenant breaches detected',
+            summary: 'All applicable covenants are currently compliant.',
+            loanCount: loans.length,
           },
         });
       }
