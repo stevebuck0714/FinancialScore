@@ -31,13 +31,11 @@
      <div style={{ marginBottom: '1px' }}>
        <h3
         onClick={() => {
-          setIsExpanded((prev) => {
-            const next = !prev;
-            if (next && !currentView.startsWith('pa-')) {
-              setCurrentView('pa-overview');
-            }
-            return next;
-          });
+          const nextExpanded = !isExpanded;
+          setIsExpanded(nextExpanded);
+          if (nextExpanded && !currentView.startsWith('pa-')) {
+            setCurrentView('pa-overview');
+          }
         }}
          style={{
            fontSize: '14px',

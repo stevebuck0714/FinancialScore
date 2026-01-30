@@ -80,6 +80,140 @@ async function loadGoals(table: 'ExpenseGoal' | 'OperationalGoal', companyId: st
   }
 }
 
+async function ensureCovenantThresholdColumns() {
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "Covenant"
+      ADD COLUMN IF NOT EXISTS "warningThreshold" DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS "breachThreshold" DOUBLE PRECISION
+  `);
+}
+
+async function loadCovenantDebugMeta(companyId: string) {
+  const meta: Record<string, any> = {};
+  try {
+    const rows = await prisma.$queryRaw<Array<{ count: any }>>`
+      SELECT COUNT(*)::int AS count FROM "Loan" WHERE "companyId" = ${companyId}
+    `;
+    meta.companyLoanCount = rows[0]?.count ?? null;
+  } catch (error) {
+    meta.companyLoanCountError = String(error);
+  }
+  try {
+    const rows = await prisma.$queryRaw<Array<{ count: any }>>`
+      SELECT COUNT(*)::int AS count FROM "Covenant"
+    `;
+    meta.covenantTotalCount = rows[0]?.count ?? null;
+  } catch (error) {
+    meta.covenantTotalCountError = String(error);
+  }
+  try {
+    const rows = await prisma.$queryRaw<Array<{ count: any }>>`
+      SELECT COUNT(*)::int AS count
+      FROM "Covenant" c
+      JOIN "Loan" l ON l."id" = c."loanId"
+      WHERE l."companyId" = ${companyId}
+    `;
+    meta.companyCovenantCount = rows[0]?.count ?? null;
+  } catch (error) {
+    meta.companyCovenantCountError = String(error);
+  }
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string; loanName: string | null; lenderName: string | null }>>`
+      SELECT "id", "loanName", "lenderName" FROM "Loan" WHERE "companyId" = ${companyId}
+    `;
+    meta.companyLoans = rows;
+  } catch (error) {
+    meta.companyLoansError = String(error);
+  }
+  return meta;
+}
+
+async function loadCovenants(companyId: string) {
+  try {
+    try {
+      await ensureCovenantThresholdColumns();
+      const rows = await prisma.$queryRaw<Array<any>>`
+        SELECT
+          c."id" as "covenantId",
+          c."covenantName",
+          c."covenantType",
+          c."threshold",
+          c."warningThreshold",
+          c."breachThreshold",
+          c."currentValue",
+          c."status",
+          c."isApplicable",
+          c."description",
+          c."updatedAt",
+          l."id" as "loanId",
+          l."loanName",
+          l."lenderName"
+        FROM "Covenant" c
+        JOIN "Loan" l ON l."id" = c."loanId"
+        WHERE l."companyId" = ${companyId}
+      `;
+      return rows.map((row) => ({
+        ...row,
+        statusValue: row.status,
+        applicableValue: row.isApplicable,
+      }));
+    } catch (error) {
+      console.warn('Performance analytics run: threshold columns unavailable', error);
+    }
+  } catch (error) {
+    console.warn('Performance analytics run: fallback covenant query used', error);
+    const rows = await prisma.$queryRaw<Array<any>>`
+      SELECT
+        c."id" as "covenantId",
+        c."covenantName",
+        c."covenantType",
+        c."threshold",
+        NULL as "currentValue",
+        c."alertLevel" as "status",
+        c."applicable" as "isApplicable",
+        c."notes" as "description",
+        c."updatedAt",
+        l."id" as "loanId",
+        l."loanName",
+        l."lenderName"
+      FROM "Covenant" c
+      JOIN "Loan" l ON l."id" = c."loanId"
+      WHERE l."companyId" = ${companyId}
+    `;
+    return rows.map((row) => ({
+      ...row,
+      statusValue: row.status,
+      applicableValue: row.isApplicable,
+    }));
+  }
+
+  const rows = await prisma.$queryRaw<Array<any>>`
+    SELECT
+      c."id" as "covenantId",
+      c."covenantName",
+      c."covenantType",
+      c."threshold",
+      NULL as "warningThreshold",
+      NULL as "breachThreshold",
+      c."currentValue",
+      c."status",
+      c."isApplicable",
+      c."description",
+      c."updatedAt",
+      l."id" as "loanId",
+      l."loanName",
+      l."lenderName"
+    FROM "Covenant" c
+    JOIN "Loan" l ON l."id" = c."loanId"
+    WHERE l."companyId" = ${companyId}
+  `;
+  return rows.map((row) => ({
+    ...row,
+    statusValue: row.status,
+    applicableValue: row.isApplicable,
+  }));
+}
+
 function average(values: number[]) {
   if (!values.length) return 0;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -231,6 +365,18 @@ function formatMonthRange(rows: any[]) {
   return `${fmt(start)} to ${fmt(end)}`;
 }
 
+function normalizeCovenantStatus(value: string) {
+  const normalized = String(value || '').toUpperCase();
+  if (!normalized) return '';
+  if (normalized.includes('BREACH') || normalized.includes('DEFAULT') || normalized.includes('VIOLATION')) {
+    return 'BREACHED';
+  }
+  if (normalized.includes('CRITICAL')) return 'CRITICAL';
+  if (normalized.includes('WARN')) return 'WARNING';
+  if (normalized.includes('WAIVE') || normalized.includes('NOT_APPLICABLE')) return 'COMPLIANT';
+  return normalized;
+}
+
 export async function POST(request: NextRequest) {
   try {
     await requireAuth();
@@ -239,6 +385,8 @@ export async function POST(request: NextRequest) {
     const companyId = String(body?.companyId || '').trim();
     const frequency = body?.frequency || 'monthly';
     const replace = body?.replace !== false;
+    const includeCovenantDebug = Boolean(body?.includeCovenantDebug);
+    const debugLoanName = body?.debugLoanName ? String(body.debugLoanName).trim().toLowerCase() : '';
 
     if (!companyId) {
       return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
@@ -372,17 +520,7 @@ export async function POST(request: NextRequest) {
     );
     const mappedAccounts = new Set(accountMappings.map((m: any) => String(m.qbAccount)));
 
-    const loans = await safeFindMany(
-      'loans',
-      prisma.loan.findMany({
-        where: { companyId },
-        include: {
-          covenants: {
-            where: { isApplicable: true },
-          },
-        },
-      })
-    );
+    const covenantRows = await loadCovenants(companyId);
 
     const opsProfile = getOpsMetricProfile(industrySectorCategory);
 
@@ -807,37 +945,62 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (loans.length) {
+    if (covenantRows.length) {
       const covenantAlerts = new Map<string, { loan: any; covenant: any; status: string; bufferPct: number | null }>();
 
-      loans.forEach((loan: any) => {
-        (loan.covenants || []).forEach((covenant: any) => {
-          if (!covenant.isApplicable || covenant.threshold == null || covenant.currentValue == null) return;
-          const status = String(covenant.status || '').toUpperCase();
-          const threshold = Number(covenant.threshold);
-          const current = Number(covenant.currentValue);
-          let bufferPct: number | null = null;
-          if (covenant.covenantType === 'MINIMUM') {
+      covenantRows.forEach((row: any) => {
+        const applicable = row.applicableValue ?? true;
+        if (!applicable) return;
+        const status = normalizeCovenantStatus(String(row.statusValue || ''));
+        const threshold = Number(row.threshold);
+        const warningThresholdRaw = row.warningThreshold != null ? Number(row.warningThreshold) : null;
+        const breachThresholdRaw = row.breachThreshold != null ? Number(row.breachThreshold) : null;
+        const breachThreshold = Number.isFinite(breachThresholdRaw ?? NaN) ? breachThresholdRaw : threshold;
+        const warningThreshold = Number.isFinite(warningThresholdRaw ?? NaN)
+          ? warningThresholdRaw
+          : Number.isFinite(threshold)
+            ? (row.covenantType === 'MAXIMUM' ? threshold * 0.9 : threshold * 1.1)
+            : null;
+        const current = Number(row.currentValue);
+        let bufferPct: number | null = null;
+        if (Number.isFinite(threshold) && Number.isFinite(current)) {
+          if (row.covenantType === 'MINIMUM') {
             bufferPct = threshold !== 0 ? (current - threshold) / Math.abs(threshold) : null;
-          } else if (covenant.covenantType === 'MAXIMUM') {
+          } else if (row.covenantType === 'MAXIMUM') {
             bufferPct = threshold !== 0 ? (threshold - current) / Math.abs(threshold) : null;
           }
+        }
 
-          let derivedStatus = status;
-          if (!derivedStatus || derivedStatus === 'COMPLIANT') {
-            if (bufferPct != null && bufferPct <= 0) derivedStatus = 'BREACHED';
-            else if (bufferPct != null && bufferPct <= 0.1) derivedStatus = 'WARNING';
+        let derivedStatus = status;
+        if (!derivedStatus || derivedStatus === 'COMPLIANT') {
+          if (Number.isFinite(current) && Number.isFinite(breachThreshold)) {
+            if (row.covenantType === 'MAXIMUM') {
+              if (current > breachThreshold) derivedStatus = 'BREACHED';
+              else if (warningThreshold != null && current > warningThreshold) derivedStatus = 'WARNING';
+            } else {
+              if (current < breachThreshold) derivedStatus = 'BREACHED';
+              else if (warningThreshold != null && current < warningThreshold) derivedStatus = 'WARNING';
+            }
+          } else if (bufferPct != null) {
+            if (bufferPct <= 0) derivedStatus = 'BREACHED';
+            else if (bufferPct <= 0.1) derivedStatus = 'WARNING';
           }
+        }
 
-          if (derivedStatus === 'WARNING' || derivedStatus === 'BREACHED' || derivedStatus === 'CRITICAL') {
-            covenantAlerts.set(covenant.id, {
-              loan,
-              covenant,
-              status: derivedStatus,
-              bufferPct,
-            });
-          }
-        });
+        if (derivedStatus === 'WARNING' || derivedStatus === 'BREACHED' || derivedStatus === 'BREACH' || derivedStatus === 'CRITICAL') {
+          covenantAlerts.set(row.covenantId, {
+            loan: { loanName: row.loanName, lenderName: row.lenderName },
+            covenant: {
+              covenantName: row.covenantName,
+              covenantType: row.covenantType,
+              currentValue: row.currentValue,
+              threshold: row.threshold,
+              updatedAt: row.updatedAt,
+            },
+            status: derivedStatus === 'BREACH' ? 'BREACHED' : derivedStatus,
+            bufferPct,
+          });
+        }
       });
 
       const covenantFindings = Array.from(covenantAlerts.values());
@@ -878,6 +1041,13 @@ export async function POST(request: NextRequest) {
       });
 
       if (!covenantFindings.length) {
+        const statusCounts = covenantRows.reduce((acc: Record<string, number>, row: any) => {
+          const applicable = row.applicableValue ?? true;
+          if (!applicable) return acc;
+          const key = normalizeCovenantStatus(String(row.statusValue || '')) || 'UNKNOWN';
+          acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        }, {});
         findings.push({
           type: 'focus',
           metric: 'Covenant Compliance',
@@ -886,7 +1056,8 @@ export async function POST(request: NextRequest) {
           payload: {
             title: 'No covenant breaches detected',
             summary: 'All applicable covenants are currently compliant.',
-            loanCount: loans.length,
+            loanCount: new Set(covenantRows.map((row: any) => row.loanId)).size,
+            statusCounts,
           },
         });
       }
@@ -1111,6 +1282,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const debugCovenantMeta = includeCovenantDebug ? await loadCovenantDebugMeta(companyId) : undefined;
+    const debugCovenants = includeCovenantDebug
+      ? covenantRows
+          .filter((row: any) => (debugLoanName ? String(row.loanName || '').toLowerCase().includes(debugLoanName) : true))
+          .map((row: any) => ({
+            loanName: row.loanName,
+            covenantName: row.covenantName,
+            covenantType: row.covenantType,
+            status: row.statusValue,
+            applicable: row.applicableValue,
+            currentValue: row.currentValue,
+            threshold: row.threshold,
+            warningThreshold: row.warningThreshold ?? null,
+            breachThreshold: row.breachThreshold ?? null,
+          }))
+      : undefined;
+
     return NextResponse.json({
       success: true,
       inserted: findings.length,
@@ -1119,6 +1307,7 @@ export async function POST(request: NextRequest) {
         expense: expenseGoals[0]?.goals || {},
         operational: operationalGoals[0]?.goals || {},
       },
+      ...(includeCovenantDebug ? { debugCovenants, debugCovenantMeta } : {}),
     });
   } catch (error) {
     console.error('Performance analytics run error:', error);

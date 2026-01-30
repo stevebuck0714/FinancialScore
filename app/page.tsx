@@ -5056,7 +5056,7 @@ function FinancialScorePage() {
                     onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
                     onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'ai-analysis' ? '#667eea' : '#1e293b'}
                   >
-                    Ask Corey
+                    Ask Corelytics
                   </h3>
                 </div>
 

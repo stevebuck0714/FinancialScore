@@ -390,6 +390,64 @@ const getStatusIcon = (status: string) => {
   }
 };
 
+const normalizeCovenantType = (value?: string | null) => {
+  const normalized = String(value || '').toUpperCase();
+  if (normalized === 'MINIMUM') return 'minimum';
+  if (normalized === 'MAXIMUM') return 'maximum';
+  if (normalized === 'RANGE') return 'range';
+  if (normalized === 'QUALITATIVE') return 'qualitative';
+  if (normalized === 'FINANCIAL') return 'financial';
+  if (normalized === 'AFFIRMATIVE') return 'affirmative';
+  if (normalized === 'NEGATIVE') return 'negative';
+  if (normalized === 'INCURRENCE') return 'incurrence';
+  return 'minimum';
+};
+
+const normalizeCovenantStatus = (value?: string | null, applicable = true) => {
+  if (!applicable) return 'compliant';
+  const normalized = String(value || '').toUpperCase();
+  if (normalized === 'BREACHED' || normalized === 'BREACH' || normalized === 'CRITICAL') return 'breached';
+  if (normalized === 'WARNING') return 'warning';
+  return 'compliant';
+};
+
+const mapServerCovenant = (covenant: any) => {
+  const type = normalizeCovenantType(covenant?.covenantType);
+  const applicable = covenant?.isApplicable ?? covenant?.applicable ?? true;
+  const status = normalizeCovenantStatus(covenant?.status ?? covenant?.alertLevel, applicable);
+  const category =
+    type === 'affirmative'
+      ? 'Affirmative'
+      : type === 'negative'
+        ? 'Negative'
+        : type === 'incurrence'
+          ? 'Incurrence'
+          : 'Financial';
+  const subCategory =
+    type === 'minimum'
+      ? 'Minimum'
+      : type === 'maximum'
+        ? 'Maximum'
+        : type === 'range'
+          ? 'Range'
+          : type === 'financial'
+            ? 'Financial'
+            : 'Qualitative';
+
+  return {
+    id: String(covenant.id),
+    name: covenant.covenantName || 'Covenant',
+    category,
+    subCategory,
+    currentValue: covenant.currentValue ?? null,
+    threshold: covenant.threshold ?? null,
+    status,
+    description: covenant.description || covenant.notes || `${covenant.loan?.loanName || 'Loan'}${covenant.loan?.lenderName ? ` • ${covenant.loan?.lenderName}` : ''}`,
+    covenantType: type,
+    applicable,
+  };
+};
+
 // Calculate real financial ratios from monthly data
 // Generate historical data for a covenant (36 months) - uses real data when available
 const generateHistoricalData = (covenant: any, covenantThresholds: Record<string, number>) => {
@@ -481,6 +539,9 @@ export default function CovenantsTab({
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [selectedCovenant, setSelectedCovenant] = useState<any>(null);
+  const [serverCovenants, setServerCovenants] = useState<any[] | null>(null);
+  const [serverCovenantsLoading, setServerCovenantsLoading] = useState(false);
+  const [serverCovenantsError, setServerCovenantsError] = useState<string | null>(null);
 
   // Fetch loans for this company
   useEffect(() => {
@@ -523,6 +584,52 @@ export default function CovenantsTab({
       fetchAlerts();
     }
   }, [selectedCompanyId]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCovenants = async () => {
+      if (!selectedCompanyId) return;
+      setServerCovenantsLoading(true);
+      setServerCovenantsError(null);
+      try {
+        const loanParam = selectedLoan?.id ? `&loanId=${selectedLoan.id}` : '';
+        const response = await fetch(`/api/covenants?companyId=${selectedCompanyId}${loanParam}`);
+        if (!response.ok) throw new Error('Failed to load covenant data');
+        const data = await response.json();
+        const mapped = Array.isArray(data.covenants) ? data.covenants.map(mapServerCovenant) : [];
+        if (isMounted) {
+          setServerCovenants(mapped);
+          const thresholds: Record<string, number> = {};
+          const applicability: Record<string, boolean> = {};
+          mapped.forEach((covenant: any) => {
+            if (typeof covenant.threshold === 'number') thresholds[covenant.id] = covenant.threshold;
+            applicability[covenant.id] = covenant.applicable !== false;
+          });
+          if (Object.keys(thresholds).length) {
+            setCovenantThresholds((prev) => ({ ...prev, ...thresholds }));
+          }
+          if (Object.keys(applicability).length) {
+            setCovenantApplicability((prev) => ({ ...prev, ...applicability }));
+          }
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          setServerCovenantsError(err.message || 'Failed to load covenant data');
+          setServerCovenants(null);
+        }
+      } finally {
+        if (isMounted) setServerCovenantsLoading(false);
+      }
+    };
+
+    if (selectedCompanyId) {
+      fetchCovenants();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedCompanyId, selectedLoan?.id]);
 
   // Handler for when a loan is selected from LoansManagement
   const handleLoanSelected = (loan: Loan) => {
@@ -755,6 +862,12 @@ export default function CovenantsTab({
 
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
+    if (serverCovenants !== null) {
+      if (serverCovenants.length > 0) {
+        return serverCovenants;
+      }
+      console.warn('⚠️ No server covenants returned, using fallback data');
+    }
     console.log('🔄 CovenantData useMemo - financialRatios:', financialRatios);
     if (!financialRatios) {
       console.log('❌ No financialRatios, using mock data');
@@ -832,13 +945,15 @@ export default function CovenantsTab({
         status
       };
     });
-  }, [financialRatios, covenantThresholds]);
+  }, [serverCovenants, financialRatios, covenantThresholds]);
 
   console.log('🏢 CovenantsTab RENDER - financialRatios exists:', !!financialRatios, 'covenantData length:', covenantData?.length);
 
   // Initialize selectedCovenant with first available covenant that has data
   React.useEffect(() => {
-    if (covenantData.length > 0 && !selectedCovenant) {
+    if (!covenantData.length) return;
+    const hasSelected = selectedCovenant && covenantData.some((c) => c.id === selectedCovenant.id);
+    if (!hasSelected) {
       const firstCovenant = covenantData.find(c => c.currentValue !== null && (covenantApplicability[c.id] ?? c.applicable));
       if (firstCovenant) {
         setSelectedCovenant(firstCovenant);
@@ -895,8 +1010,90 @@ export default function CovenantsTab({
     setSaveMessage('💾 Saving configuration...');
 
     try {
-      // Simulate API call to save configuration
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (!serverCovenants || serverCovenants.length === 0) {
+        if (!selectedLoan) {
+          setSaveMessage('⚠️ Select a loan before saving covenants.');
+          return;
+        }
+        const covenantsToCreate = covenantData.map((covenant: any) => {
+          const threshold = covenantThresholds[covenant.id] ?? covenant.threshold ?? null;
+          let warningThreshold: number | null = null;
+          let breachThreshold: number | null = null;
+          if (typeof threshold === 'number') {
+            breachThreshold = threshold;
+            warningThreshold = covenant.covenantType === 'maximum' ? threshold * 0.9 : threshold * 1.1;
+          }
+          return {
+            covenantName: covenant.name,
+            covenantType: covenant.covenantType?.toUpperCase?.() || 'MINIMUM',
+            threshold,
+            warningThreshold,
+            breachThreshold,
+            currentValue: covenant.currentValue ?? null,
+            status: covenant.status?.toUpperCase?.() || 'COMPLIANT',
+            isApplicable: covenantApplicability[covenant.id] ?? covenant.applicable,
+            description: covenant.description,
+          };
+        });
+
+        const createResponse = await fetch('/api/covenants/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            loanId: selectedLoan.id,
+            covenants: covenantsToCreate,
+          }),
+        });
+
+        const createPayload = await createResponse.json().catch(() => null);
+        if (!createResponse.ok) {
+          throw new Error(createPayload?.error || 'Failed to create covenants');
+        }
+        const failed = Array.isArray(createPayload?.created)
+          ? createPayload.created.filter((item: any) => !item.ok)
+          : [];
+        if (failed.length > 0) {
+          const errorDetail = failed.map((item: any) => item.error || 'unknown error').join('; ');
+          throw new Error(`Failed to create ${failed.length} covenant(s): ${errorDetail}`);
+        }
+
+        setSaveMessage('✅ Covenants created. Saving configuration...');
+      }
+
+      const updates = (serverCovenants || covenantData).map((covenant) => {
+        const threshold = covenantThresholds[covenant.id] ?? covenant.threshold ?? null;
+        const covenantType = covenant.covenantType;
+        let warningThreshold: number | null = null;
+        let breachThreshold: number | null = null;
+
+        if (typeof threshold === 'number') {
+          breachThreshold = threshold;
+          if (covenantType === 'maximum') {
+            warningThreshold = threshold * 0.9;
+          } else {
+            warningThreshold = threshold * 1.1;
+          }
+        }
+
+        return {
+          id: covenant.id,
+          threshold,
+          warningThreshold,
+          breachThreshold,
+          isApplicable: covenantApplicability[covenant.id] ?? covenant.applicable,
+        };
+      });
+
+      const response = await fetch('/api/covenants/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId, updates }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save covenant configuration');
+      }
 
       // Save current configuration to localStorage for persistence
       const configuration = {
@@ -910,7 +1107,6 @@ export default function CovenantsTab({
 
       localStorage.setItem('covenantConfiguration', JSON.stringify(configuration));
 
-      // In a real implementation, this would save to a database
       setSaveMessage('✅ Configuration saved successfully!');
 
       // Clear message after 4 seconds
@@ -1009,6 +1205,19 @@ export default function CovenantsTab({
           </div>
         )}
       </div>
+
+      {(serverCovenantsLoading || serverCovenantsError) && (
+        <div style={{ marginBottom: '12px' }}>
+          {serverCovenantsLoading && (
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Loading covenant data…</div>
+          )}
+          {serverCovenantsError && (
+            <div style={{ fontSize: '12px', color: '#b91c1c' }}>
+              {serverCovenantsError}. Showing fallback projections.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: '16px' }}>

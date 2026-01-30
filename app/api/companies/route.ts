@@ -47,35 +47,70 @@ export async function GET(request: NextRequest) {
       where.id = companyId;
     }
 
-    const companies = await prisma.company.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        consultantId: true,
-        addressStreet: true,
-        addressCity: true,
-        addressState: true,
-        addressZip: true,
-        addressCountry: true,
-        industrySector: true,
-        linesOfBusiness: true,
-        userDefinedAllocations: true,
-        createdAt: true,
-        // Always include pricing fields - they're needed for payment logic
-        subscriptionMonthlyPrice: true,
-        subscriptionQuarterlyPrice: true,
-        subscriptionAnnualPrice: true,
-        // Skip affiliateCode in production (not needed)
-        ...(process.env.NODE_ENV === "production"
-          ? {}
-          : {
-              affiliateCode: true,
-            }),
-      },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-    });
+    let companies;
+    try {
+      companies = await prisma.company.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          consultantId: true,
+          addressStreet: true,
+          addressCity: true,
+          addressState: true,
+          addressZip: true,
+          addressCountry: true,
+          industrySector: true,
+          industrySectorCategory: true,
+          accountingSystem: true,
+          companySizeCategory: true,
+          linesOfBusiness: true,
+          userDefinedAllocations: true,
+          createdAt: true,
+          // Always include pricing fields - they're needed for payment logic
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true,
+          // Skip affiliateCode in production (not needed)
+          ...(process.env.NODE_ENV === "production"
+            ? {}
+            : {
+                affiliateCode: true,
+              }),
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+    } catch (error) {
+      console.warn("Companies API: fallback select used", error);
+      companies = await prisma.company.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          consultantId: true,
+          addressStreet: true,
+          addressCity: true,
+          addressState: true,
+          addressZip: true,
+          addressCountry: true,
+          industrySector: true,
+          linesOfBusiness: true,
+          userDefinedAllocations: true,
+          createdAt: true,
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true,
+          ...(process.env.NODE_ENV === "production"
+            ? {}
+            : {
+                affiliateCode: true,
+              }),
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+    }
 
     console.log(`Retrieved ${companies.length} companies for user ${context.email}`);
 
@@ -138,6 +173,9 @@ export async function POST(request: NextRequest) {
       addressZip,
       addressCountry,
       industrySector,
+      industrySectorCategory,
+      accountingSystem,
+      companySizeCategory,
       affiliateCode,
       linesOfBusiness,
     } = requestBody;
@@ -496,6 +534,9 @@ export async function POST(request: NextRequest) {
           addressZip,
           addressCountry,
           industrySector,
+          industrySectorCategory: industrySectorCategory || null,
+          accountingSystem: accountingSystem || null,
+          companySizeCategory: companySizeCategory || null,
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES WORK IN BOTH ENVIRONMENTS
           // Always store pricing fields regardless of environment for affiliate codes
           // Ensure $0 values are stored as 0, not null
@@ -538,6 +579,9 @@ export async function POST(request: NextRequest) {
           addressZip: true,
           addressCountry: true,
           industrySector: true,
+          industrySectorCategory: true,
+          accountingSystem: true,
+          companySizeCategory: true,
           linesOfBusiness: true,
           userDefinedAllocations: true,
           subscriptionMonthlyPrice: true,
@@ -672,6 +716,12 @@ export async function PATCH(request: NextRequest) {
     // Industry sector
     if (updateFields.industrySector !== undefined)
       updateData.industrySector = updateFields.industrySector;
+    if (updateFields.industrySectorCategory !== undefined)
+      updateData.industrySectorCategory = updateFields.industrySectorCategory;
+    if (updateFields.accountingSystem !== undefined)
+      updateData.accountingSystem = updateFields.accountingSystem;
+    if (updateFields.companySizeCategory !== undefined)
+      updateData.companySizeCategory = updateFields.companySizeCategory;
 
     // Name
     if (updateFields.name !== undefined) updateData.name = updateFields.name;
@@ -697,6 +747,9 @@ export async function PATCH(request: NextRequest) {
       addressZip: true,
       addressCountry: true,
       industrySector: true,
+      industrySectorCategory: true,
+      accountingSystem: true,
+      companySizeCategory: true,
       linesOfBusiness: true,
       // userDefinedAllocations: true, // Column doesn't exist in production DB
       createdAt: true,

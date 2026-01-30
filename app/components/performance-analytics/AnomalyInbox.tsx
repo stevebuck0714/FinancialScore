@@ -31,6 +31,7 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [runMessage, setRunMessage] = useState<string | null>(null);
+  const showEvidenceBundle = process.env.NODE_ENV !== 'production';
 
   useEffect(() => {
     let isMounted = true;
@@ -282,6 +283,7 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
                   This is a placeholder entry until an anomaly is detected.
                 </div>
               ) : (
+                showEvidenceBundle &&
                 selectedFinding.payload && (
                   <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Evidence bundle</div>
