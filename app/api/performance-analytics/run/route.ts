@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getOpsMetricProfile } from '@/lib/performance-analytics/ops-metric-profiles';
+import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 
 type FindingType = 'trend' | 'anomaly' | 'driver' | 'focus' | 'opportunity';
 type FindingInput = {
@@ -145,10 +146,17 @@ function aggregateBreakdown(rows: any[], key: string) {
   return totals;
 }
 
-function summarizeBreakdown(prior: any[], recent: any[], key: string, totalDelta: number) {
+function summarizeBreakdown(
+  prior: any[],
+  recent: any[],
+  key: string,
+  totalDelta: number,
+  allowlist?: Set<string>
+) {
   const priorTotals = aggregateBreakdown(prior, key);
   const recentTotals = aggregateBreakdown(recent, key);
   const contributions = Object.keys({ ...priorTotals, ...recentTotals })
+    .filter((name) => (allowlist ? allowlist.has(name) : true))
     .map((name) => ({
       name,
       delta: (recentTotals[name] || 0) - (priorTotals[name] || 0),
@@ -166,13 +174,14 @@ function summarizeBreakdown(prior: any[], recent: any[], key: string, totalDelta
   return top;
 }
 
-function findBreakdownSpike(prior: any[], recent: any[], key: string) {
+function findBreakdownSpike(prior: any[], recent: any[], key: string, allowlist?: Set<string>) {
   const priorTotals = aggregateBreakdown(prior, key);
   const recentTotals = aggregateBreakdown(recent, key);
   const priorMonths = Math.max(prior.length, 1);
   const recentMonths = Math.max(recent.length, 1);
 
   const spikes = Object.keys({ ...priorTotals, ...recentTotals })
+    .filter((name) => (allowlist ? allowlist.has(name) : true))
     .map((name) => {
       const priorAvg = (priorTotals[name] || 0) / priorMonths;
       const recentAvg = (recentTotals[name] || 0) / recentMonths;
@@ -211,6 +220,15 @@ function summarizeContributors(
   });
 
   return { contributions, top, formatted };
+}
+
+function formatMonthRange(rows: any[]) {
+  if (!rows.length) return 'the latest period';
+  const start = rows[0]?.monthDate ? new Date(rows[0].monthDate) : null;
+  const end = rows[rows.length - 1]?.monthDate ? new Date(rows[rows.length - 1].monthDate) : null;
+  if (!start || isNaN(start.getTime()) || !end || isNaN(end.getTime())) return 'the latest period';
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  return `${fmt(start)} to ${fmt(end)}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -345,6 +363,15 @@ export async function POST(request: NextRequest) {
       loadGoals('OperationalGoal', companyId),
     ]);
 
+    const accountMappings = await safeFindMany(
+      'account mappings',
+      prisma.accountMapping.findMany({
+        where: { companyId },
+        select: { qbAccount: true },
+      })
+    );
+    const mappedAccounts = new Set(accountMappings.map((m: any) => String(m.qbAccount)));
+
     const loans = await safeFindMany(
       'loans',
       prisma.loan.findMany({
@@ -416,18 +443,15 @@ export async function POST(request: NextRequest) {
           let driverSummary = '';
           if (metric.label === 'COGS') {
             const cogsFields = [
-              { key: 'cogsPayroll', label: 'COGS Payroll' },
-              { key: 'cogsOwnerPay', label: 'COGS Owner Pay' },
-              { key: 'cogsContractors', label: 'COGS Contractors' },
-              { key: 'cogsMaterials', label: 'COGS Materials' },
-              { key: 'cogsCommissions', label: 'COGS Commissions' },
-              { key: 'cogsOther', label: 'COGS Other' },
+              { key: 'cogsPayroll', label: getFieldDisplayName('cogsPayroll') },
+              { key: 'cogsOwnerPay', label: getFieldDisplayName('cogsOwnerPay') },
+              { key: 'cogsContractors', label: getFieldDisplayName('cogsContractors') },
+              { key: 'cogsMaterials', label: getFieldDisplayName('cogsMaterials') },
+              { key: 'cogsCommissions', label: getFieldDisplayName('cogsCommissions') },
+              { key: 'cogsOther', label: getFieldDisplayName('cogsOther') },
             ];
             const { formatted } = summarizeContributors(recent, prior, cogsFields, recentAvg - priorAvg);
-            const breakdownDrivers = summarizeBreakdown(prior, recent, 'cogsBreakdown', recentAvg - priorAvg);
-            if (breakdownDrivers.length) {
-              driverSummary = `Primary drivers (account-level): ${breakdownDrivers.join(', ')}.`;
-            } else if (formatted.length) {
+            if (formatted.length) {
               driverSummary = `Primary drivers: ${formatted.join(', ')}.`;
             }
             if (inventoryDelta > 0 && change < 0) {
@@ -437,52 +461,33 @@ export async function POST(request: NextRequest) {
             }
           }
           if (metric.label === 'Revenue') {
-            const breakdownDrivers = summarizeBreakdown(prior, recent, 'revenueBreakdown', recentAvg - priorAvg);
-            if (breakdownDrivers.length) {
-              driverSummary = `Primary drivers (mix): ${breakdownDrivers.join(', ')}.`;
-            }
-            const priorBreakdown = aggregateBreakdown(prior, 'revenueBreakdown');
-            const recentBreakdown = aggregateBreakdown(recent, 'revenueBreakdown');
-            const totalPrior = Object.values(priorBreakdown).reduce((sum, v) => sum + v, 0);
-            const totalRecent = Object.values(recentBreakdown).reduce((sum, v) => sum + v, 0);
-            const topPrior = Object.entries(priorBreakdown).sort((a, b) => b[1] - a[1])[0];
-            const topRecent = Object.entries(recentBreakdown).sort((a, b) => b[1] - a[1])[0];
-            if (topPrior && topRecent && topPrior[0] !== topRecent[0]) {
-              const priorShare = totalPrior ? topPrior[1] / totalPrior : 0;
-              const recentShare = totalRecent ? topRecent[1] / totalRecent : 0;
-              driverSummary += ` Mix shift: ${topPrior[0]} → ${topRecent[0]} (share ${formatPct(priorShare)} → ${formatPct(recentShare)}).`;
-            }
+            driverSummary = '';
           }
           if (metric.label === 'Operating Expense') {
             const expenseFields = [
-              { key: 'payroll', label: 'Payroll' },
-              { key: 'benefits', label: 'Benefits' },
-              { key: 'insurance', label: 'Insurance' },
-              { key: 'professionalFees', label: 'Professional Fees' },
-              { key: 'subcontractors', label: 'Subcontractors' },
-              { key: 'rent', label: 'Rent' },
-              { key: 'taxLicense', label: 'Tax & License' },
-              { key: 'phoneComm', label: 'Phone & Communication' },
-              { key: 'infrastructure', label: 'Infrastructure/Utilities' },
-              { key: 'autoTravel', label: 'Auto & Travel' },
-              { key: 'salesExpense', label: 'Sales & Marketing' },
-              { key: 'marketing', label: 'Marketing' },
-              { key: 'trainingCert', label: 'Training & Certification' },
-              { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
-              { key: 'interestExpense', label: 'Interest Expense' },
-              { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
-              { key: 'otherExpense', label: 'Other Expense' },
+              { key: 'payroll', label: getFieldDisplayName('payroll') },
+              { key: 'ownerBasePay', label: getFieldDisplayName('ownerBasePay') },
+              { key: 'ownersRetirement', label: getFieldDisplayName('ownersRetirement') },
+              { key: 'benefits', label: getFieldDisplayName('benefits') },
+              { key: 'insurance', label: getFieldDisplayName('insurance') },
+              { key: 'professionalFees', label: getFieldDisplayName('professionalFees') },
+              { key: 'subcontractors', label: getFieldDisplayName('subcontractors') },
+              { key: 'rent', label: getFieldDisplayName('rent') },
+              { key: 'taxLicense', label: getFieldDisplayName('taxLicense') },
+              { key: 'phoneComm', label: getFieldDisplayName('phoneComm') },
+              { key: 'infrastructure', label: getFieldDisplayName('infrastructure') },
+              { key: 'autoTravel', label: getFieldDisplayName('autoTravel') },
+              { key: 'salesExpense', label: getFieldDisplayName('salesExpense') },
+              { key: 'marketing', label: getFieldDisplayName('marketing') },
+              { key: 'trainingCert', label: getFieldDisplayName('trainingCert') },
+              { key: 'mealsEntertainment', label: getFieldDisplayName('mealsEntertainment') },
+              { key: 'interestExpense', label: getFieldDisplayName('interestExpense') },
+              { key: 'depreciationAmortization', label: getFieldDisplayName('depreciationAmortization') },
+              { key: 'otherExpense', label: getFieldDisplayName('otherExpense') },
             ];
             const { formatted } = summarizeContributors(recent, prior, expenseFields, recentAvg - priorAvg);
-            const breakdownDrivers = summarizeBreakdown(prior, recent, 'expenseBreakdown', recentAvg - priorAvg);
-            if (breakdownDrivers.length) {
-              driverSummary = `Primary drivers (account-level): ${breakdownDrivers.join(', ')}.`;
-            } else if (formatted.length) {
+            if (formatted.length) {
               driverSummary = `Primary drivers: ${formatted.join(', ')}.`;
-            }
-            const spike = findBreakdownSpike(prior, recent, 'expenseBreakdown');
-            if (spike) {
-              driverSummary += ` Possible one-time spike in ${spike.name} (avg ${Math.round(spike.priorAvg)} → ${Math.round(spike.recentAvg)}).`;
             }
           }
           if (metric.label === 'Total AR') {
@@ -566,29 +571,6 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      const ocfPrior = average(
-        prior.map((m: any) => (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0) + (m.depreciationAmortization || 0))
-      );
-      const ocfRecent = average(
-        recent.map((m: any) => (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0) + (m.depreciationAmortization || 0))
-      );
-      const ocfChange = percentChange(ocfRecent, ocfPrior);
-      if (Math.abs(ocfChange) >= 0.1) {
-        findings.push({
-          type: 'trend',
-          metric: 'Operating Cash Flow',
-          severity: Math.abs(ocfChange) >= 0.2 ? 'high' : 'medium',
-          confidence: Math.min(0.9, 0.5 + Math.abs(ocfChange)),
-          payload: {
-            title: `Operating Cash Flow ${ocfChange > 0 ? 'up' : 'down'} ${formatPct(ocfChange)}`,
-            summary: `Operating cash flow shifted ${formatPct(ocfChange)} vs the prior 3 months. Compare with revenue and working capital changes for drivers.`,
-            magnitude: ocfChange,
-            onsetDate: recent[0]?.monthDate,
-            persistence: 'medium',
-          },
-        });
-      }
-
       const arPrior = average(prior.map((m: any) => m.ar || 0));
       const arRecent = average(recent.map((m: any) => m.ar || 0));
       const apPrior = average(prior.map((m: any) => m.ap || 0));
@@ -599,6 +581,67 @@ export async function POST(request: NextRequest) {
       const wcRecent = (arRecent + invRecent) - apRecent;
       const wcDelta = wcRecent - wcPrior;
       const wcChange = percentChange(wcRecent, wcPrior);
+
+      const ocfPrior = average(
+        prior.map((m: any) => (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0) + (m.depreciationAmortization || 0))
+      );
+      const ocfRecent = average(
+        recent.map((m: any) => (m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0) + (m.depreciationAmortization || 0))
+      );
+      const ocfChange = percentChange(ocfRecent, ocfPrior);
+      if (Math.abs(ocfChange) >= 0.1) {
+        const revDelta = average(recent.map((m: any) => m.revenue || 0)) - average(prior.map((m: any) => m.revenue || 0));
+        const cogsDelta = average(recent.map((m: any) => m.cogsTotal || 0)) - average(prior.map((m: any) => m.cogsTotal || 0));
+        const expenseDelta = average(recent.map((m: any) => m.expense || 0)) - average(prior.map((m: any) => m.expense || 0));
+        const daDelta =
+          average(recent.map((m: any) => m.depreciationAmortization || 0)) -
+          average(prior.map((m: any) => m.depreciationAmortization || 0));
+        const ocfDrivers = [
+          { name: 'Revenue', impact: revDelta },
+          { name: 'COGS', impact: -cogsDelta },
+          { name: 'Operating Expense', impact: -expenseDelta },
+          { name: 'Depreciation & Amortization', impact: daDelta },
+        ]
+          .filter((entry) => entry.impact !== 0)
+          .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+          .slice(0, 3)
+          .map((entry) => {
+            const formatted = `$${Math.abs(entry.impact).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+            return `${entry.name} ${entry.impact >= 0 ? '+' : '-'}${formatted}`;
+          });
+
+        const wcDrivers = [
+          { name: 'AR', impact: -(arRecent - arPrior) },
+          { name: 'Inventory', impact: -(invRecent - invPrior) },
+          { name: 'AP', impact: apRecent - apPrior },
+        ]
+          .filter((entry) => entry.impact !== 0)
+          .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+          .slice(0, 2)
+          .map((entry) => {
+            const formatted = `$${Math.abs(entry.impact).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+            return `${entry.name} ${entry.impact >= 0 ? '+' : '-'}${formatted}`;
+          });
+        const wcSummary = wcDelta
+          ? ` Working capital ${wcDelta > 0 ? 'absorbed' : 'released'} $${Math.abs(wcDelta).toLocaleString(undefined, {
+              maximumFractionDigits: 0,
+            })}${wcDrivers.length ? `, driven by ${wcDrivers.join(', ')}` : ''}.`
+          : '';
+
+        findings.push({
+          type: 'trend',
+          metric: 'Operating Cash Flow',
+          severity: Math.abs(ocfChange) >= 0.2 ? 'high' : 'medium',
+          confidence: Math.min(0.9, 0.5 + Math.abs(ocfChange)),
+          payload: {
+            title: `Operating Cash Flow ${ocfChange > 0 ? 'up' : 'down'} ${formatPct(ocfChange)}`,
+            summary: `Operating cash flow shifted ${formatPct(ocfChange)} vs the prior 3 months.${ocfDrivers.length ? ` Primary drivers: ${ocfDrivers.join(', ')}.` : ''}${wcSummary}`,
+            magnitude: ocfChange,
+            onsetDate: recent[0]?.monthDate,
+            persistence: 'medium',
+          },
+        });
+      }
 
       if (Math.abs(wcChange) >= 0.1) {
         const dsoPrior = revenuePriorAvg ? (arPrior / revenuePriorAvg) * (priorDays / 3) : 0;
@@ -765,52 +808,49 @@ export async function POST(request: NextRequest) {
     }
 
     if (loans.length) {
-      const covenantFindings = loans.flatMap((loan: any) =>
-        (loan.covenants || [])
-          .filter((c: any) => {
-            const status = String(c.status || '').toUpperCase();
-            return status === 'WARNING' || status === 'BREACHED' || status === 'CRITICAL';
-          })
-          .map((c: any) => ({
-            loan,
-            covenant: c,
-          }))
-      );
+      const covenantAlerts = new Map<string, { loan: any; covenant: any; status: string; bufferPct: number | null }>();
 
-      const covenantBuffers = loans.flatMap((loan: any) =>
-        (loan.covenants || [])
-          .filter((c: any) => c.isApplicable && c.threshold != null && c.currentValue != null)
-          .map((c: any) => {
-            const threshold = Number(c.threshold);
-            const current = Number(c.currentValue);
-            let bufferPct: number | null = null;
-            if (c.covenantType === 'MINIMUM') {
-              bufferPct = threshold !== 0 ? (current - threshold) / Math.abs(threshold) : null;
-            } else if (c.covenantType === 'MAXIMUM') {
-              bufferPct = threshold !== 0 ? (threshold - current) / Math.abs(threshold) : null;
-            }
-            return {
-              loan,
-              covenant: c,
-              bufferPct,
-            };
-          })
-      );
-
-      covenantFindings.forEach(({ loan, covenant }) => {
-        const status = String(covenant.status || '').toUpperCase();
-        const severity = status === 'BREACHED' || status === 'CRITICAL' ? 'high' : 'medium';
-        let bufferNote = '';
-        if (covenant.threshold != null && covenant.currentValue != null) {
+      loans.forEach((loan: any) => {
+        (loan.covenants || []).forEach((covenant: any) => {
+          if (!covenant.isApplicable || covenant.threshold == null || covenant.currentValue == null) return;
+          const status = String(covenant.status || '').toUpperCase();
           const threshold = Number(covenant.threshold);
           const current = Number(covenant.currentValue);
+          let bufferPct: number | null = null;
           if (covenant.covenantType === 'MINIMUM') {
-            const buffer = threshold !== 0 ? (current - threshold) / Math.abs(threshold) : null;
-            if (buffer != null) bufferNote = ` Buffer: ${(buffer * 100).toFixed(1)}% above minimum.`;
+            bufferPct = threshold !== 0 ? (current - threshold) / Math.abs(threshold) : null;
+          } else if (covenant.covenantType === 'MAXIMUM') {
+            bufferPct = threshold !== 0 ? (threshold - current) / Math.abs(threshold) : null;
+          }
+
+          let derivedStatus = status;
+          if (!derivedStatus || derivedStatus === 'COMPLIANT') {
+            if (bufferPct != null && bufferPct <= 0) derivedStatus = 'BREACHED';
+            else if (bufferPct != null && bufferPct <= 0.1) derivedStatus = 'WARNING';
+          }
+
+          if (derivedStatus === 'WARNING' || derivedStatus === 'BREACHED' || derivedStatus === 'CRITICAL') {
+            covenantAlerts.set(covenant.id, {
+              loan,
+              covenant,
+              status: derivedStatus,
+              bufferPct,
+            });
+          }
+        });
+      });
+
+      const covenantFindings = Array.from(covenantAlerts.values());
+
+      covenantFindings.forEach(({ loan, covenant, status, bufferPct }) => {
+        const severity = status === 'BREACHED' || status === 'CRITICAL' ? 'high' : 'medium';
+        let bufferNote = '';
+        if (bufferPct != null) {
+          if (covenant.covenantType === 'MINIMUM') {
+            bufferNote = ` Buffer: ${(bufferPct * 100).toFixed(1)}% above minimum.`;
           }
           if (covenant.covenantType === 'MAXIMUM') {
-            const buffer = threshold !== 0 ? (threshold - current) / Math.abs(threshold) : null;
-            if (buffer != null) bufferNote = ` Buffer: ${(buffer * 100).toFixed(1)}% below maximum.`;
+            bufferNote = ` Buffer: ${(bufferPct * 100).toFixed(1)}% below maximum.`;
           }
         }
         findings.push({
@@ -819,7 +859,7 @@ export async function POST(request: NextRequest) {
           severity,
           confidence: 0.8,
           payload: {
-            title: `${covenant.covenantName} ${status === 'BREACHED' || status === 'CRITICAL' ? 'breach' : 'warning'}`,
+            title: `${loan.loanName} • ${covenant.covenantName} ${status === 'BREACHED' || status === 'CRITICAL' ? 'breach' : 'warning'}`,
             summary: `Loan ${loan.loanName} (${loan.lenderName}) is ${status.toLowerCase()} for ${covenant.covenantName}.${bufferNote} Trend history not available.`,
             currentValue: covenant.currentValue,
             threshold: covenant.threshold,
@@ -838,33 +878,6 @@ export async function POST(request: NextRequest) {
       });
 
       if (!covenantFindings.length) {
-        const atRisk = covenantBuffers
-          .filter((entry) => entry.bufferPct != null && entry.bufferPct <= 0.1)
-          .sort((a, b) => (a.bufferPct ?? 0) - (b.bufferPct ?? 0));
-        if (atRisk.length) {
-          const topRisk = atRisk[0];
-          findings.push({
-            type: 'anomaly',
-            metric: `Covenant: ${topRisk.covenant.covenantName}`,
-            severity: 'medium',
-            confidence: 0.7,
-            payload: {
-              title: `${topRisk.covenant.covenantName} at-risk`,
-              summary: `Loan ${topRisk.loan.loanName} (${topRisk.loan.lenderName}) is within ${(topRisk.bufferPct! * 100).toFixed(1)}% of the threshold.`,
-              currentValue: topRisk.covenant.currentValue,
-              threshold: topRisk.covenant.threshold,
-              covenantType: topRisk.covenant.covenantType,
-              status: topRisk.covenant.status,
-              loanName: topRisk.loan.loanName,
-              lenderName: topRisk.loan.lenderName,
-              updatedAt: topRisk.covenant.updatedAt,
-              nextSteps: [
-                'Monitor ratio trend more frequently.',
-                'Prepare a mitigation plan if trend continues.',
-              ],
-            },
-          });
-        }
         findings.push({
           type: 'focus',
           metric: 'Covenant Compliance',
@@ -883,6 +896,7 @@ export async function POST(request: NextRequest) {
     if (lastSix.length >= 6) {
       const prior = lastSix.slice(0, 3);
       const recent = lastSix.slice(3, 6);
+      const periodLabel = formatMonthRange(recent);
       const priorRevenue = average(prior.map((m: any) => m.revenue || 0));
       const recentRevenue = average(recent.map((m: any) => m.revenue || 0));
       const priorCogs = average(prior.map((m: any) => m.cogsTotal || 0));
@@ -896,6 +910,54 @@ export async function POST(request: NextRequest) {
         { name: 'Operating Expense', impact: -(recentExpense - priorExpense) },
       ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
 
+      const accountFields = [
+        { key: 'cogsPayroll', source: 'COGS' },
+        { key: 'cogsOwnerPay', source: 'COGS' },
+        { key: 'cogsContractors', source: 'COGS' },
+        { key: 'cogsMaterials', source: 'COGS' },
+        { key: 'cogsCommissions', source: 'COGS' },
+        { key: 'cogsOther', source: 'COGS' },
+        { key: 'payroll', source: 'Operating Expense' },
+        { key: 'ownerBasePay', source: 'Operating Expense' },
+        { key: 'ownersRetirement', source: 'Operating Expense' },
+        { key: 'benefits', source: 'Operating Expense' },
+        { key: 'insurance', source: 'Operating Expense' },
+        { key: 'professionalFees', source: 'Operating Expense' },
+        { key: 'subcontractors', source: 'Operating Expense' },
+        { key: 'rent', source: 'Operating Expense' },
+        { key: 'taxLicense', source: 'Operating Expense' },
+        { key: 'phoneComm', source: 'Operating Expense' },
+        { key: 'infrastructure', source: 'Operating Expense' },
+        { key: 'autoTravel', source: 'Operating Expense' },
+        { key: 'salesExpense', source: 'Operating Expense' },
+        { key: 'marketing', source: 'Operating Expense' },
+        { key: 'trainingCert', source: 'Operating Expense' },
+        { key: 'mealsEntertainment', source: 'Operating Expense' },
+        { key: 'interestExpense', source: 'Operating Expense' },
+        { key: 'depreciationAmortization', source: 'Operating Expense' },
+        { key: 'otherExpense', source: 'Operating Expense' },
+      ];
+
+      const accountDrivers = accountFields
+        .map((field) => {
+          const priorAvg = average(prior.map((m: any) => m[field.key] || 0));
+          const recentAvg = average(recent.map((m: any) => m[field.key] || 0));
+          const delta = recentAvg - priorAvg;
+          const impact = field.source === 'COGS' || field.source === 'Operating Expense' ? -delta : delta;
+          return {
+            name: getFieldDisplayName(field.key),
+            impact,
+            source: field.source,
+          };
+        })
+        .filter((entry) => entry.impact !== 0)
+        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+        .slice(0, 3)
+        .map((entry) => {
+          const formatted = `$${Math.abs(entry.impact).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+          return `${entry.name} (${entry.impact >= 0 ? '+' : '-'}${formatted}, ${entry.source})`;
+        });
+
       findings.push({
         type: 'driver',
         metric: 'Net Income',
@@ -903,7 +965,9 @@ export async function POST(request: NextRequest) {
         confidence: 0.6,
         payload: {
           title: 'Top drivers of recent change',
-          summary: `Largest impacts came from ${drivers[0]?.name}, ${drivers[1]?.name}, ${drivers[2]?.name}.`,
+          summary: accountDrivers.length
+            ? `Primary account-level drivers for ${periodLabel}: ${accountDrivers.join(', ')}.`
+            : `Largest impacts for ${periodLabel} came from ${drivers[0]?.name}, ${drivers[1]?.name}, ${drivers[2]?.name}.`,
           drivers: drivers.map((d) => ({
             name: d.name,
             impact: d.impact,
