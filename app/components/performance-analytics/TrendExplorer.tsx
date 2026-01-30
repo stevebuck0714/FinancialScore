@@ -44,6 +44,7 @@ type Finding = {
   const [findings, setFindings] = useState<Finding[]>([]);
    const [loading, setLoading] = useState(true);
    const [error, setError] = useState<string | null>(null);
+  const [monthsWindow, setMonthsWindow] = useState(24);
  
    useEffect(() => {
      let isMounted = true;
@@ -51,7 +52,7 @@ type Finding = {
        setLoading(true);
        setError(null);
        try {
-         const response = await fetch(`/api/performance-analytics/context?companyId=${companyId}`);
+        const response = await fetch(`/api/performance-analytics/context?companyId=${companyId}&months=${monthsWindow}`);
          if (!response.ok) {
            let message = 'Failed to load trend explorer';
            try {
@@ -94,7 +95,7 @@ type Finding = {
      return () => {
        isMounted = false;
      };
-   }, [companyId]);
+  }, [companyId, monthsWindow]);
  
    const monthly = useMemo(() => {
      if (!context?.data?.monthlyFinancials) return [];
@@ -376,13 +377,27 @@ type Finding = {
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Trend Explorer</h1>
 
-      <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-        <div style={{ fontSize: '12px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Why These Charts
+      <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', flex: 1 }}>
+          <div style={{ fontSize: '12px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Why These Charts
+          </div>
+          <div style={{ marginTop: '6px', fontSize: '13px', color: '#64748b' }}>
+            We prioritize charts with meaningful baseline shifts, clear deviation from goals, or material peer gaps. If a chart appears here,
+            it either explains a significant movement, represents a core value driver, or highlights operational risk or opportunity.
+          </div>
         </div>
-        <div style={{ marginTop: '6px', fontSize: '13px', color: '#64748b' }}>
-          We prioritize charts with meaningful baseline shifts, clear deviation from goals, or material peer gaps. If a chart appears here,
-          it either explains a significant movement, represents a core value driver, or highlights operational risk or opportunity.
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Window</label>
+          <select
+            value={monthsWindow}
+            onChange={(e) => setMonthsWindow(parseInt(e.target.value, 10))}
+            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }}
+          >
+            <option value={12}>Last 12 months</option>
+            <option value={24}>Last 24 months</option>
+            <option value={36}>Last 36 months</option>
+          </select>
         </div>
       </div>
  

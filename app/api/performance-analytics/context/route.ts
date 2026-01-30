@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const companyId = searchParams.get('companyId') || '';
     const frequency = searchParams.get('frequency') || 'monthly';
+    const monthsParam = searchParams.get('months');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
     const limit = Math.min(parseInt(searchParams.get('limit') || '200', 10), 1000);
@@ -77,7 +78,16 @@ export async function GET(request: NextRequest) {
     }
 
     const defaultRange = getDefaultDateRange(frequency);
-    const startDate = startDateParam ? new Date(startDateParam) : defaultRange.startDate;
+    const months = Math.max(1, Math.min(parseInt(monthsParam || '24', 10), 60));
+    const startDate = startDateParam
+      ? new Date(startDateParam)
+      : frequency === 'monthly'
+        ? (() => {
+            const custom = new Date();
+            custom.setMonth(custom.getMonth() - months);
+            return custom;
+          })()
+        : defaultRange.startDate;
     const endDate = endDateParam ? new Date(endDateParam) : defaultRange.endDate;
 
     const company = await prisma.company.findUnique({

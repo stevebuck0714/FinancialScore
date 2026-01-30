@@ -51,6 +51,7 @@ type ContextResponse = {
    const [error, setError] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [runMessage, setRunMessage] = useState<string | null>(null);
+  const [monthsWindow, setMonthsWindow] = useState(24);
  
    useEffect(() => {
      let isMounted = true;
@@ -58,7 +59,7 @@ type ContextResponse = {
        setLoading(true);
        setError(null);
        try {
-        const response = await fetch(`/api/performance-analytics/context?companyId=${companyId}`);
+        const response = await fetch(`/api/performance-analytics/context?companyId=${companyId}&months=${monthsWindow}`);
         if (!response.ok) {
           let message = 'Failed to load performance analytics context';
           try {
@@ -89,7 +90,7 @@ type ContextResponse = {
      return () => {
        isMounted = false;
      };
-   }, [companyId]);
+  }, [companyId, monthsWindow]);
 
   const runAgents = async () => {
     setRunStatus('running');
@@ -142,7 +143,19 @@ type ContextResponse = {
          Benchmarks use Industry Group data. Operational analysis uses the Industry Sector profile.
        </p>
 
-      <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Window</label>
+          <select
+            value={monthsWindow}
+            onChange={(e) => setMonthsWindow(parseInt(e.target.value, 10))}
+            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }}
+          >
+            <option value={12}>Last 12 months</option>
+            <option value={24}>Last 24 months</option>
+            <option value={36}>Last 36 months</option>
+          </select>
+        </div>
         <button
           onClick={runAgents}
           disabled={runStatus === 'running'}

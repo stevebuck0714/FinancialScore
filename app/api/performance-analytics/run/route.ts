@@ -124,6 +124,69 @@ function getLatest<T extends { snapshotDate?: Date; monthDate?: Date }>(records:
   return sorted[sorted.length - 1];
 }
 
+function aggregateBreakdown(rows: any[], key: string) {
+  const totals: Record<string, number> = {};
+  rows.forEach((row) => {
+    const breakdown = row?.[key];
+    if (breakdown && typeof breakdown === 'object') {
+      Object.entries(breakdown).forEach(([name, value]) => {
+        const num = typeof value === 'number' ? value : parseFloat(String(value));
+        if (!Number.isFinite(num)) return;
+        totals[name] = (totals[name] || 0) + num;
+      });
+    }
+  });
+  return totals;
+}
+
+function summarizeBreakdown(prior: any[], recent: any[], key: string, totalDelta: number) {
+  const priorTotals = aggregateBreakdown(prior, key);
+  const recentTotals = aggregateBreakdown(recent, key);
+  const contributions = Object.keys({ ...priorTotals, ...recentTotals })
+    .map((name) => ({
+      name,
+      delta: (recentTotals[name] || 0) - (priorTotals[name] || 0),
+    }))
+    .filter((item) => item.delta !== 0)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+  const top = contributions.slice(0, 3).map((item) => {
+    const share = totalDelta !== 0 ? Math.abs(item.delta / totalDelta) : 0;
+    return `${item.name} (${item.delta >= 0 ? '+' : '-'}$${Math.abs(item.delta).toLocaleString(undefined, {
+      maximumFractionDigits: 0,
+    })}, ${Math.round(share * 100)}%)`;
+  });
+
+  return top;
+}
+
+function summarizeContributors(
+  recent: any[],
+  prior: any[],
+  fields: Array<{ key: string; label: string }>,
+  totalDelta: number
+) {
+  const contributions = fields
+    .map((field) => {
+      const priorAvg = average(prior.map((m: any) => m[field.key] || 0));
+      const recentAvg = average(recent.map((m: any) => m[field.key] || 0));
+      const delta = recentAvg - priorAvg;
+      return { ...field, delta };
+    })
+    .filter((item) => item.delta !== 0)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+  const top = contributions.slice(0, 3);
+  const formatted = top.map((item) => {
+    const share = totalDelta !== 0 ? Math.abs(item.delta / totalDelta) : 0;
+    return `${item.label} (${item.delta >= 0 ? '+' : '-'}$${Math.abs(item.delta).toLocaleString(undefined, {
+      maximumFractionDigits: 0,
+    })}, ${Math.round(share * 100)}%)`;
+  });
+
+  return { contributions, top, formatted };
+}
+
 export async function POST(request: NextRequest) {
   try {
     await requireAuth();
@@ -289,6 +352,70 @@ export async function POST(request: NextRequest) {
         const recentAvg = average(recent.map(metric.value));
         const change = percentChange(recentAvg, priorAvg);
         if (Math.abs(change) >= 0.1) {
+          const inventoryPrior = average(prior.map((m: any) => m.inventory || 0));
+          const inventoryRecent = average(recent.map((m: any) => m.inventory || 0));
+          const inventoryDelta = inventoryRecent - inventoryPrior;
+
+          let driverSummary = '';
+          if (metric.label === 'COGS') {
+            const cogsFields = [
+              { key: 'cogsPayroll', label: 'COGS Payroll' },
+              { key: 'cogsOwnerPay', label: 'COGS Owner Pay' },
+              { key: 'cogsContractors', label: 'COGS Contractors' },
+              { key: 'cogsMaterials', label: 'COGS Materials' },
+              { key: 'cogsCommissions', label: 'COGS Commissions' },
+              { key: 'cogsOther', label: 'COGS Other' },
+            ];
+            const { formatted } = summarizeContributors(recent, prior, cogsFields, recentAvg - priorAvg);
+            const breakdownDrivers = summarizeBreakdown(prior, recent, 'cogsBreakdown', recentAvg - priorAvg);
+            if (breakdownDrivers.length) {
+              driverSummary = `Primary drivers (account-level): ${breakdownDrivers.join(', ')}.`;
+            } else if (formatted.length) {
+              driverSummary = `Primary drivers: ${formatted.join(', ')}.`;
+            }
+            if (inventoryDelta > 0 && change < 0) {
+              driverSummary += ' Inventory rose while COGS fell, suggesting potential stock build or timing effects.';
+            } else if (inventoryDelta < 0 && change < 0) {
+              driverSummary += ' Inventory fell alongside lower COGS, indicating reduced consumption or volume.';
+            }
+          }
+          if (metric.label === 'Operating Expense') {
+            const expenseFields = [
+              { key: 'payroll', label: 'Payroll' },
+              { key: 'benefits', label: 'Benefits' },
+              { key: 'insurance', label: 'Insurance' },
+              { key: 'professionalFees', label: 'Professional Fees' },
+              { key: 'subcontractors', label: 'Subcontractors' },
+              { key: 'rent', label: 'Rent' },
+              { key: 'taxLicense', label: 'Tax & License' },
+              { key: 'phoneComm', label: 'Phone & Communication' },
+              { key: 'infrastructure', label: 'Infrastructure/Utilities' },
+              { key: 'autoTravel', label: 'Auto & Travel' },
+              { key: 'salesExpense', label: 'Sales & Marketing' },
+              { key: 'marketing', label: 'Marketing' },
+              { key: 'trainingCert', label: 'Training & Certification' },
+              { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
+              { key: 'interestExpense', label: 'Interest Expense' },
+              { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+              { key: 'otherExpense', label: 'Other Expense' },
+            ];
+            const { formatted } = summarizeContributors(recent, prior, expenseFields, recentAvg - priorAvg);
+            const breakdownDrivers = summarizeBreakdown(prior, recent, 'expenseBreakdown', recentAvg - priorAvg);
+            if (breakdownDrivers.length) {
+              driverSummary = `Primary drivers (account-level): ${breakdownDrivers.join(', ')}.`;
+            } else if (formatted.length) {
+              driverSummary = `Primary drivers: ${formatted.join(', ')}.`;
+            }
+          }
+
+          const revenuePriorAvg = average(prior.map((m: any) => m.revenue || 0));
+          const revenueRecentAvg = average(recent.map((m: any) => m.revenue || 0));
+          const revenueChange = percentChange(revenueRecentAvg, revenuePriorAvg);
+          const revenueContext =
+            metric.label !== 'Revenue'
+              ? `Revenue moved ${formatPct(revenueChange)} over the same period.`
+              : '';
+
           findings.push({
             type: 'trend',
             metric: metric.label,
@@ -296,7 +423,7 @@ export async function POST(request: NextRequest) {
             confidence: Math.min(0.9, 0.5 + Math.abs(change)),
             payload: {
               title: `${metric.label} ${change > 0 ? 'up' : 'down'} ${formatPct(change)}`,
-              summary: `${metric.label} shifted ${formatPct(change)} comparing the last 3 months to the prior 3.`,
+              summary: `${metric.label} shifted ${formatPct(change)} comparing the last 3 months to the prior 3. ${revenueContext} ${driverSummary}`.trim(),
               magnitude: change,
               onsetDate: recent[0]?.monthDate,
               persistence: recent.every((m) => (metric.value(m) - priorAvg) * (change > 0 ? 1 : -1) > 0)
