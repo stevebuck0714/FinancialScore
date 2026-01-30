@@ -244,6 +244,24 @@ type ContextResponse = {
            ))}
          </div>
        </div>
+
+      <div style={{ marginTop: '32px' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Definitions</h2>
+        <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+            <strong>Focus score</strong>: weighted score (0–100) combining materiality, plan/peer deviation, trend acceleration, and confidence.
+          </div>
+          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+            <strong>Severity</strong>: Low/Medium/High based on magnitude and urgency (e.g., breached covenant = High).
+          </div>
+          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+            <strong>Confidence</strong>: model confidence based on data completeness and signal consistency.
+          </div>
+          <div style={{ fontSize: '12px', color: '#475569' }}>
+            <strong>Covenant alerts tracked</strong>: WARNING, BREACHED, CRITICAL, plus compliant covenants within 10% of thresholds.
+          </div>
+        </div>
+      </div>
      </div>
    );
  }
