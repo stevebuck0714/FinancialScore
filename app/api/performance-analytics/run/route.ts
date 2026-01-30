@@ -187,6 +187,35 @@ async function loadCovenants(companyId: string) {
         }));
       } catch (innerError) {
         console.warn('Performance analytics run: currentValue column unavailable', innerError);
+        try {
+          const rows = await prisma.$queryRaw<Array<any>>`
+            SELECT
+              c."id" as "covenantId",
+              c."covenantName",
+              c."covenantType",
+              c."threshold",
+              c."warningThreshold",
+              c."breachThreshold",
+              c."alertLevel" as "status",
+              c."applicable" as "isApplicable",
+              c."notes" as "description",
+              c."updatedAt",
+              l."id" as "loanId",
+              l."loanName",
+              l."lenderName"
+            FROM "Covenant" c
+            JOIN "Loan" l ON l."id" = c."loanId"
+            WHERE l."companyId" = ${companyId}
+          `;
+          return rows.map((row) => ({
+            ...row,
+            currentValue: null,
+            statusValue: row.status,
+            applicableValue: row.isApplicable,
+          }));
+        } catch (statusError) {
+          console.warn('Performance analytics run: status column unavailable', statusError);
+        }
       }
     }
   } catch (error) {
