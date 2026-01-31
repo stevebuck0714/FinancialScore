@@ -20,51 +20,61 @@ export const authConfig: NextAuthConfig = {
           return null;
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-          include: {
-            company: true,
-            primaryConsultant: true
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email as string },
+            include: {
+              company: true,
+              primaryConsultant: true
+            }
+          });
+
+          if (!user) {
+            return null;
           }
-        });
 
-        if (!user) {
+          if (!user.passwordHash) {
+            console.warn('🔐 NextAuth authorize - Missing password hash for user:', user.email);
+            return null;
+          }
+
+          const isValidPassword = await verifyPassword(
+            credentials.password as string,
+            user.passwordHash
+          );
+
+          if (!isValidPassword) {
+            return null;
+          }
+
+          // For consultant users, get consultantId from either:
+          // 1. primaryConsultant relation (if they're the primary contact)
+          // 2. consultantId field (if they're a team member)
+          const consultantId = user.primaryConsultant?.id || user.consultantId;
+
+          console.log('🔐 NextAuth authorize - User data:', {
+            email: user.email,
+            role: user.role,
+            userType: user.userType,
+            companyRole: user.companyRole
+          });
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            userType: user.userType,
+            companyRole: user.companyRole,
+            companyId: user.companyId,
+            consultantId: consultantId,
+            isPrimaryContact: user.isPrimaryContact,
+            mfaEnabled: user.mfaEnabled // Pass MFA status to session
+          };
+        } catch (error) {
+          console.error('❌ NextAuth authorize error:', error);
           return null;
         }
-
-        const isValidPassword = await verifyPassword(
-          credentials.password as string,
-          user.passwordHash
-        );
-
-        if (!isValidPassword) {
-          return null;
-        }
-
-        // For consultant users, get consultantId from either:
-        // 1. primaryConsultant relation (if they're the primary contact)
-        // 2. consultantId field (if they're a team member)
-        const consultantId = user.primaryConsultant?.id || user.consultantId;
-
-        console.log('🔐 NextAuth authorize - User data:', {
-          email: user.email,
-          role: user.role,
-          userType: user.userType,
-          companyRole: user.companyRole
-        });
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          userType: user.userType,
-          companyRole: user.companyRole,
-          companyId: user.companyId,
-          consultantId: consultantId,
-          isPrimaryContact: user.isPrimaryContact,
-          mfaEnabled: user.mfaEnabled // Pass MFA status to session
-        };
       },
     }),
   ],

@@ -2,8 +2,8 @@
  * Database Security Utilities
  * 
  * CRITICAL: These functions prevent cross-database contamination between:
- * - Production: orange-poetry (PRODUCTION)
- * - Staging: cold-frost (STAGING)
+ * - Production: configured via PRODUCTION_DB_PROJECTS (default: orange-poetry)
+ * - Staging: configured via STAGING_DB_PROJECTS (default: cold-frost)
  * 
  * These safeguards ensure:
  * 1. Production (orange-poetry) NEVER connects to staging (cold-frost)
@@ -17,6 +17,25 @@ export interface DatabaseInfo {
   databaseName: string;
   label: string;
   isAllowed: boolean;
+  productionProjects: string[];
+  stagingProjects: string[];
+}
+
+function getProjectList(envValue: string | undefined, fallback: string[]): string[] {
+  const raw = (envValue ?? fallback.join(',')).split(',');
+  return raw.map((value) => value.trim()).filter(Boolean);
+}
+
+function findProject(databaseUrl: string, projects: string[]): string | null {
+  return projects.find((project) => databaseUrl.includes(project)) ?? null;
+}
+
+function getDatabaseHost(databaseUrl: string): string {
+  try {
+    return new URL(databaseUrl).host;
+  } catch (error) {
+    return 'unknown';
+  }
 }
 
 function isVercelProductionRuntime(): boolean {
@@ -33,26 +52,32 @@ function isVercelProductionRuntime(): boolean {
  */
 export function validateDatabaseConnection(): DatabaseInfo {
   const databaseUrl = process.env.DATABASE_URL || '';
-  
-  const isProduction = databaseUrl.includes('orange-poetry');
-  const isStaging = databaseUrl.includes('cold-frost');
-  
+
+  const productionProjects = getProjectList(process.env.PRODUCTION_DB_PROJECTS, ['orange-poetry', 'aged-snow']);
+  const stagingProjects = getProjectList(process.env.STAGING_DB_PROJECTS, ['cold-frost']);
+
+  const productionMatch = findProject(databaseUrl, productionProjects);
+  const stagingMatch = findProject(databaseUrl, stagingProjects);
+
+  const isProduction = !!productionMatch;
+  const isStaging = !!stagingMatch;
+
   let databaseName = 'unknown';
   let label = 'UNKNOWN';
   let isAllowed = false;
   
   if (isProduction) {
-    databaseName = 'orange-poetry';
-    label = 'PRODUCTION (orange-poetry)';
-    // Production DB is ONLY allowed on Vercel production runtime.
-    // Local dev should NEVER be able to connect to orange-poetry.
+    databaseName = productionMatch || 'production';
+    label = `PRODUCTION (${databaseName})`;
+    // Production DBs are ONLY allowed on Vercel production runtime.
+    // Local dev should NEVER be able to connect to production databases.
     isAllowed = isVercelProductionRuntime();
   } else if (isStaging) {
-    databaseName = 'cold-frost';
-    label = 'STAGING (cold-frost)';
+    databaseName = stagingMatch || 'staging';
+    label = `STAGING (${databaseName})`;
     // Staging DB is allowed in local dev and Vercel preview/development environments.
     // We also allow it on Vercel production runtime for non-prod projects that deploy with --prod.
-    // The critical invariant is: orange-poetry must never be reachable from local/dev.
+    // The critical invariant is: production databases must never be reachable from local/dev.
     isAllowed = true;
   } else if (databaseUrl.includes('file:') || databaseUrl.includes('sqlite')) {
     databaseName = 'sqlite';
@@ -60,19 +85,9 @@ export function validateDatabaseConnection(): DatabaseInfo {
     isAllowed = true; // SQLite is always allowed for local development
   } else if (databaseUrl.includes('neon.tech')) {
     // Generic neon.tech connection - validate by checking the endpoint name
-    if (databaseUrl.includes('orange-poetry')) {
-      databaseName = 'orange-poetry';
-      label = 'PRODUCTION (orange-poetry)';
-      isAllowed = isVercelProductionRuntime();
-    } else if (databaseUrl.includes('cold-frost')) {
-      databaseName = 'cold-frost';
-      label = 'STAGING (cold-frost)';
-      isAllowed = true;
-    } else {
-      databaseName = 'neon-unknown';
-      label = 'UNKNOWN NEON DATABASE';
-      isAllowed = false; // Unknown neon database - not allowed
-    }
+    databaseName = 'neon-unknown';
+    label = 'UNKNOWN NEON DATABASE';
+    isAllowed = false; // Unknown neon database - not allowed
   }
   
   return {
@@ -80,7 +95,9 @@ export function validateDatabaseConnection(): DatabaseInfo {
     isStaging,
     databaseName,
     label,
-    isAllowed
+    isAllowed,
+    productionProjects,
+    stagingProjects
   };
 }
 
@@ -100,11 +117,11 @@ export function enforceDatabaseSecurity(): void {
     const databaseUrl = process.env.DATABASE_URL || '';
     if (databaseUrl.includes('orange-poetry') && !isVercelProductionRuntime()) {
       const error = new Error(
-        `🚨 SECURITY VIOLATION: Production database (orange-poetry) detected during build in non-production environment!\n` +
+      `🚨 SECURITY VIOLATION: Production database detected during build in non-production environment!\n` +
         `   NODE_ENV: ${process.env.NODE_ENV}\n` +
         `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
         `   VERCEL: ${process.env.VERCEL}\n` +
-        `   Production database must ONLY be used on Vercel production runtime.`
+      `   Production databases must ONLY be used on Vercel production runtime.`
       );
       console.error(error.message);
       throw error;
@@ -119,12 +136,15 @@ export function enforceDatabaseSecurity(): void {
     const error = new Error(
       `🚨 SECURITY VIOLATION: Database connection not allowed!\n` +
       `   Database: ${dbInfo.label}\n` +
+      `   Database host: ${getDatabaseHost(process.env.DATABASE_URL || '')}\n` +
       `   NODE_ENV: ${process.env.NODE_ENV}\n` +
       `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
       `   VERCEL: ${process.env.VERCEL}\n` +
+      `   Allowed production projects: ${dbInfo.productionProjects.join(', ') || '(none)'}\n` +
+      `   Allowed staging projects: ${dbInfo.stagingProjects.join(', ') || '(none)'}\n` +
       `   This connection violates database isolation rules.\n` +
-      `   Production (orange-poetry) must ONLY be used on Vercel production runtime.\n` +
-      `   Local/dev/preview must NEVER connect to orange-poetry.`
+      `   Production databases must ONLY be used on Vercel production runtime.\n` +
+      `   Local/dev/preview must NEVER connect to production databases.`
     );
     console.error(error.message);
     console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
@@ -134,7 +154,7 @@ export function enforceDatabaseSecurity(): void {
   // Additional cross-contamination checks
   if (dbInfo.isProduction && !isVercelProductionRuntime()) {
     const error = new Error(
-      `🚨 CRITICAL SECURITY ERROR: Production database (orange-poetry) detected in non-production environment!\n` +
+      `🚨 CRITICAL SECURITY ERROR: Production database detected in non-production environment!\n` +
       `   This would allow staging code to modify production data!\n` +
       `   Aborting to prevent data corruption.`
     );
@@ -143,7 +163,7 @@ export function enforceDatabaseSecurity(): void {
     throw error;
   }
   
-  // NOTE: We intentionally do NOT forbid cold-frost when VERCEL_ENV=production here,
+  // NOTE: We intentionally do NOT forbid staging databases when VERCEL_ENV=production here,
   // because Vercel "production" is per-project and some non-prod projects may deploy
   // with --prod while still correctly pointing at cold-frost.
 }
