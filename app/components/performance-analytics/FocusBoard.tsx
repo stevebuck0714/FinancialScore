@@ -149,7 +149,7 @@ const getBucketId = (finding: Finding) => {
                {bucket.label}
              </div>
             {isMonitor && bucketFindings.length > 0 && (
-              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
+              <div style={{ fontSize: '13px', color: '#334155', marginBottom: '10px' }}>
                 {monitorOnly
                   ? 'No high-priority gaps detected right now. These are the only signals worth tracking at this time.'
                   : 'Monitor items are lower-urgency signals to track over time while higher-scoring gaps take priority.'}
@@ -165,19 +165,19 @@ const getBucketId = (finding: Finding) => {
                      {finding.payload?.summary || 'No summary provided yet.'}
                    </div>
                   {finding.type === 'focus' && finding.payload?.focusScore != null && (
-                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                    <div style={{ marginTop: '8px', fontSize: '13px', color: '#334155' }}>
                       Focus score: {Number(finding.payload.focusScore).toFixed(1)} / 100 • Higher = bigger, more actionable gap.
                     </div>
                   )}
                   {isMonitor && finding.type === 'focus' && (
-                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
+                    <div style={{ marginTop: '6px', fontSize: '13px', color: '#334155' }}>
                       {monitorOnly
                         ? 'This is being monitored because it is the only measurable signal right now, not because it is urgent.'
                         : 'This is a watch item; take action if the score rises or the gap widens.'}
                     </div>
                   )}
                   {finding.type === 'focus' && finding.payload?.focusScoreComponents && (
-                    <div style={{ marginTop: '6px', fontSize: '11px', color: '#94a3b8' }}>
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
                       Components: materiality {finding.payload.focusScoreComponents.materiality}, peer deviation {finding.payload.focusScoreComponents.deviationPeers}, trend {finding.payload.focusScoreComponents.trendAcceleration}, confidence {finding.payload.focusScoreComponents.confidence}
                     </div>
                   )}
