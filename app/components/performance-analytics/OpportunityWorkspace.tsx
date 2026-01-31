@@ -16,11 +16,34 @@ type Finding = {
    companyId: string;
  }
  
+const OPPORTUNITY_STATUSES = ['Discover', 'Validate', 'Plan', 'Execute', 'Realized'] as const;
+
  const severityLabel = (value?: string | null) => {
    if (!value) return 'Unrated';
    return value.charAt(0).toUpperCase() + value.slice(1);
  };
  
+const formatCurrency = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(value)) return 'N/A';
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+};
+
+const formatImpactRange = (impact?: { unit?: string; low?: number | null; high?: number | null }) => {
+  if (!impact) return 'N/A';
+  if (impact.low == null && impact.high == null) return 'N/A';
+  const low = formatCurrency(impact.low ?? null);
+  const high = formatCurrency(impact.high ?? null);
+  const unit = impact.unit ? ` ${impact.unit}` : '';
+  return `${low} to ${high}${unit}`;
+};
+
+const evidenceLevel = (confidence?: number | null) => {
+  if (confidence == null) return 'Weak';
+  if (confidence >= 0.7) return 'Strong';
+  if (confidence >= 0.5) return 'Medium';
+  return 'Weak';
+};
+
  export default function OpportunityWorkspace({ companyId }: OpportunityWorkspaceProps) {
    const [findings, setFindings] = useState<Finding[]>([]);
    const [loading, setLoading] = useState(true);
@@ -28,6 +51,10 @@ type Finding = {
    const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [runMessage, setRunMessage] = useState<string | null>(null);
+  const [objectiveFilter, setObjectiveFilter] = useState<'All' | 'Cash' | 'Margin' | 'Growth' | 'Risk'>('All');
+  const [timeFilter, setTimeFilter] = useState<'All' | '0–30 days' | '30–90 days' | '90–180+ days'>('All');
+  const [ownerFilter, setOwnerFilter] = useState<'All' | 'Sales' | 'Ops' | 'Finance' | 'Marketing'>('All');
+  const [evidenceFilter, setEvidenceFilter] = useState<'All' | 'Strong' | 'Medium' | 'Weak'>('All');
  
    useEffect(() => {
      let isMounted = true;
@@ -137,15 +164,42 @@ type Finding = {
     }
   };
  
-   const rankedFindings = useMemo(() => {
-     return [...findings].sort((a, b) => {
-       const confA = a.confidence ?? 0;
-       const confB = b.confidence ?? 0;
-       return confB - confA;
-     });
-   }, [findings]);
+  const rankedFindings = useMemo(() => {
+    return [...findings].sort((a, b) => {
+      const scoreA = a.payload?.score?.value ?? a.confidence ?? 0;
+      const scoreB = b.payload?.score?.value ?? b.confidence ?? 0;
+      return scoreB - scoreA;
+    });
+  }, [findings]);
+
+  const filteredFindings = useMemo(() => {
+    return rankedFindings.filter((finding) => {
+      const payload = finding.payload || {};
+      const objective = payload.objective || 'Growth';
+      const timeLabel = payload.timeToImpact?.label || '—';
+      const owner = payload.owner || 'Finance';
+      const evidence = evidenceLevel(finding.confidence);
+
+      if (objectiveFilter !== 'All' && objective !== objectiveFilter) return false;
+      if (timeFilter !== 'All' && timeLabel !== timeFilter) return false;
+      if (ownerFilter !== 'All' && owner !== ownerFilter) return false;
+      if (evidenceFilter !== 'All' && evidence !== evidenceFilter) return false;
+      return true;
+    });
+  }, [rankedFindings, objectiveFilter, timeFilter, ownerFilter, evidenceFilter]);
  
-   const selectedFinding = rankedFindings.find((finding) => finding.id === selectedId) || null;
+  const selectedFinding = filteredFindings.find((finding) => finding.id === selectedId) || filteredFindings[0] || null;
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    OPPORTUNITY_STATUSES.forEach((status) => {
+      counts[status] = 0;
+    });
+    findings.forEach((finding) => {
+      const status = finding.payload?.status || 'Discover';
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return counts;
+  }, [findings]);
  
    if (loading) {
      return <div style={{ padding: '32px', color: '#475569' }}>Loading opportunity workspace…</div>;
@@ -159,10 +213,10 @@ type Finding = {
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Opportunity Workspace</h1>
        <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
-         Opportunities are ranked by confidence and expected impact. Each entry includes prerequisites and risks.
+        Identify where to press when you are strong, and where to fix when you are underperforming. Opportunities are ranked by impact, confidence, and time-to-impact.
        </p>
 
-      <div style={{ marginTop: '16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+      <div style={{ marginTop: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
         <button
           onClick={runAgents}
           disabled={runStatus === 'running'}
@@ -186,17 +240,69 @@ type Finding = {
         )}
       </div>
  
-       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) 2fr', gap: '18px', marginTop: '18px' }}>
+      <div style={{ marginTop: '18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+        {OPPORTUNITY_STATUSES.map((status) => (
+          <div key={status} style={{ padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', background: 'white' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{status}</div>
+            <div style={{ marginTop: '6px', fontSize: '22px', fontWeight: 700, color: '#1e293b' }}>
+              {statusCounts[status] ?? 0}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: '18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+        <label style={{ fontSize: '12px', color: '#475569' }}>
+          Objective
+          <select value={objectiveFilter} onChange={(e) => setObjectiveFilter(e.target.value as any)} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <option>All</option>
+            <option>Cash</option>
+            <option>Margin</option>
+            <option>Growth</option>
+            <option>Risk</option>
+          </select>
+        </label>
+        <label style={{ fontSize: '12px', color: '#475569' }}>
+          Time-to-impact
+          <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value as any)} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <option>All</option>
+            <option>0–30 days</option>
+            <option>30–90 days</option>
+            <option>90–180+ days</option>
+          </select>
+        </label>
+        <label style={{ fontSize: '12px', color: '#475569' }}>
+          Owner
+          <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value as any)} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <option>All</option>
+            <option>Sales</option>
+            <option>Ops</option>
+            <option>Finance</option>
+            <option>Marketing</option>
+          </select>
+        </label>
+        <label style={{ fontSize: '12px', color: '#475569' }}>
+          Evidence
+          <select value={evidenceFilter} onChange={(e) => setEvidenceFilter(e.target.value as any)} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <option>All</option>
+            <option>Strong</option>
+            <option>Medium</option>
+            <option>Weak</option>
+          </select>
+        </label>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) 2fr', gap: '18px', marginTop: '18px' }}>
          <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white', padding: '12px' }}>
            <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '10px' }}>
-             Ranked Ideas
+            Opportunity Cards
            </div>
-           {rankedFindings.length === 0 && (
+          {filteredFindings.length === 0 && (
              <div style={{ fontSize: '12px', color: '#94a3b8' }}>
                No opportunities generated yet. Run agents to populate this list.
              </div>
            )}
-           {rankedFindings.map((finding) => (
+          {filteredFindings.map((finding) => (
              <button
                key={finding.id}
                onClick={() => setSelectedId(finding.id)}
@@ -207,17 +313,23 @@ type Finding = {
                  borderRadius: '10px',
                  padding: '10px 12px',
                  marginBottom: '8px',
-                 background: finding.id === selectedId ? '#ecfccb' : 'white',
+                background: finding.id === selectedFinding?.id ? '#ecfccb' : 'white',
                  cursor: 'pointer',
                }}
              >
                <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
                  {finding.payload?.title || finding.metric || 'Opportunity'}
                </div>
-               <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                 Confidence: {finding.confidence != null ? Math.round(finding.confidence * 100) + '%' : '—'} • Severity:{' '}
-                 {severityLabel(finding.severity)}
-               </div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <span>Type: {finding.payload?.type || 'General'}</span>
+                <span>•</span>
+                <span>Objective: {finding.payload?.objective || 'Growth'}</span>
+                <span>•</span>
+                <span>Score: {finding.payload?.score?.value ?? Math.round((finding.confidence ?? 0) * 100) / 100}</span>
+              </div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                Impact: {formatImpactRange(finding.payload?.impact)} • {finding.payload?.timeToImpact?.label || 'Time: N/A'}
+              </div>
              </button>
            ))}
          </div>
@@ -232,22 +344,30 @@ type Finding = {
                  {selectedFinding.payload?.title || selectedFinding.metric || 'Opportunity'}
                </div>
                <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
-                 Confidence: {selectedFinding.confidence != null ? Math.round(selectedFinding.confidence * 100) + '%' : '—'} • Severity:{' '}
-                 {severityLabel(selectedFinding.severity)}
+                Type: {selectedFinding.payload?.type || 'General'} • Objective:{' '}
+                {selectedFinding.payload?.objective || 'Growth'} • Evidence:{' '}
+                {evidenceLevel(selectedFinding.confidence)} • Severity: {severityLabel(selectedFinding.severity)}
                </div>
                <div style={{ marginTop: '12px', fontSize: '13px', color: '#475569' }}>
-                 {selectedFinding.payload?.summary || 'No summary available yet.'}
+                {selectedFinding.payload?.summary || selectedFinding.payload?.why?.join(' ') || 'No summary available yet.'}
                </div>
-               {selectedFinding.payload?.expectedImpact && (
+              {selectedFinding.payload?.impact && (
                  <div style={{ marginTop: '12px', fontSize: '13px', color: '#1e293b' }}>
-                   <strong>Expected impact:</strong> {selectedFinding.payload.expectedImpact}
+                  <strong>Impact estimate:</strong> {formatImpactRange(selectedFinding.payload.impact)}
                  </div>
                )}
-               {Array.isArray(selectedFinding.payload?.prerequisites) && selectedFinding.payload.prerequisites.length > 0 && (
+              {selectedFinding.payload?.timeToImpact && (
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#475569' }}>
+                  <strong>Time-to-impact:</strong> {selectedFinding.payload.timeToImpact.label} (signal ~
+                  {selectedFinding.payload.timeToImpact.signalDays} days, run-rate ~
+                  {selectedFinding.payload.timeToImpact.runRateDays} days)
+                </div>
+              )}
+              {Array.isArray(selectedFinding.payload?.why) && selectedFinding.payload.why.length > 0 && (
                  <div style={{ marginTop: '12px' }}>
-                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Prerequisites</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Why it surfaced</div>
                    <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#64748b' }}>
-                     {selectedFinding.payload.prerequisites.map((item: string) => (
+                    {selectedFinding.payload.why.map((item: string) => (
                        <li key={item} style={{ marginBottom: '4px' }}>
                          {item}
                        </li>
@@ -255,12 +375,55 @@ type Finding = {
                    </ul>
                  </div>
                )}
-               {selectedFinding.payload?.risks && (
-                 <div style={{ marginTop: '12px', fontSize: '12px', color: '#b45309' }}>
-                   <strong>Risks:</strong> {selectedFinding.payload.risks}
-                 </div>
-               )}
-               {selectedFinding.payload?.title === 'No qualified opportunities detected' ? (
+              {Array.isArray(selectedFinding.payload?.dependencies) && selectedFinding.payload.dependencies.length > 0 && (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Dependencies</div>
+                  <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#64748b' }}>
+                    {selectedFinding.payload.dependencies.map((item: string) => (
+                      <li key={item} style={{ marginBottom: '4px' }}>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {selectedFinding.payload?.peerEvidence && (
+                <div style={{ marginTop: '12px', fontSize: '12px', color: '#475569' }}>
+                  <strong>Peer evidence:</strong> {selectedFinding.payload.peerEvidence}
+                </div>
+              )}
+              {Array.isArray(selectedFinding.payload?.validationTests) && selectedFinding.payload.validationTests.length > 0 && (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Validation tests</div>
+                  <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#64748b' }}>
+                    {selectedFinding.payload.validationTests.map((item: string) => (
+                      <li key={item} style={{ marginBottom: '4px' }}>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {Array.isArray(selectedFinding.payload?.guardrails) && selectedFinding.payload.guardrails.length > 0 && (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#b45309' }}>Risks & guardrails</div>
+                  <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#b45309' }}>
+                    {selectedFinding.payload.guardrails.map((item: string) => (
+                      <li key={item} style={{ marginBottom: '4px' }}>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {selectedFinding.payload?.owner && (
+                <div style={{ marginTop: '12px', fontSize: '12px', color: '#475569' }}>
+                  <strong>Owner:</strong> {selectedFinding.payload.owner} • <strong>Status:</strong>{' '}
+                  {selectedFinding.payload.status || 'Discover'} • <strong>Next action:</strong>{' '}
+                  {selectedFinding.payload.nextAction || '—'}
+                </div>
+              )}
+              {selectedFinding.payload?.title === 'No qualified opportunities detected' ? (
                  <div style={{ marginTop: '16px', fontSize: '12px', color: '#94a3b8' }}>
                    This is a placeholder entry until a qualified opportunity is detected.
                  </div>

@@ -302,9 +302,37 @@ function formatPct(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function formatDays(value: number | null) {
+  if (value == null || Number.isNaN(value)) return 'N/A';
+  return `${Math.round(value)} days`;
+}
+
 function findBenchmark(benchmarks: Array<{ metricName: string; fiveYearValue: number | null }>, matcher: RegExp) {
   const match = benchmarks.find((b) => matcher.test(b.metricName || ''));
   return match?.fiveYearValue ?? null;
+}
+
+function scoreOpportunity(params: {
+  revenue: number;
+  impactLow: number | null;
+  impactHigh: number | null;
+  confidence: number;
+  feasibility: number;
+  timeToImpactDays: number;
+}) {
+  const { revenue, impactLow, impactHigh, confidence, feasibility, timeToImpactDays } = params;
+  const impactMid = impactLow != null && impactHigh != null ? (impactLow + impactHigh) / 2 : null;
+  const baseline = Math.max(50_000, revenue * 0.02);
+  const impactScore = impactMid != null ? Math.min(1, impactMid / baseline) : 0.3;
+  const timePenalty = timeToImpactDays <= 30 ? 1 : timeToImpactDays <= 90 ? 1.2 : 1.5;
+  const score = (impactScore * confidence * feasibility) / timePenalty;
+  return { score, impactScore, timePenalty };
+}
+
+function timeLabel(runRateDays: number) {
+  if (runRateDays <= 30) return '0–30 days';
+  if (runRateDays <= 90) return '30–90 days';
+  return '90–180+ days';
 }
 
 function daysInPeriod(recent: any[], prior: any[]) {
@@ -1240,27 +1268,233 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Opportunity Agent (basic heuristic)
+    // Opportunity Agent (signal-driven hypotheses)
     if (latestFinancial && monthlyFinancials.length >= 6) {
       const recent = monthlyFinancials.slice(-3);
       const prior = monthlyFinancials.slice(-6, -3);
-      const growth = percentChange(average(recent.map((m: any) => m.revenue || 0)), average(prior.map((m: any) => m.revenue || 0)));
       const revenue = latestFinancial.revenue || 0;
-      const grossMargin = revenue ? (revenue - (latestFinancial.cogsTotal || 0)) / revenue : 0;
+      const cogs = latestFinancial.cogsTotal || 0;
+      const ar = latestFinancial.ar || 0;
+      const ap = latestFinancial.ap || 0;
+      const inventory = (latestFinancial as any).inventory || 0;
+
+      const growth = percentChange(average(recent.map((m: any) => m.revenue || 0)), average(prior.map((m: any) => m.revenue || 0)));
+      const grossMargin = revenue ? (revenue - cogs) / revenue : 0;
       const grossMarginBenchmark = findBenchmark(benchmarks, /gross\s*margin/i);
-      if (growth > 0.05 && (grossMarginBenchmark == null || grossMargin > grossMarginBenchmark)) {
+      const dso = revenue > 0 ? (ar / revenue) * 365 : null;
+      const dio = cogs > 0 ? (inventory / cogs) * 365 : null;
+      const dpo = cogs > 0 ? (ap / cogs) * 365 : null;
+      const dsoBenchmark = findBenchmark(benchmarks, /days\s*(receivables|sales\s*outstanding|dso)/i);
+      const dioBenchmark = findBenchmark(benchmarks, /days\s*inventory/i);
+      const dpoBenchmark = findBenchmark(benchmarks, /days\s*payables/i);
+
+      const makeOpportunity = (input: {
+        title: string;
+        family: string;
+        objective: 'Growth' | 'Margin' | 'Cash' | 'Risk';
+        why: string[];
+        impactLow: number | null;
+        impactHigh: number | null;
+        impactUnit: 'EBITDA' | 'Cash' | 'Revenue';
+        timeToSignalDays: number;
+        timeToRunRateDays: number;
+        dependencies: string[];
+        peerEvidence: string;
+        tests: string[];
+        guardrails: string[];
+        owner: 'Sales' | 'Ops' | 'Finance' | 'Marketing';
+        nextAction: string;
+        confidence: number;
+        feasibility: number;
+        metric: string;
+      }) => {
+        const scoring = scoreOpportunity({
+          revenue,
+          impactLow: input.impactLow,
+          impactHigh: input.impactHigh,
+          confidence: input.confidence,
+          feasibility: input.feasibility,
+          timeToImpactDays: input.timeToRunRateDays,
+        });
+        const severity = scoring.score >= 0.55 ? 'high' : scoring.score >= 0.35 ? 'medium' : 'low';
         findings.push({
           type: 'opportunity',
-          metric: 'Growth Capacity',
-          severity: 'medium',
-          confidence: 0.6,
+          metric: input.metric,
+          severity,
+          confidence: input.confidence,
           payload: {
-            title: 'Scale efficient growth',
-            summary: 'Revenue is accelerating while margin is at/above peer benchmarks.',
-            expectedImpact: 'Sustain growth without margin erosion.',
-            prerequisites: ['Validate capacity', 'Confirm working capital headroom'],
-            risks: 'Over-expansion could pressure service levels or working capital.',
+            title: input.title,
+            type: input.family,
+            objective: input.objective,
+            why: input.why,
+            impact: {
+              unit: input.impactUnit,
+              low: input.impactLow,
+              high: input.impactHigh,
+              basis: 'Baseline × lever size × expected lift',
+            },
+            timeToImpact: {
+              signalDays: input.timeToSignalDays,
+              runRateDays: input.timeToRunRateDays,
+              label: timeLabel(input.timeToRunRateDays),
+            },
+            dependencies: input.dependencies,
+            peerEvidence: input.peerEvidence,
+            validationTests: input.tests,
+            guardrails: input.guardrails,
+            owner: input.owner,
+            status: 'Discover',
+            nextAction: input.nextAction,
+            score: {
+              value: Number(scoring.score.toFixed(2)),
+              impact: Number(scoring.impactScore.toFixed(2)),
+              confidence: input.confidence,
+              feasibility: input.feasibility,
+              timePenalty: scoring.timePenalty,
+              reason: 'Ranked by impact × confidence × feasibility, adjusted for time-to-impact.',
+            },
           },
+        });
+      };
+
+      // Pricing & packaging (margin gap)
+      if (grossMarginBenchmark != null && grossMargin < grossMarginBenchmark - 0.02 && revenue > 0) {
+        const gap = grossMarginBenchmark - grossMargin;
+        const impactLow = revenue * gap * 0.5;
+        const impactHigh = revenue * gap * 0.9;
+        makeOpportunity({
+          title: 'Reduce discount leakage on high-margin segments',
+          family: 'Pricing & packaging',
+          objective: 'Margin',
+          why: [
+            `Gross margin ${formatPct(grossMargin)} vs peer ${formatPct(grossMarginBenchmark)}.`,
+            'Margin gap suggests pricing or mix improvement potential.',
+          ],
+          impactLow,
+          impactHigh,
+          impactUnit: 'EBITDA',
+          timeToSignalDays: 14,
+          timeToRunRateDays: 60,
+          dependencies: ['Quote approval rules', 'Segment margin visibility', 'Discount policy thresholds'],
+          peerEvidence: `Peers at or above ${formatPct(grossMarginBenchmark)} typically show tighter discount variance and fewer overrides.`,
+          tests: ['Pilot price floors on one segment for 30 days', 'Track win rate and discount variance'],
+          guardrails: ['Churn increase > 0.5% triggers rollback', 'Win rate drop > 5% triggers review'],
+          owner: 'Sales',
+          nextAction: 'Define target segment and price floor thresholds',
+          confidence: 0.62,
+          feasibility: 0.7,
+          metric: 'Gross Margin',
+        });
+      }
+
+      // Working capital (DSO)
+      if (dsoBenchmark != null && dso != null && dso > dsoBenchmark + 5 && revenue > 0) {
+        const dsoGap = dso - dsoBenchmark;
+        const cashImpact = (dsoGap / 365) * revenue;
+        makeOpportunity({
+          title: 'Tighten terms and collections to reduce DSO',
+          family: 'Working capital (AR/AP/inventory)',
+          objective: 'Cash',
+          why: [
+            `DSO ${formatDays(dso)} vs peer ${formatDays(dsoBenchmark)}.`,
+            'Cash conversion is slower than peer median.',
+          ],
+          impactLow: cashImpact * 0.6,
+          impactHigh: cashImpact * 0.9,
+          impactUnit: 'Cash',
+          timeToSignalDays: 14,
+          timeToRunRateDays: 75,
+          dependencies: ['AR aging accuracy', 'Customer contact list', 'Reminder sequence'],
+          peerEvidence: `Peers with DSO near ${formatDays(dsoBenchmark)} typically see 1–2 quarter EBITDA lift from improved cash conversion.`,
+          tests: ['Target top 15 overdue accounts for 2-week collection sprint'],
+          guardrails: ['Customer churn > 0.5% triggers review', 'Disputes volume spike > 10% triggers pause'],
+          owner: 'Finance',
+          nextAction: 'Identify top overdue accounts and launch collection cadence',
+          confidence: 0.68,
+          feasibility: 0.8,
+          metric: 'DSO',
+        });
+      }
+
+      // Growth investment when margin strong + growth strong
+      if (growth > 0.05 && (grossMarginBenchmark == null || grossMargin >= grossMarginBenchmark) && revenue > 0) {
+        makeOpportunity({
+          title: 'Scale channels while margin is strong',
+          family: 'Sales efficiency & pipeline',
+          objective: 'Growth',
+          why: [
+            `Revenue growth ${formatPct(growth)} over last 3 months.`,
+            `Gross margin ${formatPct(grossMargin)} ${grossMarginBenchmark != null ? `vs peer ${formatPct(grossMarginBenchmark)}` : 'is healthy'}.`,
+          ],
+          impactLow: revenue * 0.08,
+          impactHigh: revenue * 0.15,
+          impactUnit: 'Revenue',
+          timeToSignalDays: 30,
+          timeToRunRateDays: 90,
+          dependencies: ['Capacity planning', 'Channel ROI tracking', 'Working capital headroom'],
+          peerEvidence: 'Peers with strong margins often scale by doubling down on highest-ROI channels.',
+          tests: ['Pilot incremental spend on top 2 channels for 6 weeks'],
+          guardrails: ['CAC increase > 15% triggers pause', 'Utilization > 92% triggers capacity review'],
+          owner: 'Marketing',
+          nextAction: 'Identify top ROI channels and set pilot budget',
+          confidence: 0.6,
+          feasibility: 0.65,
+          metric: 'Revenue Growth',
+        });
+      }
+
+      // High margin but low growth (unlock)
+      if (grossMarginBenchmark != null && grossMargin > grossMarginBenchmark + 0.02 && growth < 0.02 && revenue > 0) {
+        makeOpportunity({
+          title: 'Monetize strong margins by expanding pipeline',
+          family: 'Marketing channel mix',
+          objective: 'Growth',
+          why: [
+            `Gross margin ${formatPct(grossMargin)} vs peer ${formatPct(grossMarginBenchmark)}.`,
+            `Revenue growth ${formatPct(growth)} is below potential given margin strength.`,
+          ],
+          impactLow: revenue * 0.05,
+          impactHigh: revenue * 0.12,
+          impactUnit: 'Revenue',
+          timeToSignalDays: 30,
+          timeToRunRateDays: 120,
+          dependencies: ['Channel capacity', 'Lead quality scoring', 'Sales enablement assets'],
+          peerEvidence: 'Peers with high margins but low growth typically expand via targeted partnerships and channel focus.',
+          tests: ['Launch partner pilot with 2 strategic partners'],
+          guardrails: ['Pipeline conversion < 10% triggers channel re-evaluation'],
+          owner: 'Sales',
+          nextAction: 'Select 1–2 channel experiments and define success metrics',
+          confidence: 0.55,
+          feasibility: 0.6,
+          metric: 'Pipeline Growth',
+        });
+      }
+
+      // Inventory drag (if available)
+      if (dioBenchmark != null && dio != null && dio > dioBenchmark + 5 && cogs > 0) {
+        const cashImpact = ((dio - dioBenchmark) / 365) * cogs;
+        makeOpportunity({
+          title: 'Reduce inventory drag to free cash',
+          family: 'COGS / procurement / supplier terms',
+          objective: 'Cash',
+          why: [
+            `Inventory days ${formatDays(dio)} vs peer ${formatDays(dioBenchmark)}.`,
+            'Inventory turns imply excess working capital tied up.',
+          ],
+          impactLow: cashImpact * 0.5,
+          impactHigh: cashImpact * 0.8,
+          impactUnit: 'Cash',
+          timeToSignalDays: 30,
+          timeToRunRateDays: 90,
+          dependencies: ['SKU-level margin accuracy', 'Demand forecasting', 'Supplier lead time review'],
+          peerEvidence: `Peers with inventory days near ${formatDays(dioBenchmark)} see higher cash conversion and fewer stockouts.`,
+          tests: ['Pilot reorder point changes on top 10 SKUs'],
+          guardrails: ['Stockout rate > 2% triggers rollback'],
+          owner: 'Ops',
+          nextAction: 'Review slow-moving SKUs and adjust reorder points',
+          confidence: 0.5,
+          feasibility: 0.55,
+          metric: 'Inventory Days',
         });
       }
     }

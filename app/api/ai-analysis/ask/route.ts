@@ -106,6 +106,24 @@ function buildRatioSnapshot(month: any, benchmarks: any[]): RatioSnapshot[] {
   }));
 }
 
+type ChangeSummary = {
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+  direction: 'increased' | 'decreased' | 'flat' | 'unknown';
+  percentChange: number | null;
+};
+
+function buildChangeSummary(current?: number | null, previous?: number | null): ChangeSummary {
+  if (typeof current !== 'number' || typeof previous !== 'number') {
+    return { current: current ?? null, previous: previous ?? null, delta: null, direction: 'unknown', percentChange: null };
+  }
+  const delta = current - previous;
+  const direction = delta === 0 ? 'flat' : delta > 0 ? 'increased' : 'decreased';
+  const percentChange = previous !== 0 ? (delta / Math.abs(previous)) * 100 : null;
+  return { current, previous, delta, direction, percentChange };
+}
+
 type SerperOrganicResult = {
   title?: string;
   link?: string;
@@ -250,8 +268,33 @@ const INTERNAL_QUERY_TERMS = [
   'aging',
 ];
 
+const COMPETITOR_QUERY_TERMS = [
+  'competitor',
+  'competitors',
+  'competition',
+  'peer',
+  'peers',
+  'benchmark',
+  'benchmarks',
+  'market',
+];
+
+function isInternalOnlyQuestion(question: string): boolean {
+  const q = question.toLowerCase();
+  const hasInternal = INTERNAL_QUERY_TERMS.some((term) => q.includes(term));
+  const hasExternal = EXTERNAL_QUERY_TERMS.some((term) => q.includes(term));
+  return hasInternal && !hasExternal;
+}
+
+function isCompetitorQuestion(question: string): boolean {
+  const q = question.toLowerCase();
+  return COMPETITOR_QUERY_TERMS.some((term) => q.includes(term));
+}
+
 function shouldUseExternalSources(question: string, override?: boolean | null): boolean {
-  if (override === true) return true;
+  if (override === true) {
+    return !isInternalOnlyQuestion(question);
+  }
   if (override === false) return false;
   const q = question.toLowerCase();
   const hasExternal = EXTERNAL_QUERY_TERMS.some((term) => q.includes(term));
@@ -339,6 +382,22 @@ function buildFallbackFromSources(params: {
   requestedCount: number | null;
 }): AskOutput {
   const { sources, companyName, question, requestedCount } = params;
+  if (!isCompetitorQuestion(question)) {
+    const citedBullets = sources.map((s) => ({
+      text: `${s.title || 'Internal data source'} — Review this page for relevant financial/operational data.`,
+      citations: [{ url: s.url, title: s.title, publishedDate: s.publishedDate }],
+    }));
+    return {
+      shortAnswer:
+        'I could not synthesize a reliable answer from external sources. This question should be answered using internal financial and operational data.',
+      longAnswer:
+        'Please review the internal financial data (Data Review) and operational snapshots (Operations) for the last 30 days. If more context is needed, ensure recent data has been imported and operational snapshots are up to date.',
+      citedBullets,
+      howThisImpactsUs:
+        'Rely on internal data for operational diagnostics. External sources are not appropriate for company-specific cash/AR performance.',
+      sources,
+    };
+  }
   const candidates = extractCompanyCandidates(sources);
   const targetCount = requestedCount ?? Math.min(5, candidates.length);
   const picks = candidates.slice(0, targetCount);
@@ -459,6 +518,7 @@ async function generateAskJson(params: {
     'Do NOT reference internal Payments tab data or subscription/billing plan terms.',
     'Do NOT invent metrics or KPIs that are not present in the internal summary.',
     'In this app, KPIs are the same as ratio metrics shown in the Ratios view. Treat KPI questions as ratio questions.',
+    'When describing month-over-month changes, use internalSummary.monthlyChanges.direction and values.',
     'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
   ].join('\n');
 
@@ -484,10 +544,14 @@ async function generateAskJson(params: {
           'sources: must be the provided sources list (same URLs; do not add new URLs).',
         ];
 
+  const industryContext = (internalSummary as any)?.company?.industryGroupName
+    ? `Industry: ${(internalSummary as any).company.industryGroupName}`
+    : 'Industry: (not provided)';
   const companyContext = companyName ? `Company: ${companyName}` : 'Company: (not provided)';
 
   const user = [
     companyContext,
+    industryContext,
     `Question: ${question}`,
     '',
     'Internal data summary (use for company-specific metrics; do NOT invent data not present):',
@@ -500,6 +564,8 @@ async function generateAskJson(params: {
     ...requirements.map((r) => `- ${r}`),
     '- Be concise and action-oriented. Avoid generic filler or high-level fluff.',
     '- Use internal summary for company-specific metrics when applicable.',
+    '- For peer/market questions, explicitly reference the company industry in the answer.',
+    '- Avoid generic statements; cite specific peer commentary from sources when available.',
     '- If the query is marked as externalQuery and no external sources are available, say so clearly and avoid speculation.',
     '- If internal data is insufficient to answer, say so clearly and avoid speculation.',
     '- Exclude internal Payments tab data or subscription/billing plan terms.',
@@ -673,11 +739,23 @@ export async function POST(request: NextRequest) {
           take: 200,
         })
       : [];
+    const industryGroupName = benchmarks.find((b) => b.industryName)?.industryName || null;
     const ratioSnapshot = buildRatioSnapshot(latestMonth, benchmarks);
+
+    const monthlyChanges = latestMonth && prevMonth
+      ? {
+          revenue: buildChangeSummary(latestMonth.revenue, prevMonth.revenue),
+          expense: buildChangeSummary(latestMonth.expense, prevMonth.expense),
+          cogsTotal: buildChangeSummary(latestMonth.cogsTotal, prevMonth.cogsTotal),
+          cash: buildChangeSummary(latestMonth.cash, prevMonth.cash),
+          ar: buildChangeSummary(latestMonth.ar, prevMonth.ar),
+          ap: buildChangeSummary(latestMonth.ap, prevMonth.ap),
+        }
+      : null;
 
     const internalSummary = {
       generatedAt: now.toISOString(),
-      company: { id: companyId, name: companyName || null },
+      company: { id: companyId, name: companyName || null, industryGroupId, industryGroupName },
       queryContext: {
         externalQuery: useExternalSources,
         externalSourcesAvailable: false,
@@ -766,6 +844,7 @@ export async function POST(request: NextRequest) {
             }
           : null,
       },
+      monthlyChanges,
       kpiDefinitions: {
         alias: ['kpi', 'kpis', 'ratios'],
         note: 'In this app, KPIs are the ratio metrics shown in the Ratios view.',
@@ -778,15 +857,23 @@ export async function POST(request: NextRequest) {
         'Daily operational trends are computed using the most recent available daily snapshot date as the reference.',
         'If dataPoints are low or change values are null, there may be insufficient daily history to assess trends.',
         'KPI requests should be interpreted as ratio metrics; use kpiDefinitions.ratios when available.',
+        'Use monthlyChanges.direction to describe increase/decrease; do not invert directions.',
       ],
     };
 
+    const appBaseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3002').replace(/\/+$/, '');
     const internalSources = [
       {
-        url: 'https://internal.local/financials',
-        title: 'Internal financial and operational data',
+        url: `${appBaseUrl}?view=admin&tab=data-review`,
+        title: 'Data Review - Financials',
         publishedDate: null,
-        snippet: 'Company financials and daily operational snapshots.',
+        snippet: 'Review imported financial data and monthly ratios.',
+      },
+      {
+        url: `${appBaseUrl}?view=operations`,
+        title: 'Operations - Operational Data',
+        publishedDate: null,
+        snippet: 'Daily and monthly operational snapshots and metrics.',
       },
     ];
 

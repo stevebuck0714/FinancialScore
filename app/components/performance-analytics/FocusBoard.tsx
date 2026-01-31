@@ -130,10 +130,6 @@ const getBucketId = (finding: Finding) => {
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Focus Board</h1>
-      <p style={{ marginTop: '12px', fontSize: '15px', color: '#334155' }}>
-         Findings will appear here as agents write to the performance analytics store.
-       </p>
- 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginTop: '24px' }}>
          {BUCKETS.map((bucket) => (
            <div key={bucket.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
