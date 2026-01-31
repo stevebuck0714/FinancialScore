@@ -138,13 +138,23 @@ const getBucketId = (finding: Finding) => {
              </div>
              {findingsByBucket[bucket.id]?.length ? (
                findingsByBucket[bucket.id].map((finding) => (
-                 <div key={finding.id} style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', marginBottom: '10px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
+                <div key={finding.id} style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', marginBottom: '10px' }}>
+                 <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
                      {finding.metric || finding.payload?.title || 'Untitled Finding'}
                    </div>
                   <div style={{ fontSize: '13px', color: '#334155', marginTop: '6px' }}>
                      {finding.payload?.summary || 'No summary provided yet.'}
                    </div>
+                  {finding.type === 'focus' && finding.payload?.focusScore != null && (
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                      Focus score: {Number(finding.payload.focusScore).toFixed(1)} / 100 • Higher = bigger, more actionable gap.
+                    </div>
+                  )}
+                  {finding.type === 'focus' && finding.payload?.focusScoreComponents && (
+                    <div style={{ marginTop: '6px', fontSize: '11px', color: '#94a3b8' }}>
+                      Components: materiality {finding.payload.focusScoreComponents.materiality}, peer deviation {finding.payload.focusScoreComponents.deviationPeers}, trend {finding.payload.focusScoreComponents.trendAcceleration}, confidence {finding.payload.focusScoreComponents.confidence}
+                    </div>
+                  )}
                  </div>
                ))
              ) : (

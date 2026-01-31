@@ -1260,8 +1260,15 @@ export async function POST(request: NextRequest) {
         confidence,
         payload: {
           title: 'Focus score update',
-          summary: `Focus score ${focusScore.toFixed(1)} based on materiality and peer deviation.`,
+          summary: `Focus score ${focusScore.toFixed(1)} (0–100) combines revenue materiality, peer deviation, recent trend acceleration, and data confidence. Higher scores mean a bigger, more actionable gap to prioritize.`,
           focusScore,
+          focusScoreComponents: {
+            materiality: Number((materiality * 30).toFixed(1)),
+            deviationPlan: Number((Math.abs(deviationPlan) * 25).toFixed(1)),
+            deviationPeers: Number((Math.abs(deviationPeers) * 20).toFixed(1)),
+            trendAcceleration: Number((trendAcceleration * 15).toFixed(1)),
+            confidence: Number((confidence * 10).toFixed(1)),
+          },
           deviationPeers,
           benchmark: grossMarginBenchmark,
         },

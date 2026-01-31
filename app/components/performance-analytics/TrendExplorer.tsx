@@ -329,35 +329,35 @@ type Finding = {
     const reasons = chartRationales[metric] || [];
     const isPriority = priorityVarianceMetrics.has(metric);
     return (
-      <div style={{ marginBottom: '6px' }}>
-        <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Why this chart</div>
-        <div style={{ marginTop: '4px', fontSize: '11px', fontWeight: 600, color: isPriority ? '#1d4ed8' : '#64748b' }}>
+        <div style={{ marginBottom: '6px' }}>
+        <div style={{ fontSize: '13px', fontWeight: '600', color: '#334155' }}>Why this chart</div>
+        <div style={{ marginTop: '4px', fontSize: '12px', fontWeight: 600, color: isPriority ? '#1d4ed8' : '#475569' }}>
           {isPriority ? 'Role: Priority Variance' : 'Role: Context / Driver'}
         </div>
         {reasons.length > 0 ? (
-          <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+          <div style={{ marginTop: '4px', fontSize: '13px', color: '#334155' }}>
             {reasons.slice(0, 3).join(' ')}
           </div>
         ) : (
-          <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>{fallback}</div>
+          <div style={{ marginTop: '4px', fontSize: '13px', color: '#334155' }}>{fallback}</div>
         )}
         {metric === 'Gross Margin' && grossMarginPeerNarrative && (
-          <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
+          <div style={{ marginTop: '6px', fontSize: '13px', color: '#334155' }}>
             {grossMarginPeerNarrative}
           </div>
         )}
         {driverNarrative?.driverMap?.[metric as keyof typeof driverNarrative.driverMap] && (
-          <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
+          <div style={{ marginTop: '6px', fontSize: '13px', color: '#334155' }}>
             {driverNarrative.summary}
           </div>
         )}
         {chartSoWhat[metric] && (
-          <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
+          <div style={{ marginTop: '6px', fontSize: '13px', color: '#334155' }}>
             {chartSoWhat[metric]}
           </div>
         )}
         {chartNarratives[metric] && (
-          <div style={{ marginTop: '6px', fontSize: '12px', color: '#94a3b8' }}>
+          <div style={{ marginTop: '6px', fontSize: '13px', color: '#64748b' }}>
             {chartNarratives[metric]}
           </div>
         )}
@@ -379,20 +379,20 @@ type Finding = {
 
       <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
         <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', flex: 1 }}>
-          <div style={{ fontSize: '12px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Why These Charts
           </div>
-          <div style={{ marginTop: '6px', fontSize: '13px', color: '#64748b' }}>
+          <div style={{ marginTop: '6px', fontSize: '14px', color: '#334155' }}>
             We prioritize charts with meaningful baseline shifts, clear deviation from goals, or material peer gaps. If a chart appears here,
             it either explains a significant movement, represents a core value driver, or highlights operational risk or opportunity.
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Window</label>
+          <label style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>Window</label>
           <select
             value={monthsWindow}
             onChange={(e) => setMonthsWindow(parseInt(e.target.value, 10))}
-            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }}
+            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#1e293b' }}
           >
             <option value={12}>Last 12 months</option>
             <option value={24}>Last 24 months</option>
@@ -410,16 +410,16 @@ type Finding = {
                 <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>
                   {move.metric || move.payload?.title || 'Trend Move'}
                 </div>
-                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
+                <div style={{ fontSize: '13px', color: '#334155', marginTop: '6px' }}>
                   {move.payload?.summary || 'No summary available yet.'}
                 </div>
-                <div style={{ marginTop: '8px', fontSize: '11px', color: '#94a3b8' }}>
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
                   Confidence: {move.confidence != null ? Math.round(move.confidence * 100) + '%' : '—'}
                 </div>
               </div>
             ))}
           </div>
-          <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
+          <div style={{ marginTop: '10px', fontSize: '13px', color: '#334155' }}>
             These are the Priority Variances. Charts marked “Context / Driver” below explain what’s causing them.
           </div>
         </div>
@@ -501,7 +501,7 @@ type Finding = {
          </div>
        </div>
  
-       <div style={{ marginTop: '24px', fontSize: '12px', color: '#64748b' }}>
+      <div style={{ marginTop: '24px', fontSize: '13px', color: '#334155' }}>
          Peer bands (P25/P75) can be added once percentile benchmarks are available; current charts show the Industry Group benchmark line.
        </div>
      </div>

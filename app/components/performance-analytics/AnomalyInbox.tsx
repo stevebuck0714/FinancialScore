@@ -282,17 +282,7 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
                 <div style={{ marginTop: '16px', fontSize: '12px', color: '#94a3b8' }}>
                   This is a placeholder entry until an anomaly is detected.
                 </div>
-              ) : (
-                showEvidenceBundle &&
-                selectedFinding.payload && (
-                  <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Evidence bundle</div>
-                    <pre style={{ marginTop: '8px', fontSize: '11px', color: '#475569', whiteSpace: 'pre-wrap' }}>
-                      {JSON.stringify(selectedFinding.payload, null, 2)}
-                    </pre>
-                  </div>
-                )
-              )}
+              ) : null}
             </>
           ) : (
             <div style={{ fontSize: '12px', color: '#94a3b8' }}>Select an anomaly to view details.</div>
