@@ -159,5 +159,9 @@ const OPS_METRIC_PROFILES: Record<string, OpsMetricProfile> = {
 
 export function getOpsMetricProfile(industrySectorCategory?: string | null): OpsMetricProfile {
   if (!industrySectorCategory) return DEFAULT_PROFILE;
-  return OPS_METRIC_PROFILES[industrySectorCategory] || DEFAULT_PROFILE;
+  const normalized = industrySectorCategory
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+  return OPS_METRIC_PROFILES[normalized] || OPS_METRIC_PROFILES[industrySectorCategory] || DEFAULT_PROFILE;
 }

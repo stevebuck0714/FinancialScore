@@ -21,7 +21,8 @@ async function fetchApi(url: string, options?: RequestInit) {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new ApiError(response.status, data.error || 'Request failed');
+      const detailText = data?.details ? ` (${data.details})` : '';
+      throw new ApiError(response.status, `${data.error || 'Request failed'}${detailText}`);
     }
 
     return data;
@@ -94,6 +95,9 @@ export const companiesApi = {
     addressZip?: string;
     addressCountry?: string;
     industrySector?: number;
+    industrySectorCategory?: string | null;
+    accountingSystem?: string | null;
+    companySizeCategory?: string | null;
   }) {
     return fetchApi('/api/companies', {
       method: 'PATCH',

@@ -380,8 +380,43 @@ function buildFallbackFromSources(params: {
   companyName: string;
   question: string;
   requestedCount: number | null;
+  internalSummary?: Record<string, any>;
 }): AskOutput {
-  const { sources, companyName, question, requestedCount } = params;
+  const { sources, companyName, question, requestedCount, internalSummary } = params;
+  const q = question.toLowerCase();
+  const isMarginQuestion = ['margin', 'gross margin', 'ebitda', 'ebit'].some((term) => q.includes(term));
+  const latest = internalSummary?.monthlySnapshot?.latest;
+  const previous = internalSummary?.monthlySnapshot?.previous;
+
+  if (isMarginQuestion && latest && previous) {
+    const latestRevenue = latest.revenue || 0;
+    const prevRevenue = previous.revenue || 0;
+    const latestCogs = latest.cogsTotal || 0;
+    const prevCogs = previous.cogsTotal || 0;
+    const latestExpense = latest.expense || 0;
+    const prevExpense = previous.expense || 0;
+
+    const latestGrossMargin = latestRevenue > 0 ? (latestRevenue - latestCogs) / latestRevenue : 0;
+    const prevGrossMargin = prevRevenue > 0 ? (prevRevenue - prevCogs) / prevRevenue : 0;
+    const marginDelta = (latestGrossMargin - prevGrossMargin) * 100;
+
+    const formatCurrency = (value: number) => `$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    const formatPct = (value: number) => `${Math.abs(value).toFixed(1)}%`;
+
+    const citedBullets = sources.map((s) => ({
+      text: `${s.title || 'Internal data source'} — Evidence for revenue, COGS, and expense trends.`,
+      citations: [{ url: s.url, title: s.title, publishedDate: s.publishedDate }],
+    }));
+
+    return {
+      shortAnswer: `Gross margin moved ${marginDelta >= 0 ? 'up' : 'down'} ${formatPct(marginDelta)} versus the prior month. The biggest drivers are revenue, COGS, and operating expense shifts.`,
+      longAnswer: `Revenue changed by ${formatCurrency(latestRevenue - prevRevenue)}, COGS changed by ${formatCurrency(latestCogs - prevCogs)}, and operating expense changed by ${formatCurrency(latestExpense - prevExpense)}. Gross margin is ${marginDelta >= 0 ? 'higher' : 'lower'} by ${formatPct(marginDelta)} versus the prior month. Review Data Review for line-item detail and Operations for cash/AR impacts.`,
+      citedBullets,
+      howThisImpactsUs: 'Margin change is primarily driven by revenue mix and COGS/expense movement; use this to target pricing, cost control, and mix improvements.',
+      sources,
+    };
+  }
+
   if (!isCompetitorQuestion(question)) {
     const citedBullets = sources.map((s) => ({
       text: `${s.title || 'Internal data source'} — Review this page for relevant financial/operational data.`,
@@ -389,9 +424,9 @@ function buildFallbackFromSources(params: {
     }));
     return {
       shortAnswer:
-        'I could not synthesize a reliable answer from external sources. This question should be answered using internal financial and operational data.',
+        'I could not synthesize a reliable answer from internal data. Please review the linked financial and operational data sources.',
       longAnswer:
-        'Please review the internal financial data (Data Review) and operational snapshots (Operations) for the last 30 days. If more context is needed, ensure recent data has been imported and operational snapshots are up to date.',
+        'Please review the Data Review (financials) and Operations (operational snapshots) pages. If more context is needed, ensure recent data has been imported and operational snapshots are up to date.',
       citedBullets,
       howThisImpactsUs:
         'Rely on internal data for operational diagnostics. External sources are not appropriate for company-specific cash/AR performance.',
@@ -624,7 +659,7 @@ export async function POST(request: NextRequest) {
     const question = String(body?.question || '').trim();
     const useExternalSourcesRaw = body?.useExternalSources;
     const useExternalSourcesOverride =
-      typeof useExternalSourcesRaw === 'boolean' ? useExternalSourcesRaw : null;
+      typeof useExternalSourcesRaw === 'boolean' ? useExternalSourcesRaw : false;
 
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
@@ -951,7 +986,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (second.finish_reason === 'length' || isListInvalid(parsed, requestedCount)) {
-        throw new Error('Model output truncated or did not meet list requirements');
+        parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount, internalSummary });
       }
     }
 
@@ -978,13 +1013,13 @@ export async function POST(request: NextRequest) {
       citationsOk = hasValidCitations(citedBullets, allowedUrls);
 
       if (strictRetry.finish_reason === 'length' || isListInvalid(parsed, requestedCount) || !citationsOk) {
-        parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount });
+        parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount, internalSummary });
       }
     }
 
     citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
     if (!hasNonEmptyBullets(citedBullets)) {
-      parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount });
+      parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount, internalSummary });
       citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
       if (!hasNonEmptyBullets(citedBullets)) {
         return NextResponse.json(

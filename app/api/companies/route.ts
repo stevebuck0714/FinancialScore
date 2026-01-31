@@ -716,12 +716,63 @@ export async function PATCH(request: NextRequest) {
     // Industry sector
     if (updateFields.industrySector !== undefined)
       updateData.industrySector = updateFields.industrySector;
-    if (updateFields.industrySectorCategory !== undefined)
-      updateData.industrySectorCategory = updateFields.industrySectorCategory;
-    if (updateFields.accountingSystem !== undefined)
-      updateData.accountingSystem = updateFields.accountingSystem;
-    if (updateFields.companySizeCategory !== undefined)
-      updateData.companySizeCategory = updateFields.companySizeCategory;
+    if (updateFields.industrySectorCategory !== undefined) {
+      try {
+        const sectorCategoryColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS(
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Company'
+              AND column_name = 'industrySectorCategory'
+          ) as "exists"
+        `;
+        if (sectorCategoryColumn[0]?.exists) {
+          updateData.industrySectorCategory = updateFields.industrySectorCategory;
+        } else {
+          console.warn('Company update: industrySectorCategory column missing, skipping update');
+        }
+      } catch (error) {
+        console.warn('Company update: could not verify industrySectorCategory column, skipping update', error);
+      }
+    }
+    if (updateFields.accountingSystem !== undefined) {
+      try {
+        const accountingSystemColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS(
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Company'
+              AND column_name = 'accountingSystem'
+          ) as "exists"
+        `;
+        if (accountingSystemColumn[0]?.exists) {
+          updateData.accountingSystem = updateFields.accountingSystem;
+        } else {
+          console.warn('Company update: accountingSystem column missing, skipping update');
+        }
+      } catch (error) {
+        console.warn('Company update: could not verify accountingSystem column, skipping update', error);
+      }
+    }
+    if (updateFields.companySizeCategory !== undefined) {
+      try {
+        const companySizeColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS(
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Company'
+              AND column_name = 'companySizeCategory'
+          ) as "exists"
+        `;
+        if (companySizeColumn[0]?.exists) {
+          updateData.companySizeCategory = updateFields.companySizeCategory;
+        } else {
+          console.warn('Company update: companySizeCategory column missing, skipping update');
+        }
+      } catch (error) {
+        console.warn('Company update: could not verify companySizeCategory column, skipping update', error);
+      }
+    }
 
     // Name
     if (updateFields.name !== undefined) updateData.name = updateFields.name;
@@ -737,6 +788,23 @@ export async function PATCH(request: NextRequest) {
     console.log("🔄 Final update data:", updateData);
 
     // Build select object - include fields that exist in production DB
+    const columnExists = async (columnName: string) => {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS(
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Company'
+              AND column_name = ${columnName}
+          ) as "exists"
+        `;
+        return rows[0]?.exists === true;
+      } catch (error) {
+        console.warn(`Company update: could not verify ${columnName} column`, error);
+        return false;
+      }
+    };
+
     const selectFields: any = {
       id: true,
       name: true,
@@ -747,13 +815,19 @@ export async function PATCH(request: NextRequest) {
       addressZip: true,
       addressCountry: true,
       industrySector: true,
-      industrySectorCategory: true,
-      accountingSystem: true,
-      companySizeCategory: true,
       linesOfBusiness: true,
-      // userDefinedAllocations: true, // Column doesn't exist in production DB
       createdAt: true,
     };
+
+    if (await columnExists('industrySectorCategory')) {
+      selectFields.industrySectorCategory = true;
+    }
+    if (await columnExists('accountingSystem')) {
+      selectFields.accountingSystem = true;
+    }
+    if (await columnExists('companySizeCategory')) {
+      selectFields.companySizeCategory = true;
+    }
 
     // Select headcountAllocations if it exists (now that database column is added)
     if (process.env.NODE_ENV !== "development") {
