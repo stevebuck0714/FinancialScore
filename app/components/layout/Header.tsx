@@ -467,7 +467,7 @@ export default function Header({
             )}
           </div>
           <button onClick={() => handleNavigation('covenants')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'covenants' ? '3px solid #000' : '3px solid transparent' }}>Covenants</button>
-          <button onClick={() => handleNavigation('operations')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent' }}>Operations</button>
+          <button onClick={() => handleNavigation('operations')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent' }}>OPERATIONS</button>
         </nav>
       </div>
     </header>
