@@ -23,6 +23,9 @@ interface CompanyManagementTabProps {
   setCompanyAddressZip: (zip: string) => void;
   setCompanyAddressCountry: (country: string) => void;
   setCompanyIndustrySector: (sector: string) => void;
+  setAccountingSystem?: (system: string) => void;
+  setCompanySizeCategory?: (size: string) => void;
+  setIndustrySectorCategory?: (sector: string) => void;
   setShowCompanyDetailsModal: (show: boolean) => void;
   users: User[];
   deleteUser: (id: number) => void;
@@ -66,6 +69,9 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
     setCompanyAddressZip,
     setCompanyAddressCountry,
     setCompanyIndustrySector,
+    setAccountingSystem,
+    setCompanySizeCategory,
+    setIndustrySectorCategory,
     setShowCompanyDetailsModal,
     users,
     deleteUser,
@@ -203,6 +209,9 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                           setCompanyAddressZip(comp.addressZip || '');
                           setCompanyAddressCountry(comp.addressCountry || 'USA');
                           setCompanyIndustrySector(comp.industrySector || '');
+                          if (setAccountingSystem) setAccountingSystem(comp.accountingSystem || '');
+                          if (setCompanySizeCategory) setCompanySizeCategory(comp.companySizeCategory || 'DEFAULT');
+                          if (setIndustrySectorCategory) setIndustrySectorCategory(comp.industrySectorCategory || 'DEFAULT');
                           setShowCompanyDetailsModal(true);
                         }}
                         style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}
