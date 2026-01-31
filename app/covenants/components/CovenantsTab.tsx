@@ -24,6 +24,23 @@ interface Loan {
 // Feature flag for covenants module
 const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true;
 
+const DEFAULT_COVENANT_THRESHOLDS: Record<string, number> = {
+  '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
+  '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
+};
+
+const DEFAULT_COVENANT_APPLICABILITY: Record<string, boolean> = {
+  '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
+  '10': true, '11': true, '12': true, '13': true, '14': true, '15': true, '16': true, '17': true, '18': true,
+  '19': true, '20': true, '21': true, '22': true, '23': true, '24': false, '25': false, '26': false
+};
+
+const DEFAULT_COVENANT_ALERT_LEVELS: Record<string, 'none' | 'warning' | 'critical'> = {
+  '1': 'warning', '2': 'warning', '3': 'warning', '4': 'warning', '5': 'warning', '6': 'warning', '7': 'warning', '8': 'warning', '9': 'warning',
+  '10': 'warning', '11': 'warning', '12': 'warning', '13': 'warning', '14': 'warning', '15': 'warning', '16': 'warning', '17': 'warning', '18': 'warning',
+  '19': 'warning', '20': 'warning', '21': 'warning', '22': 'warning', '23': 'warning', '24': 'none', '25': 'none', '26': 'none'
+};
+
 interface CovenantsTabProps {
   selectedCompanyId: string;
   currentUser: User | null;
@@ -644,106 +661,39 @@ export default function CovenantsTab({
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
 
-  const [loanName, setLoanName] = useState<string>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.loanName || '';
-        } catch (e) {
-          console.warn('Failed to load saved loan name');
-        }
-      }
-    }
-    return '';
-  });
+  const [loanName, setLoanName] = useState<string>('');
 
-  const [loanAccountNumber, setLoanAccountNumber] = useState<string>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.loanAccountNumber || '';
-        } catch (e) {
-          console.warn('Failed to load saved loan account number');
-        }
-      }
-    }
-    return '';
-  });
+  const [loanAccountNumber, setLoanAccountNumber] = useState<string>('');
 
-  const [covenantThresholds, setCovenantThresholds] = useState<Record<string, number>>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.covenantThresholds || {
-            '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
-            '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
-          };
-        } catch (e) {
-          console.warn('Failed to load saved covenant thresholds');
-        }
-      }
-    }
-    return {
-      '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
-      '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
-    };
-  });
+  const [covenantThresholds, setCovenantThresholds] = useState<Record<string, number>>({});
 
-  const [covenantApplicability, setCovenantApplicability] = useState<Record<string, boolean>>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.covenantApplicability || {
-            '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
-            '10': true, '11': true, '12': true, '13': true, '14': true, '15': true, '16': true, '17': true, '18': true,
-            '19': true, '20': true, '21': true, '22': true, '23': true, '24': false, '25': false, '26': false
-          };
-        } catch (e) {
-          console.warn('Failed to load saved covenant applicability');
-        }
+  const [covenantApplicability, setCovenantApplicability] = useState<Record<string, boolean>>(DEFAULT_COVENANT_APPLICABILITY);
+  const [covenantAlertLevels, setCovenantAlertLevels] = useState<Record<string, 'none' | 'warning' | 'critical'>>(DEFAULT_COVENANT_ALERT_LEVELS);
+
+  useEffect(() => {
+    if (!selectedLoan?.id || typeof window === 'undefined') return;
+    const storageKey = `covenantConfiguration:${selectedLoan.id}`;
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        setLoanName(config.loanName || selectedLoan.loanName || '');
+        setLoanAccountNumber(config.loanAccountNumber || selectedLoan.loanIdNumber || '');
+        setCovenantThresholds(config.covenantThresholds || {});
+        setCovenantApplicability(config.covenantApplicability || DEFAULT_COVENANT_APPLICABILITY);
+        setCovenantAlertLevels(config.covenantAlertLevels || DEFAULT_COVENANT_ALERT_LEVELS);
+        return;
+      } catch (e) {
+        console.warn('Failed to load saved covenant configuration for loan');
       }
     }
-    return {
-      '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
-      '10': true, '11': true, '12': true, '13': true, '14': true, '15': true, '16': true, '17': true, '18': true,
-      '19': true, '20': true, '21': true, '22': true, '23': true, '24': false, '25': false, '26': false
-    };
-  });
-  const [covenantAlertLevels, setCovenantAlertLevels] = useState<Record<string, 'none' | 'warning' | 'critical'>>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.covenantAlertLevels || {
-            '1': 'warning', '2': 'warning', '3': 'warning', '4': 'warning', '5': 'warning', '6': 'warning', '7': 'warning', '8': 'warning', '9': 'warning',
-            '10': 'warning', '11': 'warning', '12': 'warning', '13': 'warning', '14': 'warning', '15': 'warning', '16': 'warning', '17': 'warning', '18': 'warning',
-            '19': 'warning', '20': 'warning', '21': 'warning', '22': 'warning', '23': 'warning', '24': 'none', '25': 'none', '26': 'none'
-          };
-        } catch (e) {
-          console.warn('Failed to load saved covenant alert levels');
-        }
-      }
-    }
-    return {
-      '1': 'warning', '2': 'warning', '3': 'warning', '4': 'warning', '5': 'warning', '6': 'warning', '7': 'warning', '8': 'warning', '9': 'warning',
-      '10': 'warning', '11': 'warning', '12': 'warning', '13': 'warning', '14': 'warning', '15': 'warning', '16': 'warning', '17': 'warning', '18': 'warning',
-      '19': 'warning', '20': 'warning', '21': 'warning', '22': 'warning', '23': 'warning', '24': 'none', '25': 'none', '26': 'none'
-    };
-  });
+
+    setLoanName(selectedLoan.loanName || '');
+    setLoanAccountNumber(selectedLoan.loanIdNumber || '');
+    setCovenantThresholds({});
+    setCovenantApplicability(DEFAULT_COVENANT_APPLICABILITY);
+    setCovenantAlertLevels(DEFAULT_COVENANT_ALERT_LEVELS);
+  }, [selectedLoan?.id, selectedLoan?.loanName, selectedLoan?.loanIdNumber]);
 
   // Get latest month data (November 2025)
   const latestData = React.useMemo(() => {
@@ -1097,6 +1047,7 @@ export default function CovenantsTab({
 
       // Save current configuration to localStorage for persistence
       const configuration = {
+        loanId: selectedLoan?.id || null,
         loanName,
         loanAccountNumber,
         covenantThresholds,
@@ -1105,7 +1056,9 @@ export default function CovenantsTab({
         savedAt: new Date().toISOString()
       };
 
-      localStorage.setItem('covenantConfiguration', JSON.stringify(configuration));
+      if (selectedLoan?.id) {
+        localStorage.setItem(`covenantConfiguration:${selectedLoan.id}`, JSON.stringify(configuration));
+      }
 
       setSaveMessage('✅ Configuration saved successfully!');
 
@@ -1122,23 +1075,13 @@ export default function CovenantsTab({
   // Function to reset to defaults
   const resetToDefaults = () => {
     // Reset to default values
-    setCovenantThresholds({
-      '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
-      '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
-    });
-    setCovenantApplicability({
-      '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
-      '10': true, '11': true, '12': true, '13': true, '14': true, '15': true, '16': true, '17': true, '18': true,
-      '19': true, '20': true, '21': true, '22': true, '23': true, '24': false, '25': false, '26': false
-    });
-    setCovenantAlertLevels({
-      '1': 'warning', '2': 'warning', '3': 'warning', '4': 'warning', '5': 'warning', '6': 'warning', '7': 'warning', '8': 'warning', '9': 'warning',
-      '10': 'warning', '11': 'warning', '12': 'warning', '13': 'warning', '14': 'warning', '15': 'warning', '16': 'warning', '17': 'warning', '18': 'warning',
-      '19': 'warning', '20': 'warning', '21': 'warning', '22': 'warning', '23': 'warning', '24': 'none', '25': 'none', '26': 'none'
-    });
+    setCovenantThresholds(DEFAULT_COVENANT_THRESHOLDS);
+    setCovenantApplicability(DEFAULT_COVENANT_APPLICABILITY);
+    setCovenantAlertLevels(DEFAULT_COVENANT_ALERT_LEVELS);
 
-    // Clear localStorage
-    localStorage.removeItem('covenantConfiguration');
+    if (selectedLoan?.id) {
+      localStorage.removeItem(`covenantConfiguration:${selectedLoan.id}`);
+    }
 
     setSaveMessage('🔄 Configuration reset to defaults.');
     setTimeout(() => setSaveMessage(''), 3000);
