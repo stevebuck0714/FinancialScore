@@ -7,7 +7,7 @@ const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
 
 // Rate limit configuration
 const RATE_LIMITS = {
-  '/api/auth/login': { maxAttempts: 5, windowMs: 15 * 60 * 1000 }, // 5 per 15 minutes
+  '/api/auth/login': { maxAttempts: 20, windowMs: 15 * 60 * 1000 }, // 20 per 15 minutes (temporary)
   '/api/auth/reset-password': { maxAttempts: 3, windowMs: 60 * 60 * 1000 }, // 3 per hour
   '/api/payments': { maxAttempts: 3, windowMs: 60 * 60 * 1000 }, // 3 per hour
   '/api': { maxAttempts: 100, windowMs: 60 * 1000 }, // 100 per minute (general)
@@ -101,6 +101,7 @@ export async function middleware(request: NextRequest) {
     '/api/auth/', // All NextAuth routes including callbacks, sessions, etc.
     '/api/check-db',
     '/api/webhooks', // Webhooks have their own authentication
+    '/api/cron', // Vercel Cron endpoints authenticate via headers/secret
   ]
   
   // Check if this is a public route
