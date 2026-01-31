@@ -118,6 +118,15 @@ const getBucketId = (finding: Finding) => {
 
     return grouped;
   }, [findings]);
+
+  const totalFindings = useMemo(() => {
+    return BUCKETS.reduce((acc, bucket) => acc + (findingsByBucket[bucket.id]?.length || 0), 0);
+  }, [findingsByBucket]);
+
+  const monitorOnly = useMemo(() => {
+    const monitorCount = findingsByBucket.monitor?.length || 0;
+    return totalFindings > 0 && monitorCount === totalFindings;
+  }, [findingsByBucket, totalFindings]);
  
   if (loading) {
     return <div style={{ padding: '32px', color: '#334155' }}>Loading focus board…</div>;
@@ -131,13 +140,23 @@ const getBucketId = (finding: Finding) => {
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Focus Board</h1>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginTop: '24px' }}>
-         {BUCKETS.map((bucket) => (
+         {BUCKETS.map((bucket) => {
+           const bucketFindings = findingsByBucket[bucket.id] || [];
+           const isMonitor = bucket.id === 'monitor';
+           return (
            <div key={bucket.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
              <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
                {bucket.label}
              </div>
-             {findingsByBucket[bucket.id]?.length ? (
-               findingsByBucket[bucket.id].map((finding) => (
+            {isMonitor && bucketFindings.length > 0 && (
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
+                {monitorOnly
+                  ? 'No high-priority gaps detected right now. These are the only signals worth tracking at this time.'
+                  : 'Monitor items are lower-urgency signals to track over time while higher-scoring gaps take priority.'}
+              </div>
+            )}
+            {bucketFindings.length ? (
+              bucketFindings.map((finding) => (
                 <div key={finding.id} style={{ padding: '10px 12px', borderRadius: '10px', background: '#f8fafc', marginBottom: '10px' }}>
                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
                      {finding.metric || finding.payload?.title || 'Untitled Finding'}
@@ -148,6 +167,13 @@ const getBucketId = (finding: Finding) => {
                   {finding.type === 'focus' && finding.payload?.focusScore != null && (
                     <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
                       Focus score: {Number(finding.payload.focusScore).toFixed(1)} / 100 • Higher = bigger, more actionable gap.
+                    </div>
+                  )}
+                  {isMonitor && finding.type === 'focus' && (
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
+                      {monitorOnly
+                        ? 'This is being monitored because it is the only measurable signal right now, not because it is urgent.'
+                        : 'This is a watch item; take action if the score rises or the gap widens.'}
                     </div>
                   )}
                   {finding.type === 'focus' && finding.payload?.focusScoreComponents && (
@@ -161,7 +187,7 @@ const getBucketId = (finding: Finding) => {
               <div style={{ fontSize: '13px', color: '#64748b' }}>No findings yet.</div>
              )}
            </div>
-         ))}
+         )})}
        </div>
      </div>
    );

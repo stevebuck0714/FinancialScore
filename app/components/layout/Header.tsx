@@ -27,6 +27,15 @@ export default function Header({
   const [showCashMenu, setShowCashMenu] = useState(false);
   const [showRatiosMenu, setShowRatiosMenu] = useState(false);
   const [showProjectionsMenu, setShowProjectionsMenu] = useState(false);
+  const [showPerformanceMenu, setShowPerformanceMenu] = useState(false);
+
+  const performanceAnalyticsViews = [
+    { id: 'pa-overview', label: 'Overview' },
+    { id: 'pa-focus-board', label: 'Focus Board' },
+    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
+    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
+    { id: 'pa-opportunity-workspace', label: 'Opportunity Workspace' }
+  ];
 
   if (!currentUser) return null;
 
@@ -91,8 +100,80 @@ export default function Header({
         >
           Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
         </div>
-        <nav style={{ display: 'flex', gap: '24px', marginLeft: 'auto', marginRight: 'auto' }}>
+        <nav style={{ display: 'flex', gap: '24px', marginLeft: 'auto', marginRight: 'auto', alignItems: 'center' }}>
           <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #000' : '3px solid transparent' }}>Dashboard</button>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowPerformanceMenu((prev) => !prev)}
+              style={{
+                background: currentView.startsWith('pa-') ? '#eef2ff' : 'none',
+                border: 'none',
+                fontSize: '16px',
+                fontWeight: '600',
+                color: '#000',
+                cursor: 'pointer',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                borderBottom: currentView.startsWith('pa-') ? '3px solid #000' : '3px solid transparent',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              aria-haspopup="menu"
+              aria-expanded={showPerformanceMenu}
+            >
+              <span>Analysis</span>
+              <span style={{ fontSize: '12px' }}>▾</span>
+            </button>
+            {showPerformanceMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  background: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                  padding: '6px',
+                  minWidth: '220px',
+                  zIndex: 1100
+                }}
+                onMouseLeave={() => setShowPerformanceMenu(false)}
+              >
+                {performanceAnalyticsViews.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      handleNavigation(item.id);
+                      setShowPerformanceMenu(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      background: 'transparent',
+                      border: 'none',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      color: '#000',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#f1f5f9';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button onClick={() => handleNavigation('ai-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'ai-analysis' ? '3px solid #000' : '3px solid transparent' }}>Ask Corelytics</button>
           <button onClick={() => handleNavigation('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #000' : '3px solid transparent' }}>MD&A</button>
           <div style={{ position: 'relative' }}>
             <button
@@ -387,7 +468,6 @@ export default function Header({
           </div>
           <button onClick={() => handleNavigation('covenants')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'covenants' ? '3px solid #000' : '3px solid transparent' }}>Covenants</button>
           <button onClick={() => handleNavigation('operations')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent' }}>Operations</button>
-          <button onClick={() => handleNavigation('ai-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'ai-analysis' ? '3px solid #000' : '3px solid transparent' }}>Ask Corelytics</button>
         </nav>
       </div>
     </header>

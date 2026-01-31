@@ -40,7 +40,6 @@ const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab')
 const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
 
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
-import PerformanceAnalyticsNav from './components/layout/PerformanceAnalyticsNav';
 const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
 import { saveProjectionDefaults as saveProjectionDefaultsUtil } from './utils/projection-helpers';
@@ -719,7 +718,7 @@ function FinancialScorePage() {
 
   // State - Expense Analysis
   const [selectedExpenseItem, setSelectedExpenseItem] = useState<string>('total-expenses');
-  const [selectedExpenseItems, setSelectedExpenseItems] = useState<string[]>(['total-expenses', 'cogs-total', 'payroll', 'rent']);
+  const [selectedExpenseItems, setSelectedExpenseItems] = useState<string[]>(['total-expenses', 'cogs-total', 'payroll', 'rent', 'total-operating-expenses-pct']);
   
   // Helper function to get full display name for trend items
   const getTrendItemDisplayName = (item: string): string => {
@@ -756,6 +755,7 @@ function FinancialScorePage() {
     // Fallback for items not in centralized mapping
     const fallbackNames: { [key: string]: string } = {
       'total-expenses': 'Total Expenses',
+      'total-operating-expenses-pct': 'Total Operating Expenses (%)',
       'cogs-total': getFieldDisplayName('cogsTotal'),
       'cogs-payroll': getFieldDisplayName('cogsPayroll'),
       'cogs-owner-pay': getFieldDisplayName('cogsOwnerPay'),
@@ -5034,14 +5034,7 @@ function FinancialScorePage() {
           )}
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
-            {currentUser?.userType !== 'assessment' && (
-              <>
-                <PerformanceAnalyticsNav
-                  currentView={currentView}
-                  setCurrentView={setCurrentView}
-                />
-              </>
-            )}
+            {currentUser?.userType !== 'assessment' && null}
 
             {/* Valuation Section */}
             <div style={{ marginBottom: '1px' }}>

@@ -31,6 +31,33 @@ export default function TrendAnalysisView({
   // Get master data for dynamic expense categories
   const masterData = useMasterData(selectedCompanyId);
   const expenseCategories = masterData.data?.expenseCategories || [];
+  const extendedExpenseCategories = React.useMemo(() => {
+    return [
+      ...expenseCategories,
+      { key: 'total-operating-expenses-pct', label: 'Total Operating Expenses', category: 'Expense' as const }
+    ];
+  }, [expenseCategories]);
+
+  const getOperatingExpenseTotal = (m: any) => {
+    const computed =
+      (m.payroll || 0) +
+      (m.ownerBasePay || 0) +
+      (m.benefits || 0) +
+      (m.insurance || 0) +
+      (m.professionalFees || 0) +
+      (m.subcontractors || 0) +
+      (m.rent || 0) +
+      (m.taxLicense || 0) +
+      (m.phoneComm || 0) +
+      (m.infrastructure || 0) +
+      (m.autoTravel || 0) +
+      (m.salesExpense || 0) +
+      (m.marketing || 0) +
+      (m.trainingCert || 0) +
+      (m.mealsEntertainment || 0) +
+      (m.otherExpense || 0);
+    return computed !== 0 ? computed : (m.operatingExpenseTotal || m.expense || 0);
+  };
 
   // Clear master data cache when component mounts
   React.useEffect(() => {
@@ -208,7 +235,7 @@ export default function TrendAnalysisView({
           <div style={{ marginBottom: '24px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Select Expense Categories to Analyze</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-              {expenseCategories.map(category => (
+              {extendedExpenseCategories.map(category => (
                 <label key={category.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
@@ -232,7 +259,7 @@ export default function TrendAnalysisView({
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
             {/* Dynamic expense category charts */}
-            {expenseCategories
+            {extendedExpenseCategories
               .filter(category => selectedExpenseItems.includes(category.key))
               .map((category, index) => {
                 const colors = [
@@ -248,7 +275,12 @@ export default function TrendAnalysisView({
                     title={`${category.label} (% of Revenue)`}
                     data={monthly.map(m => ({
                       month: m.month,
-                      value: m.revenue > 0 ? (((m as any)[category.key] || 0) / m.revenue) * 100 : 0
+                      value: m.revenue > 0
+                        ? ((category.key === 'total-operating-expenses-pct'
+                            ? getOperatingExpenseTotal(m)
+                            : ((m as any)[category.key] || 0)
+                          ) / m.revenue) * 100
+                        : 0
                     }))}
                     color={color}
                     compact

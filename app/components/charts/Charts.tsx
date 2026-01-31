@@ -35,19 +35,16 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const minValue = filteredValues.length > 0 ? Math.min(...filteredValues) : Math.min(...values);
   const maxValue = filteredValues.length > 0 ? Math.max(...filteredValues) : Math.max(...values);
   
-  const yMaxCalc = yMax || Math.ceil(maxValue * 1.1);
-  const yMinCalc = yMax ? 0 : Math.floor(minValue * 0.9);
-  const range = yMaxCalc - yMinCalc;
-  
+  let yMaxCalc = yMax || Math.ceil(maxValue * 1.1);
+  let yMinCalc = yMax ? 0 : Math.floor(minValue * 0.9);
+  let range = yMaxCalc - yMinCalc;
+
   if (range === 0 || !Number.isFinite(range)) {
-    return (
-      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '15px' }}>{title}</h3>
-        <p style={{ fontSize: '14px', color: '#64748b', textAlign: 'center', padding: '40px 0' }}>
-          Unable to display chart - insufficient data variation
-        </p>
-      </div>
-    );
+    const baseline = Number.isFinite(minValue) ? minValue : 0;
+    const pad = Math.max(Math.abs(baseline) * 0.05, 1);
+    yMinCalc = baseline - pad;
+    yMaxCalc = baseline + pad;
+    range = yMaxCalc - yMinCalc;
   }
 
   const width = compact ? 500 : 1100;

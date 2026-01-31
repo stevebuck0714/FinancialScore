@@ -103,7 +103,24 @@ type Finding = {
        month: m.monthDate ? new Date(m.monthDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short' }) : '',
        revenue: m.revenue || 0,
        cogsTotal: m.cogsTotal || 0,
-       expense: m.expense || 0,
+      expense: m.expense || 0,
+      operatingExpenseTotal: m.operatingExpenseTotal || 0,
+      payroll: m.payroll || 0,
+      ownerBasePay: m.ownerBasePay || 0,
+      benefits: m.benefits || 0,
+      insurance: m.insurance || 0,
+      professionalFees: m.professionalFees || 0,
+      subcontractors: m.subcontractors || 0,
+      rent: m.rent || 0,
+      taxLicense: m.taxLicense || 0,
+      phoneComm: m.phoneComm || 0,
+      infrastructure: m.infrastructure || 0,
+      autoTravel: m.autoTravel || 0,
+      salesExpense: m.salesExpense || 0,
+      marketing: m.marketing || 0,
+      trainingCert: m.trainingCert || 0,
+      mealsEntertainment: m.mealsEntertainment || 0,
+      otherExpense: m.otherExpense || 0,
        cash: m.cash || 0,
        ar: m.ar || 0,
        inventory: m.inventory || 0,
@@ -117,12 +134,33 @@ type Finding = {
      }));
    }, [monthly]);
  
-   const operatingExpensePctData = useMemo(() => {
-     return monthly.map((m: any) => ({
-       month: m.month,
-       value: m.revenue > 0 ? (m.expense / m.revenue) * 100 : 0,
-     }));
-   }, [monthly]);
+  const getOperatingExpenseTotal = (m: any) => {
+    const computed =
+      (m.payroll || 0) +
+      (m.ownerBasePay || 0) +
+      (m.benefits || 0) +
+      (m.insurance || 0) +
+      (m.professionalFees || 0) +
+      (m.subcontractors || 0) +
+      (m.rent || 0) +
+      (m.taxLicense || 0) +
+      (m.phoneComm || 0) +
+      (m.infrastructure || 0) +
+      (m.autoTravel || 0) +
+      (m.salesExpense || 0) +
+      (m.marketing || 0) +
+      (m.trainingCert || 0) +
+      (m.mealsEntertainment || 0) +
+      (m.otherExpense || 0);
+    return computed !== 0 ? computed : (m.operatingExpenseTotal || m.expense || 0);
+  };
+
+  const operatingExpensePctData = useMemo(() => {
+    return monthly.map((m: any) => ({
+      month: m.month,
+      value: m.revenue > 0 ? (getOperatingExpenseTotal(m) / m.revenue) * 100 : 0,
+    }));
+  }, [monthly]);
  
    const benchmarks = context?.benchmarks?.items || [];
    const grossMarginBenchmark = getBenchmarkValue(benchmarks as any, 'Gross Margin');
@@ -142,8 +180,8 @@ type Finding = {
     const recentRevenue = avg(recent.map((m: any) => m.revenue || 0));
     const priorCogs = avg(prior.map((m: any) => m.cogsTotal || 0));
     const recentCogs = avg(recent.map((m: any) => m.cogsTotal || 0));
-    const priorExpense = avg(prior.map((m: any) => m.expense || 0));
-    const recentExpense = avg(recent.map((m: any) => m.expense || 0));
+    const priorExpense = avg(prior.map((m: any) => getOperatingExpenseTotal(m)));
+    const recentExpense = avg(recent.map((m: any) => getOperatingExpenseTotal(m)));
 
     const priorNet = priorRevenue - priorCogs - priorExpense;
     const recentNet = recentRevenue - recentCogs - recentExpense;
@@ -197,8 +235,11 @@ type Finding = {
     const revenueDelta = recentRevenue - priorRevenue;
     const revenueChangePct = priorRevenue ? revenueDelta / Math.abs(priorRevenue) : 0;
 
-    const priorExpensePct = avg(prior.map((m: any) => (m.revenue ? (m.expense / m.revenue) * 100 : 0)));
-    const recentExpensePct = avg(recent.map((m: any) => (m.revenue ? (m.expense / m.revenue) * 100 : 0)));
+    const priorExpense = avg(prior.map((m: any) => getOperatingExpenseTotal(m)));
+    const recentExpense = avg(recent.map((m: any) => getOperatingExpenseTotal(m)));
+    const expenseDelta = recentExpense - priorExpense;
+    const priorExpensePct = avg(prior.map((m: any) => (m.revenue ? (getOperatingExpenseTotal(m) / m.revenue) * 100 : 0)));
+    const recentExpensePct = avg(recent.map((m: any) => (m.revenue ? (getOperatingExpenseTotal(m) / m.revenue) * 100 : 0)));
     const expensePctDelta = recentExpensePct - priorExpensePct;
 
     const priorGrossMargin = avg(prior.map((m: any) => (m.revenue ? ((m.revenue - (m.cogsTotal || 0)) / m.revenue) * 100 : 0)));
@@ -226,8 +267,8 @@ type Finding = {
         ? `Revenue ${revenueDelta > 0 ? 'rose' : 'fell'} ${formatDollar(revenueDelta)} (${formatPercent(revenueChangePct)} vs prior baseline).`
         : 'Revenue is flat vs the prior baseline.',
       'Operating Expense': expensePctDelta
-        ? `Operating expense % ${expensePctDelta > 0 ? 'increased' : 'decreased'} ${Math.abs(expensePctDelta).toFixed(1)} pts.`
-        : 'Operating expense % is flat vs the prior baseline.',
+        ? `Operating expense % ${expensePctDelta > 0 ? 'increased' : 'decreased'} ${Math.abs(expensePctDelta).toFixed(1)} pts (from ${priorExpensePct.toFixed(1)}% to ${recentExpensePct.toFixed(1)}%). Total operating expense dollars ${expenseDelta > 0 ? 'rose' : 'fell'} ${formatDollar(expenseDelta)}.`
+        : `Operating expense % is flat vs the prior baseline (~${recentExpensePct.toFixed(1)}%). Total operating expense dollars are ${expenseDelta > 0 ? 'up' : expenseDelta < 0 ? 'down' : 'flat'} ${formatDollar(expenseDelta)}.`,
       'Gross Margin': grossMarginDelta
         ? `Gross margin ${grossMarginDelta > 0 ? 'improved' : 'compressed'} ${Math.abs(grossMarginDelta).toFixed(1)} pts.`
         : 'Gross margin is flat vs the prior baseline.',
@@ -450,9 +491,12 @@ type Finding = {
             />
           </div>
           <div>
-            {renderRationale('Operating Expense', 'Operating expense reveals cost discipline relative to revenue.')}
+            {renderRationale(
+              'Operating Expense',
+              'Operating expense % is total operating expenses (payroll, rent, etc.) divided by revenue. It shows how cost discipline is tracking relative to sales.'
+            )}
             <LineChart
-              title="Operating Expense %"
+              title="Total Operating Expense % of Revenue"
               data={operatingExpensePctData}
               color="#ef4444"
               compact
