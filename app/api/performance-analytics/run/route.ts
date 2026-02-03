@@ -596,6 +596,7 @@ export async function POST(request: NextRequest) {
       loadGoals('ExpenseGoal', companyId),
       loadGoals('OperationalGoal', companyId),
     ]);
+    const operationalGoalValues = operationalGoals[0]?.goals || {};
 
     const accountMappings = await safeFindMany(
       'account mappings',
@@ -1013,7 +1014,10 @@ export async function POST(request: NextRequest) {
         .filter((val) => val < 0)
         .map((val) => Math.abs(val));
       const avgOutflow = cashOutflows.length ? average(cashOutflows) : 0;
-      const swingThreshold = Math.max(0.03 * avgOutflow, 25000);
+      const configuredThreshold = Number(operationalGoalValues.cash_swing_threshold);
+      const swingThreshold = Number.isFinite(configuredThreshold) && configuredThreshold > 0
+        ? configuredThreshold
+        : Math.max(0.03 * avgOutflow, 25000);
       if (Math.abs(cashChange) >= swingThreshold) {
         findings.push({
           type: 'anomaly',

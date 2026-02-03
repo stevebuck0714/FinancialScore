@@ -879,6 +879,71 @@ export default function GoalsView({
               </td>
             </tr>
           ))}
+          <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+            <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>
+              Cash Swing Threshold
+            </td>
+            {months.map((_, i) => (
+              <td key={i} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', color: '#94a3b8' }}>
+                —
+              </td>
+            ))}
+            <td style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#94a3b8' }}>
+              —
+            </td>
+            <td style={{ textAlign: 'center', padding: '12px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+                <span style={{ position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b', pointerEvents: 'none' }}>$</span>
+                <input
+                  type="text"
+                  className="no-spinner"
+                  value={operationalGoals.cash_swing_threshold ? operationalGoals.cash_swing_threshold.toLocaleString() : ''}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/,/g, '');
+                    setOperationalGoals((prev: any) => {
+                      const newGoals = { ...prev };
+                      if (value === '' || value === null || value === undefined) {
+                        delete newGoals.cash_swing_threshold;
+                      } else {
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue) && numValue > 0) {
+                          newGoals.cash_swing_threshold = numValue;
+                        } else {
+                          delete newGoals.cash_swing_threshold;
+                        }
+                      }
+                      return newGoals;
+                    });
+                  }}
+                  onKeyDown={(e) => {
+                    if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
+                      (e.keyCode === 65 && e.ctrlKey === true) ||
+                      (e.keyCode === 67 && e.ctrlKey === true) ||
+                      (e.keyCode === 86 && e.ctrlKey === true) ||
+                      (e.keyCode === 88 && e.ctrlKey === true) ||
+                      (e.keyCode >= 35 && e.keyCode <= 39)) {
+                      return;
+                    }
+                    if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+                      e.preventDefault();
+                    }
+                  }}
+                  placeholder=""
+                  style={{
+                    width: '140px',
+                    padding: '8px 12px 8px 24px',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    textAlign: 'center',
+                    color: '#1e293b',
+                    backgroundColor: '#fefce8'
+                  }}
+                />
+              </div>
+            </td>
+          </tr>
 
           {/* Inventory Section */}
           <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
