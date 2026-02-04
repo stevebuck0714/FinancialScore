@@ -101,7 +101,8 @@ export default function Header({
           Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
         </div>
         <nav style={{ display: 'flex', gap: '24px', marginLeft: 'auto', marginRight: 'auto', alignItems: 'center' }}>
-          <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #000' : '3px solid transparent' }}>Dashboard</button>
+          <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #000' : '3px solid transparent' }}>DASHBOARD</button>
+          <button onClick={() => handleNavigation('operations')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent' }}>OPERATIONS</button>
           <div style={{ position: 'relative' }}>
             <button
               onClick={() => setShowPerformanceMenu((prev) => !prev)}
@@ -467,7 +468,6 @@ export default function Header({
             )}
           </div>
           <button onClick={() => handleNavigation('covenants')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'covenants' ? '3px solid #000' : '3px solid transparent' }}>Covenants</button>
-          <button onClick={() => handleNavigation('operations')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent' }}>OPERATIONS</button>
         </nav>
       </div>
     </header>
