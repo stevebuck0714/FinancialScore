@@ -96,20 +96,12 @@ export async function POST(request: NextRequest) {
         // Set cookie with device token
         const trustDurationDays = effectiveTrustDurationDays || getTrustDurationDays();
         const isProduction = process.env.NODE_ENV === 'production';
-        let cookieDomain: string | undefined;
-        if (process.env.MFA_COOKIE_DOMAIN) {
-          cookieDomain = process.env.MFA_COOKIE_DOMAIN;
-        } else {
-          const hostname = request.nextUrl.hostname;
-          if (hostname && !hostname.includes('localhost')) {
-            cookieDomain = hostname;
-          }
-        }
+        const cookieDomain = process.env.MFA_COOKIE_DOMAIN;
 
         response.cookies.set('mfa_device_token', deviceToken, {
           httpOnly: true,
           secure: isProduction,
-          sameSite: isProduction ? 'none' : 'lax',
+          sameSite: 'lax',
           maxAge: trustDurationDays * 24 * 60 * 60, // Convert days to seconds
           path: '/',
           ...(cookieDomain ? { domain: cookieDomain } : {})

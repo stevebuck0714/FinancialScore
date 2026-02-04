@@ -104,20 +104,12 @@ export async function POST(request: NextRequest) {
 
         const trustDuration = effectiveTrustDurationDays || getTrustDurationDays();
         const isProduction = process.env.NODE_ENV === 'production';
-        let cookieDomain: string | undefined;
-        if (process.env.MFA_COOKIE_DOMAIN) {
-          cookieDomain = process.env.MFA_COOKIE_DOMAIN;
-        } else {
-          const hostname = request.nextUrl.hostname;
-          if (hostname && !hostname.includes('localhost')) {
-            cookieDomain = hostname;
-          }
-        }
+        const cookieDomain = process.env.MFA_COOKIE_DOMAIN;
 
         response.cookies.set('mfa_device_token', deviceToken, {
           httpOnly: true,
           secure: isProduction,
-          sameSite: isProduction ? 'none' : 'lax',
+          sameSite: 'lax',
           maxAge: trustDuration * 24 * 60 * 60,
           path: '/',
           ...(cookieDomain ? { domain: cookieDomain } : {})
