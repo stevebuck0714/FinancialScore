@@ -103,12 +103,28 @@ export async function POST(request: NextRequest) {
           await createTrustedDevice(userId, request, trustDurationDays);
 
         const trustDuration = effectiveTrustDurationDays || getTrustDurationDays();
+        const isProduction = process.env.NODE_ENV === 'production';
+        let cookieDomain: string | undefined;
+        if (process.env.MFA_COOKIE_DOMAIN) {
+          cookieDomain = process.env.MFA_COOKIE_DOMAIN;
+        } else if (process.env.NEXTAUTH_URL) {
+          try {
+            const hostname = new URL(process.env.NEXTAUTH_URL).hostname;
+            if (hostname && !hostname.includes('localhost')) {
+              cookieDomain = hostname;
+            }
+          } catch {
+            // Ignore malformed NEXTAUTH_URL
+          }
+        }
+
         response.cookies.set('mfa_device_token', deviceToken, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
+          secure: isProduction,
+          sameSite: isProduction ? 'none' : 'lax',
           maxAge: trustDuration * 24 * 60 * 60,
-          path: '/'
+          path: '/',
+          ...(cookieDomain ? { domain: cookieDomain } : {})
         });
 
         const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
