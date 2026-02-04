@@ -109,6 +109,7 @@ function FinancialScorePage() {
   const [showMFAVerification, setShowMFAVerification] = useState(false);
   const [mfaUserId, setMfaUserId] = useState('');
   const [mfaUserEmail, setMfaUserEmail] = useState('');
+  const [trustDurationDays, setTrustDurationDays] = useState<number | null>(null);
   
   // State - Consultants
   const [consultants, setConsultants] = useState<Consultant[]>([]);
@@ -2536,6 +2537,7 @@ function FinancialScorePage() {
         console.log('?? MFA enrollment required');
         setMfaUserId(loginData.userId);
         setMfaUserEmail(loginData.email || loginEmail);
+        setTrustDurationDays(loginData.trustDurationDays || null);
         setShowMFAEnrollment(true);
         setIsLoading(false);
         return;
@@ -2546,6 +2548,7 @@ function FinancialScorePage() {
         console.log('?? MFA verification required');
         setMfaUserId(loginData.userId);
         setMfaUserEmail(loginEmail);
+        setTrustDurationDays(loginData.trustDurationDays || null);
         setShowMFAVerification(true);
         setIsLoading(false);
         return;
@@ -2771,6 +2774,7 @@ function FinancialScorePage() {
   const handleMFAVerificationComplete = async () => {
     console.log('? MFA verification completed');
     setShowMFAVerification(false);
+    setTrustDurationDays(null);
     
     // After verification, continue with normal login flow
     try {
@@ -2867,6 +2871,7 @@ function FinancialScorePage() {
     setShowMFAEnrollment(false);
     setMfaUserId('');
     setMfaUserEmail('');
+    setTrustDurationDays(null);
     setLoginError('Login cancelled');
   };
 
@@ -2929,25 +2934,61 @@ function FinancialScorePage() {
       // Small delay to ensure session is fully propagated
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Normalize role and userType to lowercase for frontend compatibility
+      // Check MFA requirements after registration
+      const loginResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
+      });
+
+      if (!loginResponse.ok) {
+        setLoginError('Registration successful but login failed. Please try logging in.');
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+
+      const loginData = await loginResponse.json();
+
+      if (loginData.mfaEnrollmentRequired) {
+        setMfaUserId(loginData.userId);
+        setMfaUserEmail(loginData.email || loginEmail);
+        setTrustDurationDays(loginData.trustDurationDays || null);
+        setShowMFAEnrollment(true);
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+
+      if (loginData.mfaRequired) {
+        setMfaUserId(loginData.userId);
+        setMfaUserEmail(loginEmail);
+        setTrustDurationDays(loginData.trustDurationDays || null);
+        setShowMFAVerification(true);
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+
+      const { user: loginUser } = loginData;
       const normalizedUser = {
-        ...user,
-        role: user.role.toLowerCase(),
-        userType: user.userType?.toLowerCase(),
-        consultantType: user.consultantType, // Preserve consultant type
-        consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
-        consultantId: user.consultantId // Preserve consultant ID
+        ...loginUser,
+        role: loginUser.role.toLowerCase(),
+        userType: loginUser.userType?.toLowerCase(),
+        consultantType: loginUser.consultantType,
+        consultantCompanyName: loginUser.consultantCompanyName,
+        consultantId: loginUser.consultantId
       };
-      
+
       setCurrentUser(normalizedUser);
       setIsLoggedIn(true);
       setCurrentView('consultant-dashboard');
       
       // Clear any stale company data and load fresh data for the new consultant
       safeSetCompanies([]);
-      if (user.consultantId) {
+      if (loginUser.consultantId) {
         try {
-          const { companies: consultantCompanies } = await companiesApi.getAll(user.consultantId);
+          const { companies: consultantCompanies } = await companiesApi.getAll(loginUser.consultantId);
           safeSetCompanies(consultantCompanies || []);
         } catch (error) {
           console.error('Failed to load companies after registration:', error);
@@ -4942,6 +4983,7 @@ function FinancialScorePage() {
             userId={mfaUserId}
             userEmail={mfaUserEmail}
             onComplete={handleMFAEnrollmentComplete}
+            trustDurationDays={trustDurationDays || undefined}
           />
         )}
         
@@ -4952,6 +4994,7 @@ function FinancialScorePage() {
             userEmail={mfaUserEmail}
             onSuccess={handleMFAVerificationComplete}
             onCancel={handleMFACancel}
+            trustDurationDays={trustDurationDays || undefined}
           />
         )}
       </>

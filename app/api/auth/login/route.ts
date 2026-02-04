@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyPassword } from '@/lib/auth';
 import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/audit-logger';
-import { validateTrustedDevice } from '@/lib/trusted-device';
+import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
           mfaEnrollmentRequired: true,
           userId: user.id,
           email: user.email,
+          trustDurationDays: getTrustDurationDays(),
           message: 'MFA enrollment is required for your account',
         });
       }
@@ -101,6 +102,7 @@ export async function POST(request: NextRequest) {
             const response = NextResponse.json({
               mfaRequired: true,
               userId: user.id,
+              trustDurationDays: getTrustDurationDays(),
               message: 'MFA verification required',
             });
             response.cookies.delete('mfa_device_token');
@@ -112,6 +114,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             mfaRequired: true,
             userId: user.id,
+            trustDurationDays: getTrustDurationDays(),
             message: 'MFA verification required',
           });
         }

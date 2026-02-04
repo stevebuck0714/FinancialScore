@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyTOTP } from '@/lib/mfa';
+import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
+import { sendTrustedDeviceNotification } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
     console.log('🔐 MFA Verify Enrollment API called');
-    const { userId, token } = await request.json();
+    const { userId, token, rememberDevice, trustDurationDays } = await request.json();
     console.log('👤 User ID:', userId);
     console.log('🔢 Token received:', token);
 
@@ -76,7 +78,7 @@ export async function POST(request: NextRequest) {
     const consultant = updatedUser.primaryConsultant || updatedUser.consultantFirm;
     const consultantId = consultant?.id || updatedUser.consultantId;
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: 'MFA has been successfully enabled',
       user: {
@@ -93,6 +95,40 @@ export async function POST(request: NextRequest) {
         mfaEnabled: true
       }
     });
+
+    if (rememberDevice) {
+      try {
+        console.log('🔐 Creating trusted device after enrollment for user:', userId);
+        const { token: deviceToken, device, trustDurationDays: effectiveTrustDurationDays } =
+          await createTrustedDevice(userId, request, trustDurationDays);
+
+        const trustDuration = effectiveTrustDurationDays || getTrustDurationDays();
+        response.cookies.set('mfa_device_token', deviceToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: trustDuration * 24 * 60 * 60,
+          path: '/'
+        });
+
+        const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+        sendTrustedDeviceNotification({
+          to: updatedUser.email,
+          userName: updatedUser.name,
+          deviceName: device.deviceName,
+          ipAddress: device.ipAddress || 'Unknown',
+          timestamp: device.createdAt,
+          trustDurationDays: trustDuration,
+          manageDevicesLink: `${baseUrl}/settings/security`
+        }).catch(err => {
+          console.error('⚠️ Failed to send trusted device email notification:', err);
+        });
+      } catch (error) {
+        console.error('⚠️ Failed to create trusted device after enrollment:', error);
+      }
+    }
+
+    return response;
   } catch (error) {
     console.error('MFA verification error:', error);
     return NextResponse.json(

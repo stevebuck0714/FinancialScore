@@ -17,6 +17,7 @@ function getResendClient(): Resend | null {
 // Default sender email (use your verified domain or onboarding@resend.dev for testing)
 const DEFAULT_FROM = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 const NOTIFICATION_EMAIL = 'support@corelytics.com';
+const DEFAULT_TRUST_DURATION_DAYS = parseInt(process.env.MFA_TRUST_DURATION_DAYS || '60', 10);
 
 interface PasswordResetEmailProps {
   to: string;
@@ -542,6 +543,7 @@ interface TrustedDeviceNotificationProps {
   deviceName: string;
   ipAddress: string;
   timestamp: Date;
+  trustDurationDays?: number;
   manageDevicesLink: string;
 }
 
@@ -554,6 +556,7 @@ export async function sendTrustedDeviceNotification({
   deviceName,
   ipAddress,
   timestamp,
+  trustDurationDays,
   manageDevicesLink
 }: TrustedDeviceNotificationProps) {
   const client = getResendClient();
@@ -572,6 +575,7 @@ export async function sendTrustedDeviceNotification({
         deviceName,
         ipAddress,
         timestamp,
+        trustDurationDays,
         manageDevicesLink
       }),
     });
@@ -596,8 +600,12 @@ function getTrustedDeviceNotificationHTML({
   deviceName,
   ipAddress,
   timestamp,
+  trustDurationDays,
   manageDevicesLink
 }: Omit<TrustedDeviceNotificationProps, 'to'>): string {
+  const durationDays = typeof trustDurationDays === 'number' && Number.isFinite(trustDurationDays)
+    ? Math.floor(trustDurationDays)
+    : DEFAULT_TRUST_DURATION_DAYS;
   return `
 <!DOCTYPE html>
 <html>
@@ -629,7 +637,7 @@ function getTrustedDeviceNotificationHTML({
               </p>
               
               <p style="margin: 0 0 30px 0; color: #475569; font-size: 16px; line-height: 1.6;">
-                A new device was just added to your trusted devices list. This device will not require MFA verification for the next 60 days.
+                A new device was just added to your trusted devices list. This device will not require MFA verification for the next ${durationDays} days.
               </p>
               
               <!-- Device Details -->

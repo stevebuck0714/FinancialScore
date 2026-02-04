@@ -6,7 +6,7 @@ import { sendTrustedDeviceNotification } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, token, isBackupCode, rememberDevice } = await request.json();
+    const { userId, token, isBackupCode, rememberDevice, trustDurationDays } = await request.json();
 
     if (!userId || !token) {
       return NextResponse.json(
@@ -90,10 +90,11 @@ export async function POST(request: NextRequest) {
     if (rememberDevice) {
       try {
         console.log('🔐 Creating trusted device for user:', userId);
-        const { token: deviceToken, device } = await createTrustedDevice(userId, request);
+        const { token: deviceToken, device, trustDurationDays: effectiveTrustDurationDays } =
+          await createTrustedDevice(userId, request, trustDurationDays);
         
         // Set cookie with device token
-        const trustDurationDays = getTrustDurationDays();
+        const trustDurationDays = effectiveTrustDurationDays || getTrustDurationDays();
         response.cookies.set('mfa_device_token', deviceToken, {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
@@ -112,6 +113,7 @@ export async function POST(request: NextRequest) {
           deviceName: device.deviceName,
           ipAddress: device.ipAddress || 'Unknown',
           timestamp: device.createdAt,
+          trustDurationDays: trustDurationDays,
           manageDevicesLink: `${baseUrl}/settings/security`
         }).catch(err => {
           console.error('⚠️ Failed to send trusted device email notification:', err);

@@ -1,20 +1,38 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface MFAVerificationModalProps {
   userId: string;
   userEmail: string;
   onSuccess: () => void;
   onCancel: () => void;
+  trustDurationDays?: number;
 }
 
-export default function MFAVerificationModal({ userId, userEmail, onSuccess, onCancel }: MFAVerificationModalProps) {
+export default function MFAVerificationModal({ userId, userEmail, onSuccess, onCancel, trustDurationDays }: MFAVerificationModalProps) {
   const [verificationCode, setVerificationCode] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBackupCodeInput, setShowBackupCodeInput] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(false);
+  const trustDurationMax = Number.isFinite(trustDurationDays) ? Math.floor(trustDurationDays as number) : 60;
+  const [selectedTrustDurationDays, setSelectedTrustDurationDays] = useState(trustDurationMax);
+
+  useEffect(() => {
+    setSelectedTrustDurationDays(trustDurationMax);
+  }, [trustDurationMax]);
+
+  const trustDurationOptions = [
+    7, 14, 30, 60, 90, 120, 180
+  ].filter((days) => days <= trustDurationMax);
+
+  if (trustDurationOptions.length === 0) {
+    trustDurationOptions.push(trustDurationMax);
+  } else if (!trustDurationOptions.includes(trustDurationMax)) {
+    trustDurationOptions.push(trustDurationMax);
+    trustDurationOptions.sort((a, b) => a - b);
+  }
 
   const verifyMFACode = async () => {
     if (!verificationCode || verificationCode.length !== 6) {
@@ -26,15 +44,27 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
     setError('');
 
     try {
+      const payload: {
+        userId: string;
+        token: string;
+        isBackupCode: boolean;
+        rememberDevice: boolean;
+        trustDurationDays?: number;
+      } = {
+        userId,
+        token: verificationCode,
+        isBackupCode: showBackupCodeInput,
+        rememberDevice: rememberDevice
+      };
+
+      if (rememberDevice) {
+        payload.trustDurationDays = selectedTrustDurationDays;
+      }
+
       const response = await fetch('/api/auth/mfa/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId, 
-          token: verificationCode,
-          isBackupCode: showBackupCodeInput,
-          rememberDevice: rememberDevice
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -185,13 +215,47 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
               }}
             />
             <span>
-              <strong>Remember this device for 100 days</strong>
+              <strong>Remember this device for {selectedTrustDurationDays} days</strong>
               <br />
               <span style={{ fontSize: '12px', color: '#64748b' }}>
                 Don't check this on shared or public computers
               </span>
             </span>
           </label>
+          <div style={{
+            marginTop: '10px',
+            opacity: rememberDevice ? 1 : 0.6
+          }}>
+            <label style={{
+              display: 'block',
+              fontSize: '12px',
+              fontWeight: '600',
+              color: '#475569',
+              marginBottom: '6px'
+            }}>
+              Trust Duration Days
+            </label>
+            <select
+              value={selectedTrustDurationDays}
+              onChange={(e) => setSelectedTrustDurationDays(parseInt(e.target.value, 10))}
+              disabled={!rememberDevice}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                fontSize: '13px',
+                backgroundColor: rememberDevice ? 'white' : '#f1f5f9',
+                cursor: rememberDevice ? 'pointer' : 'not-allowed'
+              }}
+            >
+              {trustDurationOptions.map((days) => (
+                <option key={days} value={days}>
+                  {days} days
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <button
