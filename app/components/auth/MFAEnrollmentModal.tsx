@@ -18,7 +18,7 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
   const [verificationCode, setVerificationCode] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [rememberDevice, setRememberDevice] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(true);
   const trustDurationMax = Number.isFinite(trustDurationDays) ? Math.floor(trustDurationDays as number) : 60;
   const [selectedTrustDurationDays, setSelectedTrustDurationDays] = useState(trustDurationMax);
 
