@@ -106,6 +106,7 @@ export default function MFAEnrollmentModal({ userId, userEmail, onComplete, onCa
       const response = await fetch('/api/auth/mfa/verify-enrollment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload) // Fixed: API expects 'token' not 'code'
       });
 

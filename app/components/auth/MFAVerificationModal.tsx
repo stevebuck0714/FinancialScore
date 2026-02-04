@@ -64,6 +64,7 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
       const response = await fetch('/api/auth/mfa/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload)
       });
 
