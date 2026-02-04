@@ -175,7 +175,24 @@ export default function Header({
             )}
           </div>
           <button onClick={() => handleNavigation('ai-analysis')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'ai-analysis' ? '3px solid #000' : '3px solid transparent' }}>Ask Corelytics</button>
-          <button onClick={() => handleNavigation('mda')} style={{ background: 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderBottom: currentView === 'mda' ? '3px solid #000' : '3px solid transparent' }}>MD&A</button>
+          <button
+            onClick={() => handleNavigation('mda')}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '16px',
+              fontWeight: '600',
+              color: '#000',
+              cursor: 'pointer',
+              padding: '8px 12px',
+              borderBottom: currentView === 'mda' ? '3px solid #000' : '3px solid transparent',
+              textAlign: 'center',
+              lineHeight: '1.1'
+            }}
+          >
+            <span style={{ display: 'block' }}>Management</span>
+            <span style={{ display: 'block' }}>Discussion</span>
+          </button>
           <div style={{ position: 'relative' }}>
             <button
               onClick={() => setShowRatiosMenu((prev) => !prev)}
