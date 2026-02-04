@@ -107,14 +107,10 @@ export async function POST(request: NextRequest) {
         let cookieDomain: string | undefined;
         if (process.env.MFA_COOKIE_DOMAIN) {
           cookieDomain = process.env.MFA_COOKIE_DOMAIN;
-        } else if (process.env.NEXTAUTH_URL) {
-          try {
-            const hostname = new URL(process.env.NEXTAUTH_URL).hostname;
-            if (hostname && !hostname.includes('localhost')) {
-              cookieDomain = hostname;
-            }
-          } catch {
-            // Ignore malformed NEXTAUTH_URL
+        } else {
+          const hostname = request.nextUrl.hostname;
+          if (hostname && !hostname.includes('localhost')) {
+            cookieDomain = hostname;
           }
         }
 
