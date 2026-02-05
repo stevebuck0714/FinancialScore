@@ -96,6 +96,18 @@ const MOCK_CUSTOMER_INVOICES = [
   { customerName: 'Urban Apparel', invoiceNo: '1009', date: 'Jun 1, 2025', dueDate: 'Jul 1, 2025', currency: 'USD', amountCurrency: 449, amountHome: 332.59, amountDueHome: 0 },
   { customerName: 'Urban Apparel', invoiceNo: '1048', date: 'May 16, 2025', dueDate: 'Jun 15, 2025', currency: 'USD', amountCurrency: 363, amountHome: 268.89, amountDueHome: 0 }
 ];
+const TOP_CUSTOMERS_OVERRIDE = [
+  { name: 'GlobalTech Industries', totalRevenue: 312509 },
+  { name: 'Smith & Associates', totalRevenue: 191948 },
+  { name: 'Premier Solutions LLC', totalRevenue: 184322 },
+  { name: 'Acme Corporation', totalRevenue: 162950 },
+  { name: 'Regional Services Inc', totalRevenue: 132784 },
+  { name: 'Smith & Associates', totalRevenue: 122000 },
+  { name: 'Premier Solutions LLC', totalRevenue: 121500 },
+  { name: 'Acme Corporation', totalRevenue: 120300 },
+  { name: 'Regional Services Inc', totalRevenue: 118600 },
+  { name: 'Harbor Industrial', totalRevenue: 117800 }
+];
 const MOCK_AP_VENDORS = [
   { vendorName: 'Blue Ridge Materials', current: 5200, days1to30: 1800, days31to60: 900, days61to90: 600, days90plus: 300 },
   { vendorName: 'Summit Logistics', current: 4300, days1to30: 1500, days31to60: 800, days61to90: 500, days90plus: 200 },
@@ -839,86 +851,107 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
           </div>
         </div>
 
-        {/* Revenue Trend Chart */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            {frequency.charAt(0).toUpperCase() + frequency.slice(1)} Revenue Trend
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-              <Tooltip 
-                formatter={(value: any) => [formatCurrency(value), 'Revenue']}
-                contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="revenue" stroke="#667eea" strokeWidth={2} dot={{ fill: '#667eea', r: 4 }} name="Revenue" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Top Customers Table */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Top Customers by Revenue
-          </h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Rank</th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Customer</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Total Revenue</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Invoices</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Avg Invoice</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.topCustomers.map((customer: any, index: number) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b' }}>#{index + 1}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{customer.name}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrency(customer.totalRevenue)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>{customer.totalInvoices}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
-                      {formatCurrency(customer.totalRevenue / customer.totalInvoices)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Customer Revenue Distribution Chart */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Revenue Distribution by Customer
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={summary.topCustomers}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={(entry) => `${entry.name}: ${((entry.totalRevenue / summary.topCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0)) * 100).toFixed(1)}%`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="totalRevenue"
+        {(() => {
+          const tableCustomers = TOP_CUSTOMERS_OVERRIDE.map((customer) => ({
+            ...customer,
+            totalInvoices: Math.max(1, Math.round(customer.totalRevenue / 10000))
+          }));
+          const chartCustomers = tableCustomers;
+          const chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
+          const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent }: any) => {
+            const radius = outerRadius + 16;
+            const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
+            const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
+            return (
+              <text
+                x={x}
+                y={y}
+                fill="#475569"
+                textAnchor={x > cx ? 'start' : 'end'}
+                dominantBaseline="central"
+                style={{ fontSize: '11px', fontWeight: 600 }}
               >
-                {summary.topCustomers.map((entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value: any) => formatCurrency(value)} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+                {`${(percent * 100).toFixed(1)}%`}
+              </text>
+            );
+          };
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+              {/* Top Customers Table */}
+              <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
+                  Top Customers by Revenue
+                </h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Rank</th>
+                        <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Customer</th>
+                        <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Total Revenue</th>
+                        <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Invoices</th>
+                        <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Avg Invoice</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableCustomers.map((customer: any, index: number) => (
+                        <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b' }}>#{index + 1}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{customer.name}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
+                            {formatCurrency(customer.totalRevenue)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>{customer.totalInvoices}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
+                            {formatCurrency(customer.totalRevenue / customer.totalInvoices)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Customer Revenue Distribution Chart */}
+              <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
+                  Revenue Distribution by Customer
+                </h3>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ flex: 1.4 }}>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <PieChart>
+                        <Pie
+                          data={chartCustomers}
+                          cx="50%"
+                          cy="50%"
+                        labelLine={true}
+                        label={renderPieLabel}
+                          outerRadius={115}
+                          fill="#8884d8"
+                          dataKey="totalRevenue"
+                        >
+                          {chartCustomers.map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div style={{ flex: 0.8, display: 'grid', gap: '6px' }}>
+                    {chartCustomers.map((entry: any, index: number) => (
+                      <div key={`legend-${entry.name}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: COLORS[index % COLORS.length] }} />
+                        <span style={{ fontSize: '12px', color: '#475569' }}>{entry.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
