@@ -102,11 +102,14 @@ const TOP_CUSTOMERS_OVERRIDE = [
   { name: 'Premier Solutions LLC', totalRevenue: 184322 },
   { name: 'Acme Corporation', totalRevenue: 162950 },
   { name: 'Regional Services Inc', totalRevenue: 132784 },
-  { name: 'Smith & Associates', totalRevenue: 122000 },
-  { name: 'Premier Solutions LLC', totalRevenue: 121500 },
-  { name: 'Acme Corporation', totalRevenue: 120300 },
-  { name: 'Regional Services Inc', totalRevenue: 118600 },
   { name: 'Harbor Industrial', totalRevenue: 117800 }
+];
+const OTHER_CUSTOMERS_OVERRIDE = [
+  { name: 'Evergreen Supply Co.', totalRevenue: 74200 },
+  { name: 'Summit Equipment', totalRevenue: 68950 },
+  { name: 'Valley Precision', totalRevenue: 65500 },
+  { name: 'Northwind Parts', totalRevenue: 61200 },
+  { name: 'Brightline Services', totalRevenue: 58400 }
 ];
 const MOCK_AP_VENDORS = [
   { vendorName: 'Blue Ridge Materials', current: 5200, days1to30: 1800, days31to60: 900, days61to90: 600, days90plus: 300 },
@@ -174,6 +177,8 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   const [unpaidBillsPage, setUnpaidBillsPage] = useState(1);
   const [vendorBillsPage, setVendorBillsPage] = useState(1);
   const [selectedVendorBill, setSelectedVendorBill] = useState('All');
+  const [demandSortKey, setDemandSortKey] = useState<'customer' | 'bookingsMtd' | 'bookingsQtd' | 'bookingsYtd' | 'backlogTotal' | 'backlog60' | 'shareBacklog' | 'trend'>('backlogTotal');
+  const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -850,6 +855,192 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
             </div>
           </div>
         </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings</div>
+            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>MTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(420000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>QTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(1260000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>YTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(4860000)}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog $</div>
+            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(2840000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 30</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(940000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 60</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(1120000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 90</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(780000)}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog concentration</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>
+              Top 5 customers = 56.8%
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings trend (3-month slope)</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>+${formatCurrency(420000).replace('$', '')}/mo</span>
+              <span style={{ color: '#16a34a', fontWeight: 700 }}>↑</span>
+            </div>
+          </div>
+        </div>
+
+        {(() => {
+          const fillNeeded = Math.max(0, 10 - TOP_CUSTOMERS_OVERRIDE.length);
+          const filler = OTHER_CUSTOMERS_OVERRIDE.slice(0, fillNeeded);
+          const topTen = [...TOP_CUSTOMERS_OVERRIDE, ...filler].map((customer) => {
+            const bookingsYtd = customer.totalRevenue;
+            const bookingsQtd = Math.round(bookingsYtd * 0.34);
+            const bookingsMtd = Math.round(bookingsQtd * 0.45);
+            const backlogTotal = Math.round(bookingsYtd * 0.58);
+            const backlog30 = Math.round(backlogTotal * 0.32);
+            const backlog60 = Math.round(backlogTotal * 0.38);
+            const backlog90 = Math.max(0, backlogTotal - backlog30 - backlog60);
+            const trend = Math.round((bookingsMtd - bookingsQtd / 3) / 1000);
+            return {
+              customerName: customer.name,
+              bookingsMtd,
+              bookingsQtd,
+              bookingsYtd,
+              backlogTotal,
+              backlog30,
+              backlog60,
+              backlog90,
+              trend
+            };
+          });
+          const remainingOthers = OTHER_CUSTOMERS_OVERRIDE.slice(fillNeeded);
+          const otherAggregate = remainingOthers.reduce(
+            (acc, customer) => {
+              acc.bookingsYtd += customer.totalRevenue;
+              return acc;
+            },
+            { bookingsYtd: 0 }
+          );
+          const allOther = {
+            customerName: 'All other',
+            bookingsYtd: otherAggregate.bookingsYtd,
+            bookingsQtd: Math.round(otherAggregate.bookingsYtd * 0.34),
+            bookingsMtd: Math.round(otherAggregate.bookingsYtd * 0.15),
+            backlogTotal: Math.round(otherAggregate.bookingsYtd * 0.58),
+            backlog30: Math.round(otherAggregate.bookingsYtd * 0.19),
+            backlog60: Math.round(otherAggregate.bookingsYtd * 0.22),
+            backlog90: Math.round(otherAggregate.bookingsYtd * 0.17),
+            trend: Math.round(otherAggregate.bookingsYtd * 0.01 / 1000)
+          };
+          const demandRows = [...topTen, allOther];
+          const backlogTotalAll = demandRows.reduce((sum, row) => sum + row.backlogTotal, 0);
+          const sortedRows = [...demandRows].sort((a, b) => {
+            const dir = demandSortDir === 'asc' ? 1 : -1;
+            switch (demandSortKey) {
+              case 'customer':
+                return a.customerName.localeCompare(b.customerName) * dir;
+              case 'bookingsMtd':
+                return (a.bookingsMtd - b.bookingsMtd) * dir;
+              case 'bookingsQtd':
+                return (a.bookingsQtd - b.bookingsQtd) * dir;
+              case 'bookingsYtd':
+                return (a.bookingsYtd - b.bookingsYtd) * dir;
+              case 'backlog60':
+                return (a.backlog60 - b.backlog60) * dir;
+              case 'shareBacklog':
+                return ((a.backlogTotal / backlogTotalAll) - (b.backlogTotal / backlogTotalAll)) * dir;
+              case 'trend':
+                return (a.trend - b.trend) * dir;
+              case 'backlogTotal':
+              default:
+                return (a.backlogTotal - b.backlogTotal) * dir;
+            }
+          });
+          const handleSort = (key: typeof demandSortKey) => {
+            if (demandSortKey === key) {
+              setDemandSortDir(demandSortDir === 'asc' ? 'desc' : 'asc');
+            } else {
+              setDemandSortKey(key);
+              setDemandSortDir('desc');
+            }
+          };
+          return (
+            <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                  Top Customers Driving Demand
+                </h3>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>Default: Top 10 + All other</span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th onClick={() => handleSort('customer')} style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Customer</th>
+                      <th onClick={() => handleSort('bookingsMtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings MTD</th>
+                      <th onClick={() => handleSort('bookingsQtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings QTD</th>
+                      <th onClick={() => handleSort('bookingsYtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings YTD</th>
+                      <th onClick={() => handleSort('backlogTotal')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Backlog total</th>
+                      <th onClick={() => handleSort('backlog60')} style={{ textAlign: 'center', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Backlog due 30/60/90</th>
+                      <th onClick={() => handleSort('shareBacklog')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Share of backlog %</th>
+                      <th onClick={() => handleSort('trend')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings trend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRows.map((row) => {
+                      const backlogTotal = Math.max(1, row.backlogTotal);
+                      const backlog30Pct = (row.backlog30 / backlogTotal) * 100;
+                      const backlog60Pct = (row.backlog60 / backlogTotal) * 100;
+                      const backlog90Pct = 100 - backlog30Pct - backlog60Pct;
+                      const sharePct = backlogTotalAll ? (row.backlogTotal / backlogTotalAll) * 100 : 0;
+                      return (
+                        <tr key={row.customerName} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsMtd)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsQtd)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsYtd)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(row.backlogTotal)}</td>
+                          <td style={{ padding: '6px 10px' }}>
+                            <div style={{ display: 'flex', height: '8px', width: '100%', borderRadius: '4px', overflow: 'hidden', background: '#e2e8f0' }}>
+                              <div style={{ width: `${backlog30Pct}%`, background: AR_TREND_COLORS[0] }} title={`30: ${formatCurrency(row.backlog30)}`} />
+                              <div style={{ width: `${backlog60Pct}%`, background: AR_TREND_COLORS[1] }} title={`60: ${formatCurrency(row.backlog60)}`} />
+                              <div style={{ width: `${backlog90Pct}%`, background: AR_TREND_COLORS[2] }} title={`90: ${formatCurrency(row.backlog90)}`} />
+                            </div>
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{sharePct.toFixed(1)}%</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: row.trend >= 0 ? '#16a34a' : '#ef4444', textAlign: 'right', fontWeight: 600 }}>
+                            {row.trend >= 0 ? '+' : '-'}${Math.abs(row.trend)}k/mo
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
 
         {(() => {
           const tableCustomers = TOP_CUSTOMERS_OVERRIDE.map((customer) => ({
