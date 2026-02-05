@@ -53,6 +53,9 @@ export default function CompanyDetailsModal({
   onSave
 }: CompanyDetailsModalProps) {
   if (!show) return null;
+  const missingIndustryGroup = !companyIndustrySector;
+  const missingIndustrySector = !industrySectorCategory;
+  const canSave = !missingIndustryGroup && !missingIndustrySector;
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
@@ -117,7 +120,9 @@ export default function CompanyDetailsModal({
 
           {/* Industry Group (existing Industry Sector) */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Industry Group (required for peer benchmarking)</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+              Industry Group (required for peer benchmarking) <span style={{ color: '#ef4444' }}>*</span>
+            </label>
             <select 
               value={companyIndustrySector} 
               onChange={(e) => setCompanyIndustrySector(parseInt(e.target.value))} 
@@ -145,11 +150,18 @@ export default function CompanyDetailsModal({
                 </p>
               </div>
             )}
+            {missingIndustryGroup && (
+              <div style={{ marginTop: '6px', fontSize: '12px', color: '#ef4444' }}>
+                Industry Group is required.
+              </div>
+            )}
           </div>
 
           {/* Industry Sector (new dropdown for reporting) */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Industry Sector (required for custom reporting)</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+              Industry Sector (required for custom reporting) <span style={{ color: '#ef4444' }}>*</span>
+            </label>
             <select 
               value={industrySectorCategory} 
               onChange={(e) => setIndustrySectorCategory(e.target.value)} 
@@ -159,6 +171,11 @@ export default function CompanyDetailsModal({
                 <option key={sector.value} value={sector.value}>{sector.label}</option>
               ))}
             </select>
+            {missingIndustrySector && (
+              <div style={{ marginTop: '6px', fontSize: '12px', color: '#ef4444' }}>
+                Industry Sector is required.
+              </div>
+            )}
           </div>
 
           {/* Company Size */}
@@ -176,7 +193,23 @@ export default function CompanyDetailsModal({
           </div>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button onClick={onSave} style={{ flex: 1, padding: '12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Save</button>
+          <button
+            onClick={() => canSave && onSave()}
+            disabled={!canSave}
+            style={{
+              flex: 1,
+              padding: '12px',
+              background: canSave ? '#667eea' : '#94a3b8',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: canSave ? 'pointer' : 'not-allowed'
+            }}
+          >
+            Save
+          </button>
           <button onClick={onClose} style={{ flex: 1, padding: '12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
         </div>
       </div>

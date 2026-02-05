@@ -206,6 +206,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!industrySector) {
+      console.error("❌ Missing required field: industrySector");
+      return NextResponse.json(
+        { error: "Industry Group is required" },
+        { status: 400 },
+      );
+    }
+
+    if (!industrySectorCategory) {
+      console.error("❌ Missing required field: industrySectorCategory");
+      return NextResponse.json(
+        { error: "Industry Sector is required" },
+        { status: 400 },
+      );
+    }
+
     // Actually save companies to database
     console.log("🔍 Creating company in database");
     console.log("🔍 Environment:", process.env.NODE_ENV);
@@ -717,9 +733,22 @@ export async function PATCH(request: NextRequest) {
       updateData.addressCountry = updateFields.addressCountry;
 
     // Industry sector
-    if (updateFields.industrySector !== undefined)
+    if (updateFields.industrySector !== undefined) {
+      if (!updateFields.industrySector) {
+        return NextResponse.json(
+          { error: "Industry Group is required" },
+          { status: 400 },
+        );
+      }
       updateData.industrySector = updateFields.industrySector;
+    }
     if (updateFields.industrySectorCategory !== undefined) {
+      if (!updateFields.industrySectorCategory) {
+        return NextResponse.json(
+          { error: "Industry Sector is required" },
+          { status: 400 },
+        );
+      }
       try {
         const sectorCategoryColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
           SELECT EXISTS(
