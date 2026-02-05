@@ -6,7 +6,8 @@ import { sendTrustedDeviceNotification } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, token, isBackupCode, rememberDevice, trustDurationDays } = await request.json();
+    const { userId, token, isBackupCode, rememberDevice, trustDurationDays: requestedTrustDurationDays } =
+      await request.json();
 
     if (!userId || !token) {
       return NextResponse.json(
@@ -91,10 +92,10 @@ export async function POST(request: NextRequest) {
       try {
         console.log('🔐 Creating trusted device for user:', userId);
         const { token: deviceToken, device, trustDurationDays: effectiveTrustDurationDays } =
-          await createTrustedDevice(userId, request, trustDurationDays);
+          await createTrustedDevice(userId, request, requestedTrustDurationDays);
         
         // Set cookie with device token
-        const trustDurationDays = effectiveTrustDurationDays || getTrustDurationDays();
+        const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();
         const isProduction = process.env.NODE_ENV === 'production';
         const cookieDomain = process.env.MFA_COOKIE_DOMAIN;
 
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
           httpOnly: true,
           secure: isProduction,
           sameSite: 'lax',
-          maxAge: trustDurationDays * 24 * 60 * 60, // Convert days to seconds
+          maxAge: trustDurationDaysValue * 24 * 60 * 60, // Convert days to seconds
           path: '/',
           ...(cookieDomain ? { domain: cookieDomain } : {})
         });
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
           deviceName: device.deviceName,
           ipAddress: device.ipAddress || 'Unknown',
           timestamp: device.createdAt,
-          trustDurationDays: trustDurationDays,
+          trustDurationDays: trustDurationDaysValue,
           manageDevicesLink: `${baseUrl}/settings/security`
         }).catch(err => {
           console.error('⚠️ Failed to send trusted device email notification:', err);
