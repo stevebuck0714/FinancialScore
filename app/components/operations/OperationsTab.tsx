@@ -22,6 +22,7 @@ import OpsDashboard from './OpsDashboard';
 interface OperationsTabProps {
   selectedCompanyId: string;
   companyName: string;
+  industrySectorCategory?: string | null;
 }
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -158,7 +159,7 @@ const MOCK_VENDOR_BILLS = [
   { vendorName: 'Greenline Supplies', billNo: 'V-1048', date: 'May 16, 2025', dueDate: 'Jun 15, 2025', currency: 'USD', amountCurrency: 363, amountHome: 268.89, amountDueHome: 0 }
 ];
 
-export default function OperationsTab({ selectedCompanyId, companyName }: OperationsTabProps) {
+export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory }: OperationsTabProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory' | 'cash'>('dashboard');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -179,6 +180,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   const [selectedVendorBill, setSelectedVendorBill] = useState('All');
   const [demandSortKey, setDemandSortKey] = useState<'customer' | 'bookingsMtd' | 'bookingsQtd' | 'bookingsYtd' | 'backlogTotal' | 'backlog60' | 'shareBacklog' | 'trend'>('backlogTotal');
   const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
+  const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -195,6 +197,27 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   useEffect(() => {
     loadSummary();
   }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (!industrySectorCategory) {
+      setOpsSectorLayoutConfig(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch(`/api/ops-sector-layouts?sectorCategory=${industrySectorCategory}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        setOpsSectorLayoutConfig(data?.config?.config || null);
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.error('Failed to load ops sector layout config:', error);
+        }
+      });
+
+    return () => controller.abort();
+  }, [industrySectorCategory]);
 
   useEffect(() => {
     if (activeTab !== 'overview') {

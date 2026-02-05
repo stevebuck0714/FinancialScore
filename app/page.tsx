@@ -7161,6 +7161,7 @@ function FinancialScorePage() {
         <OperationsTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
+          industrySectorCategory={company?.industrySectorCategory || null}
         />
       )}
 

@@ -18,6 +18,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:operational": "tsx prisma/seed-operational-data.ts",
+    "db:seed:ops-layouts": "tsx scripts/seed-ops-sector-layouts.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "db:clear-users": "tsx scripts/clear-users.ts",
