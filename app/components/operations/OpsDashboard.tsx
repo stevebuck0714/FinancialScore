@@ -20,7 +20,10 @@ interface OpsDashboardProps {
   companyName: string;
 }
 
-const COLORS = ['#667eea', '#2563eb', '#16a34a', '#f59e0b', '#ec4899', '#6366f1'];
+const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+const AGING_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+const CUSTOMER_CHART_COLOR = COLORS[2];
+const CASH_CHART_COLOR = COLORS[4];
 
 export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDashboardProps) {
   // Individual frequency state for each widget
@@ -476,7 +479,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                       label={{ value: 'Goal', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
                     />
                   )}
-                  <Line type="monotone" dataKey="revenue" stroke="#667eea" strokeWidth={2} dot={{ fill: '#667eea', r: 3 }} />
+                  <Line type="monotone" dataKey="revenue" stroke={CUSTOMER_CHART_COLOR} strokeWidth={2} dot={{ fill: CUSTOMER_CHART_COLOR, r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -510,8 +513,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                       label={{ value: 'Goal Total AR', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
                     />
                   )}
-                  <Bar dataKey="current" stackId="a" fill="#16a34a" name="Current" />
-                  <Bar dataKey="over30" stackId="a" fill="#f59e0b" name="Over 30 Days" />
+                  <Bar dataKey="current" stackId="a" fill={AGING_COLORS[0]} name="Current" />
+                  <Bar dataKey="over30" stackId="a" fill={AGING_COLORS[1]} name="Over 30 Days" />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -545,8 +548,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                       label={{ value: 'Goal Total AP', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
                     />
                   )}
-                  <Bar dataKey="current" stackId="a" fill="#16a34a" name="Current" />
-                  <Bar dataKey="over30" stackId="a" fill="#f59e0b" name="Over 30 Days" />
+                  <Bar dataKey="current" stackId="a" fill={AGING_COLORS[0]} name="Current" />
+                  <Bar dataKey="over30" stackId="a" fill={AGING_COLORS[1]} name="Over 30 Days" />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -648,7 +651,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
                       label={{ value: 'Goal', position: 'insideTopRight', fill: '#ef4444', fontSize: 12, fontWeight: 600 }}
                     />
                   )}
-                  <Bar dataKey="totalCash" fill="#10b981" name="Total Cash" />
+                  <Bar dataKey="totalCash" fill={CASH_CHART_COLOR} name="Total Cash" />
                 </BarChart>
               </ResponsiveContainer>
             )}

@@ -647,7 +647,7 @@ export default function CompanyDetailsTab({
                                     },
                                     {
                                       id: "management-assessment",
-                                      label: "Management Assessment",
+                                      label: "Team Assessment",
                                     },
                                   ].map((section) => (
                                     <label
@@ -857,7 +857,7 @@ export default function CompanyDetailsTab({
                   </div>
                 </div>
 
-                {/* Management Assessment Users */}
+                {/* Team Assessment Users */}
                 <div
                   style={{
                     background: "white",
@@ -874,7 +874,7 @@ export default function CompanyDetailsTab({
                       marginBottom: "4px",
                     }}
                   >
-                    Management Assessment Users
+                    Team Assessment Users
                   </h4>
                   <p
                     style={{

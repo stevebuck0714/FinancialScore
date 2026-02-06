@@ -1,4 +1,4 @@
-﻿node_modules
+node_modules
 .next
 .env.local
 .env
@@ -21,3 +21,5 @@ diff-output.txt
 CorelyticsUpdate_.csv
 .vercel
 .env*.local
+staging_all_data.sql
+staging_full.dump

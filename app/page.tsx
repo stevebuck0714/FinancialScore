@@ -706,7 +706,7 @@ function FinancialScorePage() {
     return false;
   }, [selectedCompanyId, currentUser, companies]);
 
-  // State - Management Assessment
+  // State - Team Assessment
   const [assessmentResponses, setAssessmentResponses] = useState<AssessmentResponses>({});
   const [assessmentNotes, setAssessmentNotes] = useState<AssessmentNotes>({});
   const [assessmentRecords, setAssessmentRecords] = useState<AssessmentRecord[]>([]);
@@ -5214,7 +5214,7 @@ function FinancialScorePage() {
               )}
             </div>
 
-            {/* Management Assessment Section - For Assessment Users, Company Users, and Consultants */}
+            {/* Team Assessment Section - For Assessment Users, Company Users, and Consultants */}
             {((currentUser?.role === 'user' && (currentUser?.userType === 'assessment' || currentUser?.userType === 'company')) || currentUser?.role === 'consultant') && (
             <div style={{ marginBottom: '1px' }}>
               <h3 
@@ -5239,7 +5239,7 @@ function FinancialScorePage() {
                 }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
-                <span>Management Assessment</span>
+                <span>Team Assessment</span>
                 <span style={{ fontSize: '12px', color: '#1F70C1' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
               </h3>
               {isManagementAssessmentExpanded && (
@@ -5597,7 +5597,7 @@ function FinancialScorePage() {
         </aside>
         )}
 
-        {/* Assessment User Sidebar - Only Management Assessment */}
+        {/* Assessment User Sidebar - Only Team Assessment */}
         {currentUser?.userType === 'assessment' && (
         <aside style={{ 
           width: '280px', 
@@ -5609,11 +5609,11 @@ function FinancialScorePage() {
         }}>
           <div style={{ padding: '0 24px', marginBottom: '12px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Navigation</h2>
-            <p style={{ fontSize: '12px', color: '#64748b' }}>Management Assessment</p>
+            <p style={{ fontSize: '12px', color: '#64748b' }}>Team Assessment</p>
           </div>
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
-            {/* Management Assessment Section */}
+            {/* Team Assessment Section */}
             <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
@@ -5637,7 +5637,7 @@ function FinancialScorePage() {
                 }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
-                <span>Management Assessment</span>
+                <span>Team Assessment</span>
                 <span style={{ fontSize: '12px', color: '#1F70C1' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
               </h3>
               {isManagementAssessmentExpanded && (
@@ -5805,7 +5805,7 @@ function FinancialScorePage() {
 
         {/* Main Content Area */}
         <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: '8px' }}>
-          {/* Restrict access for assessment users - only show Management Assessment views */}
+          {/* Restrict access for assessment users - only show Team Assessment views */}
           {(!(currentUser?.userType === 'assessment') || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
           {/* Site Administration */}
@@ -12120,7 +12120,7 @@ function FinancialScorePage() {
         </div>
       )}
 
-      {/* Management Assessment - Questionnaire View */}
+      {/* Team Assessment - Questionnaire View */}
       {(() => {
         const hasCompanyId = selectedCompanyId || currentUser?.companyId;
         const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
@@ -12142,7 +12142,7 @@ function FinancialScorePage() {
       })() && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Management Assessment Questionnaire</h1>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Team Assessment Questionnaire</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
           
@@ -12286,7 +12286,7 @@ function FinancialScorePage() {
           </>
           )}
 
-      {/* Management Assessment - Your Results View */}
+      {/* Team Assessment - Your Results View */}
       {currentView === 'ma-your-results' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <MAYourResultsView
           selectedCompanyId={selectedCompanyId}
@@ -12299,8 +12299,8 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Management Assessment Views - Available to all users including assessment users */}
-          {/* Management Assessment - Welcome View */}
+      {/* Team Assessment Views - Available to all users including assessment users */}
+          {/* Team Assessment - Welcome View */}
       {currentView === 'ma-welcome' && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <MAWelcomeView
           companyName={companyName}
@@ -12309,7 +12309,7 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Management Assessment - Scores Summary View */}
+      {/* Team Assessment - Scores Summary View */}
       {currentView === 'ma-scores-summary' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <MAScoresSummaryView
           selectedCompanyId={selectedCompanyId}
@@ -12318,12 +12318,12 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Management Assessment - Scoring Guide View */}
+      {/* Team Assessment - Scoring Guide View */}
       {currentView === 'ma-scoring-guide' && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <MAScoringGuideView />
       )}
 
-      {/* Management Assessment - Charts View */}
+      {/* Team Assessment - Charts View */}
       {currentView === 'ma-charts' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Assessment Charts</h1>

@@ -309,7 +309,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                     {/* Assessment Users */}
                     <div style={{ background: 'white', borderRadius: '8px', padding: '16px', border: '2px solid #8b5cf6' }}>
                       <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Assessment Users</h4>
-                      <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '12px' }}>Fill out Management Assessment (max 5)</p>
+                      <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '12px' }}>Fill out Team Assessment (max 5)</p>
                       <div style={{ fontSize: '20px', fontWeight: '700', color: '#8b5cf6', marginBottom: '12px' }}>
                         {users.filter(u => u.companyId === comp.id && u.userType === 'assessment').length} / 5
                       </div>

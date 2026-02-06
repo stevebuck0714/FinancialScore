@@ -17,7 +17,7 @@ export default function MAWelcomeView({
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
       <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         {companyName && <div style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', textAlign: 'center', marginBottom: '12px' }}>{companyName}</div>}
-        <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', textAlign: 'center' }}>Management Assessment Questionnaire</h1>
+        <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '12px', textAlign: 'center' }}>Team Assessment Questionnaire</h1>
         
         <div style={{ fontSize: '16px', color: '#475569', lineHeight: '1.8', maxWidth: '900px', margin: '0 auto 32px', textAlign: 'left' }}>
           <p style={{ marginBottom: '16px' }}>
@@ -29,7 +29,7 @@ export default function MAWelcomeView({
           </p>
           
           <p style={{ marginBottom: '0' }}>
-            The Management Assessment service provides detailed evaluation of your company's management practices, leadership effectiveness, and organizational structure to help you optimize performance and drive growth.
+            The Team Assessment service provides detailed evaluation of your company's management practices, leadership effectiveness, and organizational structure to help you optimize performance and drive growth.
           </p>
         </div>
         
