@@ -206,21 +206,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!industrySector) {
-      console.error("❌ Missing required field: industrySector");
-      return NextResponse.json(
-        { error: "Industry Group is required" },
-        { status: 400 },
-      );
-    }
-
-    if (!industrySectorCategory) {
-      console.error("❌ Missing required field: industrySectorCategory");
-      return NextResponse.json(
-        { error: "Industry Sector is required" },
-        { status: 400 },
-      );
-    }
+    // Industry data is collected after company creation in the details flow.
 
     // Actually save companies to database
     console.log("🔍 Creating company in database");
