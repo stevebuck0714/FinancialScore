@@ -215,6 +215,11 @@ const evidenceLevel = (confidence?: number | null) => {
        <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
         Identify where to press when you are strong, and where to fix when you are underperforming. Opportunities are ranked by impact, confidence, and time-to-impact.
        </p>
+       {findings.some((f) => f.payload?.sectorLabel) && (
+         <p style={{ marginTop: '6px', fontSize: '13px', color: '#64748b' }}>
+           Sector: {findings.find((f) => f.payload?.sectorLabel)?.payload?.sectorLabel ?? '—'}
+         </p>
+       )}
 
       <div style={{ marginTop: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
         <button
@@ -347,6 +352,12 @@ const evidenceLevel = (confidence?: number | null) => {
                 Type: {selectedFinding.payload?.type || 'General'} • Objective:{' '}
                 {selectedFinding.payload?.objective || 'Growth'} • Evidence:{' '}
                 {evidenceLevel(selectedFinding.confidence)} • Severity: {severityLabel(selectedFinding.severity)}
+                {selectedFinding.payload?.sectorLabel && (
+                  <span> • Sector: {selectedFinding.payload.sectorLabel}</span>
+                )}
+                {selectedFinding.payload?.source === 'playbook' && (
+                  <span style={{ marginLeft: '6px', padding: '2px 6px', background: '#e0e7ff', color: '#3730a3', borderRadius: '4px', fontSize: '11px' }}>Playbook</span>
+                )}
                </div>
                <div style={{ marginTop: '12px', fontSize: '13px', color: '#475569' }}>
                 {selectedFinding.payload?.summary || selectedFinding.payload?.why?.join(' ') || 'No summary available yet.'}

@@ -211,9 +211,10 @@ const resolveChartConfig = (metricName: string, monthly: any[]) => {
 
 const getBucketId = (finding: Finding) => {
   const override = finding.payload?.boardBucket;
-  if (override === 'investigate' || override === 'monitor' || override === 'fix-now') {
-    return override;
+  if (override === 'investigate' || override === 'monitor' || override === 'fix-now' || override === 'fix_now') {
+    return override === 'fix_now' ? 'fix-now' : override;
   }
+  if (override === 'opportunities') return 'opportunities';
   if (finding.type === 'opportunity') return 'opportunities';
   if (finding.type === 'anomaly') {
     if (finding.severity === 'high' || finding.severity === 'medium') return 'fix-now';
@@ -375,6 +376,11 @@ const getBucketId = (finding: Finding) => {
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Focus Board</h1>
+       {findings.some((f) => f.payload?.sectorLabel) && (
+         <p style={{ marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
+           Sector: {findings.find((f) => f.payload?.sectorLabel)?.payload?.sectorLabel ?? '—'}
+         </p>
+       )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginTop: '24px' }}>
          {BUCKETS.map((bucket) => {
            const bucketFindings = findingsByBucket[bucket.id] || [];

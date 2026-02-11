@@ -28,6 +28,9 @@ export type RecommendationTheme = {
   suggestedOwner?: 'Sales' | 'Ops' | 'Finance' | 'Marketing' | 'General';
 };
 
+/** COA field names (MonthlyFinancial) to prioritize for anomaly/trend in this sector. */
+export type COACategoryHint = string;
+
 export type SectorPlaybook = {
   sector: string;
   label: string;
@@ -35,6 +38,8 @@ export type SectorPlaybook = {
   focusPriorities: FocusPriority[];
   anomalyContext: AnomalyContext;
   recommendationThemes: RecommendationTheme[];
+  /** COA line/category keys to scan first for this sector (e.g. revenue, cogsTotal, payroll, marketing). */
+  coaCategoryHints?: COACategoryHint[];
 };
 
 function normalizeSectorKey(industrySectorCategory: string | null | undefined): string {
@@ -49,6 +54,7 @@ const DEFAULT_PLAYBOOK: SectorPlaybook = {
   sector: 'DEFAULT',
   label: 'General Operations',
   opsProfileRef: 'DEFAULT',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'expense', 'payroll', 'marketing', 'rent', 'professionalFees'],
   focusPriorities: [
     { metricHint: 'revenue', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'gross margin', whenSevere: 'fix_now', whenModerate: 'monitor', rank: 2 },
@@ -73,6 +79,7 @@ const AGRICULTURE: SectorPlaybook = {
   sector: 'AGRICULTURE',
   label: 'Agriculture',
   opsProfileRef: 'AGRICULTURE',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'cogsMaterials', 'expense', 'payroll', 'inventory'],
   focusPriorities: [
     { metricHint: 'yield', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'price per unit', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -98,6 +105,7 @@ const MINING: SectorPlaybook = {
   sector: 'MINING',
   label: 'Mining',
   opsProfileRef: 'MINING',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'cogsPayroll', 'cogsMaterials', 'expense', 'depreciationAmortization'],
   focusPriorities: [
     { metricHint: 'throughput', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'downtime', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -122,6 +130,7 @@ const UTILITIES: SectorPlaybook = {
   sector: 'UTILITIES',
   label: 'Utilities',
   opsProfileRef: 'UTILITIES',
+  coaCategoryHints: ['revenue', 'expense', 'depreciationAmortization', 'infrastructure', 'professionalFees'],
   focusPriorities: [
     { metricHint: 'uptime', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'outage', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -145,6 +154,7 @@ const CONSTRUCTION: SectorPlaybook = {
   sector: 'CONSTRUCTION',
   label: 'Construction',
   opsProfileRef: 'CONSTRUCTION',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'subcontractors', 'cogsPayroll', 'expense', 'payroll', 'professionalFees'],
   focusPriorities: [
     { metricHint: 'schedule variance', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'change orders', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -170,6 +180,7 @@ const WHOLESALE_TRADE: SectorPlaybook = {
   sector: 'WHOLESALE_TRADE',
   label: 'Wholesale Trade',
   opsProfileRef: 'WHOLESALE_TRADE',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'expense', 'inventory', 'marketing', 'rent'],
   focusPriorities: [
     { metricHint: 'fill rate', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'order volume', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -194,6 +205,7 @@ const RETAIL_TRADE: SectorPlaybook = {
   sector: 'RETAIL_TRADE',
   label: 'Retail Trade',
   opsProfileRef: 'RETAIL_TRADE',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'expense', 'marketing', 'inventory', 'payroll', 'rent'],
   focusPriorities: [
     { metricHint: 'conversion', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'stockout', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -219,6 +231,7 @@ const TRANSPORTATION: SectorPlaybook = {
   sector: 'TRANSPORTATION',
   label: 'Transportation and Warehousing',
   opsProfileRef: 'TRANSPORTATION',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'expense', 'payroll', 'subcontractors', 'depreciationAmortization'],
   focusPriorities: [
     { metricHint: 'on-time', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'utilization', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -243,6 +256,7 @@ const INFORMATION: SectorPlaybook = {
   sector: 'INFORMATION',
   label: 'Information',
   opsProfileRef: 'INFORMATION',
+  coaCategoryHints: ['revenue', 'expense', 'payroll', 'marketing', 'professionalFees', 'infrastructure'],
   focusPriorities: [
     { metricHint: 'churn', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'activation', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -267,6 +281,7 @@ const FINANCE_INSURANCE: SectorPlaybook = {
   sector: 'FINANCE_INSURANCE',
   label: 'Finance and Insurance',
   opsProfileRef: 'FINANCE_INSURANCE',
+  coaCategoryHints: ['revenue', 'expense', 'interestExpense', 'payroll', 'professionalFees', 'otherExpense'],
   focusPriorities: [
     { metricHint: 'loss ratio', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'default rate', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -291,6 +306,7 @@ const REAL_ESTATE: SectorPlaybook = {
   sector: 'REAL_ESTATE',
   label: 'Real Estate, Rental and Leasing',
   opsProfileRef: 'REAL_ESTATE',
+  coaCategoryHints: ['revenue', 'expense', 'rent', 'payroll', 'professionalFees', 'depreciationAmortization'],
   focusPriorities: [
     { metricHint: 'occupancy', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'NOI', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -315,6 +331,7 @@ const PROFESSIONAL_SERVICES: SectorPlaybook = {
   sector: 'PROFESSIONAL_SERVICES',
   label: 'Professional Services',
   opsProfileRef: 'PROFESSIONAL_SERVICES',
+  coaCategoryHints: ['revenue', 'expense', 'payroll', 'subcontractors', 'professionalFees', 'marketing'],
   focusPriorities: [
     { metricHint: 'utilization', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
     { metricHint: 'realization', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
@@ -392,4 +409,125 @@ export function isHighSeverityTrigger(playbook: SectorPlaybook, metricName: stri
   if (!triggers?.length) return false;
   const normalized = (metricName || '').toLowerCase();
   return triggers.some((t) => normalized.includes(t.toLowerCase()));
+}
+
+// --- Recommendation layer: match themes to signals ---
+
+export type RecommendationSignals = {
+  revenue: number;
+  growth: number;
+  grossMargin: number;
+  dso: number | null;
+  dio: number | null;
+  cogs: number;
+  grossMarginBenchmark: number | null;
+  dsoBenchmark: number | null;
+  dioBenchmark: number | null;
+};
+
+export type RecommendationMatch = {
+  why: string[];
+  impactLow: number | null;
+  impactHigh: number | null;
+  impactUnit: 'EBITDA' | 'Cash' | 'Revenue';
+  confidence: number;
+  feasibility: number;
+  metric: string;
+};
+
+/**
+ * Returns a match (rationale + impact) if the theme applies given current signals.
+ * Used by the run route to generate sector opportunities from playbook themes.
+ */
+export function matchRecommendationTheme(
+  theme: RecommendationTheme,
+  signals: RecommendationSignals
+): RecommendationMatch | null {
+  const { revenue, growth, grossMargin, dso, dio, cogs, grossMarginBenchmark, dsoBenchmark, dioBenchmark } = signals;
+  const id = theme.id.toLowerCase();
+  const cond = (theme.whenCondition || '').toLowerCase();
+
+  // Cash / working capital
+  if (theme.objective === 'cash') {
+    if ((id.includes('dso') || id.includes('receivables') || cond.includes('dso')) && dso != null && dsoBenchmark != null && dso > dsoBenchmark + 5 && revenue > 0) {
+      const cashImpact = ((dso - dsoBenchmark) / 365) * revenue;
+      return {
+        why: [`DSO ${Math.round(dso)} days vs peer ${Math.round(dsoBenchmark)}. Cash conversion slower than peer.`],
+        impactLow: cashImpact * 0.5,
+        impactHigh: cashImpact * 0.9,
+        impactUnit: 'Cash',
+        confidence: 0.6,
+        feasibility: 0.75,
+        metric: 'DSO',
+      };
+    }
+    if ((id.includes('inventory') || id.includes('inv') || cond.includes('inventory')) && dio != null && dioBenchmark != null && dio > dioBenchmark + 5 && cogs > 0) {
+      const cashImpact = ((dio - dioBenchmark) / 365) * cogs;
+      return {
+        why: [`Inventory days ${Math.round(dio)} vs peer ${Math.round(dioBenchmark)}. Excess working capital in inventory.`],
+        impactLow: cashImpact * 0.4,
+        impactHigh: cashImpact * 0.8,
+        impactUnit: 'Cash',
+        confidence: 0.5,
+        feasibility: 0.55,
+        metric: 'Inventory Days',
+      };
+    }
+  }
+
+  // Margin
+  if (theme.objective === 'margin') {
+    if ((id.includes('margin') || id.includes('gross') || cond.includes('margin')) && grossMarginBenchmark != null && grossMargin < grossMarginBenchmark - 0.02 && revenue > 0) {
+      const gap = grossMarginBenchmark - grossMargin;
+      return {
+        why: [`Gross margin ${(grossMargin * 100).toFixed(1)}% vs peer ${(grossMarginBenchmark * 100).toFixed(1)}%. Margin gap suggests pricing or mix improvement.`],
+        impactLow: revenue * gap * 0.4,
+        impactHigh: revenue * gap * 0.85,
+        impactUnit: 'EBITDA',
+        confidence: 0.58,
+        feasibility: 0.65,
+        metric: 'Gross Margin',
+      };
+    }
+  }
+
+  // Growth
+  if (theme.objective === 'growth') {
+    if (growth > 0.05 && (grossMarginBenchmark == null || grossMargin >= grossMarginBenchmark) && revenue > 0 && (id.includes('scale') || id.includes('channel') || id.includes('pipeline') || id.includes('growth'))) {
+      return {
+        why: [`Revenue growth ${(growth * 100).toFixed(1)}% over last 3 months. Margin is healthy; consider scaling channels.`],
+        impactLow: revenue * 0.05,
+        impactHigh: revenue * 0.12,
+        impactUnit: 'Revenue',
+        confidence: 0.55,
+        feasibility: 0.6,
+        metric: 'Revenue Growth',
+      };
+    }
+    if (grossMarginBenchmark != null && grossMargin > grossMarginBenchmark + 0.02 && growth < 0.03 && revenue > 0 && (id.includes('pipeline') || id.includes('expand') || id.includes('monetize'))) {
+      return {
+        why: [`Strong margin ${(grossMargin * 100).toFixed(1)}% vs peer ${(grossMarginBenchmark * 100).toFixed(1)}%. Growth ${(growth * 100).toFixed(1)}% below potential.`],
+        impactLow: revenue * 0.04,
+        impactHigh: revenue * 0.1,
+        impactUnit: 'Revenue',
+        confidence: 0.5,
+        feasibility: 0.55,
+        metric: 'Pipeline Growth',
+      };
+    }
+  }
+
+  // Risk: no simple signal in current run; skip unless we add covenant/liquidity later
+  return null;
+}
+
+/** Map playbook objective to run's opportunity objective type. */
+export function themeObjectiveToRun(objective: RecommendationTheme['objective']): 'Cash' | 'Margin' | 'Growth' | 'Risk' {
+  return objective.charAt(0).toUpperCase() + objective.slice(1) as 'Cash' | 'Margin' | 'Growth' | 'Risk';
+}
+
+/** Map playbook suggestedOwner to run's owner type (default Ops). */
+export function themeOwnerToRun(owner: RecommendationTheme['suggestedOwner']): 'Sales' | 'Ops' | 'Finance' | 'Marketing' {
+  if (owner === 'Sales' || owner === 'Ops' || owner === 'Finance' || owner === 'Marketing') return owner;
+  return 'Ops';
 }

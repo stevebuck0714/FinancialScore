@@ -266,6 +266,19 @@ export default function AnomalyInbox({ companyId }: AnomalyInboxProps) {
                   <strong>Likely cause:</strong> {selectedFinding.payload.likelyCause}
                 </div>
               )}
+              {(selectedFinding.payload?.sectorLabel || selectedFinding.payload?.sectorContext) && (
+                <div style={{ marginTop: '12px', padding: '10px', background: '#f1f5f9', borderRadius: '8px', fontSize: '12px', color: '#475569' }}>
+                  {selectedFinding.payload.sectorLabel && (
+                    <div style={{ fontWeight: 600, color: '#334155' }}>Sector: {selectedFinding.payload.sectorLabel}</div>
+                  )}
+                  {(selectedFinding.payload.sectorContext?.seasonalityNote || selectedFinding.payload.sectorContext?.typicalVarianceNote) && (
+                    <div style={{ marginTop: '6px' }}>
+                      {selectedFinding.payload.sectorContext.seasonalityNote && <div>Seasonality: {selectedFinding.payload.sectorContext.seasonalityNote}</div>}
+                      {selectedFinding.payload.sectorContext.typicalVarianceNote && <div style={{ marginTop: '4px' }}>Typical variance: {selectedFinding.payload.sectorContext.typicalVarianceNote}</div>}
+                    </div>
+                  )}
+                </div>
+              )}
               {Array.isArray(selectedFinding.payload?.nextSteps) && selectedFinding.payload.nextSteps.length > 0 && (
                 <div style={{ marginTop: '12px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Suggested checks</div>

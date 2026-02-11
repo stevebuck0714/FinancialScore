@@ -7,6 +7,9 @@ import {
   getSectorPlaybook,
   getFocusBucketForMetric,
   isHighSeverityTrigger,
+  matchRecommendationTheme,
+  themeObjectiveToRun,
+  themeOwnerToRun,
 } from '@/lib/performance-analytics/sector-playbooks';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 
@@ -1041,6 +1044,68 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // COA-level anomaly: z-score on material line items from monthly financials (sector hints prioritize order)
+    const COA_ANOMALY_BASE: Array<{ key: string; label: string }> = [
+      { key: 'revenue', label: 'Revenue' },
+      { key: 'cogsTotal', label: 'COGS Total' },
+      { key: 'expense', label: 'Operating Expense' },
+      { key: 'payroll', label: 'Payroll' },
+      { key: 'marketing', label: 'Marketing' },
+      { key: 'rent', label: 'Rent' },
+      { key: 'professionalFees', label: 'Professional Fees' },
+      { key: 'cogsPayroll', label: 'COGS Payroll' },
+      { key: 'cogsMaterials', label: 'COGS Materials' },
+      { key: 'subcontractors', label: 'Subcontractors' },
+      { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+      { key: 'infrastructure', label: 'Infrastructure' },
+      { key: 'interestExpense', label: 'Interest Expense' },
+      { key: 'inventory', label: 'Inventory' },
+      { key: 'otherExpense', label: 'Other Expense' },
+    ];
+    const hintSet = new Set(playbook.coaCategoryHints || []);
+    const COA_ANOMALY_FIELDS =
+      hintSet.size > 0
+        ? [
+            ...(playbook.coaCategoryHints || [])
+              .filter((key) => COA_ANOMALY_BASE.some((f) => f.key === key))
+              .map((key) => COA_ANOMALY_BASE.find((f) => f.key === key)!),
+            ...COA_ANOMALY_BASE.filter((f) => !hintSet.has(f.key)),
+          ]
+        : COA_ANOMALY_BASE;
+    if (monthlyFinancials.length >= 6) {
+      const sortedMonthly = [...(monthlyFinancials as any[])].sort(
+        (a, b) => new Date(a.monthDate).getTime() - new Date(b.monthDate).getTime()
+      );
+      for (const { key, label } of COA_ANOMALY_FIELDS) {
+        const values = sortedMonthly.map((m: any) => (m[key] != null ? Number(m[key]) : 0));
+        const latest = values.length ? values[values.length - 1] : 0;
+        const score = zScore(latest, values);
+        if (Math.abs(score) >= 2 && values.some((v: number) => v !== 0)) {
+          findings.push({
+            type: 'anomaly',
+            metric: label,
+            severity: severityFromScore(score),
+            confidence: Math.min(0.85, 0.5 + Math.abs(score) / 4),
+            payload: {
+              title: `${label} ${score > 0 ? 'spike' : 'drop'}`,
+              summary: `Latest ${label} deviates by ${score.toFixed(1)}σ from recent ${values.length}-month history.`,
+              likelyCause: score > 0
+                ? 'Unusual increase; confirm one-time items, timing, or volume change.'
+                : 'Unusual decrease; confirm timing, reclass, or true decline.',
+              nextSteps: [
+                'Compare to prior period and budget if available.',
+                'Check for reclasses or one-time items.',
+                'Confirm data load and mapping for this line.',
+              ],
+              zScore: score,
+              latest,
+              coaField: key,
+            },
+          });
+        }
+      }
+    }
+
     if (covenantRows.length) {
       const covenantAlerts = new Map<string, { loan: any; covenant: any; status: string; bufferPct: number | null }>();
 
@@ -1513,6 +1578,113 @@ export async function POST(request: NextRequest) {
           feasibility: 0.55,
           metric: 'Inventory Days',
         });
+      }
+
+      // Recommendation layer: enrich opportunities with sector playbook theme (title/family)
+      const signals = {
+        revenue,
+        growth,
+        grossMargin,
+        dso,
+        dio,
+        cogs,
+        grossMarginBenchmark: grossMarginBenchmark ?? null,
+        dsoBenchmark: dsoBenchmark ?? null,
+        dioBenchmark: dioBenchmark ?? null,
+      };
+      for (const f of findings) {
+        if (f.type !== 'opportunity' || !f.payload) continue;
+        const objective = f.payload.objective as string | undefined;
+        const metric = (f.metric || '').toLowerCase();
+        for (const theme of playbook.recommendationThemes) {
+          if (themeObjectiveToRun(theme.objective) !== objective) continue;
+          const themeId = theme.id.toLowerCase();
+          const cond = (theme.whenCondition || '').toLowerCase();
+          const metricInTheme =
+            (metric && themeId.includes(metric.replace(/\s+/g, '_'))) ||
+            (metric && cond.includes(metric)) ||
+            (metric === 'dso' && (themeId.includes('dso') || themeId.includes('receivables'))) ||
+            (metric === 'gross margin' && (themeId.includes('margin') || themeId.includes('gross'))) ||
+            (metric.includes('inventory') && (themeId.includes('inventory') || themeId.includes('inv'))) ||
+            (metric.includes('revenue growth') && (themeId.includes('growth') || themeId.includes('scale') || themeId.includes('channel'))) ||
+            (metric.includes('pipeline') && (themeId.includes('pipeline') || themeId.includes('expand')));
+          if (metricInTheme) {
+            f.payload.recommendationThemeId = theme.id;
+            f.payload.sectorTitle = theme.title;
+            f.payload.sectorFamily = theme.family;
+            if (playbook.sector !== 'DEFAULT') {
+              f.payload.title = theme.title;
+              f.payload.type = theme.family;
+              if (theme.suggestedOwner) f.payload.owner = themeOwnerToRun(theme.suggestedOwner);
+            }
+            break;
+          }
+        }
+      }
+
+      // Add up to 2 sector-only opportunities from playbook when signals match and no existing opportunity covers that theme
+      const existingOpportunityMetrics = new Set(
+        findings.filter((x) => x.type === 'opportunity').map((x) => (x.metric || '').toLowerCase())
+      );
+      let addedFromPlaybook = 0;
+      const maxPlaybookOpportunities = 2;
+      for (const theme of playbook.recommendationThemes) {
+        if (addedFromPlaybook >= maxPlaybookOpportunities) break;
+        if (findings.some((f) => f.type === 'opportunity' && f.payload?.recommendationThemeId === theme.id)) continue;
+        const match = matchRecommendationTheme(theme, signals);
+        if (!match || existingOpportunityMetrics.has(match.metric.toLowerCase())) continue;
+        const objective = themeObjectiveToRun(theme.objective);
+        const scoring = scoreOpportunity({
+          revenue,
+          impactLow: match.impactLow,
+          impactHigh: match.impactHigh,
+          confidence: match.confidence,
+          feasibility: match.feasibility,
+          timeToImpactDays: match.impactUnit === 'Cash' ? 75 : match.impactUnit === 'Revenue' ? 90 : 60,
+        });
+        const severity = scoring.score >= 0.55 ? 'high' : scoring.score >= 0.35 ? 'medium' : 'low';
+        findings.push({
+          type: 'opportunity',
+          metric: match.metric,
+          severity,
+          confidence: match.confidence,
+          payload: {
+            title: theme.title,
+            type: theme.family,
+            objective,
+            why: match.why,
+            recommendationThemeId: theme.id,
+            source: 'playbook',
+            impact: {
+              unit: match.impactUnit,
+              low: match.impactLow,
+              high: match.impactHigh,
+              basis: 'Sector playbook × signal',
+            },
+            timeToImpact: {
+              signalDays: 14,
+              runRateDays: match.impactUnit === 'Cash' ? 75 : 90,
+              label: timeLabel(match.impactUnit === 'Cash' ? 75 : 90),
+            },
+            dependencies: [],
+            peerEvidence: `Sector playbook (${playbook.label}) suggests this lever when ${theme.whenCondition}.`,
+            validationTests: ['Validate with local data', 'Confirm owner and timeline'],
+            guardrails: ['Monitor for unintended effects'],
+            owner: themeOwnerToRun(theme.suggestedOwner),
+            status: 'Discover',
+            nextAction: `Review and assign owner; validate ${theme.whenCondition}`,
+            score: {
+              value: Number(scoring.score.toFixed(2)),
+              impact: Number(scoring.impactScore.toFixed(2)),
+              confidence: match.confidence,
+              feasibility: match.feasibility,
+              timePenalty: scoring.timePenalty,
+              reason: 'Sector playbook recommendation from signal match.',
+            },
+          },
+        });
+        existingOpportunityMetrics.add(match.metric.toLowerCase());
+        addedFromPlaybook += 1;
       }
     }
 
