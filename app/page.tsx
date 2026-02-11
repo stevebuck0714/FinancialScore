@@ -528,7 +528,7 @@ function FinancialScorePage() {
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
-  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('company-list');
+  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'value-proposition' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});

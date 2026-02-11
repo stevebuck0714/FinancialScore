@@ -1370,6 +1370,10 @@ export async function POST(request: NextRequest) {
       const dioBenchmark = findBenchmark(benchmarks, /days\s*inventory/i);
       const dpoBenchmark = findBenchmark(benchmarks, /days\s*payables/i);
 
+      // Next 3–5 Actions: verb + object + data reference + owner + due date per task
+      type NextActionTask = { description: string; owner?: string; dueHorizon: string; dataReference?: string };
+      type MonitoringSpec = { primaryKpi: string; leadingIndicators: string[]; timeWindowDays: number; stopContinueRule: string };
+
       const makeOpportunity = (input: {
         title: string;
         family: string;
@@ -1389,6 +1393,8 @@ export async function POST(request: NextRequest) {
         confidence: number;
         feasibility: number;
         metric: string;
+        nextActions?: NextActionTask[];
+        monitoring?: MonitoringSpec;
       }) => {
         const scoring = scoreOpportunity({
           revenue,
@@ -1427,6 +1433,8 @@ export async function POST(request: NextRequest) {
             owner: input.owner,
             status: 'Discover',
             nextAction: input.nextAction,
+            nextActions: input.nextActions ?? [],
+            monitoring: input.monitoring ?? null,
             score: {
               value: Number(scoring.score.toFixed(2)),
               impact: Number(scoring.impactScore.toFixed(2)),
@@ -1466,6 +1474,18 @@ export async function POST(request: NextRequest) {
           confidence: 0.62,
           feasibility: 0.7,
           metric: 'Gross Margin',
+          nextActions: [
+            { description: 'Export segment margin by product/customer from P&L; flag segments below target margin', owner: 'Finance', dueHorizon: 'today', dataReference: 'P&L by segment' },
+            { description: 'Define price floor and max discount % by segment; publish to quote tool', owner: 'Sales', dueHorizon: '48 hours', dataReference: 'Pricing policy' },
+            { description: 'Pilot price floors on top 3 segments for 14 days; track win rate and discount variance', owner: 'Sales', dueHorizon: '7 days', dataReference: 'Win/loss + discount %' },
+            { description: 'Review gross margin % and scrap/expedite; if no improvement in 14 days escalate to pricing committee', owner: 'Finance', dueHorizon: '14 days', dataReference: 'Gross margin %' },
+          ],
+          monitoring: {
+            primaryKpi: 'Gross margin % (monthly)',
+            leadingIndicators: ['Discount % by segment (daily)', 'Scrap rate / expedite freight % (daily)', 'Win rate by segment (weekly)'],
+            timeWindowDays: 14,
+            stopContinueRule: 'If gross margin does not improve by 0.5 pts in 14 days or churn increases >0.5%, escalate to pricing committee; if scrap stays >3% for 3 consecutive days after containment, escalate to supplier action plan.',
+          },
         });
       }
 
@@ -1495,6 +1515,17 @@ export async function POST(request: NextRequest) {
           confidence: 0.68,
           feasibility: 0.8,
           metric: 'DSO',
+          nextActions: [
+            { description: 'Generate Top 25 past-due invoices by $ and days; assign owners; draft email script', owner: 'Finance', dueHorizon: 'today', dataReference: 'AR aging report' },
+            { description: 'Create dispute queue for invoices blocked by POD/price mismatch; resolve top 10', owner: 'Finance', dueHorizon: '48 hours', dataReference: 'Dispute log' },
+            { description: 'Implement credit hold threshold update; measure DSO change over 30 days', owner: 'Finance', dueHorizon: '7 days', dataReference: 'DSO + AR aging' },
+          ],
+          monitoring: {
+            primaryKpi: 'DSO (days sales outstanding, monthly)',
+            leadingIndicators: ['AR aging bucket mix (daily)', 'Over 60 days % (weekly)', 'Dispute count (weekly)'],
+            timeWindowDays: 14,
+            stopContinueRule: 'If DSO does not improve by 2+ days in 14 days, escalate to credit manager; if disputes spike >10%, pause and review process.',
+          },
         });
       }
 
@@ -1522,6 +1553,18 @@ export async function POST(request: NextRequest) {
           confidence: 0.6,
           feasibility: 0.65,
           metric: 'Revenue Growth',
+          nextActions: [
+            { description: 'Pull channel ROI (CAC, LTV, conversion) for last 90 days; rank by ROI', owner: 'Marketing', dueHorizon: 'today', dataReference: 'Channel attribution' },
+            { description: 'Set pilot budget and cap for top 2 channels; define success metric (e.g. CPA target)', owner: 'Marketing', dueHorizon: '48 hours', dataReference: 'Budget + targets' },
+            { description: 'Launch pilot; track spend and conversion weekly for 6 weeks', owner: 'Marketing', dueHorizon: '7 days', dataReference: 'Weekly channel report' },
+            { description: 'Review revenue and CAC at 30 days; continue or pause per guardrails', owner: 'Marketing', dueHorizon: '30 days', dataReference: 'Revenue + CAC' },
+          ],
+          monitoring: {
+            primaryKpi: 'Revenue (monthly)',
+            leadingIndicators: ['Channel spend vs plan (daily)', 'Conversion rate by channel (weekly)', 'CAC by channel (weekly)'],
+            timeWindowDays: 30,
+            stopContinueRule: 'If CAC increases >15% vs baseline, pause channel; if utilization >92%, trigger capacity review before adding spend.',
+          },
         });
       }
 
@@ -1549,6 +1592,18 @@ export async function POST(request: NextRequest) {
           confidence: 0.55,
           feasibility: 0.6,
           metric: 'Pipeline Growth',
+          nextActions: [
+            { description: 'List 5 partner/channel options with reach and fit; score and pick top 2', owner: 'Sales', dueHorizon: 'today', dataReference: 'Partner pipeline' },
+            { description: 'Draft pilot scope and success metric (e.g. pipeline added in 90 days)', owner: 'Sales', dueHorizon: '48 hours', dataReference: 'Pilot brief' },
+            { description: 'Launch partner pilot; track pipeline and conversion weekly', owner: 'Sales', dueHorizon: '7 days', dataReference: 'Pipeline + conversion' },
+            { description: 'Review pipeline conversion at 30 days; continue or re-evaluate per guardrails', owner: 'Sales', dueHorizon: '30 days', dataReference: 'Conversion %' },
+          ],
+          monitoring: {
+            primaryKpi: 'Revenue growth % (monthly)',
+            leadingIndicators: ['Pipeline added by channel (weekly)', 'Conversion % by channel (weekly)', 'Lead quality score (weekly)'],
+            timeWindowDays: 30,
+            stopContinueRule: 'If pipeline conversion stays <10% at 30 days, re-evaluate channel; escalate to sales leadership for channel mix review.',
+          },
         });
       }
 
@@ -1577,6 +1632,18 @@ export async function POST(request: NextRequest) {
           confidence: 0.5,
           feasibility: 0.55,
           metric: 'Inventory Days',
+          nextActions: [
+            { description: 'Export slow-moving and excess inventory by SKU ($ and days); assign owners by category', owner: 'Ops', dueHorizon: 'today', dataReference: 'Inventory aging report' },
+            { description: 'Review reorder points for top 10 SKUs; propose new targets with demand and lead time', owner: 'Ops', dueHorizon: '48 hours', dataReference: 'Reorder points + demand' },
+            { description: 'Implement reorder point changes; track stockout rate and inventory days for 14 days', owner: 'Ops', dueHorizon: '7 days', dataReference: 'Stockout % + inventory days' },
+            { description: 'Measure inventory days and cash released at 30 days; roll back if stockout >2%', owner: 'Ops', dueHorizon: '30 days', dataReference: 'Inventory days + stockout %' },
+          ],
+          monitoring: {
+            primaryKpi: 'Inventory days (monthly)',
+            leadingIndicators: ['Stockout rate by SKU (daily)', 'Inventory $ by category (weekly)', 'Reorder trigger hits (weekly)'],
+            timeWindowDays: 14,
+            stopContinueRule: 'If stockout rate exceeds 2%, roll back reorder changes; if inventory days do not improve in 14 days, escalate to procurement/supplier action plan.',
+          },
         });
       }
 
@@ -1673,6 +1740,17 @@ export async function POST(request: NextRequest) {
             owner: themeOwnerToRun(theme.suggestedOwner),
             status: 'Discover',
             nextAction: `Review and assign owner; validate ${theme.whenCondition}`,
+            nextActions: [
+              { description: `Validate signal and data for: ${theme.whenCondition}`, owner: themeOwnerToRun(theme.suggestedOwner), dueHorizon: 'today', dataReference: 'Relevant P&L / ops metric' },
+              { description: 'Define 3 concrete tasks (verb + object + owner + due date); assign owner', owner: themeOwnerToRun(theme.suggestedOwner), dueHorizon: '48 hours', dataReference: 'Action plan' },
+              { description: 'Execute first task; set primary KPI and 14-day check', owner: themeOwnerToRun(theme.suggestedOwner), dueHorizon: '7 days', dataReference: 'KPI + leading indicator' },
+            ],
+            monitoring: {
+              primaryKpi: `${match.metric} (primary outcome)`,
+              leadingIndicators: ['Relevant daily/weekly operational metric'],
+              timeWindowDays: 14,
+              stopContinueRule: 'If no improvement in 14 days, escalate or re-prioritize; monitor for unintended effects.',
+            },
             score: {
               value: Number(scoring.score.toFixed(2)),
               impact: Number(scoring.impactScore.toFixed(2)),
@@ -1700,6 +1778,8 @@ export async function POST(request: NextRequest) {
           expectedImpact: 'Establish baseline opportunities once signals strengthen.',
           prerequisites: ['Confirm growth trend stability', 'Verify margin vs peers', 'Assess liquidity headroom'],
           risks: 'Pursuing initiatives without signal confirmation could dilute focus.',
+          nextActions: [],
+          monitoring: null,
         },
       });
     }

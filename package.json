@@ -39,6 +39,7 @@
     "dotenv": "^17.2.3",
     "intuit-oauth": "^4.2.1",
     "lucide-react": "^0.294.0",
+    "mammoth": "^1.11.0",
     "next": "^14.0.4",
     "next-auth": "^5.0.0-beta.29",
     "openai": "^6.3.0",

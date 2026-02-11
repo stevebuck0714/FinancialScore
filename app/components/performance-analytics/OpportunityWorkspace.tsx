@@ -427,11 +427,43 @@ const evidenceLevel = (confidence?: number | null) => {
                   </ul>
                 </div>
               )}
+              {Array.isArray(selectedFinding.payload?.nextActions) && selectedFinding.payload.nextActions.length > 0 && (
+                <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#166534', marginBottom: '10px' }}>Next 3 Actions</div>
+                  <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#14532d' }}>
+                    {selectedFinding.payload.nextActions.map((task: { description: string; owner?: string; dueHorizon: string; dataReference?: string }, idx: number) => (
+                      <li key={idx} style={{ marginBottom: '10px' }}>
+                        <span style={{ fontWeight: 600 }}>{task.description}</span>
+                        <div style={{ fontSize: '11px', color: '#15803d', marginTop: '4px' }}>
+                          {task.owner && <span>Owner: {task.owner}</span>}
+                          {task.dueHorizon && <span>{task.owner ? ' • ' : ''}Due: {task.dueHorizon}</span>}
+                          {task.dataReference && <span> • Data: {task.dataReference}</span>}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+              {selectedFinding.payload?.monitoring && (
+                <div style={{ marginTop: '16px', padding: '12px', background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: '10px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e40af', marginBottom: '10px' }}>Monitoring — when is this done?</div>
+                  <div style={{ fontSize: '12px', color: '#1e3a8a' }}>
+                    <div><strong>Primary KPI:</strong> {selectedFinding.payload.monitoring.primaryKpi}</div>
+                    {Array.isArray(selectedFinding.payload.monitoring.leadingIndicators) && selectedFinding.payload.monitoring.leadingIndicators.length > 0 && (
+                      <div style={{ marginTop: '6px' }}><strong>Leading indicators:</strong> {selectedFinding.payload.monitoring.leadingIndicators.join(', ')}</div>
+                    )}
+                    <div style={{ marginTop: '6px' }}><strong>Time window:</strong> {selectedFinding.payload.monitoring.timeWindowDays} days</div>
+                    <div style={{ marginTop: '6px' }}><strong>Stop / continue rule:</strong> {selectedFinding.payload.monitoring.stopContinueRule}</div>
+                  </div>
+                </div>
+              )}
               {selectedFinding.payload?.owner && (
                 <div style={{ marginTop: '12px', fontSize: '12px', color: '#475569' }}>
                   <strong>Owner:</strong> {selectedFinding.payload.owner} • <strong>Status:</strong>{' '}
-                  {selectedFinding.payload.status || 'Discover'} • <strong>Next action:</strong>{' '}
-                  {selectedFinding.payload.nextAction || '—'}
+                  {selectedFinding.payload.status || 'Discover'}
+                  {(!selectedFinding.payload?.nextActions?.length && selectedFinding.payload?.nextAction) && (
+                    <> • <strong>Next action:</strong> {selectedFinding.payload.nextAction}</>
+                  )}
                 </div>
               )}
               {selectedFinding.payload?.title === 'No qualified opportunities detected' ? (
