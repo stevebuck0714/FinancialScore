@@ -3,6 +3,11 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getOpsMetricProfile } from '@/lib/performance-analytics/ops-metric-profiles';
+import {
+  getSectorPlaybook,
+  getFocusBucketForMetric,
+  isHighSeverityTrigger,
+} from '@/lib/performance-analytics/sector-playbooks';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 
 type FindingType = 'trend' | 'anomaly' | 'driver' | 'focus' | 'opportunity';
@@ -610,6 +615,7 @@ export async function POST(request: NextRequest) {
     const covenantRows = await loadCovenants(companyId);
 
     const opsProfile = getOpsMetricProfile(industrySectorCategory);
+    const playbook = getSectorPlaybook(industrySectorCategory);
 
     const findings: FindingInput[] = [];
 
@@ -1567,6 +1573,35 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Enrich findings with sector playbook (boardBucket, sector context, severity)
+    for (const finding of findings) {
+      if (playbook.sector !== 'DEFAULT') {
+        finding.payload = { ...finding.payload, sector: playbook.sector, sectorLabel: playbook.label };
+      }
+      if (finding.type === 'anomaly') {
+        if (playbook.anomalyContext.seasonalityNote || playbook.anomalyContext.typicalVarianceNote) {
+          finding.payload.sectorContext = {
+            seasonalityNote: playbook.anomalyContext.seasonalityNote ?? undefined,
+            typicalVarianceNote: playbook.anomalyContext.typicalVarianceNote ?? undefined,
+          };
+        }
+        if (finding.severity === 'medium' && isHighSeverityTrigger(playbook, finding.metric || '')) {
+          finding.severity = 'high';
+        }
+      }
+      if (finding.type === 'focus') {
+        finding.payload.boardBucket = getFocusBucketForMetric(
+          playbook,
+          finding.metric || 'Gross Margin',
+          (finding.severity as 'high' | 'medium' | 'low') || 'medium'
+        );
+      }
+      if (finding.type === 'opportunity' && playbook.sector !== 'DEFAULT') {
+        finding.payload.sector = playbook.sector;
+        finding.payload.sectorLabel = playbook.label;
+      }
+    }
+
     const now = new Date().toISOString();
     for (const finding of findings) {
       const id = `pf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -1606,6 +1641,7 @@ export async function POST(request: NextRequest) {
       success: true,
       inserted: findings.length,
       opsProfile,
+      playbook: { sector: playbook.sector, label: playbook.label },
       goals: {
         expense: expenseGoals[0]?.goals || {},
         operational: operationalGoals[0]?.goals || {},
