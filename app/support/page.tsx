@@ -3,13 +3,13 @@
 import { useState } from 'react';
 
 export default function SupportPage() {
-  const [activeTab, setActiveTab] = useState<'getting-started' | 'privacy' | 'license' | 'contact'>('getting-started');
+  const [activeTab, setActiveTab] = useState<'getting-started' | 'privacy' | 'license' | 'request-support'>('getting-started');
 
   const tabs = [
     { id: 'getting-started' as const, label: 'ℹ️ Getting Started', emoji: 'ℹ️' },
     { id: 'privacy' as const, label: '🔒 Privacy Policy', emoji: '🔒' },
     { id: 'license' as const, label: '📄 License Agreement', emoji: '📄' },
-    { id: 'contact' as const, label: '💬 Contact Support', emoji: '💬' },
+    { id: 'request-support' as const, label: '🎫 Request Support', emoji: '🎫' },
   ];
 
   return (
@@ -104,7 +104,7 @@ export default function SupportPage() {
           {activeTab === 'getting-started' && <GettingStartedContent />}
           {activeTab === 'privacy' && <PrivacyPolicyContent />}
           {activeTab === 'license' && <LicenseAgreementContent />}
-          {activeTab === 'contact' && <ContactSupportContent />}
+          {activeTab === 'request-support' && <RequestSupportContent />}
         </div>
       </div>
     </div>
@@ -575,83 +575,164 @@ function LicenseAgreementContent() {
   );
 }
 
-// Contact Support Content Component
-function ContactSupportContent() {
+// Request Support Content Component
+function RequestSupportContent() {
+  const [subject, setSubject] = useState('');
+  const [category, setCategory] = useState('');
+  const [priority, setPriority] = useState('');
+  const [description, setDescription] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [pageModule, setPageModule] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitMessage(null);
+    if (!subject.trim() || !category.trim() || !description.trim() || !contactName.trim() || !contactEmail.trim() || !companyName.trim()) {
+      setSubmitMessage({ type: 'error', text: 'Please fill in all required fields.' });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/support-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: subject.trim(),
+          category,
+          priority: priority || undefined,
+          description: description.trim(),
+          contactName: contactName.trim(),
+          contactEmail: contactEmail.trim(),
+          companyName: companyName.trim(),
+          pageModule: pageModule || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to submit ticket');
+      setSubmitMessage({ type: 'success', text: 'Support ticket submitted successfully. We will respond at ' + contactEmail + '.' });
+      setSubject('');
+      setCategory('');
+      setPriority('');
+      setDescription('');
+    } catch (err) {
+      setSubmitMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to submit support ticket.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '12px 14px',
+    fontSize: '15px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    background: 'white',
+  };
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' };
+
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-      <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '24px', textAlign: 'center' }}>
-        💬 Contact Support
+    <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+      <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
+        Request Support
       </h2>
-      
-      <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px', textAlign: 'center' }}>
-        Need help? We're here for you! Reach out to our support team.
+      <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
+        Submit a support ticket and we will respond at your contact email. Tickets are routed to support@corelytics.com.
       </p>
 
-      <div style={{ 
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
-        borderRadius: '12px', 
-        padding: '40px',
-        color: 'white',
-        textAlign: 'center',
-        marginBottom: '32px'
-      }}>
-        <h3 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '16px' }}>
-          📧 Email Support
-        </h3>
-        <p style={{ fontSize: '16px', marginBottom: '24px', opacity: 0.9 }}>
-          Send us an email and we'll get back to you as soon as possible
-        </p>
-        <a
-          href="mailto:support@corelytics.com"
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div>
+          <label style={labelStyle}>Subject *</label>
+          <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Brief summary of your issue" style={inputStyle} required />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          <div>
+            <label style={labelStyle}>Category *</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle} required>
+              <option value="">Select category</option>
+              <option value="Technical Issue">Technical Issue</option>
+              <option value="Account/Billing">Account/Billing</option>
+              <option value="Feature Request">Feature Request</option>
+              <option value="Data/Import">Data/Import</option>
+              <option value="Bug Report">Bug Report</option>
+              <option value="General Question">General Question</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Priority</label>
+            <select value={priority} onChange={(e) => setPriority(e.target.value)} style={inputStyle}>
+              <option value="">Select priority</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+              <option value="Urgent">Urgent</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>Description *</label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Provide detailed description of your issue or request" rows={6} style={{ ...inputStyle, resize: 'vertical' }} required />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          <div>
+            <label style={labelStyle}>Contact Name *</label>
+            <input type="text" value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Your name" style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Contact Email *</label>
+            <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="your@email.com" style={inputStyle} required />
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>Company Name *</label>
+          <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Your company name" style={inputStyle} required />
+        </div>
+        <div>
+          <label style={labelStyle}>Page/Module</label>
+          <select value={pageModule} onChange={(e) => setPageModule(e.target.value)} style={inputStyle}>
+            <option value="">Select where the issue occurs</option>
+            <option value="Dashboard">Dashboard</option>
+            <option value="Data Import">Data Import</option>
+            <option value="MD&A">MD&A</option>
+            <option value="Ratios">Ratios</option>
+            <option value="Operations">Operations</option>
+            <option value="Trends">Trends</option>
+            <option value="Goals">Goals</option>
+            <option value="Projections">Projections</option>
+            <option value="Cash Flow">Cash Flow</option>
+            <option value="Working Capital">Working Capital</option>
+            <option value="Loan Covenants">Loan Covenants</option>
+            <option value="Ask Corelytics">Ask Corelytics</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        {submitMessage && (
+          <div style={{ padding: '14px 18px', borderRadius: '8px', background: submitMessage.type === 'success' ? '#f0fdf4' : '#fef2f2', color: submitMessage.type === 'success' ? '#166534' : '#991b1b', fontSize: '14px' }}>
+            {submitMessage.text}
+          </div>
+        )}
+        <button
+          type="submit"
+          disabled={isSubmitting}
           style={{
-            display: 'inline-block',
-            padding: '14px 32px',
-            background: 'white',
-            color: '#667eea',
-            textDecoration: 'none',
-            borderRadius: '8px',
-            fontWeight: '600',
+            padding: '14px 28px',
             fontSize: '16px',
-            transition: 'all 0.2s'
+            fontWeight: '600',
+            color: 'white',
+            background: isSubmitting ? '#94a3b8' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+            alignSelf: 'flex-start',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
         >
-          support@corelytics.com
-        </a>
-      </div>
-
-      <div style={{ 
-        background: '#f0fdf4', 
-        borderLeft: '4px solid #22c55e', 
-        padding: '20px', 
-        borderRadius: '0 8px 8px 0'
-      }}>
-        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#166534', marginBottom: '12px' }}>
-          📚 Before You Contact Us
-        </h4>
-        <ul style={{ marginLeft: '20px', color: '#166534', fontSize: '14px', lineHeight: '1.8' }}>
-          <li>Check the Getting Started guide for common questions</li>
-          <li>Make sure you've reviewed the relevant documentation</li>
-          <li>Have your account information ready when contacting support</li>
-          <li>Include screenshots if you're reporting an issue</li>
-        </ul>
-      </div>
-
-      <div style={{ 
-        marginTop: '40px', 
-        padding: '24px',
-        background: '#fef3c7',
-        borderRadius: '12px',
-        border: '1px solid #fbbf24'
-      }}>
-        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#92400e', marginBottom: '12px' }}>
-          🚀 Feature Requests
-        </h4>
-        <p style={{ fontSize: '14px', color: '#92400e', lineHeight: '1.8' }}>
-          Have an idea for a new feature or improvement? We'd love to hear it! Send your suggestions to the support email above with "Feature Request" in the subject line.
-        </p>
-      </div>
+          {isSubmitting ? 'Submitting...' : 'Submit Ticket'}
+        </button>
+      </form>
     </div>
   );
 }

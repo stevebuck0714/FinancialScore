@@ -726,3 +726,70 @@ function getTrustedDeviceNotificationHTML({
   `.trim();
 }
 
+// Support ticket props
+interface SupportTicketProps {
+  subject: string;
+  category: string;
+  priority?: string;
+  description: string;
+  contactName: string;
+  contactEmail: string;
+  companyName: string;
+  pageModule?: string;
+}
+
+/**
+ * Send support ticket to support@corelytics.com
+ */
+export async function sendSupportTicket(ticket: SupportTicketProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.error('RESEND_API_KEY not configured - cannot send support ticket');
+    throw new Error('Email service is not configured. Please email support@corelytics.com directly.');
+  }
+
+  const subject = `[Support Ticket] ${ticket.subject}`;
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Support Ticket</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; color: #1e293b;">
+  <h2 style="color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 8px;">Support Ticket</h2>
+  <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+    <tr><td style="padding: 8px 0; font-weight: 600; width: 160px;">Subject:</td><td>${escapeHtml(ticket.subject)}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Category:</td><td>${escapeHtml(ticket.category)}</td></tr>
+    ${ticket.priority ? `<tr><td style="padding: 8px 0; font-weight: 600;">Priority:</td><td>${escapeHtml(ticket.priority)}</td></tr>` : ''}
+    <tr><td style="padding: 8px 0; font-weight: 600;">Contact Name:</td><td>${escapeHtml(ticket.contactName)}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Contact Email:</td><td>${escapeHtml(ticket.contactEmail)}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Company Name:</td><td>${escapeHtml(ticket.companyName)}</td></tr>
+    ${ticket.pageModule ? `<tr><td style="padding: 8px 0; font-weight: 600;">Page/Module:</td><td>${escapeHtml(ticket.pageModule)}</td></tr>` : ''}
+  </table>
+  <h3 style="margin-top: 24px; color: #475569;">Description</h3>
+  <div style="background: #f8fafc; padding: 16px; border-radius: 8px; white-space: pre-wrap; line-height: 1.6;">${escapeHtml(ticket.description)}</div>
+  <p style="margin-top: 24px; font-size: 12px; color: #94a3b8;">Submitted via Corelytics Support Center</p>
+</body>
+</html>
+  `.trim();
+
+  const { data, error } = await client.emails.send({
+    from: DEFAULT_FROM,
+    to: [NOTIFICATION_EMAIL],
+    replyTo: [ticket.contactEmail],
+    subject,
+    html,
+  });
+
+  if (error) {
+    console.error('Resend error:', error);
+    throw new Error(`Failed to send support ticket: ${error.message}`);
+  }
+
+  console.log('Support ticket sent to', NOTIFICATION_EMAIL, data);
+  return { success: true, data };
+}
+
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  return String(text).replace(/[&<>"']/g, (m) => map[m]);
+}
+

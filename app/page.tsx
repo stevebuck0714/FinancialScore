@@ -8795,7 +8795,7 @@ function FinancialScorePage() {
                   transition: 'all 0.3s ease'
                 }}
               >
-                {valuationSaveStatus === 'saving' ? '?? Saving...' : valuationSaveStatus === 'saved' ? '? Saved!' : valuationSaveStatus === 'error' ? '? Error' : 'Save Settings'}
+                {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save Settings'}
               </button>
               {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
