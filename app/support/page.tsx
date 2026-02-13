@@ -38,24 +38,44 @@ export default function SupportPage() {
           <h1 style={{ fontSize: '32px', fontWeight: '700', margin: 0 }}>
             Support Center
           </h1>
-          <a
-            href="/"
-            style={{
-              display: 'inline-block',
-              padding: '10px 20px',
-              background: 'rgba(255,255,255,0.2)',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '8px',
-              fontWeight: '600',
-              transition: 'all 0.2s',
-              border: '1px solid rgba(255,255,255,0.3)'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-          >
-            ← Back to Dashboard
-          </a>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <a
+              href="/?view=ma-welcome"
+              style={{
+                display: 'inline-block',
+                padding: '10px 20px',
+                background: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                textDecoration: 'none',
+                borderRadius: '8px',
+                fontWeight: '600',
+                transition: 'all 0.2s',
+                border: '1px solid rgba(255,255,255,0.3)'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.3)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; }}
+            >
+              Team Assessment
+            </a>
+            <a
+              href="/"
+              style={{
+                display: 'inline-block',
+                padding: '10px 20px',
+                background: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                textDecoration: 'none',
+                borderRadius: '8px',
+                fontWeight: '600',
+                transition: 'all 0.2s',
+                border: '1px solid rgba(255,255,255,0.3)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+            >
+              ← Back to Dashboard
+            </a>
+          </div>
         </div>
 
         {/* Tabs */}

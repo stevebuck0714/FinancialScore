@@ -277,7 +277,7 @@ function FinancialScorePage() {
   const [industrySectorCategory, setIndustrySectorCategory] = useState('DEFAULT');
   const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
-  const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false);
+  // const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false); // Financial Score section removed from sidebar
   
   // State - Default Pricing
   const [defaultBusinessMonthlyPrice, setDefaultBusinessMonthlyPrice] = useState(195);
@@ -349,7 +349,7 @@ function FinancialScorePage() {
     
     // Reset company management sub-tab when switching to company-management
     if (tab === 'company-management') {
-      setCompanyManagementSubTab('details');
+      setCompanyManagementSubTab('profile');
     }
     
     setAdminDashboardTab(tab);
@@ -527,8 +527,8 @@ function FinancialScorePage() {
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
-  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
-  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'value-proposition' | 'documentation'>('company-list');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'documentation'>('profile');
+  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
@@ -1591,9 +1591,12 @@ function FinancialScorePage() {
     const success = urlParams.get('success');
     const error = urlParams.get('error');
 
-    // Set view if specified
+    // Set view if specified (e.g. from Support page Team Assessment link)
     if (view === 'admin') {
       setCurrentView('admin');
+    }
+    if (view === 'ma-welcome') {
+      setCurrentView('ma-welcome');
     }
 
     // Set admin dashboard tab if specified
@@ -4831,9 +4834,10 @@ function FinancialScorePage() {
     if (printPackageSelections.mda) {
       printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)' });
     }
-    if (printPackageSelections.financialScore) {
-      printQueue.push({ view: 'fs-score', title: 'Financial Score' });
-    }
+    // Financial Score disabled - commented out
+    // if (printPackageSelections.financialScore) {
+    //   printQueue.push({ view: 'fs-score', title: 'Financial Score' });
+    // }
     if (printPackageSelections.priorityRatios) {
       printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios' });
     }
@@ -5079,371 +5083,56 @@ function FinancialScorePage() {
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {currentUser?.userType !== 'assessment' && null}
 
-            {/* Valuation Section */}
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => setCurrentView('valuation')}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: currentView === 'valuation' ? '#1F70C1' : '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  transition: 'color 0.2s',
-                  borderLeft: currentView === 'valuation' ? '4px solid #1F70C1' : '4px solid transparent'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#1F70C1'}
-                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'valuation' ? '#1F70C1' : '#1e293b'}
-              >
-                Valuation
+            {/* Analysis Section - 6 items always visible */}
+            <div style={{ marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '1px 24px', marginBottom: '8px' }}>
+                Analysis
               </h3>
-            </div>
-
-            {/* Financial Statements Section */}
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => setCurrentView('financial-statements')}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: currentView === 'financial-statements' ? '#1F70C1' : '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  transition: 'color 0.2s',
-                  borderLeft: currentView === 'financial-statements' ? '4px solid #1F70C1' : '4px solid transparent'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#1F70C1'}
-                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'financial-statements' ? '#1F70C1' : '#1e293b'}
-              >
-                Financial Statements
-              </h3>
-            </div>
-
-            {/* Financial Score Section */}
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => setIsFinancialScoreExpanded(!isFinancialScoreExpanded)}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  transition: 'color 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#1F70C1';
-                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                }}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
-              >
-                <span>Financial Score</span>
-                <span style={{ fontSize: '12px', color: '#1F70C1' }}>{isFinancialScoreExpanded ? '-' : '+'}</span>
-              </h3>
-              {isFinancialScoreExpanded && (
-                <div style={{ paddingLeft: '28px' }}>
+              <div style={{ paddingLeft: '28px' }}>
+                {[
+                  { id: 'pa-overview', label: 'Overview' },
+                  { id: 'pa-focus-board', label: 'Focus Board' },
+                  { id: 'pa-trend-explorer', label: 'Trend Explorer' },
+                  { id: 'pa-anomaly-inbox', label: 'Anomalies' },
+                  { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' },
+                  { id: 'ai-analysis', label: 'Ask Corelytics' }
+                ].map((item) => (
                   <div
-                    onClick={() => setCurrentView('fs-intro')}
+                    key={item.id}
+                    onClick={() => handleNavigation(item.id)}
                     style={{
-                      fontSize: '14px',
-                      color: currentView === 'fs-intro' ? '#1F70C1' : '#475569',
-                      padding: '4px 12px',
+                      fontSize: '16px',
+                      color: currentView === item.id ? '#1F70C1' : '#475569',
+                      padding: '6px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'fs-intro' ? '#e0f2fe' : 'transparent',
-                      fontWeight: currentView === 'fs-intro' ? '600' : '400',
+                      background: currentView === item.id ? '#e0f2fe' : 'transparent',
+                      fontWeight: currentView === item.id ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
-                      if (currentView !== 'fs-intro') {
+                      if (currentView !== item.id) {
                         e.currentTarget.style.background = '#f8fafc';
                         e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (currentView !== 'fs-intro') {
+                      if (currentView !== item.id) {
                         e.currentTarget.style.background = 'transparent';
                         e.currentTarget.style.color = '#475569';
                       }
                     }}
                   >
-                    {currentView === 'fs-intro' && '? '}Introduction
+                    {currentView === item.id && '› '}{item.label}
                   </div>
-                  <div
-                    onClick={() => setCurrentView('fs-score')}
-                    style={{
-                      fontSize: '14px',
-                      color: currentView === 'fs-score' ? '#1F70C1' : '#475569',
-                      padding: '8px 12px',
-                      cursor: 'pointer',
-                      borderRadius: '6px',
-                      marginBottom: '4px',
-                      background: currentView === 'fs-score' ? '#e0f2fe' : 'transparent',
-                      fontWeight: currentView === 'fs-score' ? '600' : '400',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (currentView !== 'fs-score') {
-                        e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#1F70C1';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentView !== 'fs-score') {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#475569';
-                      }
-                    }}
-                  >
-                    {currentView === 'fs-score' && '? '}Financial Score
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
 
-            {/* Team Assessment Section - For Assessment Users, Company Users, and Consultants */}
-            {((currentUser?.role === 'user' && (currentUser?.userType === 'assessment' || currentUser?.userType === 'company')) || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  transition: 'color 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#1F70C1';
-                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                }}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
-              >
-                <span>Team Assessment</span>
-                <span style={{ fontSize: '12px', color: '#1F70C1' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
-              </h3>
-              {isManagementAssessmentExpanded && (
-                <div style={{ paddingLeft: '28px' }}>
-                <div
-                  onClick={() => setCurrentView('ma-welcome')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-welcome' ? '#1F70C1' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-welcome' ? '#e0f2fe' : 'transparent',
-                    fontWeight: currentView === 'ma-welcome' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-welcome') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#1F70C1';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-welcome') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-welcome' && '? '}Welcome
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-questionnaire')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-questionnaire' ? '#1F70C1' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-questionnaire' ? '#e0f2fe' : 'transparent',
-                    fontWeight: currentView === 'ma-questionnaire' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-questionnaire') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#1F70C1';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-questionnaire') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-questionnaire' && '? '}Questionnaire
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-your-results')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-your-results' ? '#1F70C1' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-your-results' ? '#e0f2fe' : 'transparent',
-                    fontWeight: currentView === 'ma-your-results' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-your-results') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#1F70C1';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-your-results') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-your-results' && '? '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-scores-summary')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-scores-summary' ? '#1F70C1' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-scores-summary' ? '#e0f2fe' : 'transparent',
-                    fontWeight: currentView === 'ma-scores-summary' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-scores-summary') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#1F70C1';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-scores-summary') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-scores-summary' && '? '}Scores Summary
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-scoring-guide')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-scoring-guide' ? '#1F70C1' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-scoring-guide' ? '#e0f2fe' : 'transparent',
-                    fontWeight: currentView === 'ma-scoring-guide' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-scoring-guide') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#1F70C1';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-scoring-guide') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-scoring-guide' && '? '}Scoring Guide
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-charts')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-charts' ? '#1F70C1' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-charts' ? '#e0f2fe' : 'transparent',
-                    fontWeight: currentView === 'ma-charts' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-charts') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#1F70C1';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-charts') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-charts' && '? '}Charts
-                </div>
-              </div>
-              )}
-            </div>
-            )}
+            {/* Financial Score Section - removed from sidebar; functionality commented out below */}
 
-            {/* Custom Print Section - For Consultants and Company Users only */}
-            {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-              <div style={{ marginBottom: '1px' }}>
-                <h3 
-                  onClick={() => setCurrentView('custom-print')}
-                  style={{ 
-                    fontSize: '14px', 
-                    fontWeight: '700', 
-                    color: currentView === 'custom-print' ? '#1F70C1' : '#1e293b',
-                    textTransform: 'uppercase', 
-                    letterSpacing: '0.5px',
-                    padding: '1px 24px',
-                    marginBottom: '1px',
-                    cursor: 'pointer',
-                    transition: 'color 0.2s',
-                    borderLeft: currentView === 'custom-print' ? '4px solid #1F70C1' : '4px solid transparent'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#1F70C1';
-                    e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                  }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#1F70C1' : '#1e293b'}
-                >
-                  Custom Print
-                </h3>
-              </div>
-            )}
+            {/* Team Assessment - moved to Support page; link there goes to /?view=ma-welcome */}
 
             {/* Company Dashboard Section - For Business Users (Company Users) */}
             {currentUser?.role === 'user' && currentUser?.userType === 'company' && (
@@ -5480,29 +5169,58 @@ function FinancialScorePage() {
               </div>
             )}
 
-            {/* User/Consultant Name Display - Now acts as dashboard link */}
-            <div 
-              onClick={() => {
-                if (currentUser?.role === 'consultant') {
-                  setCurrentView('consultant-dashboard');
-                } else if (currentUser?.userType === 'company') {
-                  setCurrentView('admin');
-                }
-              }}
-              style={{ 
-                marginTop: 'auto', 
-                paddingTop: '16px', 
-                paddingBottom: '8px', 
-                borderTop: '1px solid #e2e8f0', 
-                paddingLeft: '24px', 
-                paddingRight: '24px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                borderRadius: '6px',
-                marginLeft: '0',
-                marginRight: '0',
-                marginBottom: '0'
-              }}
+            {/* Bottom section: Print Packages + User/Consultant - grouped at bottom of sidebar */}
+            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
+              {/* Print Packages Section - For Consultants and Company Users only */}
+              {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
+                <div style={{ marginBottom: '1px' }}>
+                  <h3 
+                    onClick={() => setCurrentView('custom-print')}
+                    style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '700', 
+                      color: currentView === 'custom-print' ? '#1F70C1' : '#1e293b',
+                      textTransform: 'uppercase', 
+                      letterSpacing: '0.5px',
+                      padding: '1px 24px',
+                      marginBottom: '1px',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                      borderLeft: currentView === 'custom-print' ? '4px solid #1F70C1' : '4px solid transparent'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#1F70C1';
+                      e.currentTarget.title = 'Print Packages';
+                    }}
+                    onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#1F70C1' : '#1e293b'}
+                  >
+                    Print Packages
+                  </h3>
+                </div>
+              )}
+
+              {/* User/Consultant Name Display - Now acts as dashboard link */}
+              <div 
+                onClick={() => {
+                  if (currentUser?.role === 'consultant') {
+                    setCurrentView('consultant-dashboard');
+                  } else if (currentUser?.userType === 'company') {
+                    setCurrentView('admin');
+                  }
+                }}
+                style={{ 
+                  paddingTop: '16px', 
+                  paddingBottom: '8px', 
+                  borderTop: '1px solid #e2e8f0', 
+                  paddingLeft: '24px', 
+                  paddingRight: '24px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  marginLeft: '0',
+                  marginRight: '0',
+                  marginBottom: '0'
+                }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = '#f0f9ff';
               }}
@@ -5523,45 +5241,6 @@ function FinancialScorePage() {
                 {currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
               </div>
             </div>
-
-            {/* User Info and Logout Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-              <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Logged in as
-                  </div>
-                  <button 
-                    onClick={handleLogout} 
-                    style={{ 
-                      padding: '6px 12px', 
-                      background: '#f8fafc', 
-                      color: '#334155', 
-                      border: '1px solid #cbd5e1', 
-                      borderRadius: '8px', 
-                      fontSize: '12px', 
-                      fontWeight: '600', 
-                      cursor: 'pointer',
-                      transition: 'background 0.2s, color 0.2s, border-color 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#e2e8f0';
-                      e.currentTarget.style.borderColor = '#94a3b8';
-                      e.currentTarget.style.color = '#1e293b';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.borderColor = '#cbd5e1';
-                      e.currentTarget.style.color = '#334155';
-                    }}
-                  >
-                    Log out
-                  </button>
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
-                  {currentUser?.name}
-                </div>
-              </div>
             </div>
 
             {/* Support Section */}
@@ -5728,46 +5407,6 @@ function FinancialScorePage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* User Info and Logout Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-              <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Logged in as
-                  </div>
-                  <button 
-                    onClick={handleLogout} 
-                    style={{ 
-                      padding: '6px 12px', 
-                      background: '#f8fafc', 
-                      color: '#334155', 
-                      border: '1px solid #cbd5e1', 
-                      borderRadius: '8px', 
-                      fontSize: '12px', 
-                      fontWeight: '600', 
-                      cursor: 'pointer',
-                      transition: 'background 0.2s, color 0.2s, border-color 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#e2e8f0';
-                      e.currentTarget.style.borderColor = '#94a3b8';
-                      e.currentTarget.style.color = '#1e293b';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.borderColor = '#cbd5e1';
-                      e.currentTarget.style.color = '#334155';
-                    }}
-                  >
-                    Log out
-                  </button>
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>
-                  {currentUser?.name}
-                </div>
-              </div>
             </div>
 
             {/* Support Section */}
@@ -8422,79 +8061,18 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Financial Score - Introduction View */}
-      {currentView === 'fs-intro' && (
+      {/* Financial Score - Introduction View - DISABLED (commented out) */}
+      {/* {currentView === 'fs-intro' && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '32px', textAlign: 'center' }}>Introduction to the Corelytics Financial Score</h1>
-            
-            <div style={{ fontSize: '16px', color: '#475569', lineHeight: '1.8', maxWidth: '900px', margin: '0 auto' }}>
-              <p style={{ marginBottom: '20px' }}>
-                We would like to introduce to you the emerging standard score for small and medium businesses. It is called the <strong>Corelytics Financial Score (CFS)</strong>. On a scale of 1 to 100, 100 indicates a company that is firing on all cylinders and building value at a steady clip; a score of zero indicates no operations. The scores in between have a lot to say about the general health of any company being measured.
-              </p>
-              
-              <p style={{ marginBottom: '32px' }}>
-                The score tells a lot about a company's financial stability and their potential value in the market regardless of specific industry.
-              </p>
-              
-              <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '32px', marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Approximate Interpretation of Corelytics Financial Scores:</h2>
-                
-                <div style={{ display: 'grid', gap: '20px' }}>
-                  <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 — 100: Strong Financial Performance</div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#064e3b', fontSize: '15px', lineHeight: '1.6' }}>
-                      <li>Good growth and good balance</li>
-                      <li>In a good position for considering an M&A transaction</li>
-                      <li>Excellent time to expand offerings and invest in R&D</li>
-                    </ul>
-                  </div>
-                  
-                  <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 — 80: Good Fundamentals</div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
-                      <li>In a good position for revenue growth</li>
-                      <li>Needs to focus on bringing costs down as volume grows</li>
-                    </ul>
-                  </div>
-                  
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 — 50: Basic Problems</div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f', fontSize: '15px', lineHeight: '1.6' }}>
-                      <li>Cost structure issues; not in a position to grow</li>
-                      <li>Improvements needed in operations and process controls</li>
-                      <li>Growth without operating improvements could do significant harm</li>
-                    </ul>
-                  </div>
-                  
-                  <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 — 30: Serious Performance Problems</div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '15px', lineHeight: '1.6' }}>
-                      <li>Problems exist which may not be correctable</li>
-                      <li>Some form of major restructuring or liquidation may be best</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              
-              <p style={{ marginBottom: '20px' }}>
-                These scores are both <strong>diagnostic</strong> and <strong>prescriptive</strong>. They are diagnostic in that they identify a fundamental level of performance and related potential problems; prescriptive in that they point to specific actions that should be taken to remedy identified problems or take advantage of opportunities.
-              </p>
-              
-              <div style={{ background: '#ede9fe', borderRadius: '12px', padding: '24px', marginTop: '32px' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#5b21b6', marginBottom: '16px' }}>The Overall Score is Based On:</h3>
-                <ul style={{ margin: 0, paddingLeft: '20px', color: '#6b21a8', fontSize: '15px', lineHeight: '1.8' }}>
-                  <li>Long-term and short-term trends in revenue growth and expense growth</li>
-                  <li>Trends in asset and liability growth</li>
-                </ul>
-              </div>
-            </div>
+            ...
           </div>
         </div>
-      )}
+      )} */}
 
-      {/* Financial Score Trends View */}
-      {currentView === 'fs-score' && selectedCompanyId && trendData.length > 0 && (
+      {/* Financial Score Trends View - DISABLED (commented out) */}
+      {/* {currentView === 'fs-score' && selectedCompanyId && trendData.length > 0 && (
         <FinancialScoreView
           monthly={monthly}
           trendData={trendData}
@@ -8510,7 +8088,7 @@ function FinancialScorePage() {
           alr1={alr1}
           alrGrowth={alrGrowth}
         />
-      )}
+      )} */}
 
       {/* Formula Popup Modal */}
       {showFormulaPopup && KPI_FORMULAS[showFormulaPopup] && (
@@ -8745,8 +8323,8 @@ function FinancialScorePage() {
 
       {/* Valuation View */}
       {currentView === 'valuation' && selectedCompanyId && monthly.length > 0 && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Business Valuation</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
@@ -8797,7 +8375,6 @@ function FinancialScorePage() {
               >
                 {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save Settings'}
               </button>
-              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
           </div>
           
@@ -8858,10 +8435,10 @@ function FinancialScorePage() {
             return (
               <>
                 {/* Overview Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>SDE Valuation</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>SDE Valuation</h3>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981', marginBottom: '4px' }}>
                       ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
@@ -8869,9 +8446,9 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>EBITDA Valuation</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
+                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>EBITDA Valuation</h3>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
                       ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
@@ -8879,9 +8456,9 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #f59e0b' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>DCF Valuation</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b', marginBottom: '8px' }}>
+                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #f59e0b' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>DCF Valuation</h3>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b', marginBottom: '4px' }}>
                       ${Math.round(dcfValue).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
@@ -8891,13 +8468,13 @@ function FinancialScorePage() {
                 </div>
                 
                 {/* SDE Method */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Seller's Discretionary Earnings (SDE) Method
                   </h2>
                   
-                  <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
-                    <div style={{ marginBottom: '16px' }}>
+                  <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ marginBottom: '8px' }}>
                       <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
                       <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${(ttmSDE / 1000).toFixed(0)}K</div>
                     </div>
@@ -8909,8 +8486,8 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                       SDE Multiple: {sdeMultiplier.toFixed(1)}x
                     </label>
                     <input 
@@ -8920,7 +8497,7 @@ function FinancialScorePage() {
                       step="0.1" 
                       value={sdeMultiplier} 
                       onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))} 
-                      style={{ width: '100%', marginBottom: '8px' }} 
+                      style={{ width: '100%', marginBottom: '4px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
                       <span>Typical Range: 1.5x - 4.0x</span>
@@ -8928,11 +8505,11 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
                       Estimated Business Value (SDE)
                     </div>
-                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#10b981' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
                       ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
@@ -8942,15 +8519,15 @@ function FinancialScorePage() {
                 </div>
                 
                 {/* EBITDA Method */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     EBITDA Multiple Method
                   </h2>
                   
-                  <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months EBITDA</div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>${(ttmEBITDA / 1000).toFixed(0)}K</div>
+                  <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months EBITDA</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>${(ttmEBITDA / 1000).toFixed(0)}K</div>
                     </div>
                     
                     <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
@@ -8962,8 +8539,8 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                       EBITDA Multiple: {ebitdaMultiplier.toFixed(1)}x
                     </label>
                     <input 
@@ -8973,7 +8550,7 @@ function FinancialScorePage() {
                       step="0.1" 
                       value={ebitdaMultiplier} 
                       onChange={(e) => setEbitdaMultiplier(parseFloat(e.target.value))} 
-                      style={{ width: '100%', marginBottom: '8px' }} 
+                      style={{ width: '100%', marginBottom: '4px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
                       <span>Typical Range: 3.0x - 8.0x</span>
@@ -8981,11 +8558,11 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
                       Estimated Business Value (EBITDA)
                     </div>
-                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#667eea' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>
                       ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
@@ -8995,13 +8572,13 @@ function FinancialScorePage() {
                 </div>
                 
                 {/* DCF Method */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Discounted Cash Flow (DCF) Method
                   </h2>
                   
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
+                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '10px' }}>
                       <div>
                         <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Rate</div>
                         <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{growth_24mo.toFixed(1)}%</div>
@@ -9025,10 +8602,10 @@ function FinancialScorePage() {
                   </div>
                   
                   {/* Free Cash Flow Calculation */}
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', marginBottom: '20px', border: '1px solid #fcd34d' }}>
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{ fontSize: '14px', color: '#92400e', marginBottom: '8px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>${(ttmFreeCashFlow / 1000).toFixed(0)}K</div>
+                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', marginBottom: '12px', border: '1px solid #fcd34d' }}>
+                    <div style={{ marginBottom: '10px' }}>
+                      <div style={{ fontSize: '13px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>${(ttmFreeCashFlow / 1000).toFixed(0)}K</div>
                     </div>
                     
                     <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
@@ -9068,8 +8645,8 @@ function FinancialScorePage() {
                   </div>
                   
                   {/* Adjustable Parameters */}
-                  <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                       Discount Rate (WACC): {dcfDiscountRate.toFixed(1)}%
                     </label>
                     <input 
@@ -9088,8 +8665,8 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                       Terminal Growth Rate: {dcfTerminalGrowth.toFixed(1)}%
                     </label>
                     <input 
@@ -9099,7 +8676,7 @@ function FinancialScorePage() {
                       step="0.5" 
                       value={dcfTerminalGrowth} 
                       onChange={(e) => setDcfTerminalGrowth(parseFloat(e.target.value))} 
-                      style={{ width: '100%', marginBottom: '8px' }} 
+                      style={{ width: '100%', marginBottom: '4px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
                       <span>Conservative: 0-2%</span>
@@ -9108,11 +8685,11 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
                       Estimated Business Value (DCF)
                     </div>
-                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#f59e0b' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
                       ${Math.round(dcfValue).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>

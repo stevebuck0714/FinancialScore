@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import ProfileTab from '../dashboard/ProfileTab';
 import CompanyDetailsTab from './CompanyDetailsTab';
+import DocumentationTab from '../consultant/DocumentationTab';
 import { useFinancialData } from '../../hooks/useFinancialData';
 
 interface CompanyManagementTabProps {
@@ -107,6 +108,23 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
         >
           Manage Users
         </button>
+        <button
+          onClick={() => props.setCompanyManagementSubTab('documentation')}
+          style={{
+            padding: '10px 20px',
+            background: props.companyManagementSubTab === 'documentation' ? '#667eea' : 'transparent',
+            color: props.companyManagementSubTab === 'documentation' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: props.companyManagementSubTab === 'documentation' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '6px 6px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Documentation
+        </button>
       </div>
       
       {/* Profile Sub-tab */}
@@ -144,6 +162,11 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
         </div>
       )}
       
+      {/* Documentation Sub-tab */}
+      {props.companyManagementSubTab === 'documentation' && (
+        <DocumentationTab />
+      )}
+
       {/* Manage Users Sub-tab */}
       {props.companyManagementSubTab === 'details' && (
         <CompanyDetailsTab

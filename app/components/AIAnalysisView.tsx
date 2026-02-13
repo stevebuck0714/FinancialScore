@@ -257,10 +257,7 @@ export default function AIAnalysisView(props: {
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '16px', marginBottom: '20px' }}>
         <div>
-          <h1 style={{ fontSize: '32px', fontWeight: '800', color: '#0f172a', margin: 0 }}>AI Analysis</h1>
-          <div style={{ marginTop: '6px', fontSize: '14px', color: '#64748b' }}>
-            {companyName ? `${companyName} • ` : ''}AI Search (with citations) + Period Review (daily ops + monthly COA)
-          </div>
+          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>AI Search and Period Review</h1>
         </div>
       </div>
 

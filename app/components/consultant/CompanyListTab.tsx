@@ -42,7 +42,7 @@ export default function CompanyListTab({
             setCurrentView('admin');
             setSelectedCompanyId('');
             setAdminDashboardTab('company-management');
-            setCompanyManagementSubTab('details');
+            setCompanyManagementSubTab('profile');
           }}
           style={{
             padding: '6px 12px',
@@ -95,7 +95,7 @@ export default function CompanyListTab({
                       setSelectedCompanyId(company.id);
                       setCurrentView('admin');
                       setAdminDashboardTab('company-management');
-                      setCompanyManagementSubTab('details');
+                      setCompanyManagementSubTab('profile');
                     }}
                   >
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0, lineHeight: '1.2' }}>

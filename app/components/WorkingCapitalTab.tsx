@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useMasterData } from '@/lib/master-data-store';
 import SimpleChart from './SimpleChart';
 
@@ -16,6 +16,7 @@ export default function WorkingCapitalTab({
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
   const monthly = monthlyData || [];
   const [showWCRatioFormula, setShowWCRatioFormula] = React.useState(false);
+  const [assetsLiabHover, setAssetsLiabHover] = useState<{ index: number; x: number; y: number; month: string; assets: number; liabilities: number } | null>(null);
 
   if (loading) {
     return (
@@ -408,11 +409,14 @@ export default function WorkingCapitalTab({
             const chartWidth = width - padding.left - padding.right;
             const chartHeight = height - padding.top - padding.bottom;
 
-            const xStep = chartWidth / (chartData.length - 1);
+            const xStep = chartData.length > 1 ? chartWidth / (chartData.length - 1) : chartWidth;
             
             const getY = (value: number) => {
               return padding.top + chartHeight - ((value - minValue) / range) * chartHeight;
             };
+
+            const assetPoints = chartData.map((d, i) => ({ x: padding.left + i * xStep, y: getY(d.assets), ...d }));
+            const liabilityPoints = chartData.map((d, i) => ({ x: padding.left + i * xStep, y: getY(d.liabilities), ...d }));
 
             // Create paths for both lines
             const assetsPath = chartData.map((d, i) => {
@@ -437,6 +441,7 @@ export default function WorkingCapitalTab({
             }
 
             return (
+              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
               <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
                 {/* Grid lines */}
                 {gridLines.map((line, i) => (
@@ -484,7 +489,33 @@ export default function WorkingCapitalTab({
                 {/* Lines */}
                 <path d={assetsPath} fill="none" stroke="#3b82f6" strokeWidth="2.5" />
                 <path d={liabilitiesPath} fill="none" stroke="#ef4444" strokeWidth="2.5" />
+                {/* Hover circles - Assets (blue) */}
+                {assetPoints.map((p, i) => (
+                  <g key={`asset-${i}`}>
+                    <circle cx={p.x} cy={p.y} r="8" fill="transparent" style={{ cursor: 'pointer' }} onMouseEnter={() => setAssetsLiabHover({ index: i, x: p.x, y: p.y, month: p.month, assets: p.assets, liabilities: p.liabilities })} onMouseLeave={() => setAssetsLiabHover(null)} />
+                    <circle cx={p.x} cy={p.y} r="4" fill="#3b82f6" stroke="white" strokeWidth="2" pointerEvents="none">
+                      <title>{`${p.month}: Assets $${p.assets.toFixed(0)}K`}</title>
+                    </circle>
+                  </g>
+                ))}
+                {/* Hover circles - Liabilities (red) */}
+                {liabilityPoints.map((p, i) => (
+                  <g key={`liab-${i}`}>
+                    <circle cx={p.x} cy={p.y} r="8" fill="transparent" style={{ cursor: 'pointer' }} onMouseEnter={() => setAssetsLiabHover({ index: i, x: p.x, y: p.y, month: p.month, assets: p.assets, liabilities: p.liabilities })} onMouseLeave={() => setAssetsLiabHover(null)} />
+                    <circle cx={p.x} cy={p.y} r="4" fill="#ef4444" stroke="white" strokeWidth="2" pointerEvents="none">
+                      <title>{`${p.month}: Liabilities $${p.liabilities.toFixed(0)}K`}</title>
+                    </circle>
+                  </g>
+                ))}
               </svg>
+              {assetsLiabHover && (
+                <div style={{ position: 'absolute', left: `${Math.min((assetsLiabHover.x + 15) / width * 100, 85)}%`, top: `${Math.max((assetsLiabHover.y - 50) / height * 100, 0)}%`, background: 'rgba(30, 41, 59, 0.95)', color: 'white', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', pointerEvents: 'none', zIndex: 10 }}>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>{assetsLiabHover.month}</div>
+                  <div style={{ color: '#60a5fa' }}>Assets: ${assetsLiabHover.assets.toFixed(0)}K</div>
+                  <div style={{ color: '#f87171' }}>Liabilities: ${assetsLiabHover.liabilities.toFixed(0)}K</div>
+                </div>
+              )}
+              </div>
             );
           })()}
         </div>

@@ -3,7 +3,6 @@
 import React from 'react';
 import TeamManagementTab from '../dashboard/TeamManagementTab';
 import CompanyListTab from './CompanyListTab';
-import ValuePropositionTab from './ValuePropositionTab';
 import DocumentationTab from './DocumentationTab';
 // import CovenantsTab from '../../covenants/components/CovenantsTab'; // Removed - covenants only in Company Management
 
@@ -107,23 +106,6 @@ export default function ConsultantDashboard({
           </button>
         )}
         <button
-          onClick={() => setConsultantDashboardTab('value-proposition')}
-          style={{
-            padding: '12px 24px',
-            background: consultantDashboardTab === 'value-proposition' ? '#667eea' : 'transparent',
-            color: consultantDashboardTab === 'value-proposition' ? 'white' : '#64748b',
-            border: 'none',
-            borderBottom: consultantDashboardTab === 'value-proposition' ? '3px solid #667eea' : '3px solid transparent',
-            fontSize: '16px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
-            transition: 'all 0.2s'
-          }}
-        >
-          Value Proposition
-        </button>
-        <button
           onClick={() => setConsultantDashboardTab('documentation')}
           style={{
             padding: '12px 24px',
@@ -167,11 +149,6 @@ export default function ConsultantDashboard({
           removeTeamMember={removeTeamMember}
           isLoading={isLoading}
         />
-      )}
-
-      {/* Value Proposition Tab */}
-      {consultantDashboardTab === 'value-proposition' && (
-        <ValuePropositionTab />
       )}
 
       {/* Documentation Tab */}

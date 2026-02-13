@@ -4,8 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 const DOCUMENTS: { file: string; title: string }[] = [
   { file: 'Privacy_Policy.docx', title: 'Privacy Policy' },
-  { file: 'Sample API Integration questionnaire.docx', title: 'Sample API Integration Questionnaire' },
-  { file: 'SECURITY_FOR_STAKEHOLDERS.docx', title: 'Security for Stakeholders' },
+  { file: 'SECURITY_FOR_STAKEHOLDERS.docx', title: 'Security and Data Protection' },
   { file: 'Getting Started Guide.docx', title: 'Getting Started Guide' },
   { file: 'USER_MANUAL.docx', title: 'User Manual' },
 ];
