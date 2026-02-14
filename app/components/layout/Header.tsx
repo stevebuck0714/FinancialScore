@@ -134,8 +134,44 @@ export default function Header({
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
           <nav style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'nowrap' }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-              <button onClick={() => handleNavigation('dashboard')} style={{ background: currentView === 'dashboard' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'dashboard' ? '3px solid #000' : '3px solid transparent', whiteSpace: 'nowrap' }}>DASHBOARD</button>
-              <button onClick={() => handleNavigation('operations')} style={{ background: currentView === 'operations' ? '#eef2ff' : 'none', border: 'none', fontSize: '16px', fontWeight: '600', color: '#000', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent', whiteSpace: 'nowrap' }}>OPERATIONS</button>
+              <button
+                onClick={() => handleNavigation('dashboard')}
+                style={{
+                  background: currentView === 'dashboard' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#000',
+                  cursor: 'pointer',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  borderBottom: currentView === 'dashboard' ? '3px solid #000' : '3px solid transparent',
+                  lineHeight: '1.1',
+                  textAlign: 'center'
+                }}
+              >
+                <span style={{ display: 'block' }}>FINANCIAL</span>
+                <span style={{ display: 'block' }}>DASHBOARD</span>
+              </button>
+              <button
+                onClick={() => handleNavigation('operations')}
+                style={{
+                  background: currentView === 'operations' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#000',
+                  cursor: 'pointer',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent',
+                  lineHeight: '1.1',
+                  textAlign: 'center'
+                }}
+              >
+                <span style={{ display: 'block' }}>OPERATION</span>
+                <span style={{ display: 'block' }}>DASHBOARD</span>
+              </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
             <button

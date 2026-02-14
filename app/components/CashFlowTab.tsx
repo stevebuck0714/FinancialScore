@@ -8,23 +8,27 @@ interface CashFlowTabProps {
   selectedCompanyId: string;
   companyName: string;
   initialDisplay?: 'monthly' | 'quarterly' | 'annual';
+  prefetchedMonthlyData?: MonthlyDataRow[];
 }
 
 export default function CashFlowTab({
   selectedCompanyId,
   companyName,
   initialDisplay = 'monthly',
+  prefetchedMonthlyData,
 }: CashFlowTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
-  const monthly = monthlyData || [];
+  const hasPrefetchedData = Array.isArray(prefetchedMonthlyData) && prefetchedMonthlyData.length > 0;
+  const monthly = hasPrefetchedData ? prefetchedMonthlyData : (monthlyData || []);
   
   const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>(initialDisplay);
+  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
 
   React.useEffect(() => {
     setCashFlowDisplay(initialDisplay);
   }, [initialDisplay]);
 
-  if (loading) {
+  if (!hasPrefetchedData && loading) {
     return (
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px', textAlign: 'center' }}>
         <div style={{ fontSize: '18px', color: '#64748b' }}>Loading cash flow data...</div>
@@ -270,7 +274,7 @@ export default function CashFlowTab({
       <style>{`
         @media print {
           @page {
-            size: portrait;
+            size: ${printOrientation};
             margin: 0.3in;
           }
           
@@ -341,6 +345,15 @@ export default function CashFlowTab({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <select
+            className="no-print"
+            value={printOrientation}
+            onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+            style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+          >
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
           {cashFlowDisplay !== 'monthly' && (
             <button 
               className="no-print"

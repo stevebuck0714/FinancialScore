@@ -125,6 +125,7 @@ export default function DashboardView({
   onSaveDashboardPrefs
 }: DashboardViewProps) {
   const [isSaving, setIsSaving] = useState(false);
+  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
   
   const handleSaveDashboard = async () => {
     if (!onSaveDashboardPrefs) return;
@@ -155,7 +156,7 @@ export default function DashboardView({
           <style>{`
             @media print {
               @page {
-                size: landscape;
+                size: ${printOrientation};
                 margin: 0.2in 0.4in 0.3in 0.4in;
               }
               
@@ -284,6 +285,15 @@ export default function DashboardView({
               >
                 {isSaving ? '💾 Saving...' : '💾 Save Dashboard'}
               </button>
+              <select
+                className="no-print"
+                value={printOrientation}
+                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+                style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+              >
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
               <button
                 className="no-print"
                 onClick={() => window.print()}

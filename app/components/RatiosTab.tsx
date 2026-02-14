@@ -15,6 +15,7 @@ interface RatiosTabProps {
   benchmarks: any[];
   onFormulaClick: (formula: string) => void;
   initialTab?: 'all-ratios' | 'priority-ratios' | 'monthly-ratios';
+  prefetchedMonthlyData?: MonthlyDataRow[];
 }
 
 export default function RatiosTab({
@@ -23,9 +24,12 @@ export default function RatiosTab({
   benchmarks,
   onFormulaClick,
   initialTab = 'all-ratios',
+  prefetchedMonthlyData,
 }: RatiosTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
-  const monthly = monthlyData || [];
+  const hasPrefetchedData = Array.isArray(prefetchedMonthlyData) && prefetchedMonthlyData.length > 0;
+  const monthly = hasPrefetchedData ? prefetchedMonthlyData : (monthlyData || []);
+  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
   // Debug: Log benchmarks when component receives them
   React.useEffect(() => {
@@ -268,7 +272,7 @@ export default function RatiosTab({
     return (v: number) => v.toFixed(1);
   };
 
-  if (loading) {
+  if (!hasPrefetchedData && loading) {
     return (
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px', textAlign: 'center' }}>
         <div style={{ fontSize: '18px', color: '#64748b' }}>Loading ratio data...</div>
@@ -289,7 +293,7 @@ export default function RatiosTab({
       <style>{`
         @media print {
           @page {
-            size: letter;
+            size: ${printOrientation};
             margin: 0.375in 0.375in 0.75in 0.375in;
           }
           
@@ -521,6 +525,14 @@ export default function RatiosTab({
           {priorityRatios.length > 0 && (
             <div>
               <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '20px' }}>
+                <select
+                  value={printOrientation}
+                  onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+                  style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer', marginRight: '12px' }}
+                >
+                  <option value="portrait">Portrait</option>
+                  <option value="landscape">Landscape</option>
+                </select>
                 <button
                   onClick={() => window.print()}
                   style={{

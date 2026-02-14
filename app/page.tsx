@@ -901,6 +901,8 @@ function FinancialScorePage() {
     balanceSheet3YearsAnnual: false,
     profile: false
   });
+  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [isPrintingPackage, setIsPrintingPackage] = useState(false);
 
   const handleExportMdaToWord = async (executiveSummaryText: string, mdaAnalysis: { strengths: string[]; weaknesses: string[]; insights: string[] }) => {
     try {
@@ -4895,10 +4897,13 @@ function FinancialScorePage() {
       return;
     }
 
+    setIsPrintingPackage(true);
+
     // Print each report in sequence with a delay
     let currentIndex = 0;
     const printNext = () => {
       if (currentIndex >= printQueue.length) {
+        setIsPrintingPackage(false);
         alert('All reports have been sent to print!');
         return;
       }
@@ -5002,26 +5007,68 @@ function FinancialScorePage() {
   }
 
   return (
-    <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="app-shell" style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Toaster />
       <InactivityLogout 
         isLoggedIn={isLoggedIn}
         userEmail={currentUser?.email}
         onLogout={handleLogout}
       />
-      <Header
-        currentUser={currentUser}
-        currentView={currentView}
-        setCurrentView={setCurrentView as any}
-        handleLogout={handleLogout}
-        handleNavigation={handleNavigation}
-      />
+      <style>{`
+        @media print {
+          @page {
+            size: ${isPrintingPackage ? printOrientation : 'auto'};
+          }
+
+          html,
+          body,
+          .app-shell {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+
+          .app-shell .app-global-header,
+          .app-shell .app-left-sidebar,
+          .app-shell header,
+          .app-shell aside,
+          .app-shell footer,
+          .app-shell [role="navigation"] {
+            display: none !important;
+          }
+
+          .app-shell-content {
+            margin-top: 0 !important;
+            height: auto !important;
+            display: block !important;
+            overflow: visible !important;
+          }
+
+          .app-shell-main {
+            padding-top: 0 !important;
+            overflow: visible !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+          }
+        }
+      `}</style>
+      <div className="app-global-header">
+        <Header
+          currentUser={currentUser}
+          currentView={currentView}
+          setCurrentView={setCurrentView as any}
+          handleLogout={handleLogout}
+          handleNavigation={handleNavigation}
+        />
+      </div>
 
       {/* Main Content Area with Sidebar */}
-      <div style={{ display: 'flex', overflow: 'hidden', marginTop: '70px', height: 'calc(100vh - 70px)' }}>
+      <div className="app-shell-content" style={{ display: 'flex', overflow: 'hidden', marginTop: '70px', height: 'calc(100vh - 70px)' }}>
         {/* Left Navigation Sidebar - Not for Site Admin */}
         {currentUser?.role !== 'siteadmin' && !(currentUser?.userType === 'assessment') && (
-        <aside style={{ 
+        <aside className="app-left-sidebar" style={{ 
           width: '280px', 
           background: 'white', 
           borderRight: '2px solid #e2e8f0', 
@@ -5274,7 +5321,7 @@ function FinancialScorePage() {
 
         {/* Assessment User Sidebar - Only Team Assessment */}
         {currentUser?.userType === 'assessment' && (
-        <aside style={{ 
+        <aside className="app-left-sidebar" style={{ 
           width: '280px', 
           background: 'white', 
           borderRight: '2px solid #e2e8f0', 
@@ -5439,7 +5486,7 @@ function FinancialScorePage() {
         )}
 
         {/* Main Content Area */}
-        <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: '8px' }}>
+        <main className="app-shell-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: '8px' }}>
           {/* Restrict access for assessment users - only show Team Assessment views */}
           {(!(currentUser?.userType === 'assessment') || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
@@ -8228,6 +8275,7 @@ function FinancialScorePage() {
           benchmarks={benchmarks}
           onFormulaClick={(formula) => setShowFormulaPopup(formula)}
           initialTab={kpiDashboardTab}
+          prefetchedMonthlyData={monthly as any}
         />
       )}
 
@@ -8320,6 +8368,7 @@ function FinancialScorePage() {
         <WorkingCapitalTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
+          prefetchedMonthlyData={monthly as any}
         />
       )}
 
@@ -8731,6 +8780,7 @@ function FinancialScorePage() {
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
           initialDisplay={cashFlowDisplay}
+          prefetchedMonthlyData={monthly as any}
         />
       )}
 
@@ -9013,7 +9063,6 @@ function FinancialScorePage() {
           <style>{`
             @media print {
               @page {
-                size: portrait;
                 margin: 0.2in 0.3in;
               }
               
@@ -9239,7 +9288,24 @@ function FinancialScorePage() {
               </div>
               
               {/* Print Button */}
-              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+                <select
+                  className="no-print"
+                  value={printOrientation}
+                  onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+                  style={{
+                    padding: '10px 12px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    color: '#1e293b',
+                    background: 'white',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="portrait">Portrait</option>
+                  <option value="landscape">Landscape</option>
+                </select>
                 <button
                   onClick={() => window.print()}
                   style={{
@@ -12116,6 +12182,20 @@ function FinancialScorePage() {
             <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
               Select the reports you want to include in your custom print package
             </p>
+
+            <div style={{ marginBottom: '24px', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                Print Orientation
+              </label>
+              <select
+                value={printOrientation}
+                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+                style={{ width: '220px', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', background: 'white', cursor: 'pointer' }}
+              >
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
+            </div>
             
             <div style={{ marginBottom: '32px' }}>
               {/* MD&A Report */}

@@ -1,32 +1,25 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useMasterData } from '@/lib/master-data-store';
 import SimpleChart from './SimpleChart';
 
 interface WorkingCapitalTabProps {
   selectedCompanyId: string;
   companyName: string;
+  prefetchedMonthlyData?: any[];
 }
 
 export default function WorkingCapitalTab({
   selectedCompanyId,
   companyName,
+  prefetchedMonthlyData,
 }: WorkingCapitalTabProps) {
-  const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
-  const monthly = monthlyData || [];
+  const monthly = Array.isArray(prefetchedMonthlyData) ? prefetchedMonthlyData : [];
   const [showWCRatioFormula, setShowWCRatioFormula] = React.useState(false);
   const [assetsLiabHover, setAssetsLiabHover] = useState<{ index: number; x: number; y: number; month: string; assets: number; liabilities: number } | null>(null);
+  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
 
-  if (loading) {
-    return (
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px', textAlign: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#64748b' }}>Loading working capital data...</div>
-      </div>
-    );
-  }
-
-  if (error || !monthly || monthly.length === 0) {
+  if (!monthly || monthly.length === 0) {
     return (
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px', textAlign: 'center' }}>
         <div style={{ fontSize: '18px', color: '#ef4444' }}>No financial data available for working capital analysis</div>
@@ -39,12 +32,16 @@ export default function WorkingCapitalTab({
       <style>{`
         @media print {
           @page {
-            size: portrait;
+            size: ${printOrientation};
             margin: 0.3in;
           }
 
           /* Hide navigation and UI elements */
           .no-print,
+          header,
+          nav,
+          aside,
+          [role="navigation"],
           .dashboard-header-print-hide {
             display: none !important;
           }
@@ -56,6 +53,15 @@ export default function WorkingCapitalTab({
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>Working Capital Analysis</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <select
+            className="no-print"
+            value={printOrientation}
+            onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+            style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+          >
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
           <button
             onClick={() => window.print()}
             style={{

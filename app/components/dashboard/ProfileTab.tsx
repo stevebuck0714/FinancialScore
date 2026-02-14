@@ -53,6 +53,7 @@ export default function ProfileTab({
   const [companyAddressState, setCompanyAddressState] = React.useState('');
   const [companyAddressZip, setCompanyAddressZip] = React.useState('');
   const [companyAddressCountry, setCompanyAddressCountry] = React.useState('USA');
+  const [printOrientation, setPrintOrientation] = React.useState<'portrait' | 'landscape'>('portrait');
 
   // Load LOB data when component mounts or company changes
   React.useEffect(() => {
@@ -179,6 +180,7 @@ export default function ProfileTab({
       <style>{`
         @media print {
           @page {
+            size: ${printOrientation};
             margin: 0.75in 0.75in 0.75in 0.75in;
           }
           
@@ -263,24 +265,33 @@ export default function ProfileTab({
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
               Company Profile
             </h2>
-            <button
-              className="no-print"
-              onClick={() => window.print()}
-              style={{ 
-                padding: '8px 16px', 
-                background: '#667eea', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: '6px', 
-                fontSize: '13px', 
-                fontWeight: '600', 
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              🖨️ Print
-            </button>
+            <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <select
+                value={printOrientation}
+                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+              >
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
+              <button
+                onClick={() => window.print()}
+                style={{ 
+                  padding: '8px 16px', 
+                  background: '#667eea', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '6px', 
+                  fontSize: '13px', 
+                  fontWeight: '600', 
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                🖨️ Print
+              </button>
+            </div>
           </div>
         
         {/* Company Header Info */}
