@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
 import { getSectorArApFallbacks, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
+import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 
 interface OperationsTabProps {
   selectedCompanyId: string;
@@ -26,7 +27,7 @@ interface OperationsTabProps {
   industrySectorCategory?: string | null;
 }
 
-type OpTab = 'dashboard' | 'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory' | 'cash';
+type OpTab = 'dashboard' | 'overview' | string;
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -208,44 +209,29 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     return new Date().toISOString().split('T')[0];
   });
 
-  const normalizeModuleToTab = (moduleId: string): OpTab | null => {
-    const m = String(moduleId || '').trim().toLowerCase();
-    if (!m) return null;
-
-    if (m === 'customers' || m === 'customers_accounts' || m === 'customers_members' || m === 'clients_customers' || m === 'tenants_customers' || m === 'guests_customers' || m === 'customers_sites' || m === 'payors_customers') return 'customers';
-    if (m === 'ar' || m === 'billing_ar' || m === 'ar_receipts' || m === 'receivables') return 'ar';
-    if (m === 'ap' || m === 'payables') return 'ap';
-    if (m === 'products' || m === 'products_skus' || m === 'products_assortment' || m === 'offerings' || m === 'service_catalog') return 'products';
-    if (m === 'inventory') return 'inventory';
-    if (m === 'cash' || m === 'cash_liquidity') return 'cash';
-
-    // Route additional sector buckets to the closest existing widget.
-    if (m === 'sales' || m === 'orders_sales' || m === 'sales_transactions' || m === 'sales_pipeline' || m === 'backlog_sales' || m === 'leasing_sales' || m === 'ticketing_sales') return 'customers';
-    if (m === 'production' || m === 'demand_usage' || m === 'projects_wip' || m === 'work_orders_service_delivery' || m === 'patients_encounters' || m === 'events_programming' || m === 'jobs_work_orders') return 'products';
-
-    return null;
-  };
-
-  const orderedContentTabs: OpTab[] = ['customers', 'ar', 'ap', 'products', 'inventory', 'cash'];
-  const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules) ? opsSectorLayoutConfig.modules : [];
-  const layoutTabs = Array.from(
-    new Set(layoutModules.map(normalizeModuleToTab).filter((tab): tab is OpTab => Boolean(tab)))
-  ).filter((tab) => orderedContentTabs.includes(tab));
-
-  const sectorTabs = Array.from(
-    new Set(
-      getTopLineBucketsForSector(industrySectorCategory)
-        .map((bucket) => normalizeModuleToTab(bucket.key))
-        .filter((tab): tab is OpTab => Boolean(tab))
-    )
-  ).filter((tab) => orderedContentTabs.includes(tab));
-
-  const resolvedContentTabs =
-    layoutTabs.length > 0 ? orderedContentTabs.filter((tab) => layoutTabs.includes(tab)) :
-    sectorTabs.length > 0 ? orderedContentTabs.filter((tab) => sectorTabs.includes(tab)) :
-    orderedContentTabs;
-
-  const availableTabs: OpTab[] = ['dashboard', 'overview', ...resolvedContentTabs];
+  const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash'];
+  const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules)
+    ? opsSectorLayoutConfig.modules
+        .map((module: unknown) => String(module || '').trim())
+        .filter((module: string) => module && module.toLowerCase() !== 'ops-default')
+    : [];
+  const sectorModules = getTopLineBucketsForSector(industrySectorCategory).map((bucket) => bucket.key);
+  const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
+  const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
+  const availableModuleTabs = Array.from(
+    new Set(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash'])
+  );
+  const availableTabs: OpTab[] = ['dashboard', 'overview', ...availableModuleTabs];
+  const moduleTitlesByType = Object.fromEntries(
+    orderedDashboardDataTypes
+      .map((type) => {
+        const modulesForType = availableModuleTabs.filter((module) => mapModuleToDataType(module) === type);
+        if (!modulesForType.length) return [type, null];
+        const labels = modulesForType.map((module) => getModuleLabel(module));
+        return [type, labels.length === 1 ? labels[0] : `${labels[0]} (+${labels.length - 1})`];
+      })
+      .filter(([, label]) => Boolean(label))
+  ) as Partial<Record<OpsDataType, string>>;
 
   useEffect(() => {
     if (!availableTabs.includes(activeTab)) {
@@ -324,17 +310,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     setLoading(true);
     setError(null);
     try {
-      // Map tab names to API type parameter
-      const typeMap: Record<string, string> = {
-        'customers': 'customers',
-        'ar': 'ar-aging',
-        'ap': 'ap-aging',
-        'products': 'products',
-        'inventory': 'inventory',
-        'cash': 'cash'
-      };
-      
-      const type = typeMap[tab];
+      const type = mapModuleToDataType(tab) || null;
       if (!type) {
         setLoading(false);
         return;
@@ -352,14 +328,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       if (!response.ok) throw new Error(`Failed to load ${type} data`);
       const data = await response.json();
       
-      switch (tab) {
+      switch (type) {
         case 'customers':
           setCustomerData(data);
           break;
-        case 'ar':
+        case 'ar-aging':
           setArData(data);
           break;
-        case 'ap':
+        case 'ap-aging':
           setApData(data);
           break;
         case 'products':
@@ -2850,6 +2826,21 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     );
   };
 
+  const renderModuleTabContent = (moduleKey: string) => {
+    const dataType = mapModuleToDataType(moduleKey);
+    if (dataType === 'customers') return renderCustomers();
+    if (dataType === 'ar-aging') return renderARaging();
+    if (dataType === 'ap-aging') return renderAPaging();
+    if (dataType === 'products') return renderProducts();
+    if (dataType === 'inventory') return renderInventory();
+    if (dataType === 'cash') return renderCash();
+    return (
+      <div style={{ padding: '32px', color: '#64748b' }}>
+        No renderer is configured for module <strong>{moduleKey}</strong>.
+      </div>
+    );
+  };
+
   return (
     <div style={{ 
       maxWidth: '1600px', 
@@ -2881,11 +2872,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
               color: activeTab === tab ? '#667eea' : '#64748b',
               cursor: 'pointer',
               borderBottom: activeTab === tab ? '3px solid #667eea' : '3px solid transparent',
-              transition: 'all 0.2s',
-              textTransform: 'capitalize'
+              transition: 'all 0.2s'
             }}
           >
-            {tab === 'dashboard' ? 'Ops Dashboard' : tab === 'ar' ? 'AR Aging' : tab === 'ap' ? 'AP Aging' : tab}
+            {tab === 'dashboard'
+              ? 'Ops Dashboard'
+              : tab === 'overview'
+                ? 'Overview'
+                : getModuleLabel(tab)}
           </button>
         ))}
       </div>
@@ -2893,21 +2887,45 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       {/* Filters */}
       {renderFilters()}
 
+      {/* Debug panel for sector-driven layout resolution */}
+      <div
+        style={{
+          margin: '12px 24px 8px 24px',
+          padding: '10px 12px',
+          borderRadius: '8px',
+          border: '1px solid #cbd5e1',
+          background: '#f8fafc',
+          fontSize: '12px',
+          color: '#334155',
+          display: 'grid',
+          gap: '6px',
+        }}
+      >
+        <div style={{ fontWeight: 700, color: '#0f172a' }}>Operations Layout Debug</div>
+        <div>
+          <strong>Sector:</strong> {industrySectorCategory || 'not set'} {' | '}
+          <strong>Source:</strong> {moduleSource === 'layout-config' ? 'saved layout config' : 'sector default buckets'}
+        </div>
+        <div>
+          <strong>Modules:</strong> {resolvedModules.length ? resolvedModules.join(', ') : '(none)'}
+        </div>
+        <div>
+          <strong>Resolved module tabs:</strong> {availableModuleTabs.length ? availableModuleTabs.join(', ') : '(none)'}
+        </div>
+      </div>
+
       {/* Content */}
       {activeTab === 'dashboard' && (
         <OpsDashboard
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
           industrySectorCategory={industrySectorCategory}
+          activeModules={resolvedModules}
+          moduleTitlesByType={moduleTitlesByType}
         />
       )}
       {activeTab === 'overview' && renderOverview()}
-      {activeTab === 'customers' && renderCustomers()}
-      {activeTab === 'ar' && renderARaging()}
-      {activeTab === 'ap' && renderAPaging()}
-      {activeTab === 'products' && renderProducts()}
-      {activeTab === 'inventory' && renderInventory()}
-      {activeTab === 'cash' && renderCash()}
+      {activeTab !== 'dashboard' && activeTab !== 'overview' && renderModuleTabContent(activeTab)}
     </div>
   );
 }

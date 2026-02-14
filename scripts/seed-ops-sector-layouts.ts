@@ -1,11 +1,6 @@
 import prisma from '../lib/prisma';
 import { INDUSTRY_SECTORS } from '../lib/constants/company-options';
-
-const DEFAULT_LAYOUT_CONFIG = {
-  version: 1,
-  layoutId: 'default',
-  modules: ['ops-default'],
-};
+import { getDefaultSectorLayoutConfig } from '../lib/operations/sector-layout-defaults';
 
 async function main() {
   const sectors = INDUSTRY_SECTORS.map((sector) => sector.value).filter(
@@ -17,7 +12,7 @@ async function main() {
       prisma.opsSectorLayoutConfig.upsert({
         where: { sectorCategory },
         update: {},
-        create: { sectorCategory, config: DEFAULT_LAYOUT_CONFIG },
+        create: { sectorCategory, config: getDefaultSectorLayoutConfig(sectorCategory) },
       })
     )
   );

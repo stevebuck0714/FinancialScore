@@ -2,14 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, requireSiteAdmin } from '@/lib/tenant-security';
 import { INDUSTRY_SECTORS } from '@/lib/constants/company-options';
+import { getDefaultSectorLayoutConfig, isLegacyOpsDefaultConfig } from '@/lib/operations/sector-layout-defaults';
 
 export const dynamic = 'force-dynamic';
-
-const DEFAULT_LAYOUT_CONFIG = {
-  version: 1,
-  layoutId: 'default',
-  modules: ['ops-default'],
-};
 
 function getSectorList() {
   return INDUSTRY_SECTORS
@@ -26,6 +21,25 @@ export async function GET(request: NextRequest) {
       where: { sectorCategory },
       select: { sectorCategory: true, config: true, updatedAt: true },
     });
+    if (!config) {
+      return NextResponse.json({
+        config: {
+          sectorCategory,
+          config: getDefaultSectorLayoutConfig(sectorCategory),
+          updatedAt: null,
+        },
+      });
+    }
+
+    if (isLegacyOpsDefaultConfig(config.config)) {
+      return NextResponse.json({
+        config: {
+          ...config,
+          config: getDefaultSectorLayoutConfig(sectorCategory),
+        },
+      });
+    }
+
     return NextResponse.json({ config });
   }
 
@@ -52,7 +66,7 @@ export async function POST(request: NextRequest) {
           update: {},
           create: {
             sectorCategory,
-            config: DEFAULT_LAYOUT_CONFIG,
+            config: getDefaultSectorLayoutConfig(sectorCategory),
           },
           select: { sectorCategory: true, updatedAt: true },
         })

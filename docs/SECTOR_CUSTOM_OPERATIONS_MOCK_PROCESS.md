@@ -80,9 +80,10 @@ Mock data is generated from deterministic sector profiles (names, account labels
 ## How to Update Sector Defaults
 
 1. Update top-line bucket map in `lib/operations/sector-mock-data.ts`.
-2. Update sector layout config via `/api/ops-sector-layouts` (Site Admin).
-3. If needed, reseed defaults with `scripts/seed-ops-sector-layouts.ts`.
-4. Verify by loading Operations for a company in that sector with no snapshot rows.
+2. Sector layout defaults are derived from those bucket keys via `lib/operations/sector-layout-defaults.ts`.
+3. Update sector layout config via `/api/ops-sector-layouts` (Site Admin).
+4. If needed, reseed defaults with `scripts/seed-ops-sector-layouts.ts`.
+5. Verify by loading Operations for a company in that sector with no snapshot rows.
 
 ## Cutover to Real Data
 

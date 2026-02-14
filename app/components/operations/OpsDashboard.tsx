@@ -14,11 +14,14 @@ import {
   ResponsiveContainer,
   ReferenceLine
 } from 'recharts';
+import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 
 interface OpsDashboardProps {
   selectedCompanyId: string;
   companyName: string;
   industrySectorCategory?: string | null;
+  activeModules?: string[];
+  moduleTitlesByType?: Partial<Record<OpsDataType, string>>;
 }
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -26,7 +29,7 @@ const AGING_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CUSTOMER_CHART_COLOR = COLORS[2];
 const CASH_CHART_COLOR = COLORS[4];
 
-export default function OpsDashboard({ selectedCompanyId, companyName, industrySectorCategory }: OpsDashboardProps) {
+export default function OpsDashboard({ selectedCompanyId, companyName, industrySectorCategory, activeModules, moduleTitlesByType }: OpsDashboardProps) {
   // Individual frequency state for each widget
   const [customerFreq, setCustomerFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
   const [arFreq, setArFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -415,6 +418,177 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     return Object.values(periodTrend);
   };
 
+  const configuredModules = (activeModules || [])
+    .map((module) => String(module || '').trim())
+    .filter((module) => module && module.toLowerCase() !== 'ops-default');
+  const hasConfiguredModules = configuredModules.length > 0;
+
+  const modulesByType: Record<OpsDataType, string[]> = {
+    customers: [],
+    'ar-aging': [],
+    'ap-aging': [],
+    products: [],
+    inventory: [],
+    cash: [],
+  };
+
+  configuredModules.forEach((module) => {
+    const type = mapModuleToDataType(module);
+    if (!type) return;
+    const label = getModuleLabel(module);
+    if (!modulesByType[type].includes(label)) modulesByType[type].push(label);
+  });
+
+  const customerLabels = hasConfiguredModules ? modulesByType.customers : ['Customer Sales'];
+  const arLabels = hasConfiguredModules ? modulesByType['ar-aging'] : ['AR Aging'];
+  const apLabels = hasConfiguredModules ? modulesByType['ap-aging'] : ['AP Aging'];
+  const productLabels = hasConfiguredModules ? modulesByType.products : ['Product Sales'];
+  const inventoryLabels = hasConfiguredModules ? modulesByType.inventory : ['Inventory'];
+  const cashLabels = hasConfiguredModules ? modulesByType.cash : ['Cash Balance'];
+
+  const showCustomerWidget = customerLabels.length > 0;
+  const showArWidget = arLabels.length > 0;
+  const showApWidget = apLabels.length > 0;
+  const showProductWidget = productLabels.length > 0;
+  const showInventoryWidget = inventoryLabels.length > 0;
+  const showCashWidget = cashLabels.length > 0;
+
+  const primaryLabelByType: Record<OpsDataType, string> = {
+    customers: customerLabels[0] || 'Customer Sales',
+    'ar-aging': arLabels[0] || 'AR Aging',
+    'ap-aging': apLabels[0] || 'AP Aging',
+    products: productLabels[0] || 'Product Sales',
+    inventory: inventoryLabels[0] || 'Inventory',
+    cash: cashLabels[0] || 'Cash Balance',
+  };
+
+  const extraWidgets: Array<{ type: OpsDataType; label: string }> = [
+    ...customerLabels.slice(1).map((label) => ({ type: 'customers' as OpsDataType, label })),
+    ...arLabels.slice(1).map((label) => ({ type: 'ar-aging' as OpsDataType, label })),
+    ...apLabels.slice(1).map((label) => ({ type: 'ap-aging' as OpsDataType, label })),
+    ...productLabels.slice(1).map((label) => ({ type: 'products' as OpsDataType, label })),
+    ...inventoryLabels.slice(1).map((label) => ({ type: 'inventory' as OpsDataType, label })),
+    ...cashLabels.slice(1).map((label) => ({ type: 'cash' as OpsDataType, label })),
+  ];
+
+  const renderExtraWidget = (widget: { type: OpsDataType; label: string }, index: number) => {
+    const cardStyle: React.CSSProperties = { background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' };
+    if (widget.type === 'customers') {
+      return (
+        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>📊 {widget.label}</h3>
+            <FrequencySelector value={customerFreq} onChange={setCustomerFreq} />
+          </div>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={prepareCustomerChartData()}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(value: any) => [formatCurrency(value), 'Revenue']} />
+              <Line type="monotone" dataKey="revenue" stroke={CUSTOMER_CHART_COLOR} strokeWidth={2} dot={{ fill: CUSTOMER_CHART_COLOR, r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      );
+    }
+    if (widget.type === 'ar-aging') {
+      return (
+        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>💰 {widget.label}</h3>
+            <FrequencySelector value={arFreq} onChange={setArFreq} />
+          </div>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={prepareArChartData()}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value)} />
+              <Bar dataKey="current" stackId="a" fill={AGING_COLORS[0]} name="Current" />
+              <Bar dataKey="over30" stackId="a" fill={AGING_COLORS[1]} name="Over 30 Days" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      );
+    }
+    if (widget.type === 'ap-aging') {
+      return (
+        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>💳 {widget.label}</h3>
+            <FrequencySelector value={apFreq} onChange={setApFreq} />
+          </div>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={prepareApChartData()}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(value: any) => formatCurrency(value)} />
+              <Bar dataKey="current" stackId="a" fill={AGING_COLORS[0]} name="Current" />
+              <Bar dataKey="over30" stackId="a" fill={AGING_COLORS[1]} name="Over 30 Days" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      );
+    }
+    if (widget.type === 'products') {
+      return (
+        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>📦 {widget.label}</h3>
+            <FrequencySelector value={productFreq} onChange={setProductFreq} />
+          </div>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={prepareProductChartData()}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(value: any) => [formatCurrency(value), 'Revenue']} />
+              <Line type="monotone" dataKey="revenue" stroke="#ec4899" strokeWidth={2} dot={{ fill: '#ec4899', r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      );
+    }
+    if (widget.type === 'inventory') {
+      return (
+        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>🏭 {widget.label}</h3>
+            <FrequencySelector value={inventoryFreq} onChange={setInventoryFreq} />
+          </div>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={prepareInventoryChartData()}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(value: any) => [formatCurrency(value), 'Value']} />
+              <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={{ fill: '#6366f1', r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      );
+    }
+    return (
+      <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>💵 {widget.label}</h3>
+          <FrequencySelector value={cashFreq} onChange={setCashFreq} />
+        </div>
+        <ResponsiveContainer width="100%" height={250}>
+          <BarChart data={prepareCashChartData()}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
+            <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+            <Tooltip formatter={(value: any) => [formatCurrency(value), 'Total Cash']} />
+            <Bar dataKey="totalCash" fill={CASH_CHART_COLOR} name="Total Cash" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
+
   return (
     <div style={{ padding: '24px', background: '#f8fafc', minHeight: '100vh' }}>
       <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
@@ -459,10 +633,11 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '24px' }}>
           
           {/* Customer Sales Widget */}
+          {showCustomerWidget && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                📊 Customer Sales
+                📊 {primaryLabelByType.customers}
               </h3>
               <FrequencySelector value={customerFreq} onChange={setCustomerFreq} />
             </div>
@@ -491,12 +666,14 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
               </ResponsiveContainer>
             )}
           </div>
+          )}
 
           {/* AR Aging Widget */}
+          {showArWidget && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                💰 AR Aging
+                💰 {primaryLabelByType['ar-aging']}
               </h3>
               <FrequencySelector value={arFreq} onChange={setArFreq} />
             </div>
@@ -526,12 +703,14 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
               </ResponsiveContainer>
             )}
           </div>
+          )}
 
           {/* AP Aging Widget */}
+          {showApWidget && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                💳 AP Aging
+                💳 {primaryLabelByType['ap-aging']}
               </h3>
               <FrequencySelector value={apFreq} onChange={setApFreq} />
             </div>
@@ -561,12 +740,14 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
               </ResponsiveContainer>
             )}
           </div>
+          )}
 
           {/* Product Sales Widget */}
+          {showProductWidget && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                📦 Product Sales
+                📦 {primaryLabelByType.products}
               </h3>
               <FrequencySelector value={productFreq} onChange={setProductFreq} />
             </div>
@@ -595,12 +776,14 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
               </ResponsiveContainer>
             )}
           </div>
+          )}
 
           {/* Inventory Widget */}
+          {showInventoryWidget && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                🏭 Inventory
+                🏭 {primaryLabelByType.inventory}
               </h3>
               <FrequencySelector value={inventoryFreq} onChange={setInventoryFreq} />
             </div>
@@ -629,12 +812,14 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
               </ResponsiveContainer>
             )}
           </div>
+          )}
 
           {/* Cash Widget */}
+          {showCashWidget && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
-                💵 Cash Balance
+                💵 {primaryLabelByType.cash}
               </h3>
               <FrequencySelector value={cashFreq} onChange={setCashFreq} />
             </div>
@@ -663,6 +848,9 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
               </ResponsiveContainer>
             )}
           </div>
+          )}
+
+          {extraWidgets.map((widget, index) => renderExtraWidget(widget, index))}
 
         </div>
       </div>
