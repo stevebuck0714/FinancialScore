@@ -1,3 +1,5 @@
+import { normalizeIndustrySectorCategory } from './industry-sector-category';
+
 export type OpsMetricCategory =
   | 'demand'
   | 'supply'
@@ -78,6 +80,17 @@ const OPS_METRIC_PROFILES: Record<string, OpsMetricProfile> = {
     ],
     suggestedGoals: ['schedule variance', 'job margin', 'change orders %'],
   },
+  MANUFACTURING: {
+    sector: 'MANUFACTURING',
+    label: 'Manufacturing',
+    groups: [
+      { category: 'supply', items: ['throughput', 'capacity utilization %', 'scrap %'] },
+      { category: 'fulfillment', items: ['on-time delivery %', 'cycle time', 'schedule adherence %'] },
+      { category: 'quality', items: ['first pass yield', 'defect %'] },
+      { category: 'unitEconomics', items: ['cost per unit', 'gross margin %'] },
+    ],
+    suggestedGoals: ['throughput', 'first pass yield', 'cost per unit'],
+  },
   WHOLESALE_TRADE: {
     sector: 'WHOLESALE_TRADE',
     label: 'Wholesale Trade',
@@ -155,13 +168,75 @@ const OPS_METRIC_PROFILES: Record<string, OpsMetricProfile> = {
     ],
     suggestedGoals: ['utilization %', 'project margin', 'win rate'],
   },
+  ADMIN_SUPPORT_WASTE: {
+    sector: 'ADMIN_SUPPORT_WASTE',
+    label: 'Admin & Support + Waste Management/Remediation',
+    groups: [
+      { category: 'demand', items: ['service volume', 'route density', 'contract renewals %'] },
+      { category: 'fulfillment', items: ['on-time completion %', 'schedule adherence %'] },
+      { category: 'unitEconomics', items: ['cost per service', 'fuel cost %', 'gross margin %'] },
+      { category: 'quality', items: ['safety incidents', 'rework %'] },
+    ],
+    suggestedGoals: ['on-time completion %', 'cost per service', 'contract renewals %'],
+  },
+  EDUCATIONAL_SERVICES: {
+    sector: 'EDUCATIONAL_SERVICES',
+    label: 'Educational Services',
+    groups: [
+      { category: 'demand', items: ['enrollment growth', 'program fill rate'] },
+      { category: 'customer', items: ['retention %', 'completion %', 'NPS'] },
+      { category: 'service', items: ['instructional hours delivered', 'class utilization %'] },
+      { category: 'unitEconomics', items: ['revenue per student', 'cost per student'] },
+    ],
+    suggestedGoals: ['retention %', 'completion %', 'revenue per student'],
+  },
+  HEALTH_CARE_SOCIAL_ASSISTANCE: {
+    sector: 'HEALTH_CARE_SOCIAL_ASSISTANCE',
+    label: 'Health Care & Social Assistance',
+    groups: [
+      { category: 'service', items: ['visit volume', 'appointment lead time', 'wait time'] },
+      { category: 'quality', items: ['readmission %', 'no-show %', 'compliance %'] },
+      { category: 'capacity', items: ['provider utilization %', 'bed/slot utilization %'] },
+      { category: 'unitEconomics', items: ['revenue per visit', 'cost per encounter'] },
+    ],
+    suggestedGoals: ['wait time', 'no-show %', 'provider utilization %'],
+  },
+  ARTS_ENTERTAINMENT_RECREATION: {
+    sector: 'ARTS_ENTERTAINMENT_RECREATION',
+    label: 'Arts, Entertainment & Recreation',
+    groups: [
+      { category: 'demand', items: ['attendance', 'ticket conversion %', 'membership growth'] },
+      { category: 'fulfillment', items: ['event utilization %', 'capacity fill %'] },
+      { category: 'unitEconomics', items: ['revenue per attendee', 'concession margin %'] },
+      { category: 'customer', items: ['repeat attendance %', 'NPS'] },
+    ],
+    suggestedGoals: ['attendance', 'capacity fill %', 'revenue per attendee'],
+  },
+  ACCOMMODATION_FOOD_SERVICES: {
+    sector: 'ACCOMMODATION_FOOD_SERVICES',
+    label: 'Accommodation & Food Services',
+    groups: [
+      { category: 'demand', items: ['occupancy %', 'table turns', 'covers per day'] },
+      { category: 'fulfillment', items: ['service speed', 'order accuracy %'] },
+      { category: 'unitEconomics', items: ['RevPAR', 'food cost %', 'labor cost %'] },
+      { category: 'quality', items: ['guest satisfaction', 'complaint rate'] },
+    ],
+    suggestedGoals: ['occupancy %', 'food cost %', 'order accuracy %'],
+  },
+  OTHER_SERVICES: {
+    sector: 'OTHER_SERVICES',
+    label: 'Other Services',
+    groups: [
+      { category: 'demand', items: ['bookings', 'lead-to-booking conversion %'] },
+      { category: 'fulfillment', items: ['cycle time', 'on-time completion %'] },
+      { category: 'unitEconomics', items: ['average ticket', 'gross margin %'] },
+      { category: 'customer', items: ['repeat customer %', 'NPS'] },
+    ],
+    suggestedGoals: ['bookings', 'on-time completion %', 'gross margin %'],
+  },
 };
 
 export function getOpsMetricProfile(industrySectorCategory?: string | null): OpsMetricProfile {
-  if (!industrySectorCategory) return DEFAULT_PROFILE;
-  const normalized = industrySectorCategory
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, '_');
-  return OPS_METRIC_PROFILES[normalized] || OPS_METRIC_PROFILES[industrySectorCategory] || DEFAULT_PROFILE;
+  const normalized = normalizeIndustrySectorCategory(industrySectorCategory);
+  return OPS_METRIC_PROFILES[normalized] || DEFAULT_PROFILE;
 }

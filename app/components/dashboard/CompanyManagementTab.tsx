@@ -211,7 +211,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                           setCompanyIndustrySector(comp.industrySector || '');
                           if (setAccountingSystem) setAccountingSystem(comp.accountingSystem || '');
                           if (setCompanySizeCategory) setCompanySizeCategory(comp.companySizeCategory || 'DEFAULT');
-                          if (setIndustrySectorCategory) setIndustrySectorCategory(comp.industrySectorCategory || 'DEFAULT');
+                          if (setIndustrySectorCategory) setIndustrySectorCategory(comp.industrySectorCategory || '01');
                           setShowCompanyDetailsModal(true);
                         }}
                         style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}

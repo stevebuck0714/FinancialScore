@@ -284,7 +284,7 @@ export default function ProfileTab({
                     setCompanyIndustrySector(company.industrySector || '');
                     if (setAccountingSystem) setAccountingSystem(company.accountingSystem || '');
                     if (setCompanySizeCategory) setCompanySizeCategory(company.companySizeCategory || 'DEFAULT');
-                    if (setIndustrySectorCategory) setIndustrySectorCategory(company.industrySectorCategory || 'DEFAULT');
+                    if (setIndustrySectorCategory) setIndustrySectorCategory(company.industrySectorCategory || '01');
                     setShowCompanyDetailsModal(true);
                   }
                 }}

@@ -14,7 +14,7 @@ const DEFAULT_LAYOUT_CONFIG = {
 function getSectorList() {
   return INDUSTRY_SECTORS
     .map((sector) => sector.value)
-    .filter((value) => value && value !== 'DEFAULT');
+    .filter((value) => value && value !== '01');
 }
 
 export async function GET(request: NextRequest) {

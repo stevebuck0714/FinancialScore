@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
+import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from '@/lib/operations/sector-mock-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,7 @@ export const dynamic = 'force-dynamic';
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
  * - limit: number (optional) - max records to return
+ * - sectorCategory: NAICS sector code (optional) - falls back to company sector
  */
 export async function GET(request: NextRequest) {
   try {
@@ -26,8 +28,9 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
-    const frequency = searchParams.get('frequency') || 'monthly';
+    const frequency = (searchParams.get('frequency') || 'monthly') as 'daily' | 'weekly' | 'monthly';
     const limit = parseInt(searchParams.get('limit') || '1000');
+    const sectorCategoryParam = searchParams.get('sectorCategory');
 
     if (!companyId) {
       return NextResponse.json(
@@ -53,6 +56,11 @@ export async function GET(request: NextRequest) {
 
     const startDate = startDateParam ? new Date(startDateParam) : defaultStartDate;
     const endDate = endDateParam ? new Date(endDateParam) : defaultEndDate;
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { industrySectorCategory: true },
+    });
+    const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
 
     // Build date filter
     const dateFilter = {
@@ -88,6 +96,20 @@ export async function GET(request: NextRequest) {
           acc[record.customerName].totalInvoices += record.invoiceCount;
           return acc;
         }, {} as Record<string, any>);
+
+        if (!data.length) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'customers',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
 
         return NextResponse.json({
           records: data,
@@ -125,6 +147,20 @@ export async function GET(request: NextRequest) {
             }
           : null;
 
+        if (!data.length) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'ar-aging',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
+
         return NextResponse.json({
           records: data,
           summary: agingMetrics,
@@ -156,6 +192,20 @@ export async function GET(request: NextRequest) {
               dpo: calculateDPO(data), // Days Payable Outstanding estimate
             }
           : null;
+
+        if (!data.length) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'ap-aging',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
 
         return NextResponse.json({
           records: data,
@@ -190,6 +240,20 @@ export async function GET(request: NextRequest) {
           acc[record.itemName].totalQuantity += record.quantitySold;
           return acc;
         }, {} as Record<string, any>);
+
+        if (!data.length) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'products',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
 
         return NextResponse.json({
           records: data,
@@ -230,6 +294,20 @@ export async function GET(request: NextRequest) {
             .sort((a, b) => b.assetValue - a.assetValue)
             .slice(0, 10),
         };
+
+        if (!data.length) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'inventory',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
 
         return NextResponse.json({
           records: data,
@@ -295,6 +373,20 @@ export async function GET(request: NextRequest) {
             : 0,
         };
 
+        if (!data.length) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'cash',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
+
         return NextResponse.json({
           records: data,
           summary: cashMetrics,
@@ -311,14 +403,23 @@ export async function GET(request: NextRequest) {
           prisma.cashSnapshot.count({ where: { companyId } }),
         ]);
 
+        const summary = {
+          customerSalesRecords: customers,
+          arAgingRecords: arAging,
+          apAgingRecords: apAging,
+          productSalesRecords: products,
+          inventoryRecords: inventory,
+          cashRecords: cash,
+        };
+        if (!customers && !arAging && !apAging && !products && !inventory && !cash) {
+          return NextResponse.json({
+            summary: buildOperationalMockSummaryCounts(sectorCategory),
+          });
+        }
+
         return NextResponse.json({
           summary: {
-            customerSalesRecords: customers,
-            arAgingRecords: arAging,
-            apAgingRecords: apAging,
-            productSalesRecords: products,
-            inventoryRecords: inventory,
-            cashRecords: cash,
+            ...summary,
           },
         });
     }

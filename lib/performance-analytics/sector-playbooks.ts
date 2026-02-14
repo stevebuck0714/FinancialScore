@@ -1,3 +1,5 @@
+import { normalizeIndustrySectorCategory } from './industry-sector-category';
+
 /**
  * Sector playbook library for Performance Analytics.
  * Focuses analysis (Focus Board, Trend Explorer, Anomaly, Opportunities) by company sector.
@@ -41,14 +43,6 @@ export type SectorPlaybook = {
   /** COA line/category keys to scan first for this sector (e.g. revenue, cogsTotal, payroll, marketing). */
   coaCategoryHints?: COACategoryHint[];
 };
-
-function normalizeSectorKey(industrySectorCategory: string | null | undefined): string {
-  if (!industrySectorCategory || typeof industrySectorCategory !== 'string') return 'DEFAULT';
-  return industrySectorCategory
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, '_');
-}
 
 const DEFAULT_PLAYBOOK: SectorPlaybook = {
   sector: 'DEFAULT',
@@ -173,6 +167,31 @@ const CONSTRUCTION: SectorPlaybook = {
     { id: 'constr_margin', title: 'Improve job margin and labor productivity', family: 'Unit economics', whenCondition: 'Job margin or productivity weak', objective: 'margin', suggestedOwner: 'Ops' },
     { id: 'constr_wip', title: 'Tighten WIP and retention collection', family: 'Working capital', whenCondition: 'WIP aging or retention elevated', objective: 'cash', suggestedOwner: 'Finance' },
     { id: 'constr_win', title: 'Strengthen bid win rate and backlog quality', family: 'Demand', whenCondition: 'Win rate or backlog weak', objective: 'growth', suggestedOwner: 'Sales' },
+  ],
+};
+
+const MANUFACTURING: SectorPlaybook = {
+  sector: 'MANUFACTURING',
+  label: 'Manufacturing',
+  opsProfileRef: 'MANUFACTURING',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'cogsMaterials', 'cogsPayroll', 'expense', 'inventory', 'depreciationAmortization'],
+  focusPriorities: [
+    { metricHint: 'throughput', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
+    { metricHint: 'scrap', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
+    { metricHint: 'first pass yield', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 3 },
+    { metricHint: 'cost per unit', whenSevere: 'investigate', whenModerate: 'monitor', rank: 4 },
+    { metricHint: 'on-time', whenSevere: 'investigate', whenModerate: 'monitor', rank: 5 },
+  ],
+  anomalyContext: {
+    seasonalityNote: 'Production schedules and customer demand cycles create monthly volatility.',
+    typicalVarianceNote: 'Throughput and scrap often move ±8–12% with mix and downtime.',
+    highSeverityTriggers: ['throughput', 'scrap', 'first pass yield', 'cost per unit', 'on-time'],
+  },
+  recommendationThemes: [
+    { id: 'mfg_throughput', title: 'Increase throughput and line utilization', family: 'Capacity', whenCondition: 'Throughput or utilization below target', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'mfg_quality', title: 'Reduce scrap and improve first pass yield', family: 'Quality', whenCondition: 'Scrap or defects elevated', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'mfg_unit_cost', title: 'Lower unit cost through process efficiency', family: 'Unit economics', whenCondition: 'Cost per unit above plan', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'mfg_otd', title: 'Improve on-time delivery reliability', family: 'Fulfillment', whenCondition: 'On-time performance weak', objective: 'growth', suggestedOwner: 'Ops' },
   ],
 };
 
@@ -352,12 +371,163 @@ const PROFESSIONAL_SERVICES: SectorPlaybook = {
   ],
 };
 
+const ADMIN_SUPPORT_WASTE: SectorPlaybook = {
+  sector: 'ADMIN_SUPPORT_WASTE',
+  label: 'Admin & Support + Waste Management/Remediation',
+  opsProfileRef: 'ADMIN_SUPPORT_WASTE',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'expense', 'payroll', 'fuel', 'professionalFees', 'otherExpense'],
+  focusPriorities: [
+    { metricHint: 'service volume', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
+    { metricHint: 'on-time completion', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
+    { metricHint: 'cost per service', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 3 },
+    { metricHint: 'route density', whenSevere: 'investigate', whenModerate: 'monitor', rank: 4 },
+    { metricHint: 'safety', whenSevere: 'investigate', whenModerate: 'monitor', rank: 5 },
+  ],
+  anomalyContext: {
+    seasonalityNote: 'Demand varies by contract cycles and municipal/commercial calendars.',
+    typicalVarianceNote: 'Service volume and route costs can shift ±10% by territory and fuel.',
+    highSeverityTriggers: ['service volume', 'on-time completion', 'cost per service', 'safety'],
+  },
+  recommendationThemes: [
+    { id: 'asw_route', title: 'Improve route density and dispatch efficiency', family: 'Fulfillment', whenCondition: 'Route density or travel time weak', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'asw_unit_cost', title: 'Lower cost per service and fuel intensity', family: 'Unit economics', whenCondition: 'Cost per service elevated', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'asw_ontime', title: 'Increase on-time completion and SLA adherence', family: 'Service', whenCondition: 'On-time completion below SLA', objective: 'growth', suggestedOwner: 'Ops' },
+    { id: 'asw_safety', title: 'Reduce safety incidents and rework', family: 'Risk', whenCondition: 'Safety incidents rising', objective: 'risk', suggestedOwner: 'Ops' },
+  ],
+};
+
+const EDUCATIONAL_SERVICES: SectorPlaybook = {
+  sector: 'EDUCATIONAL_SERVICES',
+  label: 'Educational Services',
+  opsProfileRef: 'EDUCATIONAL_SERVICES',
+  coaCategoryHints: ['revenue', 'expense', 'payroll', 'professionalFees', 'marketing', 'rent'],
+  focusPriorities: [
+    { metricHint: 'enrollment', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
+    { metricHint: 'retention', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
+    { metricHint: 'completion', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 3 },
+    { metricHint: 'class utilization', whenSevere: 'investigate', whenModerate: 'monitor', rank: 4 },
+    { metricHint: 'cost per student', whenSevere: 'investigate', whenModerate: 'monitor', rank: 5 },
+  ],
+  anomalyContext: {
+    seasonalityNote: 'Enrollment and attendance have strong term-based seasonality.',
+    typicalVarianceNote: 'Enrollment and retention can vary ±5–10% by cohort and program.',
+    highSeverityTriggers: ['enrollment', 'retention', 'completion', 'cost per student'],
+  },
+  recommendationThemes: [
+    { id: 'edu_retention', title: 'Improve retention and learner completion', family: 'Customer', whenCondition: 'Retention or completion below target', objective: 'growth', suggestedOwner: 'Ops' },
+    { id: 'edu_enrollment', title: 'Increase enrollment pipeline and conversion', family: 'Demand', whenCondition: 'Enrollment growth weak', objective: 'growth', suggestedOwner: 'Marketing' },
+    { id: 'edu_utilization', title: 'Optimize class and faculty utilization', family: 'Capacity', whenCondition: 'Class utilization below plan', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'edu_unit_cost', title: 'Reduce cost per student served', family: 'Unit economics', whenCondition: 'Cost per student elevated', objective: 'margin', suggestedOwner: 'Finance' },
+  ],
+};
+
+const HEALTH_CARE_SOCIAL_ASSISTANCE: SectorPlaybook = {
+  sector: 'HEALTH_CARE_SOCIAL_ASSISTANCE',
+  label: 'Health Care & Social Assistance',
+  opsProfileRef: 'HEALTH_CARE_SOCIAL_ASSISTANCE',
+  coaCategoryHints: ['revenue', 'expense', 'payroll', 'professionalFees', 'supplies', 'otherExpense'],
+  focusPriorities: [
+    { metricHint: 'wait time', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
+    { metricHint: 'no-show', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
+    { metricHint: 'utilization', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 3 },
+    { metricHint: 'readmission', whenSevere: 'investigate', whenModerate: 'monitor', rank: 4 },
+    { metricHint: 'cost per encounter', whenSevere: 'investigate', whenModerate: 'monitor', rank: 5 },
+  ],
+  anomalyContext: {
+    seasonalityNote: 'Patient/service demand rises seasonally and with local outbreaks/events.',
+    typicalVarianceNote: 'Visit volume and staffing utilization can move ±8–12% month to month.',
+    highSeverityTriggers: ['wait time', 'no-show', 'readmission', 'utilization', 'cost per encounter'],
+  },
+  recommendationThemes: [
+    { id: 'hsa_access', title: 'Improve access and reduce wait times', family: 'Service', whenCondition: 'Wait time or lead time elevated', objective: 'growth', suggestedOwner: 'Ops' },
+    { id: 'hsa_utilization', title: 'Increase provider/case capacity utilization', family: 'Capacity', whenCondition: 'Utilization below target', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'hsa_no_show', title: 'Reduce no-show and cancellation rates', family: 'Demand', whenCondition: 'No-show rate elevated', objective: 'growth', suggestedOwner: 'Ops' },
+    { id: 'hsa_cost', title: 'Lower cost per encounter while maintaining quality', family: 'Unit economics', whenCondition: 'Cost per encounter pressure', objective: 'margin', suggestedOwner: 'Finance' },
+  ],
+};
+
+const ARTS_ENTERTAINMENT_RECREATION: SectorPlaybook = {
+  sector: 'ARTS_ENTERTAINMENT_RECREATION',
+  label: 'Arts, Entertainment & Recreation',
+  opsProfileRef: 'ARTS_ENTERTAINMENT_RECREATION',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'expense', 'marketing', 'payroll', 'rent'],
+  focusPriorities: [
+    { metricHint: 'attendance', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
+    { metricHint: 'capacity fill', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
+    { metricHint: 'revenue per attendee', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 3 },
+    { metricHint: 'repeat attendance', whenSevere: 'investigate', whenModerate: 'monitor', rank: 4 },
+    { metricHint: 'concession margin', whenSevere: 'investigate', whenModerate: 'monitor', rank: 5 },
+  ],
+  anomalyContext: {
+    seasonalityNote: 'Demand depends on calendar events, weather, and holidays.',
+    typicalVarianceNote: 'Attendance and utilization often swing ±15% by event schedule.',
+    highSeverityTriggers: ['attendance', 'capacity fill', 'revenue per attendee', 'repeat attendance'],
+  },
+  recommendationThemes: [
+    { id: 'aer_attendance', title: 'Increase attendance and conversion', family: 'Demand', whenCondition: 'Attendance or conversion weak', objective: 'growth', suggestedOwner: 'Marketing' },
+    { id: 'aer_fill', title: 'Improve capacity fill and event mix', family: 'Capacity', whenCondition: 'Capacity fill under target', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'aer_ticket', title: 'Lift average revenue per attendee', family: 'Unit economics', whenCondition: 'Revenue per attendee below target', objective: 'margin', suggestedOwner: 'Sales' },
+    { id: 'aer_retention', title: 'Grow memberships and repeat attendance', family: 'Customer', whenCondition: 'Repeat attendance soft', objective: 'growth', suggestedOwner: 'Marketing' },
+  ],
+};
+
+const ACCOMMODATION_FOOD_SERVICES: SectorPlaybook = {
+  sector: 'ACCOMMODATION_FOOD_SERVICES',
+  label: 'Accommodation & Food Services',
+  opsProfileRef: 'ACCOMMODATION_FOOD_SERVICES',
+  coaCategoryHints: ['revenue', 'cogsTotal', 'expense', 'payroll', 'inventory', 'rent', 'marketing'],
+  focusPriorities: [
+    { metricHint: 'occupancy', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
+    { metricHint: 'food cost', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
+    { metricHint: 'labor cost', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 3 },
+    { metricHint: 'order accuracy', whenSevere: 'investigate', whenModerate: 'monitor', rank: 4 },
+    { metricHint: 'guest satisfaction', whenSevere: 'investigate', whenModerate: 'monitor', rank: 5 },
+  ],
+  anomalyContext: {
+    seasonalityNote: 'Strong weekly and seasonal demand cycles across dayparts and travel periods.',
+    typicalVarianceNote: 'Occupancy and labor productivity can vary ±10–20% by season.',
+    highSeverityTriggers: ['occupancy', 'food cost', 'labor cost', 'order accuracy', 'guest satisfaction'],
+  },
+  recommendationThemes: [
+    { id: 'afs_revpar', title: 'Improve occupancy/table turns and revenue density', family: 'Demand', whenCondition: 'Occupancy or covers below target', objective: 'growth', suggestedOwner: 'Ops' },
+    { id: 'afs_food', title: 'Reduce food cost and waste', family: 'Unit economics', whenCondition: 'Food cost % elevated', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'afs_labor', title: 'Optimize labor scheduling and productivity', family: 'Capacity', whenCondition: 'Labor cost % elevated', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'afs_service', title: 'Improve service speed and guest satisfaction', family: 'Service', whenCondition: 'Guest satisfaction or speed weak', objective: 'growth', suggestedOwner: 'Ops' },
+  ],
+};
+
+const OTHER_SERVICES: SectorPlaybook = {
+  sector: 'OTHER_SERVICES',
+  label: 'Other Services',
+  opsProfileRef: 'OTHER_SERVICES',
+  coaCategoryHints: ['revenue', 'expense', 'payroll', 'marketing', 'professionalFees', 'rent'],
+  focusPriorities: [
+    { metricHint: 'bookings', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 1 },
+    { metricHint: 'on-time completion', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 2 },
+    { metricHint: 'gross margin', whenSevere: 'fix_now', whenModerate: 'investigate', rank: 3 },
+    { metricHint: 'repeat customer', whenSevere: 'investigate', whenModerate: 'monitor', rank: 4 },
+    { metricHint: 'cycle time', whenSevere: 'investigate', whenModerate: 'monitor', rank: 5 },
+  ],
+  anomalyContext: {
+    seasonalityNote: 'Service demand varies by local seasonality and appointment patterns.',
+    typicalVarianceNote: 'Booking and completion rates can shift ±10% month to month.',
+    highSeverityTriggers: ['bookings', 'on-time completion', 'gross margin', 'repeat customer'],
+  },
+  recommendationThemes: [
+    { id: 'other_demand', title: 'Increase bookings and conversion', family: 'Demand', whenCondition: 'Bookings or conversion weak', objective: 'growth', suggestedOwner: 'Marketing' },
+    { id: 'other_margin', title: 'Improve ticket mix and gross margin', family: 'Unit economics', whenCondition: 'Margin below target', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'other_cycle', title: 'Reduce service cycle time and improve completion', family: 'Fulfillment', whenCondition: 'Cycle time elevated', objective: 'margin', suggestedOwner: 'Ops' },
+    { id: 'other_repeat', title: 'Increase repeat customers and loyalty', family: 'Customer', whenCondition: 'Repeat rate declining', objective: 'growth', suggestedOwner: 'Sales' },
+  ],
+};
+
 const SECTOR_PLAYBOOKS: Record<string, SectorPlaybook> = {
   DEFAULT: DEFAULT_PLAYBOOK,
   AGRICULTURE,
   MINING,
   UTILITIES,
   CONSTRUCTION,
+  MANUFACTURING,
   WHOLESALE_TRADE,
   RETAIL_TRADE,
   TRANSPORTATION,
@@ -365,6 +535,12 @@ const SECTOR_PLAYBOOKS: Record<string, SectorPlaybook> = {
   FINANCE_INSURANCE,
   REAL_ESTATE,
   PROFESSIONAL_SERVICES,
+  ADMIN_SUPPORT_WASTE,
+  EDUCATIONAL_SERVICES,
+  HEALTH_CARE_SOCIAL_ASSISTANCE,
+  ARTS_ENTERTAINMENT_RECREATION,
+  ACCOMMODATION_FOOD_SERVICES,
+  OTHER_SERVICES,
 };
 
 /**
@@ -373,7 +549,7 @@ const SECTOR_PLAYBOOKS: Record<string, SectorPlaybook> = {
  * Fallback: DEFAULT playbook when sector is missing or unknown.
  */
 export function getSectorPlaybook(industrySectorCategory: string | null | undefined): SectorPlaybook {
-  const key = normalizeSectorKey(industrySectorCategory);
+  const key = normalizeIndustrySectorCategory(industrySectorCategory);
   return SECTOR_PLAYBOOKS[key] ?? DEFAULT_PLAYBOOK;
 }
 

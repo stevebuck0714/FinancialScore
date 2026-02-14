@@ -18,12 +18,15 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
+import { getSectorArApFallbacks, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 
 interface OperationsTabProps {
   selectedCompanyId: string;
   companyName: string;
   industrySectorCategory?: string | null;
 }
+
+type OpTab = 'dashboard' | 'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory' | 'cash';
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -158,9 +161,20 @@ const MOCK_VENDOR_BILLS = [
   { vendorName: 'Greenline Supplies', billNo: 'V-1009', date: 'Jun 1, 2025', dueDate: 'Jul 1, 2025', currency: 'USD', amountCurrency: 449, amountHome: 332.59, amountDueHome: 0 },
   { vendorName: 'Greenline Supplies', billNo: 'V-1048', date: 'May 16, 2025', dueDate: 'Jun 15, 2025', currency: 'USD', amountCurrency: 363, amountHome: 268.89, amountDueHome: 0 }
 ];
+const LEGACY_MOCKS_FOR_REFERENCE = [
+  MOCK_AR_CUSTOMERS,
+  MOCK_UNPAID_INVOICES,
+  MOCK_PAID_INVOICES,
+  MOCK_CUSTOMER_INVOICES,
+  MOCK_AP_VENDORS,
+  MOCK_UNPAID_BILLS,
+  MOCK_PAID_BILLS,
+  MOCK_VENDOR_BILLS,
+];
+void LEGACY_MOCKS_FOR_REFERENCE;
 
 export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory }: OperationsTabProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory' | 'cash'>('dashboard');
+  const [activeTab, setActiveTab] = useState<OpTab>('dashboard');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -194,9 +208,54 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     return new Date().toISOString().split('T')[0];
   });
 
+  const normalizeModuleToTab = (moduleId: string): OpTab | null => {
+    const m = String(moduleId || '').trim().toLowerCase();
+    if (!m) return null;
+
+    if (m === 'customers' || m === 'customers_accounts' || m === 'customers_members' || m === 'clients_customers' || m === 'tenants_customers' || m === 'guests_customers' || m === 'customers_sites' || m === 'payors_customers') return 'customers';
+    if (m === 'ar' || m === 'billing_ar' || m === 'ar_receipts' || m === 'receivables') return 'ar';
+    if (m === 'ap' || m === 'payables') return 'ap';
+    if (m === 'products' || m === 'products_skus' || m === 'products_assortment' || m === 'offerings' || m === 'service_catalog') return 'products';
+    if (m === 'inventory') return 'inventory';
+    if (m === 'cash' || m === 'cash_liquidity') return 'cash';
+
+    // Route additional sector buckets to the closest existing widget.
+    if (m === 'sales' || m === 'orders_sales' || m === 'sales_transactions' || m === 'sales_pipeline' || m === 'backlog_sales' || m === 'leasing_sales' || m === 'ticketing_sales') return 'customers';
+    if (m === 'production' || m === 'demand_usage' || m === 'projects_wip' || m === 'work_orders_service_delivery' || m === 'patients_encounters' || m === 'events_programming' || m === 'jobs_work_orders') return 'products';
+
+    return null;
+  };
+
+  const orderedContentTabs: OpTab[] = ['customers', 'ar', 'ap', 'products', 'inventory', 'cash'];
+  const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules) ? opsSectorLayoutConfig.modules : [];
+  const layoutTabs = Array.from(
+    new Set(layoutModules.map(normalizeModuleToTab).filter((tab): tab is OpTab => Boolean(tab)))
+  ).filter((tab) => orderedContentTabs.includes(tab));
+
+  const sectorTabs = Array.from(
+    new Set(
+      getTopLineBucketsForSector(industrySectorCategory)
+        .map((bucket) => normalizeModuleToTab(bucket.key))
+        .filter((tab): tab is OpTab => Boolean(tab))
+    )
+  ).filter((tab) => orderedContentTabs.includes(tab));
+
+  const resolvedContentTabs =
+    layoutTabs.length > 0 ? orderedContentTabs.filter((tab) => layoutTabs.includes(tab)) :
+    sectorTabs.length > 0 ? orderedContentTabs.filter((tab) => sectorTabs.includes(tab)) :
+    orderedContentTabs;
+
+  const availableTabs: OpTab[] = ['dashboard', 'overview', ...resolvedContentTabs];
+
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, availableTabs]);
+
   useEffect(() => {
     loadSummary();
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, industrySectorCategory]);
 
   useEffect(() => {
     if (!industrySectorCategory) {
@@ -220,10 +279,10 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   }, [industrySectorCategory]);
 
   useEffect(() => {
-    if (activeTab !== 'overview') {
+    if (activeTab !== 'overview' && activeTab !== 'dashboard') {
       loadTabData(activeTab);
     }
-  }, [activeTab, selectedCompanyId, frequency, startDate, endDate]);
+  }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
 
   // Auto-adjust date range when frequency changes
   useEffect(() => {
@@ -246,7 +305,11 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/operational-data?companyId=${selectedCompanyId}`);
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+      });
+      const response = await fetch(`/api/operational-data?${params}`);
       if (!response.ok) throw new Error('Failed to load operational data');
       const data = await response.json();
       setSummary(data.summary);
@@ -272,12 +335,17 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       };
       
       const type = typeMap[tab];
+      if (!type) {
+        setLoading(false);
+        return;
+      }
       const params = new URLSearchParams({
         companyId: selectedCompanyId,
         type,
         frequency,
         startDate,
         endDate,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
       const response = await fetch(`/api/operational-data?${params}`);
@@ -1179,8 +1247,9 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     if (!arData) return null;
 
     const { records, summary } = arData;
+    const sectorFallback = getSectorArApFallbacks(industrySectorCategory);
     const latestRecord = records[0];
-    const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || MOCK_AR_CUSTOMERS).map((row: any) => ({
+    const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || sectorFallback.unpaidByCustomer).map((row: any) => ({
       customerName: row.customerName || row.name,
       current: row.current || 0,
       days1to30: row.days1to30 || 0,
@@ -1194,14 +1263,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .sort((a, b) => b.totalDue - a.totalDue)
       .slice(0, 10);
     const unpaidTotal = unpaidByCustomer.reduce((sum, item) => sum + item.totalDue, 0);
-    const invoices = (summary?.unpaidInvoices || MOCK_UNPAID_INVOICES).map((row: any) => ({
+    const invoices = (summary?.unpaidInvoices || sectorFallback.unpaidInvoices).map((row: any) => ({
       customerName: row.customerName || row.customer,
       customerNumber: row.customerNumber || row.customerId || row.customerNo || '-',
       invoiceDate: row.invoiceDate || row.date,
       dueDate: row.dueDate,
       amountDue: row.amountDue || row.balance || 0,
     }));
-    const paidByCustomer = (summary?.paidInvoices || MOCK_PAID_INVOICES)
+    const paidByCustomer = (summary?.paidInvoices || sectorFallback.paidInvoices)
       .map((row: any) => ({
         customerName: row.customerName || row.customer,
         currentMonth: row.currentMonth || 0,
@@ -1211,7 +1280,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .sort((a: any, b: any) => b.last12Months - a.last12Months)
       .slice(0, 10);
     const paidTotal = paidByCustomer.reduce((sum: number, item: any) => sum + item.last12Months, 0);
-    const customerInvoiceRows = (summary?.customerInvoices || MOCK_CUSTOMER_INVOICES).map((row: any) => ({
+    const customerInvoiceRows = (summary?.customerInvoices || sectorFallback.customerInvoices).map((row: any) => ({
       customerName: row.customerName || row.customer,
       invoiceNo: row.invoiceNo || row.invoiceNumber,
       date: row.date,
@@ -1781,8 +1850,9 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     if (!apData) return null;
 
     const { records, summary } = apData;
+    const sectorFallback = getSectorArApFallbacks(industrySectorCategory);
     const latestRecord = records[0];
-    const apVendors = (summary?.breakdown || summary?.unpaidByVendor || MOCK_AP_VENDORS).map((row: any) => ({
+    const apVendors = (summary?.breakdown || summary?.unpaidByVendor || sectorFallback.unpaidByVendor).map((row: any) => ({
       vendorName: row.vendorName || row.name,
       current: row.current || 0,
       days1to30: row.days1to30 || 0,
@@ -1796,14 +1866,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .sort((a, b) => b.totalDue - a.totalDue)
       .slice(0, 10);
     const unpaidVendorTotal = unpaidByVendor.reduce((sum, item) => sum + item.totalDue, 0);
-    const unpaidBills = (summary?.unpaidBills || MOCK_UNPAID_BILLS).map((row: any) => ({
+    const unpaidBills = (summary?.unpaidBills || sectorFallback.unpaidBills).map((row: any) => ({
       vendorName: row.vendorName || row.vendor,
       billNo: row.billNo || row.billNumber,
       date: row.date,
       dueDate: row.dueDate,
       amountDue: row.amountDue || row.balance || 0,
     }));
-    const paidBills = (summary?.paidBills || MOCK_PAID_BILLS)
+    const paidBills = (summary?.paidBills || sectorFallback.paidBills)
       .map((row: any) => ({
         vendorName: row.vendorName || row.vendor,
         currentMonth: row.currentMonth || 0,
@@ -1813,7 +1883,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .sort((a: any, b: any) => b.last12Months - a.last12Months)
       .slice(0, 10);
     const paidBillsTotal = paidBills.reduce((sum: number, item: any) => sum + item.last12Months, 0);
-    const vendorBillRows = (summary?.vendorBills || MOCK_VENDOR_BILLS).map((row: any) => ({
+    const vendorBillRows = (summary?.vendorBills || sectorFallback.vendorBills).map((row: any) => ({
       vendorName: row.vendorName || row.vendor,
       billNo: row.billNo || row.billNumber,
       date: row.date,
@@ -2798,7 +2868,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
         display: 'flex',
         gap: '20px'
       }}>
-        {['dashboard', 'overview', 'customers', 'ar', 'ap', 'products', 'inventory', 'cash'].map((tab) => (
+        {availableTabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
@@ -2824,7 +2894,13 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       {renderFilters()}
 
       {/* Content */}
-      {activeTab === 'dashboard' && <OpsDashboard selectedCompanyId={selectedCompanyId} companyName={companyName} />}
+      {activeTab === 'dashboard' && (
+        <OpsDashboard
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          industrySectorCategory={industrySectorCategory}
+        />
+      )}
       {activeTab === 'overview' && renderOverview()}
       {activeTab === 'customers' && renderCustomers()}
       {activeTab === 'ar' && renderARaging()}

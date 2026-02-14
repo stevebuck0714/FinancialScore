@@ -274,7 +274,7 @@ function FinancialScorePage() {
   const [companyIndustrySector, setCompanyIndustrySector] = useState<number | ''>('');
   const [accountingSystem, setAccountingSystem] = useState('');
   const [companySizeCategory, setCompanySizeCategory] = useState('DEFAULT');
-  const [industrySectorCategory, setIndustrySectorCategory] = useState('DEFAULT');
+  const [industrySectorCategory, setIndustrySectorCategory] = useState('01');
   const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
   // const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false); // Financial Score section removed from sidebar
@@ -3583,7 +3583,7 @@ function FinancialScorePage() {
       setCompanyIndustrySector('');
       setAccountingSystem('');
       setCompanySizeCategory('DEFAULT');
-      setIndustrySectorCategory('DEFAULT');
+      setIndustrySectorCategory('01');
       
       // Stay on Consultant Dashboard
       setCurrentView('admin');

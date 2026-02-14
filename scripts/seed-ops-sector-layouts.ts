@@ -9,7 +9,7 @@ const DEFAULT_LAYOUT_CONFIG = {
 
 async function main() {
   const sectors = INDUSTRY_SECTORS.map((sector) => sector.value).filter(
-    (value) => value && value !== 'DEFAULT'
+    (value) => value && value !== '01'
   );
 
   const results = await Promise.all(

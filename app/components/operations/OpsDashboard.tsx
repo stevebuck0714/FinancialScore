@@ -18,6 +18,7 @@ import {
 interface OpsDashboardProps {
   selectedCompanyId: string;
   companyName: string;
+  industrySectorCategory?: string | null;
 }
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -25,7 +26,7 @@ const AGING_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CUSTOMER_CHART_COLOR = COLORS[2];
 const CASH_CHART_COLOR = COLORS[4];
 
-export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDashboardProps) {
+export default function OpsDashboard({ selectedCompanyId, companyName, industrySectorCategory }: OpsDashboardProps) {
   // Individual frequency state for each widget
   const [customerFreq, setCustomerFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
   const [arFreq, setArFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -106,7 +107,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
         type: 'customers',
         frequency: customerFreq,
         startDate,
-        endDate
+        endDate,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
       const response = await fetch(`/api/operational-data?${params}`);
@@ -128,7 +130,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
         type: 'ar-aging',
         frequency: arFreq,
         startDate,
-        endDate
+        endDate,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
       const response = await fetch(`/api/operational-data?${params}`);
@@ -150,7 +153,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
         type: 'ap-aging',
         frequency: apFreq,
         startDate,
-        endDate
+        endDate,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
       const response = await fetch(`/api/operational-data?${params}`);
@@ -172,7 +176,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
         type: 'products',
         frequency: productFreq,
         startDate,
-        endDate
+        endDate,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
       const response = await fetch(`/api/operational-data?${params}`);
@@ -194,7 +199,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
         type: 'inventory',
         frequency: inventoryFreq,
         startDate,
-        endDate
+        endDate,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
       const response = await fetch(`/api/operational-data?${params}`);
@@ -216,7 +222,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
         type: 'cash',
         frequency: cashFreq,
         startDate,
-        endDate
+        endDate,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
       const response = await fetch(`/api/operational-data?${params}`);
@@ -306,12 +313,12 @@ export default function OpsDashboard({ selectedCompanyId, companyName }: OpsDash
   }, [selectedCompanyId]);
 
   // Load data on mount and when frequency changes
-  useEffect(() => { loadCustomerData(); }, [selectedCompanyId, customerFreq]);
-  useEffect(() => { loadArData(); }, [selectedCompanyId, arFreq]);
-  useEffect(() => { loadApData(); }, [selectedCompanyId, apFreq]);
-  useEffect(() => { loadProductData(); }, [selectedCompanyId, productFreq]);
-  useEffect(() => { loadInventoryData(); }, [selectedCompanyId, inventoryFreq]);
-  useEffect(() => { loadCashData(); }, [selectedCompanyId, cashFreq]);
+  useEffect(() => { loadCustomerData(); }, [selectedCompanyId, industrySectorCategory, customerFreq]);
+  useEffect(() => { loadArData(); }, [selectedCompanyId, industrySectorCategory, arFreq]);
+  useEffect(() => { loadApData(); }, [selectedCompanyId, industrySectorCategory, apFreq]);
+  useEffect(() => { loadProductData(); }, [selectedCompanyId, industrySectorCategory, productFreq]);
+  useEffect(() => { loadInventoryData(); }, [selectedCompanyId, industrySectorCategory, inventoryFreq]);
+  useEffect(() => { loadCashData(); }, [selectedCompanyId, industrySectorCategory, cashFreq]);
 
   // Frequency selector component
   const FrequencySelector = ({ value, onChange }: { value: string, onChange: (v: any) => void }) => (
