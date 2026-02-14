@@ -2788,7 +2788,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       background: '#f8fafc'
     }}>
       {/* Spacer for main nav */}
-      <div style={{ height: '60px' }}></div>
+      <div style={{ height: '20px' }}></div>
 
       {/* Tabs */}
       <div style={{ 
