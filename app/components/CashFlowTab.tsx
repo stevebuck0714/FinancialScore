@@ -7,16 +7,22 @@ import type { MonthlyDataRow } from '../types';
 interface CashFlowTabProps {
   selectedCompanyId: string;
   companyName: string;
+  initialDisplay?: 'monthly' | 'quarterly' | 'annual';
 }
 
 export default function CashFlowTab({
   selectedCompanyId,
   companyName,
+  initialDisplay = 'monthly',
 }: CashFlowTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
   const monthly = monthlyData || [];
   
-  const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
+  const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>(initialDisplay);
+
+  React.useEffect(() => {
+    setCashFlowDisplay(initialDisplay);
+  }, [initialDisplay]);
 
   if (loading) {
     return (

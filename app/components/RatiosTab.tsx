@@ -14,6 +14,7 @@ interface RatiosTabProps {
   companyName: string;
   benchmarks: any[];
   onFormulaClick: (formula: string) => void;
+  initialTab?: 'all-ratios' | 'priority-ratios' | 'monthly-ratios';
 }
 
 export default function RatiosTab({
@@ -21,6 +22,7 @@ export default function RatiosTab({
   companyName,
   benchmarks,
   onFormulaClick,
+  initialTab = 'all-ratios',
 }: RatiosTabProps) {
   const { monthlyData, loading, error } = useMasterData(selectedCompanyId);
   const monthly = monthlyData || [];
@@ -33,8 +35,12 @@ export default function RatiosTab({
     });
   }, [benchmarks]);
 
-  const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios' | 'monthly-ratios'>('all-ratios');
+  const [kpiDashboardTab, setKpiDashboardTab] = useState<'all-ratios' | 'priority-ratios' | 'monthly-ratios'>(initialTab);
   const [priorityRatios, setPriorityRatios] = useState<string[]>([]);
+
+  useEffect(() => {
+    setKpiDashboardTab(initialTab);
+  }, [initialTab]);
 
   // Load saved priority ratios
   useEffect(() => {

@@ -890,7 +890,6 @@ function FinancialScorePage() {
   // State - Custom Print Package
   const [printPackageSelections, setPrintPackageSelections] = useState({
     mda: false,
-    financialScore: false,
     priorityRatios: false,
     workingCapital: false,
     dashboard: false,
@@ -4834,10 +4833,6 @@ function FinancialScorePage() {
     if (printPackageSelections.mda) {
       printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)' });
     }
-    // Financial Score disabled - commented out
-    // if (printPackageSelections.financialScore) {
-    //   printQueue.push({ view: 'fs-score', title: 'Financial Score' });
-    // }
     if (printPackageSelections.priorityRatios) {
       printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios' });
     }
@@ -4925,13 +4920,14 @@ function FinancialScorePage() {
         setCurrentView(report.view as any);
       }
 
-      // Wait for render then print
+      // Wait for view transition/render to settle before printing
+      const renderDelayMs = report.view === 'dashboard' ? 1500 : 1000;
       setTimeout(() => {
         window.print();
         currentIndex++;
-        // Wait for print dialog to close before next one
-        setTimeout(printNext, 1000);
-      }, 500);
+        // Give the browser time to close print dialog before next report
+        setTimeout(printNext, 1200);
+      }, renderDelayMs);
     };
 
     printNext();
@@ -8203,7 +8199,7 @@ function FinancialScorePage() {
       )}
 
       {/* Custom Dashboard View */}
-      {currentView === 'dashboard' && selectedCompanyId && trendData.length > 0 && (
+      {currentView === 'dashboard' && selectedCompanyId && (
         <DashboardView
           monthly={monthly}
           trendData={trendData}
@@ -8231,6 +8227,7 @@ function FinancialScorePage() {
           companyName={companyName || ''}
           benchmarks={benchmarks}
           onFormulaClick={(formula) => setShowFormulaPopup(formula)}
+          initialTab={kpiDashboardTab}
         />
       )}
 
@@ -8289,6 +8286,31 @@ function FinancialScorePage() {
           setExpenseGoals={setExpenseGoals}
           masterDataCategories={masterDataCategories}
           setMasterDataCategories={setMasterDataCategories}
+        />
+      )}
+
+      {currentView === 'profile' && selectedCompanyId && (
+        <ProfileTab
+          selectedCompanyId={selectedCompanyId}
+          currentUser={currentUser}
+          company={company}
+          companyProfiles={companyProfiles}
+          setCompanyProfiles={setCompanyProfiles}
+          monthly={monthly}
+          trendData={trendData}
+          isLoading={isLoading}
+          setIsLoading={setIsLoading}
+          setEditingCompanyId={setEditingCompanyId}
+          setCompanyAddressStreet={setCompanyAddressStreet}
+          setCompanyAddressCity={setCompanyAddressCity}
+          setCompanyAddressState={setCompanyAddressState}
+          setCompanyAddressZip={setCompanyAddressZip}
+          setCompanyAddressCountry={setCompanyAddressCountry}
+          setCompanyIndustrySector={setCompanyIndustrySector}
+          setAccountingSystem={setAccountingSystem}
+          setCompanySizeCategory={setCompanySizeCategory}
+          setIndustrySectorCategory={setIndustrySectorCategory}
+          setShowCompanyDetailsModal={setShowCompanyDetailsModal}
         />
       )}
 
@@ -8708,6 +8730,7 @@ function FinancialScorePage() {
         <CashFlowTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
+          initialDisplay={cashFlowDisplay}
         />
       )}
 
@@ -12111,22 +12134,6 @@ function FinancialScorePage() {
                 </label>
               </div>
 
-              {/* Financial Score */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={printPackageSelections.financialScore}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, financialScore: e.target.checked})}
-                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
-                  />
-                  <div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Financial Score</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Score summary and trends</div>
-                  </div>
-                </label>
-              </div>
-
               {/* Priority Ratios */}
               <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
@@ -12303,7 +12310,6 @@ function FinancialScorePage() {
                 onClick={() => {
                   setPrintPackageSelections({
                     mda: false,
-                    financialScore: false,
                     priorityRatios: false,
                     workingCapital: false,
                     dashboard: false,
