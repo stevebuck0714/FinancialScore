@@ -117,22 +117,30 @@ export async function middleware(request: NextRequest) {
   }
   
   if (pathname.startsWith('/api') && !isPublicRoute) {
-    // Get the session token - try multiple cookie names for compatibility
-    let token = await getToken({ 
+    // Try default token resolution first, then common cookie-name variants.
+    let token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
-      cookieName: 'next-auth.session-token'
     })
-    
-    // If not found with next-auth name, try authjs name (NextAuth v5)
+
     if (!token) {
-      token = await getToken({ 
-        req: request,
-        secret: process.env.NEXTAUTH_SECRET,
-        cookieName: process.env.NODE_ENV === 'production' 
-          ? '__Secure-authjs.session-token' 
-          : 'authjs.session-token'
-      })
+      const cookieNamesToTry = [
+        'next-auth.session-token',
+        '__Secure-next-auth.session-token',
+        '__Host-next-auth.session-token',
+        'authjs.session-token',
+        '__Secure-authjs.session-token',
+        '__Host-authjs.session-token',
+      ]
+
+      for (const cookieName of cookieNamesToTry) {
+        token = await getToken({
+          req: request,
+          secret: process.env.NEXTAUTH_SECRET,
+          cookieName,
+        })
+        if (token) break
+      }
     }
     
     console.log('🔐 Middleware auth check:', {
