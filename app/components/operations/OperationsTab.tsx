@@ -2887,33 +2887,6 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       {/* Filters */}
       {renderFilters()}
 
-      {/* Debug panel for sector-driven layout resolution */}
-      <div
-        style={{
-          margin: '12px 24px 8px 24px',
-          padding: '10px 12px',
-          borderRadius: '8px',
-          border: '1px solid #cbd5e1',
-          background: '#f8fafc',
-          fontSize: '12px',
-          color: '#334155',
-          display: 'grid',
-          gap: '6px',
-        }}
-      >
-        <div style={{ fontWeight: 700, color: '#0f172a' }}>Operations Layout Debug</div>
-        <div>
-          <strong>Sector:</strong> {industrySectorCategory || 'not set'} {' | '}
-          <strong>Source:</strong> {moduleSource === 'layout-config' ? 'saved layout config' : 'sector default buckets'}
-        </div>
-        <div>
-          <strong>Modules:</strong> {resolvedModules.length ? resolvedModules.join(', ') : '(none)'}
-        </div>
-        <div>
-          <strong>Resolved module tabs:</strong> {availableModuleTabs.length ? availableModuleTabs.join(', ') : '(none)'}
-        </div>
-      </div>
-
       {/* Content */}
       {activeTab === 'dashboard' && (
         <OpsDashboard
