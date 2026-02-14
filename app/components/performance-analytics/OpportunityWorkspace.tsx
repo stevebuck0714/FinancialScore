@@ -211,7 +211,7 @@ const evidenceLevel = (confidence?: number | null) => {
  
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-       <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Opportunity Workspace</h1>
+      <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Actions/Monitor</h1>
        <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
         Identify where to press when you are strong, and where to fix when you are underperforming. Opportunities are ranked by impact, confidence, and time-to-impact.
        </p>
@@ -466,20 +466,11 @@ const evidenceLevel = (confidence?: number | null) => {
                   )}
                 </div>
               )}
-              {selectedFinding.payload?.title === 'No qualified opportunities detected' ? (
-                 <div style={{ marginTop: '16px', fontSize: '12px', color: '#94a3b8' }}>
-                   This is a placeholder entry until a qualified opportunity is detected.
-                 </div>
-               ) : (
-                 selectedFinding.payload && (
-                   <div style={{ marginTop: '16px', padding: '12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Evidence bundle</div>
-                     <pre style={{ marginTop: '8px', fontSize: '11px', color: '#475569', whiteSpace: 'pre-wrap' }}>
-                       {JSON.stringify(selectedFinding.payload, null, 2)}
-                     </pre>
-                   </div>
-                 )
-               )}
+              {selectedFinding.payload?.title === 'No qualified opportunities detected' && (
+                <div style={{ marginTop: '16px', fontSize: '12px', color: '#94a3b8' }}>
+                  This is a placeholder entry until a qualified opportunity is detected.
+                </div>
+              )}
              </>
            ) : (
              <div style={{ fontSize: '12px', color: '#94a3b8' }}>Select an opportunity to view details.</div>

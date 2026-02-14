@@ -118,6 +118,27 @@ export default function CompanyDetailsModal({
             </select>
           </div>
 
+          {/* Industry Sector (new dropdown for reporting) */}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+              Industry Sector (required for custom reporting) <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <select 
+              value={industrySectorCategory} 
+              onChange={(e) => setIndustrySectorCategory(e.target.value)} 
+              style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer' }}
+            >
+              {INDUSTRY_SECTOR_OPTIONS.map(sector => (
+                <option key={sector.value} value={sector.value}>{sector.label}</option>
+              ))}
+            </select>
+            {missingIndustrySector && (
+              <div style={{ marginTop: '6px', fontSize: '12px', color: '#ef4444' }}>
+                Industry Sector is required.
+              </div>
+            )}
+          </div>
+
           {/* Industry Group (existing Industry Sector) */}
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
@@ -153,27 +174,6 @@ export default function CompanyDetailsModal({
             {missingIndustryGroup && (
               <div style={{ marginTop: '6px', fontSize: '12px', color: '#ef4444' }}>
                 Industry Group is required.
-              </div>
-            )}
-          </div>
-
-          {/* Industry Sector (new dropdown for reporting) */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-              Industry Sector (required for custom reporting) <span style={{ color: '#ef4444' }}>*</span>
-            </label>
-            <select 
-              value={industrySectorCategory} 
-              onChange={(e) => setIndustrySectorCategory(e.target.value)} 
-              style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', cursor: 'pointer' }}
-            >
-              {INDUSTRY_SECTOR_OPTIONS.map(sector => (
-                <option key={sector.value} value={sector.value}>{sector.label}</option>
-              ))}
-            </select>
-            {missingIndustrySector && (
-              <div style={{ marginTop: '6px', fontSize: '12px', color: '#ef4444' }}>
-                Industry Sector is required.
               </div>
             )}
           </div>

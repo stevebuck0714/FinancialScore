@@ -58,6 +58,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   const [loadingCash, setLoadingCash] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [widgetOrder, setWidgetOrder] = useState<string[]>([]);
+  const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
 
   // Helper to get date range based on frequency
   const getDateRange = (frequency: string) => {
@@ -98,6 +100,12 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     } else {
       return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
     }
+  };
+
+  const normalizeWidgetOrder = (currentOrder: string[], availableIds: string[]) => {
+    const filtered = currentOrder.filter((id) => availableIds.includes(id));
+    const missing = availableIds.filter((id) => !filtered.includes(id));
+    return [...filtered, ...missing];
   };
 
   // Load data functions
@@ -265,6 +273,9 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
           setProductFreq(data.preferences.productFreq || 'monthly');
           setInventoryFreq(data.preferences.inventoryFreq || 'monthly');
           setCashFreq(data.preferences.cashFreq || 'monthly');
+          if (Array.isArray(data.preferences.widgetOrder)) {
+            setWidgetOrder(data.preferences.widgetOrder.filter((id: unknown) => typeof id === 'string'));
+          }
         }
       }
     } catch (error) {
@@ -283,7 +294,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
         apFreq,
         productFreq,
         inventoryFreq,
-        cashFreq
+        cashFreq,
+        widgetOrder
       };
       
       const response = await fetch('/api/ops-dashboard-prefs', {
@@ -470,12 +482,13 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     ...inventoryLabels.slice(1).map((label) => ({ type: 'inventory' as OpsDataType, label })),
     ...cashLabels.slice(1).map((label) => ({ type: 'cash' as OpsDataType, label })),
   ];
+  const getExtraWidgetId = (widget: { type: OpsDataType; label: string }) => `extra:${widget.type}:${widget.label}`;
 
-  const renderExtraWidget = (widget: { type: OpsDataType; label: string }, index: number) => {
+  const renderExtraWidget = (widget: { type: OpsDataType; label: string }) => {
     const cardStyle: React.CSSProperties = { background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' };
     if (widget.type === 'customers') {
       return (
-        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+        <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>📊 {widget.label}</h3>
             <FrequencySelector value={customerFreq} onChange={setCustomerFreq} />
@@ -494,7 +507,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     }
     if (widget.type === 'ar-aging') {
       return (
-        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+        <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>💰 {widget.label}</h3>
             <FrequencySelector value={arFreq} onChange={setArFreq} />
@@ -514,7 +527,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     }
     if (widget.type === 'ap-aging') {
       return (
-        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+        <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>💳 {widget.label}</h3>
             <FrequencySelector value={apFreq} onChange={setApFreq} />
@@ -534,7 +547,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     }
     if (widget.type === 'products') {
       return (
-        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+        <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>📦 {widget.label}</h3>
             <FrequencySelector value={productFreq} onChange={setProductFreq} />
@@ -553,7 +566,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     }
     if (widget.type === 'inventory') {
       return (
-        <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+        <div style={cardStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>🏭 {widget.label}</h3>
             <FrequencySelector value={inventoryFreq} onChange={setInventoryFreq} />
@@ -571,7 +584,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
       );
     }
     return (
-      <div key={`extra-${widget.type}-${index}`} style={cardStyle}>
+      <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>💵 {widget.label}</h3>
           <FrequencySelector value={cashFreq} onChange={setCashFreq} />
@@ -589,6 +602,67 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     );
   };
 
+  const availableWidgetIds = [
+    ...(showCustomerWidget ? ['customers'] : []),
+    ...(showArWidget ? ['ar-aging'] : []),
+    ...(showApWidget ? ['ap-aging'] : []),
+    ...(showProductWidget ? ['products'] : []),
+    ...(showInventoryWidget ? ['inventory'] : []),
+    ...(showCashWidget ? ['cash'] : []),
+    ...extraWidgets.map((widget) => getExtraWidgetId(widget)),
+  ];
+
+  const normalizedWidgetOrder = normalizeWidgetOrder(widgetOrder, availableWidgetIds);
+
+  useEffect(() => {
+    setWidgetOrder((current) => {
+      const next = normalizeWidgetOrder(current, availableWidgetIds);
+      if (current.length === next.length && current.every((id, index) => id === next[index])) {
+        return current;
+      }
+      return next;
+    });
+  }, [availableWidgetIds.join('|')]);
+
+  const getWidgetPosition = (widgetId: string) => {
+    const index = normalizedWidgetOrder.indexOf(widgetId);
+    return index >= 0 ? index : normalizedWidgetOrder.length;
+  };
+
+  const handleWidgetDrop = (sourceWidgetId: string, targetWidgetId: string) => {
+    if (!sourceWidgetId || sourceWidgetId === targetWidgetId) return;
+    setWidgetOrder((current) => {
+      const base = normalizeWidgetOrder(current, availableWidgetIds);
+      const fromIndex = base.indexOf(sourceWidgetId);
+      const toIndex = base.indexOf(targetWidgetId);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return base;
+      const next = [...base];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+    setDraggedWidgetId(null);
+  };
+
+  const getDraggableCardProps = (widgetId: string): React.HTMLAttributes<HTMLDivElement> => ({
+    draggable: true,
+    onDragStart: (e) => {
+      setDraggedWidgetId(widgetId);
+      e.dataTransfer.setData('text/plain', widgetId);
+      e.dataTransfer.effectAllowed = 'move';
+    },
+    onDragEnd: () => setDraggedWidgetId(null),
+    onDragOver: (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    },
+    onDrop: (e) => {
+      e.preventDefault();
+      const droppedId = e.dataTransfer.getData('text/plain') || draggedWidgetId || '';
+      handleWidgetDrop(droppedId, widgetId);
+    },
+  });
+
   return (
     <div style={{ padding: '24px', background: '#f8fafc', minHeight: '100vh' }}>
       <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
@@ -597,6 +671,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
             Operations Dashboard
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '13px', color: '#64748b' }}>Drag cards to reorder</span>
             {saveMessage && (
               <span style={{ 
                 fontSize: '14px', 
@@ -634,7 +709,10 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
           
           {/* Customer Sales Widget */}
           {showCustomerWidget && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div
+            {...getDraggableCardProps('customers')}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('customers'), cursor: 'grab' }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
                 📊 {primaryLabelByType.customers}
@@ -670,7 +748,10 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
           {/* AR Aging Widget */}
           {showArWidget && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div
+            {...getDraggableCardProps('ar-aging')}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('ar-aging'), cursor: 'grab' }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
                 💰 {primaryLabelByType['ar-aging']}
@@ -707,7 +788,10 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
           {/* AP Aging Widget */}
           {showApWidget && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div
+            {...getDraggableCardProps('ap-aging')}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('ap-aging'), cursor: 'grab' }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
                 💳 {primaryLabelByType['ap-aging']}
@@ -744,7 +828,10 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
           {/* Product Sales Widget */}
           {showProductWidget && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div
+            {...getDraggableCardProps('products')}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('products'), cursor: 'grab' }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
                 📦 {primaryLabelByType.products}
@@ -780,7 +867,10 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
           {/* Inventory Widget */}
           {showInventoryWidget && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div
+            {...getDraggableCardProps('inventory')}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('inventory'), cursor: 'grab' }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
                 🏭 {primaryLabelByType.inventory}
@@ -816,7 +906,10 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
           {/* Cash Widget */}
           {showCashWidget && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div
+            {...getDraggableCardProps('cash')}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('cash'), cursor: 'grab' }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
                 💵 {primaryLabelByType.cash}
@@ -850,7 +943,18 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
           </div>
           )}
 
-          {extraWidgets.map((widget, index) => renderExtraWidget(widget, index))}
+          {extraWidgets.map((widget) => {
+            const widgetId = getExtraWidgetId(widget);
+            return (
+              <div
+                key={widgetId}
+                {...getDraggableCardProps(widgetId)}
+                style={{ order: getWidgetPosition(widgetId), cursor: 'grab' }}
+              >
+                {renderExtraWidget(widget)}
+              </div>
+            );
+          })}
 
         </div>
       </div>

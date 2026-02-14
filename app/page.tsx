@@ -5086,7 +5086,7 @@ function FinancialScorePage() {
             {/* Analysis Section - 6 items always visible */}
             <div style={{ marginBottom: '16px' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '1px 24px', marginBottom: '8px' }}>
-                Analysis
+                Expert Analysis
               </h3>
               <div style={{ paddingLeft: '28px' }}>
                 {[
