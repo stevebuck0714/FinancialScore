@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import ProfileTab from '../dashboard/ProfileTab';
 import CompanyDetailsTab from './CompanyDetailsTab';
 import DocumentationTab from '../consultant/DocumentationTab';
+import PaymentsTab from '../dashboard/PaymentsTab';
 import { useFinancialData } from '../../hooks/useFinancialData';
 
 interface CompanyManagementTabProps {
@@ -58,6 +59,19 @@ interface CompanyManagementTabProps {
   setCompanyProfiles: (profiles: any[]) => void;
   trendData: any;
   setIsLoading: (loading: boolean) => void;
+
+  // Payments (moved under Company Management)
+  paymentsSelectedCompany: any;
+  selectedSubscriptionPlan: string | null;
+  setSelectedSubscriptionPlan: (plan: string | null) => void;
+  activeSubscription: any;
+  setActiveSubscription: (sub: any) => void;
+  loadingSubscription: boolean;
+  setShowCheckoutModal: (show: boolean) => void;
+  setShowUpdatePaymentModal: (show: boolean) => void;
+  subscriptionMonthlyPrice: number;
+  subscriptionQuarterlyPrice: number;
+  subscriptionAnnualPrice: number;
 }
 
 export default function CompanyManagementTab(props: CompanyManagementTabProps) {
@@ -107,6 +121,23 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           }}
         >
           Manage Users
+        </button>
+        <button
+          onClick={() => props.setCompanyManagementSubTab('payments')}
+          style={{
+            padding: '10px 20px',
+            background: props.companyManagementSubTab === 'payments' ? '#667eea' : 'transparent',
+            color: props.companyManagementSubTab === 'payments' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: props.companyManagementSubTab === 'payments' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '6px 6px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Payments
         </button>
         <button
           onClick={() => props.setCompanyManagementSubTab('documentation')}
@@ -165,6 +196,33 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
       {/* Documentation Sub-tab */}
       {props.companyManagementSubTab === 'documentation' && (
         <DocumentationTab />
+      )}
+
+      {/* Payments Sub-tab */}
+      {props.companyManagementSubTab === 'payments' && (
+        <>
+          {!props.selectedCompanyId ? (
+            <div className="no-print" style={{ background: '#f8fafc', borderRadius: '8px', padding: '48px 24px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and payments.</p>
+            </div>
+          ) : (
+            <PaymentsTab
+              selectedCompany={props.paymentsSelectedCompany}
+              selectedSubscriptionPlan={props.selectedSubscriptionPlan}
+              setSelectedSubscriptionPlan={props.setSelectedSubscriptionPlan}
+              activeSubscription={props.activeSubscription}
+              setActiveSubscription={props.setActiveSubscription}
+              loadingSubscription={props.loadingSubscription}
+              setShowCheckoutModal={props.setShowCheckoutModal}
+              setShowUpdatePaymentModal={props.setShowUpdatePaymentModal}
+              selectedCompanyId={props.selectedCompanyId as any}
+              subscriptionMonthlyPrice={props.subscriptionMonthlyPrice}
+              subscriptionQuarterlyPrice={props.subscriptionQuarterlyPrice}
+              subscriptionAnnualPrice={props.subscriptionAnnualPrice}
+            />
+          )}
+        </>
       )}
 
       {/* Manage Users Sub-tab */}

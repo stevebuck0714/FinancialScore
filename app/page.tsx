@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
-import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lucide-react';
+import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, ArrowLeft } from 'lucide-react';
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
 import { assessmentData } from '../data/assessmentData';
 import { authApi, companiesApi, usersApi, consultantsApi, financialsApi, assessmentsApi, profilesApi, benchmarksApi, ApiError } from '@/lib/api-client';
@@ -26,9 +26,9 @@ const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(
 const CompanyDetailsModal = dynamic(() => import('./components/modals/CompanyDetailsModal'), { ssr: false });
 const DataReviewTab = dynamic(() => import('./components/dashboard/DataReviewTab'), { ssr: false });
 const TeamManagementTab = dynamic(() => import('./components/dashboard/TeamManagementTab'), { ssr: false });
-const PaymentsTab = dynamic(() => import('./components/dashboard/PaymentsTab'), { ssr: false });
 const ProfileTab = dynamic(() => import('./components/dashboard/ProfileTab'), { ssr: false });
 const LOBReportingTab = dynamic(() => import('./components/dashboard/LOBReportingTab'), { ssr: false });
+const DocumentsTab = dynamic(() => import('./components/dashboard/DocumentsTab'), { ssr: false });
 const ConsultantDashboard = dynamic(() => import('./components/consultant/ConsultantDashboard'), { ssr: false });
 const CompanyManagementTab = dynamic(() => import('./components/admin/CompanyManagementTab'), { ssr: false });
 const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySettingsTab'), { ssr: false });
@@ -325,7 +325,8 @@ function FinancialScorePage() {
   const handleNavigation = (view: string) => {
     if (isPaymentRequired()) {
       alert('?? Payment Required\n\nPlease complete your subscription payment before accessing other features.');
-      setAdminDashboardTab('payments');
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
       setCurrentView('admin');
       return;
     }
@@ -333,17 +334,19 @@ function FinancialScorePage() {
   };
 
   // Handle admin dashboard tab navigation with payment gate
-  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping') => {
-    // Always allow payments tab
+  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'documents' | 'data-mapping') => {
+    // Payments is now a sub-tab under Company Management
     if (tab === 'payments') {
-      setAdminDashboardTab(tab);
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
       return;
     }
 
     // Block other tabs if payment is required
     if (isPaymentRequired()) {
-      alert('?? Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
-      setAdminDashboardTab('payments');
+      alert('?? Payment Required\n\nPlease complete your subscription payment in Company Management > Payments before accessing other features.');
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
       return;
     }
     
@@ -523,13 +526,22 @@ function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'documents' | 'data-mapping' | 'goals' | 'payments'>('company-management');
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
-  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'documentation'>('profile');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation'>('profile');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
+
+  // Back-compat: if something sets the legacy top-level 'payments' tab,
+  // redirect it into Company Management > Payments.
+  useEffect(() => {
+    if (adminDashboardTab === 'payments') {
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
+    }
+  }, [adminDashboardTab]);
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
   const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
@@ -642,6 +654,42 @@ function FinancialScorePage() {
   const [subscriptionAnnualPrice, setSubscriptionAnnualPrice] = useState<number | undefined>();
 
   // Affiliate pricing cache removed - pricing now stored permanently in database
+
+  // Payments tab (now under Company Management) uses these derived values.
+  const paymentsSelectedCompany = useMemo(() => {
+    if (!selectedCompanyId) return null;
+    return Array.isArray(companies) ? (companies.find(c => c.id === selectedCompanyId) || null) : null;
+  }, [companies, selectedCompanyId]);
+
+  const paymentsPricing = useMemo(() => {
+    const isBusinessUser =
+      currentUser?.userType === 'company' ||
+      currentUser?.userType === 'COMPANY' ||
+      (currentUser?.role === 'user' && !currentUser?.consultantId);
+
+    const defaultMonthly = isBusinessUser ? (defaultBusinessMonthlyPrice ?? 195) : (defaultConsultantMonthlyPrice ?? 195);
+    const defaultQuarterly = isBusinessUser ? (defaultBusinessQuarterlyPrice ?? 500) : (defaultConsultantQuarterlyPrice ?? 500);
+    const defaultAnnual = isBusinessUser ? (defaultBusinessAnnualPrice ?? 1750) : (defaultConsultantAnnualPrice ?? 1750);
+
+    return {
+      monthly: subscriptionMonthlyPrice ?? defaultMonthly,
+      quarterly: subscriptionQuarterlyPrice ?? defaultQuarterly,
+      annual: subscriptionAnnualPrice ?? defaultAnnual,
+    };
+  }, [
+    subscriptionMonthlyPrice,
+    subscriptionQuarterlyPrice,
+    subscriptionAnnualPrice,
+    defaultBusinessMonthlyPrice,
+    defaultBusinessQuarterlyPrice,
+    defaultBusinessAnnualPrice,
+    defaultConsultantMonthlyPrice,
+    defaultConsultantQuarterlyPrice,
+    defaultConsultantAnnualPrice,
+    currentUser?.userType,
+    currentUser?.role,
+    currentUser?.consultantId,
+  ]);
 
   // Check if payment is required for the current company
   // Payment is required if ANY of the 3 subscription prices are > $0
@@ -948,7 +996,10 @@ function FinancialScorePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const consultantId = currentUser?.consultantId;
-    if (adminDashboardTab === 'payments' && consultantId && selectedCompanyId) {
+    const isPaymentsActive =
+      (adminDashboardTab === 'company-management' && companyManagementSubTab === 'payments') ||
+      adminDashboardTab === 'payments'; // Back-compat if any legacy state sets it
+    if (isPaymentsActive && consultantId && selectedCompanyId) {
       const refreshCompanyData = async () => {
         try {
           const fetchedCompanies = await companiesApi.getAll(consultantId);
@@ -959,12 +1010,15 @@ function FinancialScorePage() {
       };
       refreshCompanyData();
     }
-  }, [adminDashboardTab, selectedCompanyId]);
+  }, [adminDashboardTab, companyManagementSubTab, selectedCompanyId]);
 
   // Load subscription details when accessing payments tab
   useEffect(() => {
     const loadSubscriptionDetails = async () => {
-      if (adminDashboardTab === 'payments' && selectedCompanyId) {
+      const isPaymentsActive =
+        (adminDashboardTab === 'company-management' && companyManagementSubTab === 'payments') ||
+        adminDashboardTab === 'payments'; // Back-compat if any legacy state sets it
+      if (isPaymentsActive && selectedCompanyId) {
         setLoadingSubscription(true);
         try {
           const response = await fetch(`/api/subscriptions?companyId=${selectedCompanyId}`);
@@ -985,7 +1039,7 @@ function FinancialScorePage() {
     };
 
     loadSubscriptionDetails();
-  }, [adminDashboardTab, selectedCompanyId]);
+  }, [adminDashboardTab, companyManagementSubTab, selectedCompanyId]);
 
   // Update payment method handler
   const handleUpdatePaymentMethod = async (e: React.FormEvent) => {
@@ -3175,7 +3229,8 @@ function FinancialScorePage() {
       setSelectedCompanyId(company.id);
 
       // Redirect to payments tab for new company setup
-      setAdminDashboardTab('payments');
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
 
       alert('Company created successfully!');
     } catch (error) {
@@ -5128,6 +5183,37 @@ function FinancialScorePage() {
 
             {/* Analysis Section - 6 items always visible */}
             <div style={{ marginBottom: '16px' }}>
+              {/* Make "Ask Corelytics" prominent and above the section label */}
+              <div style={{ padding: '0 24px 8px 24px' }}>
+                <div
+                  onClick={() => handleNavigation('ai-analysis')}
+                  style={{
+                    fontSize: '16px',
+                    color: currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b',
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    borderRadius: '8px',
+                    background: currentView === 'ai-analysis' ? '#e0f2fe' : '#f8fafc',
+                    fontWeight: '700',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (currentView !== 'ai-analysis') {
+                      e.currentTarget.style.background = '#e2e8f0';
+                      e.currentTarget.style.color = '#1F70C1';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (currentView !== 'ai-analysis') {
+                      e.currentTarget.style.background = '#f8fafc';
+                      e.currentTarget.style.color = '#1e293b';
+                    }
+                  }}
+                >
+                  {currentView === 'ai-analysis' && '› '}Ask Corelytics
+                </div>
+              </div>
+
               <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '1px 24px', marginBottom: '8px' }}>
                 Expert Analysis
               </h3>
@@ -5137,8 +5223,7 @@ function FinancialScorePage() {
                   { id: 'pa-focus-board', label: 'Focus Board' },
                   { id: 'pa-trend-explorer', label: 'Trend Explorer' },
                   { id: 'pa-anomaly-inbox', label: 'Anomalies' },
-                  { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' },
-                  { id: 'ai-analysis', label: 'Ask Corelytics' }
+                  { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
                 ].map((item) => (
                   <div
                     key={item.id}
@@ -5618,7 +5703,8 @@ function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      ? Return to Site Admin
+                      <ArrowLeft size={16} aria-hidden="true" />
+                      <span>Return to Site Admin</span>
                     </button>
                   </div>
                 </div>
@@ -5678,7 +5764,8 @@ function FinancialScorePage() {
                   gap: '8px'
                 }}
               >
-                ? Back to Site Admin
+                <ArrowLeft size={16} aria-hidden="true" />
+                <span>Back to Site Admin</span>
               </button>
             </div>
           )}
@@ -5701,23 +5788,6 @@ function FinancialScorePage() {
               }}
             >
               Company Management
-            </button>
-            <button
-              onClick={() => handleAdminTabNavigation('payments')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'payments' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'payments' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'payments' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Payments
             </button>
             <button
               onClick={() => handleAdminTabNavigation('api-connections')}
@@ -5787,6 +5857,23 @@ function FinancialScorePage() {
             >
               Data Review
             </button>
+            <button
+              onClick={() => handleAdminTabNavigation('documents')}
+              style={{
+                padding: '12px 24px',
+                background: adminDashboardTab === 'documents' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'documents' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'documents' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Documents
+            </button>
           </div>
           
           {/* Company Management Tab */}
@@ -5843,7 +5930,30 @@ function FinancialScorePage() {
               monthly={monthly}
               trendData={trendData}
               setIsLoading={setIsLoading}
+              paymentsSelectedCompany={paymentsSelectedCompany}
+              selectedSubscriptionPlan={selectedSubscriptionPlan}
+              setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
+              activeSubscription={activeSubscription}
+              setActiveSubscription={setActiveSubscription}
+              loadingSubscription={loadingSubscription}
+              setShowCheckoutModal={setShowCheckoutModal}
+              setShowUpdatePaymentModal={setShowUpdatePaymentModal}
+              subscriptionMonthlyPrice={paymentsPricing.monthly}
+              subscriptionQuarterlyPrice={paymentsPricing.quarterly}
+              subscriptionAnnualPrice={paymentsPricing.annual}
             />
+          )}
+
+          {/* Documents Tab */}
+          {adminDashboardTab === 'documents' && selectedCompanyId && (
+            <DocumentsTab selectedCompanyId={selectedCompanyId} />
+          )}
+
+          {!selectedCompanyId && adminDashboardTab === 'documents' && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage documents.</p>
+            </div>
           )}
 
           {/* LOB Settings Tab */}
@@ -6676,145 +6786,6 @@ function FinancialScorePage() {
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to review financial data.</p>
-            </div>
-          )}
-
-          {/* Payments Tab */}
-          {adminDashboardTab === 'payments' && selectedCompanyId && (() => {
-            const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
-            
-            // Get pricing directly from company data (not state variables)
-            let monthlyPrice = selectedCompany?.subscriptionMonthlyPrice;
-            let quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice;
-            let annualPrice = selectedCompany?.subscriptionAnnualPrice;
-            
-            // Fall back to userDefinedAllocations if dedicated fields are null/undefined
-            if ((monthlyPrice === null || monthlyPrice === undefined) &&
-                selectedCompany?.userDefinedAllocations?.subscriptionPricing) {
-              monthlyPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.monthly;
-              quarterlyPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.quarterly;
-              annualPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.annual;
-            }
-            
-            // Check if company has explicit free pricing (isFree flag in userDefinedAllocations)
-            const userDefinedPricing = (selectedCompany as any)?.userDefinedAllocations?.subscriptionPricing;
-            const isExplicitlyFree = userDefinedPricing?.isFree === true;
-            
-            // Determine final pricing values
-            let finalMonthlyPrice: number;
-            let finalQuarterlyPrice: number;
-            let finalAnnualPrice: number;
-            
-            // Normalize pricing values to numbers (handle string "0" and number 0)
-            // Also handle the case where values might be 0, "0", or null/undefined
-            const normalizedMonthly = monthlyPrice != null ? Number(monthlyPrice) : null;
-            const normalizedQuarterly = quarterlyPrice != null ? Number(quarterlyPrice) : null;
-            const normalizedAnnual = annualPrice != null ? Number(annualPrice) : null;
-            
-            // Determine final pricing values
-            // Check if all prices are explicitly 0 (free pricing) - handle both string "0" and number 0
-            // Also check raw values in case normalization didn't work
-            const allPricesAreZero = (normalizedMonthly === 0 && normalizedQuarterly === 0 && normalizedAnnual === 0) ||
-                                    (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0);
-            
-            // Check if pricing is null/undefined and no userDefinedAllocations (use default pricing)
-            const pricingIsMissing = normalizedMonthly === null && normalizedQuarterly === null && normalizedAnnual === null && !userDefinedPricing;
-            
-            // CRITICAL: If company has $0 pricing, always use $0 (don't fall back to defaults)
-            if (isExplicitlyFree || allPricesAreZero) {
-              // Explicitly free (affiliate code with $0 pricing) - use $0
-              finalMonthlyPrice = 0;
-              finalQuarterlyPrice = 0;
-              finalAnnualPrice = 0;
-              console.log('? Company has $0 pricing - setting all prices to 0');
-            } else if (pricingIsMissing) {
-              // Company was created without affiliate code - use default pricing from SystemSettings
-              // For business users, use business pricing defaults; for consultants, use consultant defaults
-              const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
-              if (isBusinessUser) {
-                // Use business pricing defaults from SystemSettings (loaded in state)
-                finalMonthlyPrice = defaultBusinessMonthlyPrice ?? 195;
-                finalQuarterlyPrice = defaultBusinessQuarterlyPrice ?? 500;
-                finalAnnualPrice = defaultBusinessAnnualPrice ?? 1750;
-              } else {
-                // Consultant pricing from SystemSettings (loaded in state)
-                finalMonthlyPrice = defaultConsultantMonthlyPrice ?? 195;
-                finalQuarterlyPrice = defaultConsultantQuarterlyPrice ?? 500;
-                finalAnnualPrice = defaultConsultantAnnualPrice ?? 1750;
-              }
-            } else {
-              // Has pricing data - use it (or defaults for any null/undefined values)
-              // For business users, use business defaults; for consultants, use consultant defaults
-              const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
-              const defaultMonthly = isBusinessUser ? (defaultBusinessMonthlyPrice ?? 195) : (defaultConsultantMonthlyPrice ?? 195);
-              const defaultQuarterly = isBusinessUser ? (defaultBusinessQuarterlyPrice ?? 500) : (defaultConsultantQuarterlyPrice ?? 500);
-              const defaultAnnual = isBusinessUser ? (defaultBusinessAnnualPrice ?? 1750) : (defaultConsultantAnnualPrice ?? 1750);
-              
-              // Use normalized values if they exist, but preserve 0 values (don't replace 0 with defaults)
-              finalMonthlyPrice = (normalizedMonthly !== null && normalizedMonthly !== undefined) 
-                ? normalizedMonthly 
-                : ((monthlyPrice === 0) ? 0 : defaultMonthly);
-              finalQuarterlyPrice = (normalizedQuarterly !== null && normalizedQuarterly !== undefined) 
-                ? normalizedQuarterly 
-                : ((quarterlyPrice === 0) ? 0 : defaultQuarterly);
-              finalAnnualPrice = (normalizedAnnual !== null && normalizedAnnual !== undefined) 
-                ? normalizedAnnual 
-                : ((annualPrice === 0) ? 0 : defaultAnnual);
-              
-              // Double-check: if all final prices are 0, ensure they stay 0
-              if (finalMonthlyPrice === 0 && finalQuarterlyPrice === 0 && finalAnnualPrice === 0) {
-                console.log('? All final prices are 0 - confirming free pricing');
-              }
-            }
-            
-            // Debug logging
-            console.log('?? PaymentsTab Pricing Debug:', {
-              companyId: selectedCompanyId,
-              companyName: selectedCompany?.name,
-              fromCompany: {
-                monthly: selectedCompany?.subscriptionMonthlyPrice,
-                quarterly: selectedCompany?.subscriptionQuarterlyPrice,
-                annual: selectedCompany?.subscriptionAnnualPrice
-              },
-              fromUserDefined: userDefinedPricing,
-              isExplicitlyFree,
-              rawValues: { monthlyPrice, quarterlyPrice, annualPrice },
-              normalizedValues: { normalizedMonthly, normalizedQuarterly, normalizedAnnual },
-              allPricesAreZero,
-              pricingIsMissing,
-              finalValues: { finalMonthlyPrice, finalQuarterlyPrice, finalAnnualPrice },
-              isFree: isExplicitlyFree || allPricesAreZero || (finalMonthlyPrice === 0 && finalQuarterlyPrice === 0 && finalAnnualPrice === 0),
-              defaultPricing: {
-                business: { monthly: defaultBusinessMonthlyPrice, quarterly: defaultBusinessQuarterlyPrice, annual: defaultBusinessAnnualPrice },
-                consultant: { monthly: defaultConsultantMonthlyPrice, quarterly: defaultConsultantQuarterlyPrice, annual: defaultConsultantAnnualPrice }
-              },
-              userType: currentUser?.userType,
-              role: currentUser?.role,
-              consultantId: currentUser?.consultantId
-            });
-            
-            return (
-              <PaymentsTab
-                selectedCompany={selectedCompany}
-                selectedSubscriptionPlan={selectedSubscriptionPlan}
-                setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
-                activeSubscription={activeSubscription}
-                setActiveSubscription={setActiveSubscription}
-                loadingSubscription={loadingSubscription}
-                setShowCheckoutModal={setShowCheckoutModal}
-                setShowUpdatePaymentModal={setShowUpdatePaymentModal}
-                selectedCompanyId={selectedCompanyId}
-                subscriptionMonthlyPrice={finalMonthlyPrice}
-                subscriptionQuarterlyPrice={finalQuarterlyPrice}
-                subscriptionAnnualPrice={finalAnnualPrice}
-              />
-            );
-          })()}
-
-          {!selectedCompanyId && adminDashboardTab === 'payments' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and payments.</p>
             </div>
           )}
         </div>

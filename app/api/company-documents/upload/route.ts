@@ -1,0 +1,164 @@
+import { NextResponse } from 'next/server';
+import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
+import prisma from '@/lib/prisma';
+import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { extractTextFromArrayBuffer } from '@/lib/company-documents/extract-text';
+import { indexCompanyDocument } from '@/lib/company-documents/index-document';
+
+export const dynamic = 'force-dynamic';
+
+const CATEGORY_VALUES = new Set([
+  'LOAN_DOCUMENTS',
+  'FINANCING_DOCUMENTS',
+  'LEGAL_AND_REGULATORY',
+  'OTHER',
+]);
+
+function asCategory(value: unknown): 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'OTHER' | null {
+  const s = String(value || '').trim().toUpperCase();
+  return CATEGORY_VALUES.has(s) ? (s as any) : null;
+}
+
+export async function POST(request: Request): Promise<Response> {
+  const body = (await request.json()) as HandleUploadBody;
+
+  try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      // Keep message explicit; this is the #1 misconfig in local dev.
+      return NextResponse.json(
+        { error: 'BLOB_READ_WRITE_TOKEN is not set (required for Vercel Blob uploads)' },
+        { status: 500 },
+      );
+    }
+
+    const jsonResponse = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (_pathname, clientPayload) => {
+        const context = await requireAuth();
+
+        console.log('📄 Blob upload token request', {
+          hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+          clientPayloadType: typeof clientPayload,
+        });
+
+        const payload =
+          typeof clientPayload === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(clientPayload);
+                } catch {
+                  return {};
+                }
+              })()
+            : ((clientPayload || {}) as any);
+        const companyId = String(payload.companyId || '').trim();
+        const category = asCategory(payload.category);
+        const originalFileName = String(payload.originalFileName || '').trim();
+
+        if (!companyId || !category || !originalFileName) {
+          console.warn('❌ Missing upload payload', { companyId, category, originalFileName });
+          throw new Error('Missing upload payload (companyId/category/originalFileName)');
+        }
+
+        const hasAccess = await validateCompanyAccess(companyId);
+        if (!hasAccess) {
+          throw new Error('Forbidden');
+        }
+
+        return {
+          allowedContentTypes: [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          ],
+          addRandomSuffix: true,
+          tokenPayload: JSON.stringify({
+            companyId,
+            category,
+            originalFileName,
+            uploadedByUserId: context.userId,
+          }),
+        };
+      },
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        // NOTE: Vercel calls this after upload completes. It won't fire on localhost
+        // unless you use ngrok and set VERCEL_BLOB_CALLBACK_URL.
+        try {
+          const p = tokenPayload ? JSON.parse(tokenPayload) : {};
+          const companyId = String(p?.companyId || '').trim();
+          const category = asCategory(p?.category);
+          const originalFileName = String(p?.originalFileName || '').trim();
+          const uploadedByUserId = String(p?.uploadedByUserId || '').trim();
+
+          if (!companyId || !category || !originalFileName || !uploadedByUserId) {
+            return;
+          }
+
+          // Upsert in case the client also registers explicitly (local dev).
+          const doc = await prisma.companyDocument.upsert({
+            where: { blobUrl: blob.url },
+            create: {
+              companyId,
+              uploadedByUserId,
+              category,
+              originalFileName,
+              blobUrl: blob.url,
+              blobPathname: blob.pathname,
+              contentType: blob.contentType || null,
+              sizeBytes: typeof (blob as any).size === 'number' ? Math.trunc((blob as any).size) : null,
+              extractionStatus: 'PENDING',
+            },
+            update: {
+              companyId,
+              category,
+              originalFileName,
+              blobPathname: blob.pathname,
+              contentType: blob.contentType || null,
+              sizeBytes: typeof (blob as any).size === 'number' ? Math.trunc((blob as any).size) : null,
+            },
+            select: { id: true },
+          });
+
+          // Extract text now (best-effort).
+          const res = await fetch(blob.url);
+          if (!res.ok) throw new Error(`Failed to fetch blob for extraction (${res.status})`);
+          const arrayBuffer = await res.arrayBuffer();
+          const extracted = await extractTextFromArrayBuffer({
+            arrayBuffer,
+            contentType: blob.contentType,
+            fileName: originalFileName,
+          });
+
+          if (extracted.status === 'DONE' || extracted.status === 'NO_TEXT') {
+            await prisma.companyDocument.update({
+              where: { id: doc.id },
+              data: { extractedText: extracted.text || null, extractionStatus: extracted.status, extractionError: null },
+            });
+          } else {
+            await prisma.companyDocument.update({
+              where: { id: doc.id },
+              data: { extractedText: null, extractionStatus: 'FAILED', extractionError: extracted.error },
+            });
+          }
+
+          if (extracted.status === 'DONE') {
+            await indexCompanyDocument({ documentId: doc.id });
+          } else if (extracted.status === 'NO_TEXT') {
+            await prisma.companyDocument.update({
+              where: { id: doc.id },
+              data: { indexStatus: 'FAILED', indexedAt: null, indexError: 'No text extracted to index' },
+            });
+          }
+        } catch (e) {
+          console.warn('onUploadCompleted failed (ignored):', e);
+        }
+      },
+    });
+
+    return NextResponse.json(jsonResponse);
+  } catch (error: any) {
+    console.error('❌ /api/company-documents/upload failed:', error?.message || error);
+    return NextResponse.json({ error: error?.message || 'Upload failed' }, { status: 400 });
+  }
+}
+

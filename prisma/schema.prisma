@@ -75,6 +75,8 @@ model Company {
   financialRecords           FinancialRecord[]
   subscription               Subscription?
   users                      User[]
+  documents                  CompanyDocument[]
+  documentChunks             CompanyDocumentChunk[]
   loans                      Loan[]
   xeroTransactions           XeroTransaction[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
@@ -111,11 +113,83 @@ model User {
   financialRecords     FinancialRecord[]
   company              Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   trustedDevices       TrustedDevice[]
+  uploadedDocuments    CompanyDocument[]  @relation("CompanyDocumentUploadedBy")
 
   @@index([email])
   @@index([companyId])
   @@index([consultantId])
   @@index([passwordResetToken])
+}
+
+enum CompanyDocumentCategory {
+  LOAN_DOCUMENTS
+  FINANCING_DOCUMENTS
+  LEGAL_AND_REGULATORY
+  OTHER
+}
+
+model CompanyDocument {
+  id               String                  @id @default(cuid())
+  companyId        String
+  uploadedByUserId String
+  category         CompanyDocumentCategory
+
+  originalFileName String
+  blobUrl          String                  @unique
+  blobPathname     String?                 @unique
+  contentType      String?
+  sizeBytes        Int?
+
+  extractionStatus String                  @default("PENDING") // PENDING | DONE | FAILED | NO_TEXT
+  extractedText    String?
+  extractionError  String?
+
+  // Chunk/embedding index status for document search (RAG).
+  // PENDING | DONE | FAILED
+  indexStatus      String                  @default("PENDING")
+  indexedAt        DateTime?
+  indexError       String?
+  embeddingModel   String?
+  embeddingDim     Int?
+
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  company          Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User                    @relation("CompanyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  chunks           CompanyDocumentChunk[]
+
+  @@index([companyId])
+  @@index([uploadedByUserId])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model CompanyDocumentChunk {
+  id         String          @id @default(cuid())
+  documentId String
+  companyId  String
+
+  chunkIndex Int
+  startOffset Int?
+  endOffset   Int?
+
+  text       String
+  textHash   String
+
+  // Stored in Postgres as pgvector 'vector' type. Prisma does not natively support it,
+  // but keeping the field here documents the column and allows raw SQL to reference it.
+  embedding  Unsupported("vector")
+
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  document   CompanyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@index([companyId])
 }
 
 model TrustedDevice {

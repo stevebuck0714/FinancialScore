@@ -141,10 +141,8 @@ export default function CompanyDetailsTab({
           role: (u as any).companyRole || "user",
           sidebarAccess: (u as any).sidebarAccess || [
             "company-dashboard",
-            "performance-analytics",
             "valuation",
             "financial-statements",
-            "financial-score",
             "management-assessment",
           ],
         };
@@ -617,7 +615,7 @@ export default function CompanyDetailsTab({
                                     marginBottom: "6px",
                                   }}
                                 >
-                                  Sidebar Access (check items user can access):
+                                  Access Rights (check items user can access):
                                 </div>
                                 <div
                                   style={{
@@ -632,18 +630,10 @@ export default function CompanyDetailsTab({
                                       id: "company-dashboard",
                                       label: "Company Dashboard",
                                     },
-                                    {
-                                      id: "performance-analytics",
-                                      label: "Performance Analytics",
-                                    },
                                     { id: "valuation", label: "Valuation" },
                                     {
                                       id: "financial-statements",
                                       label: "Financial Statements",
-                                    },
-                                    {
-                                      id: "financial-score",
-                                      label: "Financial Score",
                                     },
                                     {
                                       id: "management-assessment",

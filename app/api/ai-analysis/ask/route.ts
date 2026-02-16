@@ -4,6 +4,8 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getBenchmarkValue } from '@/app/utils/data-processing';
+import { indexCompanyDocument } from '@/lib/company-documents/index-document';
+import { retrieveDocumentChunks } from '@/lib/company-documents/retrieve-chunks';
 
 type RatioSnapshot = {
   name: string;
@@ -207,6 +209,59 @@ type AskOutput = {
 
 const REFERRAL_BLOCKLIST = ['yelp', "angi", "angie's list", 'homeadvisor', 'yellow pages'];
 
+function buildDocumentExcerpt(params: {
+  fullText: string;
+  question: string;
+  maxChars: number;
+}): { excerpt: string; strategy: string } {
+  const { fullText, question, maxChars } = params;
+  const text = String(fullText || '');
+  const q = String(question || '').toLowerCase();
+  const lower = text.toLowerCase();
+
+  if (!text) return { excerpt: '', strategy: 'empty' };
+
+  const needles: string[] = [];
+  if (q.includes('covenant')) needles.push('covenant');
+  if (q.includes('financial')) needles.push('financial covenant');
+  if (q.includes('report')) needles.push('reporting covenant');
+  if (q.includes('affirm')) needles.push('affirmative covenant');
+  if (q.includes('negative')) needles.push('negative covenant');
+  if (q.includes('events of default')) needles.push('events of default');
+  // Always include covenant as a catch-all when the user is document-searching.
+  if (!needles.includes('covenant')) needles.push('covenant');
+
+  // Prefer a heading-like "Covenants" mention if present.
+  const headingMatch = lower.match(/(?:^|\n)\s*(?:section\s+\d+(?:\.\d+)*\s*)?covenants?\b/);
+  const headingIdx = headingMatch?.index ?? -1;
+
+  let bestIdx = headingIdx;
+  if (bestIdx < 0) {
+    for (const n of needles) {
+      const i = lower.indexOf(n);
+      if (i >= 0) {
+        bestIdx = i;
+        break;
+      }
+    }
+  }
+
+  // If we found a relevant anchor, take a large "after" window (sections usually follow the header).
+  if (bestIdx >= 0) {
+    const before = Math.min(8000, Math.floor(maxChars * 0.15));
+    const after = maxChars - before;
+    const start = Math.max(0, bestIdx - before);
+    const end = Math.min(text.length, bestIdx + after);
+    const excerpt = text.slice(start, end);
+    const strategy = headingIdx >= 0 ? 'anchor:heading-covenants' : 'anchor:keyword';
+    return { excerpt, strategy };
+  }
+
+  // No obvious anchor: covenant sections are often later → bias toward the tail.
+  if (text.length <= maxChars) return { excerpt: text, strategy: 'full' };
+  return { excerpt: text.slice(Math.max(0, text.length - maxChars)), strategy: 'tail' };
+}
+
 type TrendChange = {
   startDate: string | null;
   startValue: number | null;
@@ -383,10 +438,29 @@ function buildFallbackFromSources(params: {
   internalSummary?: Record<string, any>;
 }): AskOutput {
   const { sources, companyName, question, requestedCount, internalSummary } = params;
+  const hasDoc = !!internalSummary?.documentContext;
   const q = question.toLowerCase();
   const isMarginQuestion = ['margin', 'gross margin', 'ebitda', 'ebit'].some((term) => q.includes(term));
   const latest = internalSummary?.monthlySnapshot?.latest;
   const previous = internalSummary?.monthlySnapshot?.previous;
+
+  if (hasDoc) {
+    const docName = internalSummary?.documentContext?.fileName || 'the selected document';
+    const citedBullets = sources.map((s) => ({
+      text: `${s.title || docName} — I could not reliably extract a complete answer; open the source and try a narrower question.`,
+      citations: [{ url: s.url, title: s.title, publishedDate: s.publishedDate }],
+    }));
+    return {
+      shortAnswer: `I couldn't reliably answer that from ${docName}.`,
+      longAnswer:
+        `This usually happens when the extracted text is incomplete (scanned PDF / complex formatting) or the question is too broad. ` +
+        `Try a narrower prompt like "List financial covenants", "List reporting covenants", or "Find the section titled Covenants and summarize it".`,
+      citedBullets,
+      howThisImpactsUs:
+        'If we can extract the covenant section cleanly, Corelytics can summarize and track compliance tasks; otherwise we may need a cleaner PDF or a DOCX version.',
+      sources,
+    };
+  }
 
   if (isMarginQuestion && latest && previous) {
     const latestRevenue = latest.revenue || 0;
@@ -541,21 +615,44 @@ async function generateAskJson(params: {
   strictCitations?: boolean;
 }): Promise<{ parsed: AskOutput; finish_reason: string | null | undefined; contentPreview: string; contentLength: number }> {
   const { openai, model, companyName, question, internalSummary, sources, mode, requestedCount, strictCitations } = params;
+  const hasDoc = !!(internalSummary as any)?.documentContext?.id;
+  const docCtx = hasDoc ? ((internalSummary as any).documentContext as any) : null;
+  const retrievedChunks = hasDoc && Array.isArray(docCtx?.retrievedChunks) ? (docCtx.retrievedChunks as any[]) : [];
+  const retrievedChunkText = hasDoc
+    ? retrievedChunks
+        .map((c) => {
+          const chunkIndex = typeof c?.chunkIndex === 'number' ? c.chunkIndex : '?';
+          const score = typeof c?.score === 'number' ? c.score.toFixed(3) : '';
+          const kw = typeof c?.keywordRank === 'number' ? c.keywordRank.toFixed(3) : '';
+          const dist = typeof c?.vectorDistance === 'number' ? c.vectorDistance.toFixed(4) : '';
+          const meta = [score ? `score=${score}` : null, kw ? `kw=${kw}` : null, dist ? `dist=${dist}` : null].filter(Boolean).join(' ');
+          const text = String(c?.text || '').trim();
+          return `[[chunk ${chunkIndex}${meta ? ` ${meta}` : ''}]]\n${text}`;
+        })
+        .join('\n\n-----\n\n')
+    : '';
 
   const sourceList = buildSourcesForPrompt(sources);
 
-  const system = [
-    'You are an expert financial/operational analyst.',
-    'Return VALID JSON only.',
-    'All factual claims must be grounded in the provided sources.',
-    'Do not invent URLs. Citations must reference only the provided source URLs.',
-    'Focus strictly on financial and operational analysis.',
-    'Do NOT reference internal Payments tab data or subscription/billing plan terms.',
-    'Do NOT invent metrics or KPIs that are not present in the internal summary.',
-    'In this app, KPIs are the same as ratio metrics shown in the Ratios view. Treat KPI questions as ratio questions.',
-    'When describing month-over-month changes, use internalSummary.monthlyChanges.direction and values.',
-    'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
-  ].join('\n');
+  const system = hasDoc
+    ? [
+        'You are an expert analyst reading retrieved chunks from a company document.',
+        'Return VALID JSON only.',
+        'All factual claims must be grounded in the provided retrieved chunks and cite ONLY the allowed source URL.',
+        'Do not invent covenants, thresholds, dates, or section numbers not present in the chunks.',
+      ].join('\n')
+    : [
+        'You are an expert financial/operational analyst.',
+        'Return VALID JSON only.',
+        'All factual claims must be grounded in the provided sources.',
+        'Do not invent URLs. Citations must reference only the provided source URLs.',
+        'Focus strictly on financial and operational analysis.',
+        'Do NOT reference internal Payments tab data or subscription/billing plan terms.',
+        'Do NOT invent metrics or KPIs that are not present in the internal summary.',
+        'In this app, KPIs are the same as ratio metrics shown in the Ratios view. Treat KPI questions as ratio questions.',
+        'When describing month-over-month changes, use internalSummary.monthlyChanges.direction and values.',
+        'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
+      ].join('\n');
 
   const requirements =
     mode === 'full'
@@ -564,7 +661,9 @@ async function generateAskJson(params: {
           '"shortAnswer", "longAnswer", "citedBullets", "howThisImpactsUs", "sources".',
           'shortAnswer: 2-4 sentences.',
           'longAnswer: concise and direct, keep it under ~250 words.',
-          'citedBullets: 7-10 bullets; EVERY bullet must include >=1 citation.',
+          hasDoc
+            ? 'citedBullets: list the most relevant items (8-25 bullets); EVERY bullet must include >=1 citation.'
+            : 'citedBullets: 7-10 bullets; EVERY bullet must include >=1 citation.',
           'howThisImpactsUs: REQUIRED, keep it concise (<= 120 words).',
           'sources: must be the provided sources list (same URLs; you may reorder; do not add new URLs).',
         ]
@@ -574,7 +673,9 @@ async function generateAskJson(params: {
           '"shortAnswer", "longAnswer", "citedBullets", "howThisImpactsUs", "sources".',
           'shortAnswer: 2-3 sentences.',
           'longAnswer: keep it short (<= 200 words).',
-          'citedBullets: exactly 5 bullets; EVERY bullet must include >=1 citation.',
+          hasDoc
+            ? 'citedBullets: 6-12 bullets; EVERY bullet must include >=1 citation.'
+            : 'citedBullets: exactly 5 bullets; EVERY bullet must include >=1 citation.',
           'howThisImpactsUs: REQUIRED (<= 120 words).',
           'sources: must be the provided sources list (same URLs; do not add new URLs).',
         ];
@@ -584,43 +685,74 @@ async function generateAskJson(params: {
     : 'Industry: (not provided)';
   const companyContext = companyName ? `Company: ${companyName}` : 'Company: (not provided)';
 
-  const user = [
-    companyContext,
-    industryContext,
-    `Question: ${question}`,
-    '',
-    'Internal data summary (use for company-specific metrics; do NOT invent data not present):',
-    JSON.stringify(internalSummary, null, 2),
-    '',
-    'Allowed sources (cite ONLY these URLs):',
-    JSON.stringify(sourceList),
-    '',
-    'Requirements:',
-    ...requirements.map((r) => `- ${r}`),
-    '- Be concise and action-oriented. Avoid generic filler or high-level fluff.',
-    '- Use internal summary for company-specific metrics when applicable.',
-    '- For peer/market questions, explicitly reference the company industry in the answer.',
-    '- Avoid generic statements; cite specific peer commentary from sources when available.',
-    '- If the query is marked as externalQuery and no external sources are available, say so clearly and avoid speculation.',
-    '- If internal data is insufficient to answer, say so clearly and avoid speculation.',
-    '- Exclude internal Payments tab data or subscription/billing plan terms.',
-    '- Do not tell the user to visit Yelp/Angi/etc; synthesize the list directly from allowed sources.',
-    '- Use source titles/snippets to identify specific companies; do not invent names.',
-    ...(strictCitations
-      ? ['- Every citedBullets item MUST include citations with >=1 allowed URL. If unsure, omit the item.']
-      : []),
-    ...(requestedCount
-      ? [
-          `- The question requests a list of ${requestedCount}. Provide exactly ${requestedCount} items.`,
-          '- Format each citedBullets item as: "Name — short descriptor; Address/Phone if available".',
-        ]
-      : []),
-    '',
-    'Citations format:',
-    '- Each cited bullet must include citations: [{ "url": "<one of the allowed urls>", "title": "...", "publishedDate": "..." }]',
-    '',
-    'Return ONLY JSON.',
-  ].join('\n');
+  const user = hasDoc
+    ? [
+        companyContext,
+        industryContext,
+        `Question: ${question}`,
+        '',
+        'Document context:',
+        `- fileName: ${String(docCtx?.fileName || '')}`,
+        `- category: ${String(docCtx?.category || '')}`,
+        `- extractionStatus: ${String(docCtx?.extractionStatus || '')}`,
+        `- indexStatus: ${String(docCtx?.indexStatus || '')}`,
+        `- embeddingModel: ${String(docCtx?.embeddingModel || '')}`,
+        `- embeddingDim: ${String(docCtx?.embeddingDim || '')}`,
+        '',
+        'Retrieved document chunks (may be partial; answer ONLY from these):',
+        retrievedChunkText,
+        '',
+        'Allowed sources (cite ONLY these URLs):',
+        JSON.stringify(sourceList),
+        '',
+        'Requirements:',
+        ...requirements.map((r) => `- ${r}`),
+        '- If the chunks do not contain the answer, say that explicitly and suggest better search terms (e.g. "FINANCIAL COVENANTS", "Total Debt to EBITDA", "Section 5.03").',
+        '- For covenant questions, prefer one covenant per bullet and include the exact threshold/ratio language when present.',
+        '',
+        'Citations format:',
+        '- Each cited bullet must include citations: [{ "url": "<allowed url>", "title": "...", "publishedDate": null }]',
+        '',
+        'Return ONLY JSON.',
+      ].join('\n')
+    : [
+        companyContext,
+        industryContext,
+        `Question: ${question}`,
+        '',
+        'Internal data summary (use for company-specific metrics; do NOT invent data not present):',
+        // Keep compact to reduce token use.
+        JSON.stringify(internalSummary),
+        '',
+        'Allowed sources (cite ONLY these URLs):',
+        JSON.stringify(sourceList),
+        '',
+        'Requirements:',
+        ...requirements.map((r) => `- ${r}`),
+        '- Be concise and action-oriented. Avoid generic filler or high-level fluff.',
+        '- Use internal summary for company-specific metrics when applicable.',
+        '- For peer/market questions, explicitly reference the company industry in the answer.',
+        '- Avoid generic statements; cite specific peer commentary from sources when available.',
+        '- If the query is marked as externalQuery and no external sources are available, say so clearly and avoid speculation.',
+        '- If internal data is insufficient to answer, say so clearly and avoid speculation.',
+        '- Exclude internal Payments tab data or subscription/billing plan terms.',
+        '- Do not tell the user to visit Yelp/Angi/etc; synthesize the list directly from allowed sources.',
+        '- Use source titles/snippets to identify specific companies; do not invent names.',
+        ...(strictCitations
+          ? ['- Every citedBullets item MUST include citations with >=1 allowed URL. If unsure, omit the item.']
+          : []),
+        ...(requestedCount
+          ? [
+              `- The question requests a list of ${requestedCount}. Provide exactly ${requestedCount} items.`,
+              '- Format each citedBullets item as: "Name — short descriptor; Address/Phone if available".',
+            ]
+          : []),
+        '',
+        'Citations format:',
+        '- Each cited bullet must include citations: [{ "url": "<one of the allowed urls>", "title": "...", "publishedDate": "..." }]',
+        '',
+        'Return ONLY JSON.',
+      ].join('\n');
 
   const completion = await openai.chat.completions.create({
     model,
@@ -630,7 +762,7 @@ async function generateAskJson(params: {
     ],
     response_format: { type: 'json_object' },
     temperature: 0.2,
-    max_tokens: mode === 'full' ? 2200 : 1400,
+    max_tokens: hasDoc ? 1400 : (mode === 'full' ? 2200 : 1400),
   });
 
   const content = completion.choices[0]?.message?.content ?? '';
@@ -657,6 +789,9 @@ export async function POST(request: NextRequest) {
     const companyId = String(body?.companyId || '').trim();
     const companyName = String(body?.companyName || '').trim();
     const question = String(body?.question || '').trim();
+    const documentId = body?.documentId ? String(body.documentId).trim() : '';
+    const uiModeRaw = String(body?.mode || '').trim().toLowerCase();
+    const uiMode: 'default' | 'document' = uiModeRaw === 'document' ? 'document' : 'default';
     const useExternalSourcesRaw = body?.useExternalSources;
     const useExternalSourcesOverride =
       typeof useExternalSourcesRaw === 'boolean' ? useExternalSourcesRaw : false;
@@ -678,8 +813,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'OPENAI_API_KEY is not set in environment' }, { status: 500 });
     }
 
+    let docContext = documentId
+      ? await prisma.companyDocument.findUnique({
+          where: { id: documentId },
+          select: {
+            id: true,
+            companyId: true,
+            category: true,
+            originalFileName: true,
+            extractionStatus: true,
+            indexStatus: true,
+            indexedAt: true,
+            indexError: true,
+            embeddingModel: true,
+            embeddingDim: true,
+            extractedText: true,
+          },
+        })
+      : null;
+
+    if (docContext && docContext.companyId !== companyId) {
+      return NextResponse.json({ error: 'Document not found for this company' }, { status: 404 });
+    }
+
     const now = new Date();
-    const useExternalSources = shouldUseExternalSources(question, useExternalSourcesOverride);
+    const useExternalSources = uiMode === 'document' ? false : shouldUseExternalSources(question, useExternalSourcesOverride);
     const requestedCount = parseRequestedCount(question);
     const start35 = new Date(now.getTime() - 35 * DAY_MS);
     const [cashDaily, arDaily, apDaily, customersDaily] = await Promise.all([
@@ -788,115 +946,241 @@ export async function POST(request: NextRequest) {
         }
       : null;
 
-    const internalSummary = {
-      generatedAt: now.toISOString(),
-      company: { id: companyId, name: companyName || null, industryGroupId, industryGroupName },
-      queryContext: {
-        externalQuery: useExternalSources,
-        externalSourcesAvailable: false,
-      },
-      dataAvailability: {
-        cashDaily: cashByDay.size,
-        arDaily: arTotalByDay.size,
-        apDaily: apTotalByDay.size,
-        customersDaily: customerTotalByDay.size,
-      },
-      operationalTrends: {
-        windowDays: { short: 14, long: 30 },
-        metrics: [
-          {
-            name: 'Cash balance (daily)',
-            unit: 'USD',
-            dataPoints: cashByDay.size,
-            change14Days: computeChange(cashByDay, 14),
-            change30Days: computeChange(cashByDay, 30),
+    if (uiMode === 'document' && !documentId) {
+      return NextResponse.json({ error: 'Select a document first.' }, { status: 400 });
+    }
+
+    if (docContext) {
+      const s = String(docContext.extractionStatus || '').toUpperCase();
+      if (s === 'PENDING') {
+        return NextResponse.json({ error: 'Document text is still processing. Try again in a few seconds.' }, { status: 422 });
+      }
+      if (s === 'FAILED') {
+        return NextResponse.json({ error: 'Document text extraction failed. Try re-uploading the file.' }, { status: 422 });
+      }
+      if (s === 'NO_TEXT') {
+        return NextResponse.json({ error: 'No text could be extracted (likely a scanned PDF). Upload a text-based PDF or DOCX.' }, { status: 422 });
+      }
+    }
+
+    // Document-mode retrieval: ensure embeddings/chunks exist and retrieve a bounded set of relevant chunks.
+    let retrievedDocChunks:
+      | null
+      | Awaited<ReturnType<typeof retrieveDocumentChunks>> = null;
+
+    if (uiMode === 'document' && docContext) {
+      const idxStatus = String(docContext.indexStatus || '').toUpperCase();
+      if (idxStatus !== 'DONE') {
+        const indexed = await indexCompanyDocument({ documentId: docContext.id });
+        if (!indexed.ok) {
+          return NextResponse.json(
+            { error: indexed.error || 'Document index is not ready yet. Try again in a few seconds.' },
+            { status: 422 },
+          );
+        }
+        // Re-fetch doc context (indexStatus/indexedAt/indexError updated).
+        docContext = await prisma.companyDocument.findUnique({
+          where: { id: documentId },
+          select: {
+            id: true,
+            companyId: true,
+            category: true,
+            originalFileName: true,
+            extractionStatus: true,
+            indexStatus: true,
+            indexedAt: true,
+            indexError: true,
+            embeddingModel: true,
+            embeddingDim: true,
+            extractedText: false,
           },
+        }) as any;
+      }
+
+      retrievedDocChunks = await retrieveDocumentChunks({
+        documentId: docContext.id,
+        question,
+        keywordLimit: 25,
+        vectorLimit: 25,
+        finalLimit: 12,
+      });
+
+      if ((retrievedDocChunks?.chunks || []).length === 0) {
+        return NextResponse.json(
           {
-            name: 'AR total (daily)',
-            unit: 'USD',
-            dataPoints: arTotalByDay.size,
-            change14Days: computeChange(arTotalByDay, 14),
-            change30Days: computeChange(arTotalByDay, 30),
+            error:
+              'No relevant text chunks were found for this question in the selected document. Try a more specific query (e.g. include a defined term, section number, or exact covenant name).',
           },
-          {
-            name: 'AR >30 days share (daily)',
-            unit: 'percent',
-            dataPoints: arOver30ShareByDay.size,
-            change14Days: computeChange(arOver30ShareByDay, 14),
-            change30Days: computeChange(arOver30ShareByDay, 30),
-          },
-          {
-            name: 'AP total (daily)',
-            unit: 'USD',
-            dataPoints: apTotalByDay.size,
-            change14Days: computeChange(apTotalByDay, 14),
-            change30Days: computeChange(apTotalByDay, 30),
-          },
-          {
-            name: 'AP 90+ days share (daily)',
-            unit: 'percent',
-            dataPoints: apOver90ShareByDay.size,
-            change14Days: computeChange(apOver90ShareByDay, 14),
-            change30Days: computeChange(apOver90ShareByDay, 30),
-          },
-          {
-            name: 'Customer revenue total (daily)',
-            unit: 'USD',
-            dataPoints: customerTotalByDay.size,
-            change14Days: computeChange(customerTotalByDay, 14),
-            change30Days: computeChange(customerTotalByDay, 30),
-          },
-          {
-            name: 'Top customer share (daily)',
-            unit: 'percent',
-            dataPoints: customerTopShareByDay.size,
-            change14Days: computeChange(customerTopShareByDay, 14),
-            change30Days: computeChange(customerTopShareByDay, 30),
-          },
-        ],
-      },
-      monthlySnapshot: {
-        latest: latestMonth
-          ? {
-              monthDate: latestMonth.monthDate,
-              revenue: latestMonth.revenue,
-              expense: latestMonth.expense,
-              cogsTotal: latestMonth.cogsTotal,
-              cash: latestMonth.cash,
-              ar: latestMonth.ar,
-              ap: latestMonth.ap,
-            }
-          : null,
-        previous: prevMonth
-          ? {
-              monthDate: prevMonth.monthDate,
-              revenue: prevMonth.revenue,
-              expense: prevMonth.expense,
-              cogsTotal: prevMonth.cogsTotal,
-              cash: prevMonth.cash,
-              ar: prevMonth.ar,
-              ap: prevMonth.ap,
-            }
-          : null,
-      },
-      monthlyChanges,
-      kpiDefinitions: {
-        alias: ['kpi', 'kpis', 'ratios'],
-        note: 'In this app, KPIs are the ratio metrics shown in the Ratios view.',
-        asOfMonth: latestMonth?.monthDate || null,
-        industryGroupId,
-        benchmarksAvailable: benchmarks.length,
-        ratios: ratioSnapshot,
-      },
-      notes: [
-        'Daily operational trends are computed using the most recent available daily snapshot date as the reference.',
-        'If dataPoints are low or change values are null, there may be insufficient daily history to assess trends.',
-        'KPI requests should be interpreted as ratio metrics; use kpiDefinitions.ratios when available.',
-        'Use monthlyChanges.direction to describe increase/decrease; do not invert directions.',
-      ],
-    };
+          { status: 422 },
+        );
+      }
+    }
+
+    const internalSummary =
+      uiMode === 'document'
+        ? {
+            generatedAt: now.toISOString(),
+            company: { id: companyId, name: companyName || null, industryGroupId, industryGroupName },
+            documentContext: docContext
+              ? {
+                  id: docContext.id,
+                  fileName: docContext.originalFileName,
+                  category: docContext.category,
+                  extractionStatus: docContext.extractionStatus,
+                  indexStatus: docContext.indexStatus,
+                  indexedAt: docContext.indexedAt,
+                  indexError: docContext.indexError,
+                  embeddingModel: docContext.embeddingModel,
+                  embeddingDim: docContext.embeddingDim,
+                  retrievedChunks: (retrievedDocChunks?.chunks || []).map((c) => ({
+                    id: c.id,
+                    chunkIndex: c.chunkIndex,
+                    score: c.score,
+                    keywordRank: c.keywordRank,
+                    vectorDistance: c.vectorDistance,
+                    text: String(c.text || '').slice(0, 5200),
+                  })),
+                  retrievalDebug: retrievedDocChunks?.debug || null,
+                }
+              : null,
+            queryContext: {
+              externalQuery: false,
+              externalSourcesAvailable: false,
+            },
+            notes: [
+              'Answer using ONLY the retrieved document chunks and the allowed document source URL.',
+              'If the relevant covenant language is not present in the retrieved chunks, say so and suggest a more targeted query.',
+            ],
+          }
+        : {
+            generatedAt: now.toISOString(),
+            company: { id: companyId, name: companyName || null, industryGroupId, industryGroupName },
+            documentContext: docContext
+              ? {
+                  id: docContext.id,
+                  fileName: docContext.originalFileName,
+                  category: docContext.category,
+                  extractionStatus: docContext.extractionStatus,
+                  extractedTextPreview: String((docContext as any).extractedText || '').slice(0, 15000),
+                }
+              : null,
+            queryContext: {
+              externalQuery: useExternalSources,
+              externalSourcesAvailable: false,
+            },
+            dataAvailability: {
+              cashDaily: cashByDay.size,
+              arDaily: arTotalByDay.size,
+              apDaily: apTotalByDay.size,
+              customersDaily: customerTotalByDay.size,
+            },
+            operationalTrends: {
+              windowDays: { short: 14, long: 30 },
+              metrics: [
+                {
+                  name: 'Cash balance (daily)',
+                  unit: 'USD',
+                  dataPoints: cashByDay.size,
+                  change14Days: computeChange(cashByDay, 14),
+                  change30Days: computeChange(cashByDay, 30),
+                },
+                {
+                  name: 'AR total (daily)',
+                  unit: 'USD',
+                  dataPoints: arTotalByDay.size,
+                  change14Days: computeChange(arTotalByDay, 14),
+                  change30Days: computeChange(arTotalByDay, 30),
+                },
+                {
+                  name: 'AR >30 days share (daily)',
+                  unit: 'percent',
+                  dataPoints: arOver30ShareByDay.size,
+                  change14Days: computeChange(arOver30ShareByDay, 14),
+                  change30Days: computeChange(arOver30ShareByDay, 30),
+                },
+                {
+                  name: 'AP total (daily)',
+                  unit: 'USD',
+                  dataPoints: apTotalByDay.size,
+                  change14Days: computeChange(apTotalByDay, 14),
+                  change30Days: computeChange(apTotalByDay, 30),
+                },
+                {
+                  name: 'AP 90+ days share (daily)',
+                  unit: 'percent',
+                  dataPoints: apOver90ShareByDay.size,
+                  change14Days: computeChange(apOver90ShareByDay, 14),
+                  change30Days: computeChange(apOver90ShareByDay, 30),
+                },
+                {
+                  name: 'Customer revenue total (daily)',
+                  unit: 'USD',
+                  dataPoints: customerTotalByDay.size,
+                  change14Days: computeChange(customerTotalByDay, 14),
+                  change30Days: computeChange(customerTotalByDay, 30),
+                },
+                {
+                  name: 'Top customer share (daily)',
+                  unit: 'percent',
+                  dataPoints: customerTopShareByDay.size,
+                  change14Days: computeChange(customerTopShareByDay, 14),
+                  change30Days: computeChange(customerTopShareByDay, 30),
+                },
+              ],
+            },
+            monthlySnapshot: {
+              latest: latestMonth
+                ? {
+                    monthDate: latestMonth.monthDate,
+                    revenue: latestMonth.revenue,
+                    expense: latestMonth.expense,
+                    cogsTotal: latestMonth.cogsTotal,
+                    cash: latestMonth.cash,
+                    ar: latestMonth.ar,
+                    ap: latestMonth.ap,
+                  }
+                : null,
+              previous: prevMonth
+                ? {
+                    monthDate: prevMonth.monthDate,
+                    revenue: prevMonth.revenue,
+                    expense: prevMonth.expense,
+                    cogsTotal: prevMonth.cogsTotal,
+                    cash: prevMonth.cash,
+                    ar: prevMonth.ar,
+                    ap: prevMonth.ap,
+                  }
+                : null,
+            },
+            monthlyChanges,
+            kpiDefinitions: {
+              alias: ['kpi', 'kpis', 'ratios'],
+              note: 'In this app, KPIs are the ratio metrics shown in the Ratios view.',
+              asOfMonth: latestMonth?.monthDate || null,
+              industryGroupId,
+              benchmarksAvailable: benchmarks.length,
+              ratios: ratioSnapshot,
+            },
+            notes: [
+              'Daily operational trends are computed using the most recent available daily snapshot date as the reference.',
+              'If dataPoints are low or change values are null, there may be insufficient daily history to assess trends.',
+              'KPI requests should be interpreted as ratio metrics; use kpiDefinitions.ratios when available.',
+              'Use monthlyChanges.direction to describe increase/decrease; do not invert directions.',
+            ],
+          };
 
     const appBaseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3002').replace(/\/+$/, '');
+    const documentSource = docContext
+      ? {
+          url: `${appBaseUrl}/api/company-documents/${docContext.id}/open`,
+          title: docContext.originalFileName,
+          publishedDate: null,
+          snippet:
+            uiMode === 'document'
+              ? (String((retrievedDocChunks?.chunks?.[0]?.text || '')).slice(0, 220) || 'Company document (retrieved chunks)')
+              : (String((docContext as any).extractedText || '').slice(0, 220) || 'Company document (uploaded PDF/DOCX)'),
+        }
+      : null;
     const internalSources = [
       {
         url: `${appBaseUrl}?view=admin&tab=data-review`,
@@ -920,7 +1204,11 @@ export async function POST(request: NextRequest) {
       snippet: r.snippet || undefined,
     }));
     internalSummary.queryContext.externalSourcesAvailable = externalSources.length > 0;
-    const sources = useExternalSources ? externalSources : internalSources;
+    const sources =
+      uiMode === 'document'
+        ? (documentSource ? [documentSource] : [])
+        : (useExternalSources ? externalSources : internalSources);
+    const sourcesWithDoc = uiMode === 'document' ? sources : (documentSource ? [documentSource, ...sources] : sources);
 
     if (useExternalSources && externalSources.length === 0) {
       return NextResponse.json(
@@ -928,7 +1216,7 @@ export async function POST(request: NextRequest) {
         { status: 422 },
       );
     }
-    if (sources.length === 0) {
+    if (sourcesWithDoc.length === 0) {
       return NextResponse.json({ error: 'No sources available for this query.' }, { status: 422 });
     }
 
@@ -946,7 +1234,7 @@ export async function POST(request: NextRequest) {
         companyName,
         question,
         internalSummary,
-        sources,
+        sources: sourcesWithDoc,
         mode: 'full',
         requestedCount,
       });
@@ -971,7 +1259,7 @@ export async function POST(request: NextRequest) {
         companyName,
         question,
         internalSummary,
-        sources,
+        sources: sourcesWithDoc,
         mode: 'compact',
         requestedCount,
       });
@@ -986,14 +1274,33 @@ export async function POST(request: NextRequest) {
       });
 
       if (second.finish_reason === 'length' || isListInvalid(parsed, requestedCount)) {
-        parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount, internalSummary });
+        parsed = buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
       }
     }
 
     // Basic shape validation + source URL allowlist
-    const allowedUrls = new Set(sources.map((s) => s.url));
+    const allowedUrls = new Set(sourcesWithDoc.map((s) => s.url));
     let citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
     let citationsOk = hasValidCitations(citedBullets, allowedUrls);
+
+    // Document-mode: there is exactly one allowed source (the document open URL).
+    // The model sometimes omits citations even when the answer is grounded.
+    // Instead of discarding the answer, attach the document citation to every bullet.
+    if (uiMode === 'document' && documentSource?.url) {
+      const docCitation = { url: documentSource.url, title: documentSource.title, publishedDate: null };
+      citedBullets = citedBullets.map((b: any) => {
+        const text = String(b?.text || '');
+        const citationsRaw = Array.isArray(b?.citations) ? b.citations : [];
+        const citationsFiltered = citationsRaw
+          .map((c: any) => ({ url: String(c?.url || '').trim(), title: c?.title || undefined, publishedDate: c?.publishedDate ?? null }))
+          .filter((c: any) => allowedUrls.has(c.url));
+        return {
+          text,
+          citations: citationsFiltered.length > 0 ? citationsFiltered : [docCitation],
+        };
+      });
+      citationsOk = true;
+    }
 
     if (!citationsOk) {
       const strictRetry = await generateAskJson({
@@ -1002,7 +1309,7 @@ export async function POST(request: NextRequest) {
         companyName,
         question,
         internalSummary,
-        sources,
+        sources: sourcesWithDoc,
         mode: 'compact',
         requestedCount,
         strictCitations: true,
@@ -1013,13 +1320,14 @@ export async function POST(request: NextRequest) {
       citationsOk = hasValidCitations(citedBullets, allowedUrls);
 
       if (strictRetry.finish_reason === 'length' || isListInvalid(parsed, requestedCount) || !citationsOk) {
-        parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount, internalSummary });
+        parsed = buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
       }
     }
 
-    citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
+    // Keep the validated/normalized citedBullets (document-mode may have auto-attached citations).
+    citedBullets = Array.isArray(citedBullets) ? citedBullets : [];
     if (!hasNonEmptyBullets(citedBullets)) {
-      parsed = buildFallbackFromSources({ sources, companyName, question, requestedCount, internalSummary });
+      parsed = buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
       citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
       if (!hasNonEmptyBullets(citedBullets)) {
         return NextResponse.json(
@@ -1052,7 +1360,7 @@ export async function POST(request: NextRequest) {
         })),
       })),
       howThisImpactsUs: String(parsed?.howThisImpactsUs || ''),
-      sources: normalizedSources.length > 0 ? normalizedSources : sources,
+      sources: normalizedSources.length > 0 ? normalizedSources : sourcesWithDoc,
     });
   } catch (error: any) {
     console.error('AI Analysis ask error:', error);

@@ -2,6 +2,7 @@ node_modules
 .next
 .env.local
 .env
+.env.*
 *.log
 .DS_Store
 .vscode
@@ -10,8 +11,6 @@ node_modules
 
 prisma/dev.db
 
-.vercel
-
 # Benchmark and test data files
 benchmark-data.sql
 benchmark-*.sql
@@ -19,7 +18,9 @@ benchmark-*.sql
 diff-output.txt
 
 CorelyticsUpdate_.csv
-.vercel
 .env*.local
 staging_all_data.sql
 staging_full.dump
+*.tsbuildinfo
+~$*
+.vercel
