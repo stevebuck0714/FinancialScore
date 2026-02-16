@@ -32,9 +32,20 @@ export async function retrieveDocumentChunks(params: {
   const q = String(question || '').trim();
   if (!q) return { chunks: [], debug: { keyword: 0, vector: 0 } };
 
+  // Heuristic: "anchor phrases" improve recall for unstructured doc questions.
+  // Many docs have consistent headers/phrases that are better search keys than the user's question.
+  const qLower = q.toLowerCase();
+  const anchorTerms: string[] = [];
+  if (/\b(covenant|covenants)\b/.test(qLower)) anchorTerms.push('covenants', 'financial covenants');
+  if (/\b(default|events? of default)\b/.test(qLower)) anchorTerms.push('events of default');
+  if (/\b(defined term|definitions?)\b/.test(qLower)) anchorTerms.push('definitions');
+  if (/\b(termination|renewal)\b/.test(qLower)) anchorTerms.push('term', 'termination');
+  if (/\b(confidential|confidentiality)\b/.test(qLower)) anchorTerms.push('confidentiality');
+  if (/\b(indemnif|indemnification)\b/.test(qLower)) anchorTerms.push('indemnification');
+  if (/\b(governing law|jurisdiction)\b/.test(qLower)) anchorTerms.push('governing law', 'jurisdiction');
+
   // Query expansion improves recall for legal docs where the question's phrasing
   // doesn't match the document's phrasing (e.g., "financial covenant" vs "Total Debt to EBITDA").
-  const qLower = q.toLowerCase();
   const expandedTerms: string[] = [];
   if (qLower.includes('covenant')) {
     expandedTerms.push(
@@ -52,6 +63,7 @@ export async function retrieveDocumentChunks(params: {
   }
   if (qLower.includes('ebitda')) expandedTerms.push('total debt to ebitda', 'leverage ratio');
   const expandedQuery = expandedTerms.length ? `${q}\n\n${expandedTerms.join(' ')}` : q;
+  const anchorQuery = anchorTerms.length ? anchorTerms.join(' ') : '';
 
   // Vector query embedding
   const embedded = await embedTexts([expandedQuery]);
@@ -95,6 +107,34 @@ export async function retrieveDocumentChunks(params: {
           expandedQuery,
           documentId,
           keywordLimit,
+        )) as any)
+      : [];
+
+  // Secondary keyword pass using anchor phrases if keyword recall is weak.
+  const anchorKeywordRows: Row[] =
+    keywordLimit > 0 && anchorQuery && keywordRows.length < Math.max(4, Math.floor(keywordLimit * 0.2))
+      ? ((await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            "id",
+            "chunkIndex",
+            "startOffset",
+            "endOffset",
+            "text",
+            ts_rank_cd(
+              to_tsvector('english', coalesce("text", '')),
+              plainto_tsquery('english', $1)
+            ) AS "keywordRank",
+            NULL::double precision AS "vectorDistance"
+          FROM "CompanyDocumentChunk"
+          WHERE "documentId" = $2
+            AND to_tsvector('english', coalesce("text", '')) @@ plainto_tsquery('english', $1)
+          ORDER BY "keywordRank" DESC
+          LIMIT $3
+        `,
+          anchorQuery,
+          documentId,
+          Math.min(keywordLimit, 15),
         )) as any)
       : [];
 
@@ -144,11 +184,15 @@ export async function retrieveDocumentChunks(params: {
   }
 
   for (const r of keywordRows) upsert(r);
+  for (const r of anchorKeywordRows) upsert(r);
   for (const r of vectorRows) upsert(r);
 
   const merged = Array.from(byId.values());
   if (merged.length === 0) {
-    return { chunks: [], debug: { keyword: keywordRows.length, vector: vectorRows.length } };
+    return {
+      chunks: [],
+      debug: { keyword: keywordRows.length + anchorKeywordRows.length, vector: vectorRows.length },
+    };
   }
 
   // Normalize ranks into [0,1] scores.
@@ -175,12 +219,13 @@ export async function retrieveDocumentChunks(params: {
   merged.sort((a, b) => b.score - a.score);
   const topScored = merged.slice(0, finalLimit);
 
-  // Include neighbor chunks to avoid missing section language that spans chunk boundaries.
+  // Include neighbor chunks to avoid missing language spanning chunk boundaries.
   const wantedIndices = new Set<number>();
+  const NEIGHBOR_WINDOW = 2;
   for (const c of topScored) {
-    wantedIndices.add(c.chunkIndex);
-    wantedIndices.add(c.chunkIndex - 1);
-    wantedIndices.add(c.chunkIndex + 1);
+    for (let d = -NEIGHBOR_WINDOW; d <= NEIGHBOR_WINDOW; d += 1) {
+      wantedIndices.add(c.chunkIndex + d);
+    }
   }
   const indices = Array.from(wantedIndices.values()).filter((n) => Number.isInteger(n) && n >= 0);
   indices.sort((a, b) => a - b);
@@ -226,6 +271,9 @@ export async function retrieveDocumentChunks(params: {
   }
 
   const final = Array.from(finalById.values()).sort((a, b) => a.chunkIndex - b.chunkIndex);
-  return { chunks: final, debug: { keyword: keywordRows.length, vector: vectorRows.length } };
+  return {
+    chunks: final,
+    debug: { keyword: keywordRows.length + anchorKeywordRows.length, vector: vectorRows.length },
+  };
 }
 

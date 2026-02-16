@@ -618,6 +618,10 @@ async function generateAskJson(params: {
   const hasDoc = !!(internalSummary as any)?.documentContext?.id;
   const docCtx = hasDoc ? ((internalSummary as any).documentContext as any) : null;
   const retrievedChunks = hasDoc && Array.isArray(docCtx?.retrievedChunks) ? (docCtx.retrievedChunks as any[]) : [];
+  const qLower = String(question || '').toLowerCase();
+  const docLooksLikeListRequest =
+    /\b(list|enumerate|identify|what are|which are|give me)\b/.test(qLower) &&
+    !/\b(why|explain|summarize|describe)\b/.test(qLower);
   const retrievedChunkText = hasDoc
     ? retrievedChunks
         .map((c) => {
@@ -639,7 +643,7 @@ async function generateAskJson(params: {
         'You are an expert analyst reading retrieved chunks from a company document.',
         'Return VALID JSON only.',
         'All factual claims must be grounded in the provided retrieved chunks and cite ONLY the allowed source URL.',
-        'Do not invent covenants, thresholds, dates, or section numbers not present in the chunks.',
+        'Do not invent numbers, dates, thresholds, names, or section numbers not present in the chunks.',
       ].join('\n')
     : [
         'You are an expert financial/operational analyst.',
@@ -662,7 +666,9 @@ async function generateAskJson(params: {
           'shortAnswer: 2-4 sentences.',
           'longAnswer: concise and direct, keep it under ~250 words.',
           hasDoc
-            ? 'citedBullets: list the most relevant items (8-25 bullets); EVERY bullet must include >=1 citation.'
+            ? (docLooksLikeListRequest
+                ? 'citedBullets: list the relevant extracted items; 5-15 bullets is fine; EVERY bullet must include >=1 citation.'
+                : 'citedBullets: 3-8 bullets capturing the most relevant grounded points; EVERY bullet must include >=1 citation.')
             : 'citedBullets: 7-10 bullets; EVERY bullet must include >=1 citation.',
           'howThisImpactsUs: REQUIRED, keep it concise (<= 120 words).',
           'sources: must be the provided sources list (same URLs; you may reorder; do not add new URLs).',
@@ -674,9 +680,13 @@ async function generateAskJson(params: {
           'shortAnswer: 2-3 sentences.',
           'longAnswer: keep it short (<= 200 words).',
           hasDoc
-            ? 'citedBullets: 6-12 bullets; EVERY bullet must include >=1 citation.'
+            ? (docLooksLikeListRequest
+                ? 'citedBullets: 4-10 bullets; EVERY bullet must include >=1 citation.'
+                : 'citedBullets: 2-6 bullets; EVERY bullet must include >=1 citation.')
             : 'citedBullets: exactly 5 bullets; EVERY bullet must include >=1 citation.',
-          'howThisImpactsUs: REQUIRED (<= 120 words).',
+          hasDoc
+            ? 'howThisImpactsUs: REQUIRED, but if not applicable to a document question, write "N/A".'
+            : 'howThisImpactsUs: REQUIRED (<= 120 words).',
           'sources: must be the provided sources list (same URLs; do not add new URLs).',
         ];
 
@@ -707,8 +717,8 @@ async function generateAskJson(params: {
         '',
         'Requirements:',
         ...requirements.map((r) => `- ${r}`),
-        '- If the chunks do not contain the answer, say that explicitly and suggest better search terms (e.g. "FINANCIAL COVENANTS", "Total Debt to EBITDA", "Section 5.03").',
-        '- For covenant questions, prefer one covenant per bullet and include the exact threshold/ratio language when present.',
+        '- If the chunks do not contain the answer, say that explicitly and suggest better search terms or an anchor phrase that likely appears in the document (e.g. a section header, defined term, or exact phrase).',
+        '- Prefer quoting short exact phrases from the chunks when answering extraction questions.',
         '',
         'Citations format:',
         '- Each cited bullet must include citations: [{ "url": "<allowed url>", "title": "...", "publishedDate": null }]',
@@ -997,12 +1007,13 @@ export async function POST(request: NextRequest) {
         }) as any;
       }
 
+      // General-purpose doc Q&A needs higher recall than "12 chunks" for many question types.
       retrievedDocChunks = await retrieveDocumentChunks({
         documentId: docContext.id,
         question,
-        keywordLimit: 25,
-        vectorLimit: 25,
-        finalLimit: 12,
+        keywordLimit: 35,
+        vectorLimit: 35,
+        finalLimit: 18,
       });
 
       if ((retrievedDocChunks?.chunks || []).length === 0) {
@@ -1326,6 +1337,41 @@ export async function POST(request: NextRequest) {
 
     // Keep the validated/normalized citedBullets (document-mode may have auto-attached citations).
     citedBullets = Array.isArray(citedBullets) ? citedBullets : [];
+
+    // Document-mode robustness: if the model returned no usable bullets (common for long legal docs),
+    // fall back to showing grounded excerpts from the retrieved chunks rather than the generic
+    // "couldn't reliably answer" fallback.
+    if (uiMode === 'document' && documentSource?.url && !hasNonEmptyBullets(citedBullets)) {
+      const docCitation = { url: documentSource.url, title: documentSource.title, publishedDate: null };
+      const chunksRaw = (retrievedDocChunks?.chunks || [])
+        .map((c) => ({
+          ...c,
+          text: String(c?.text || ''),
+          score: typeof (c as any)?.score === 'number' ? (c as any).score : 0,
+        }))
+        .filter((c) => c.text.trim().length >= 120);
+
+      // Pick the highest scoring chunks (the retrieval function returns chunks ordered by chunkIndex,
+      // which is good for readability but bad for "top N" selection).
+      const top = chunksRaw
+        .slice()
+        .sort((a, b) => (b.score || 0) - (a.score || 0))
+        .slice(0, 6)
+        .sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0))
+        .slice(0, 4);
+
+      citedBullets = top
+        .map((c) => {
+          const excerpt = String(c.text || '').replace(/\s+/g, ' ').trim().slice(0, 360);
+          if (!excerpt) return null;
+          return {
+            text: `Relevant excerpt (chunk ${c.chunkIndex}) — ${excerpt}${excerpt.length >= 360 ? '…' : ''}`,
+            citations: [docCitation],
+          };
+        })
+        .filter(Boolean) as any;
+    }
+
     if (!hasNonEmptyBullets(citedBullets)) {
       parsed = buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
       citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
