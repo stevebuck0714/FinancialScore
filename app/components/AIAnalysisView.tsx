@@ -355,9 +355,7 @@ export default function AIAnalysisView(props: {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '16px', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>AI Search and Period Review</h1>
-        </div>
+        <div />
       </div>
 
       {/* Tab Navigation */}
@@ -376,7 +374,7 @@ export default function AIAnalysisView(props: {
             borderRadius: '8px 8px 0 0',
           }}
         >
-          Ask (AI Search)
+          Ask Corelytics
         </button>
         <button
           onClick={() => setTab('search-documents')}
