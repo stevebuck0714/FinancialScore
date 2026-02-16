@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+// This route reads request headers for auth/cron verification, so it must be dynamic.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 /**
  * Cron endpoint to keep the database warm and prevent autosuspend.
  * Schedule: every 5 minutes

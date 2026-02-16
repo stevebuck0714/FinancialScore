@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanupExpiredDevices } from '@/lib/trusted-device';
 
+// This route reads request headers for auth verification, so it must be dynamic.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 /**
  * Cron endpoint for cleaning up expired trusted devices
  * This endpoint should be called by a cron job (e.g., Vercel Cron)

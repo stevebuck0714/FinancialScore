@@ -3,6 +3,10 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 
+// This route depends on request URL/headers via auth + query parsing, so it must be dynamic.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 type CovenantAlert = {
   id: string;
   title: string;
