@@ -48,10 +48,24 @@ export async function createModelText(params: {
   const { openai, model, messages, temperature = 0.2, maxTokens } = params;
 
   // 1) Prefer Responses API (required for gpt-5.x and some newer models).
+  // Responses expects `instructions` instead of `system` messages.
+  const instructions = messages
+    .filter((m) => m.role === 'system')
+    .map((m) => m.content)
+    .join('\n\n')
+    .trim();
+
+  const nonSystem = messages.filter((m) => m.role !== 'system');
+  const input =
+    nonSystem.length === 1 && nonSystem[0]?.role === 'user'
+      ? nonSystem[0].content
+      : nonSystem.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+
   try {
     const response = await (openai as any).responses.create({
       model,
-      input: messages,
+      ...(instructions ? { instructions } : {}),
+      input,
       temperature,
       ...(typeof maxTokens === 'number' ? { max_output_tokens: maxTokens } : {}),
     });
