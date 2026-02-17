@@ -1272,7 +1272,10 @@ export async function POST(request: NextRequest) {
 
     // 2) Ask the model to synthesize an answer with REQUIRED structure
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const model = process.env.OPENAI_MODEL || 'gpt-4o';
+    const defaultModel = process.env.OPENAI_MODEL || 'gpt-4o';
+    const askModel = process.env.OPENAI_MODEL_ASK || defaultModel;
+    const docsModel = process.env.OPENAI_MODEL_DOCS || defaultModel;
+    const model = uiMode === 'document' ? docsModel : askModel;
 
     // Try full mode first; if truncated, retry once in compact mode.
     let parsed: AskOutput;

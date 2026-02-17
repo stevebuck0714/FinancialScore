@@ -2,6 +2,32 @@ import OpenAI from 'openai';
 
 export type OpenAIChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
+function getOpenAiTimeoutMs(): number {
+  const raw = process.env.OPENAI_TIMEOUT_MS;
+  const parsed = raw ? Number(raw) : 45000;
+  if (!Number.isFinite(parsed)) return 45000;
+  // Keep within sane bounds; this endpoint is interactive.
+  return Math.max(1000, Math.min(180000, Math.floor(parsed)));
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          const err: any = new Error(`${label} timed out after ${ms}ms`);
+          err.code = 'ETIMEDOUT';
+          reject(err);
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function extractResponsesText(response: any): string {
   if (typeof response?.output_text === 'string' && response.output_text.trim()) {
     return response.output_text;
@@ -53,6 +79,7 @@ async function createResponsesTextViaFetch(params: {
 }): Promise<{ text: string; finishReason?: string | null }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set in environment');
+  const timeoutMs = getOpenAiTimeoutMs();
 
   const basePayload: any = {
     model: params.model,
@@ -81,14 +108,30 @@ async function createResponsesTextViaFetch(params: {
   };
 
   const doRequest = async (payload: any) => {
-    const res = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await withTimeout(
+        fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        }),
+        timeoutMs,
+        'OpenAI responses request',
+      );
+    } catch (e: any) {
+      // Normalize abort/timeout errors into something actionable.
+      const msg = String(e?.message || '');
+      if (e?.code === 'ETIMEDOUT' || msg.toLowerCase().includes('timed out')) {
+        const err: any = new Error(msg || `OpenAI responses request timed out after ${timeoutMs}ms`);
+        err.code = 'ETIMEDOUT';
+        throw err;
+      }
+      throw e;
+    }
     const raw = await res.text().catch(() => '');
     let data: any = null;
     try {
@@ -244,6 +287,7 @@ export async function createModelText(params: {
   maxTokens?: number; // chat max_tokens; mapped to responses max_output_tokens
 }): Promise<{ text: string; finishReason?: string | null; api: 'responses' | 'chat' }> {
   const { openai, model, messages, temperature = 0.2, maxTokens } = params;
+  const timeoutMs = getOpenAiTimeoutMs();
 
   // 1) Prefer Responses API (required for gpt-5.x and some newer models).
   // Responses expects `instructions` instead of `system` messages.
@@ -274,15 +318,19 @@ export async function createModelText(params: {
     // Otherwise, try chat completions.
   }
 
-  const completion = await openai.chat.completions.create({
-    model,
-    messages,
-    temperature,
-    ...(typeof maxTokens === 'number' ? { max_tokens: maxTokens } : {}),
-    // Helps JSON-heavy prompts; models that don't support it will error, but those
-    // should be handled by the Responses path above.
-    response_format: { type: 'json_object' } as any,
-  });
+  const completion = await withTimeout(
+    openai.chat.completions.create({
+      model,
+      messages,
+      temperature,
+      ...(typeof maxTokens === 'number' ? { max_tokens: maxTokens } : {}),
+      // Helps JSON-heavy prompts; models that don't support it will error, but those
+      // should be handled by the Responses path above.
+      response_format: { type: 'json_object' } as any,
+    }),
+    timeoutMs,
+    'OpenAI chat request',
+  );
 
   const text = completion.choices[0]?.message?.content ?? '';
   if (!text.trim()) throw new Error('Empty model response (chat)');
