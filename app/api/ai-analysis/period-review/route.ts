@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
+import { createModelText } from '@/lib/openai-helpers';
 
 type Source = { url: string; title?: string; publishedDate?: string | null };
 
@@ -425,19 +426,18 @@ export async function POST(request: NextRequest) {
       '- Exclude internal Payments tab data or subscription/billing plan terms.',
     ].join('\n');
 
-    const completion = await openai.chat.completions.create({
+    const resp = await createModelText({
+      openai,
       model,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      // Enforce valid JSON output
-      response_format: { type: 'json_object' },
       temperature: 0.2,
-      max_tokens: 1400,
+      maxTokens: 1400,
     });
 
-    const content = completion.choices[0]?.message?.content || '';
+    const content = resp.text || '';
     const parsed = safeJsonParse(content);
 
     const returnedAlerts = Array.isArray(parsed?.operationalTrends?.negativeTrendAlerts)

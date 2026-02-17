@@ -65,6 +65,13 @@ export default function DocumentsTab(props: { selectedCompanyId: string }) {
         throw new Error(`Failed to load documents (${res.status}): non-JSON response`);
       }
       const data = JSON.parse(raw);
+      if (data?.migrationRequired) {
+        throw new Error(
+          `Documents are not configured in this environment (missing DB migration). Run: ${String(
+            (data?.manualMigrations || []).join(' , ')
+          )}`
+        );
+      }
       if (!res.ok) throw new Error(data?.error || 'Failed to load documents');
       setDocuments(Array.isArray(data?.documents) ? data.documents : []);
     } catch (e: any) {

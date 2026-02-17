@@ -18,6 +18,14 @@ function asCategory(value: unknown): 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 
   return CATEGORY_VALUES.has(s) ? (s as any) : null;
 }
 
+function isMissingCompanyDocumentsTableError(e: any) {
+  const code = String(e?.code || '').trim();
+  const msg = String(e?.message || '');
+  // Prisma uses P2021 for missing table in many cases; message varies by provider.
+  if (code === 'P2021') return true;
+  return msg.includes('CompanyDocument') && msg.toLowerCase().includes('does not exist');
+}
+
 export async function GET(req: NextRequest) {
   try {
     await requireAuth();
@@ -57,6 +65,24 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ documents });
   } catch (e: any) {
+    if (isMissingCompanyDocumentsTableError(e)) {
+      // Deployed code may reach a DB that hasn't had the manual migration applied yet.
+      // Return a non-500 response so the UI can show a friendly setup message.
+      return NextResponse.json(
+        {
+          documents: [],
+          migrationRequired: true,
+          missing: ['CompanyDocument', 'CompanyDocumentChunk'],
+          message:
+            'Company documents are not available because the database migration has not been applied yet.',
+          manualMigrations: [
+            'prisma/manual_migrations/20260216_add_company_documents.sql',
+            'prisma/manual_migrations/20260216_add_company_document_chunks_pgvector.sql',
+          ],
+        },
+        { status: 200 }
+      );
+    }
     return NextResponse.json({ error: e?.message || 'Failed to list documents' }, { status: 500 });
   }
 }
@@ -204,6 +230,20 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ document: refreshed });
   } catch (e: any) {
+    if (isMissingCompanyDocumentsTableError(e)) {
+      return NextResponse.json(
+        {
+          error:
+            'Company documents are not available because the database migration has not been applied yet.',
+          migrationRequired: true,
+          manualMigrations: [
+            'prisma/manual_migrations/20260216_add_company_documents.sql',
+            'prisma/manual_migrations/20260216_add_company_document_chunks_pgvector.sql',
+          ],
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: e?.message || 'Failed to register document' }, { status: 500 });
   }
 }

@@ -6,6 +6,7 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getBenchmarkValue } from '@/app/utils/data-processing';
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 import { retrieveDocumentChunks } from '@/lib/company-documents/retrieve-chunks';
+import { createModelText } from '@/lib/openai-helpers';
 
 type RatioSnapshot = {
   name: string;
@@ -764,19 +765,21 @@ async function generateAskJson(params: {
         'Return ONLY JSON.',
       ].join('\n');
 
-  const completion = await openai.chat.completions.create({
+  // NOTE: models like gpt-5.1 are Responses-only; we use a helper that prefers
+  // the Responses API and falls back to Chat Completions.
+  const resp = await createModelText({
+    openai,
     model,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
-    response_format: { type: 'json_object' },
     temperature: 0.2,
-    max_tokens: hasDoc ? 1400 : (mode === 'full' ? 2200 : 1400),
+    maxTokens: hasDoc ? 1400 : (mode === 'full' ? 2200 : 1400),
   });
 
-  const content = completion.choices[0]?.message?.content ?? '';
-  const finish_reason = completion.choices[0]?.finish_reason;
+  const content = resp.text;
+  const finish_reason = resp.finishReason;
 
   if (typeof content !== 'string' || content.trim().length === 0) {
     throw new Error('Failed to parse model JSON (empty model response)');
