@@ -49,41 +49,53 @@ async function createResponsesTextViaFetch(params: {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set in environment');
 
-  const res = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: params.model,
-      ...(params.instructions ? { instructions: params.instructions } : {}),
-      input: params.input,
-      temperature: params.temperature,
-      ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
-    }),
-  });
+  const basePayload: any = {
+    model: params.model,
+    ...(params.instructions ? { instructions: params.instructions } : {}),
+    input: params.input,
+    ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
+  };
 
-  const raw = await res.text().catch(() => '');
-  let data: any = null;
-  try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch {
-    data = null;
+  const doRequest = async (payload: any) => {
+    const res = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const raw = await res.text().catch(() => '');
+    let data: any = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      data = null;
+    }
+    return { res, raw, data };
+  };
+
+  // Try with temperature first, then retry without it when the model rejects it.
+  let out = await doRequest({ ...basePayload, temperature: params.temperature });
+  if (!out.res.ok) {
+    const msg = String(out.data?.error?.message || out.raw || '');
+    if (out.res.status === 400 && msg.includes("Unsupported parameter: 'temperature'")) {
+      out = await doRequest(basePayload);
+    }
   }
 
-  if (!res.ok) {
-    const msg = String(data?.error?.message || raw || `OpenAI responses error (${res.status})`);
+  if (!out.res.ok) {
+    const msg = String(out.data?.error?.message || out.raw || `OpenAI responses error (${out.res.status})`);
     const err: any = new Error(msg);
-    err.status = res.status;
-    err.code = data?.error?.code ?? null;
-    err.type = data?.error?.type ?? null;
+    err.status = out.res.status;
+    err.code = out.data?.error?.code ?? null;
+    err.type = out.data?.error?.type ?? null;
     throw err;
   }
 
-  const text = extractResponsesText(data);
+  const text = extractResponsesText(out.data);
   if (!text.trim()) throw new Error('Empty model response (responses)');
-  const finishReason = data?.output?.[0]?.finish_reason ?? data?.finish_reason ?? null;
+  const finishReason = out.data?.output?.[0]?.finish_reason ?? out.data?.finish_reason ?? null;
   return { text, finishReason };
 }
 
