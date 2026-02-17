@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type AskResponse = {
   shortAnswer: string;
@@ -84,10 +84,16 @@ export default function AIAnalysisView(props: {
   const [tab, setTab] = useState<'ask' | 'search-documents' | 'period-review'>('ask');
 
   // Ask
-  const [question, setQuestion] = useState('');
+  const [askQuestion, setAskQuestion] = useState('');
   const [askLoading, setAskLoading] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [askResponse, setAskResponse] = useState<AskResponse | null>(null);
+
+  // Document search (separate state so it doesn't leak from Ask Corelytics)
+  const [docQuestion, setDocQuestion] = useState('');
+  const [docLoading, setDocLoading] = useState(false);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [docResponse, setDocResponse] = useState<AskResponse | null>(null);
   const [useExternalSources, setUseExternalSources] = useState(false);
   const [documents, setDocuments] = useState<CompanyDocument[]>([]);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
@@ -216,16 +222,43 @@ export default function AIAnalysisView(props: {
     setQuestionsSavedAt(null);
   }
 
+  const askAbortRef = useRef<AbortController | null>(null);
+  const docAbortRef = useRef<AbortController | null>(null);
+
+  function abortInFlight(mode: 'default' | 'document') {
+    const ref = mode === 'document' ? docAbortRef : askAbortRef;
+    try {
+      ref.current?.abort();
+    } catch {
+      // ignore
+    }
+    ref.current = null;
+  }
+
   async function runAsk(q: string, opts?: { mode?: 'default' | 'document' }) {
     const trimmed = q.trim();
     if (!trimmed) return;
 
-    setAskLoading(true);
-    setAskError(null);
-    setAskResponse(null);
+    const mode = opts?.mode === 'document' ? 'document' : 'default';
+    abortInFlight(mode);
+
+    const controller = new AbortController();
+    const timeoutMs = 45000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    if (mode === 'document') {
+      setDocLoading(true);
+      setDocError(null);
+      setDocResponse(null);
+      docAbortRef.current = controller;
+    } else {
+      setAskLoading(true);
+      setAskError(null);
+      setAskResponse(null);
+      askAbortRef.current = controller;
+    }
 
     try {
-      const mode = opts?.mode === 'document' ? 'document' : 'default';
       const res = await fetch('/api/ai-analysis/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -237,16 +270,30 @@ export default function AIAnalysisView(props: {
           documentId: selectedDocumentId || null,
           mode,
         }),
+        signal: controller.signal,
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data?.error || 'Failed to run AI Search');
       }
-      setAskResponse(data as AskResponse);
+      if (mode === 'document') setDocResponse(data as AskResponse);
+      else setAskResponse(data as AskResponse);
     } catch (e: any) {
-      setAskError(e?.message || 'Unknown error');
+      const msg =
+        e?.name === 'AbortError'
+          ? 'Request cancelled (took too long). Please try again.'
+          : (e?.message || 'Unknown error');
+      if (mode === 'document') setDocError(msg);
+      else setAskError(msg);
     } finally {
-      setAskLoading(false);
+      clearTimeout(timeoutId);
+      if (mode === 'document') {
+        setDocLoading(false);
+        if (docAbortRef.current === controller) docAbortRef.current = null;
+      } else {
+        setAskLoading(false);
+        if (askAbortRef.current === controller) askAbortRef.current = null;
+      }
     }
   }
 
@@ -318,6 +365,13 @@ export default function AIAnalysisView(props: {
     if (tab === 'search-documents') {
       setUseExternalSources(false);
     }
+  }, [tab]);
+
+  useEffect(() => {
+    // Avoid a "stuck" feel: cancel in-flight requests when switching tabs.
+    if (tab === 'ask') abortInFlight('document');
+    if (tab === 'search-documents') abortInFlight('default');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   const docsByCategory = useMemo(() => {
@@ -585,8 +639,8 @@ export default function AIAnalysisView(props: {
             <div>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
                 <input
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
+                  value={askQuestion}
+                  onChange={(e) => setAskQuestion(e.target.value)}
                   placeholder="Ask a question…"
                   style={{
                     flex: 1,
@@ -598,13 +652,13 @@ export default function AIAnalysisView(props: {
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      runAsk(question, { mode: 'default' });
+                      runAsk(askQuestion, { mode: 'default' });
                     }
                   }}
                 />
                 <button
-                  onClick={() => runAsk(question, { mode: 'default' })}
-                  disabled={askLoading || !question.trim()}
+                  onClick={() => runAsk(askQuestion, { mode: 'default' })}
+                  disabled={askLoading || !askQuestion.trim()}
                   style={{
                     padding: '12px 16px',
                     borderRadius: '10px',
@@ -799,8 +853,8 @@ export default function AIAnalysisView(props: {
 
               <div style={{ marginTop: '14px', display: 'flex', gap: '10px', alignItems: 'stretch' }}>
                 <input
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
+                  value={docQuestion}
+                  onChange={(e) => setDocQuestion(e.target.value)}
                   placeholder={selectedDocumentId ? 'Ask about this document…' : 'Select a document first…'}
                   style={{
                     flex: 1,
@@ -817,15 +871,15 @@ export default function AIAnalysisView(props: {
                   }
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      runAsk(question, { mode: 'document' });
+                      runAsk(docQuestion, { mode: 'document' });
                     }
                   }}
                 />
                 <button
-                  onClick={() => runAsk(question, { mode: 'document' })}
+                  onClick={() => runAsk(docQuestion, { mode: 'document' })}
                   disabled={
-                    askLoading ||
-                    !question.trim() ||
+                    docLoading ||
+                    !docQuestion.trim() ||
                     !selectedDocumentId ||
                     (selectedDocument ? String(selectedDocument.extractionStatus || '').toUpperCase() !== 'DONE' : false) ||
                     (selectedDocument ? String(selectedDocument.indexStatus || '').toUpperCase() === 'FAILED' : false)
@@ -842,27 +896,27 @@ export default function AIAnalysisView(props: {
                   }}
                   title="Run (Ctrl/Cmd+Enter)"
                 >
-                  {askLoading ? 'Searching…' : 'Search Document'}
+                  {docLoading ? 'Searching…' : 'Search Document'}
                 </button>
               </div>
 
-              {askError && (
+              {docError && (
                 <div style={{ marginTop: '12px', padding: '12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '10px' }}>
-                  {askError}
+                  {docError}
                 </div>
               )}
 
-              {askResponse && (
+              {docResponse && (
                 <div style={{ marginTop: '16px', display: 'grid', gap: '14px' }}>
                   <Section title="Short answer">
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>{askResponse.shortAnswer}</div>
+                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>{docResponse.shortAnswer}</div>
                   </Section>
                   <Section title="Long answer">
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{askResponse.longAnswer}</div>
+                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{docResponse.longAnswer}</div>
                   </Section>
                   <Section title="Cited bullets (every bullet is sourced)">
                     <div style={{ display: 'grid', gap: '10px' }}>
-                      {askResponse.citedBullets.map((b, idx) => (
+                      {docResponse.citedBullets.map((b, idx) => (
                         <div key={idx} style={{ padding: '10px 12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                           <div style={{ color: '#0f172a', lineHeight: '1.55' }}>• {b.text}</div>
                           <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -884,11 +938,11 @@ export default function AIAnalysisView(props: {
                     </div>
                   </Section>
                   <Section title="How this impacts us">
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{askResponse.howThisImpactsUs}</div>
+                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{docResponse.howThisImpactsUs}</div>
                   </Section>
                   <Section title="Sources">
                     <div style={{ display: 'grid', gap: '8px' }}>
-                      {askResponse.sources.map((s, idx) => (
+                      {docResponse.sources.map((s, idx) => (
                         <a
                           key={idx}
                           href={s.url}
