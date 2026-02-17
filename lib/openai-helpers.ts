@@ -65,6 +65,13 @@ async function createResponsesTextViaFetch(params: {
     response_format: { type: 'json_object' },
   };
 
+  const minimalPayload: any = {
+    model: params.model,
+    ...(params.instructions ? { instructions: params.instructions } : {}),
+    input: params.input,
+    ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
+  };
+
   const doRequest = async (payload: any) => {
     const res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -145,7 +152,7 @@ async function createResponsesTextViaFetch(params: {
     throw err;
   }
 
-  const text = extractResponsesText(out.data);
+  let text = extractResponsesText(out.data);
   if (!text.trim()) {
     // Make this debuggable in production without logging sensitive prompt text.
     const output = Array.isArray(out.data?.output) ? out.data.output : [];
@@ -153,6 +160,22 @@ async function createResponsesTextViaFetch(params: {
     const contentTypes = output
       .flatMap((x: any) => (Array.isArray(x?.content) ? x.content : []))
       .map((c: any) => String(c?.type || 'unknown'));
+
+    // Some models can return a "reasoning-only" output item with no message/text.
+    // When that happens, retry once with a minimal payload (no formatting flags) to
+    // force a normal text response.
+    if (outputTypes.length === 1 && outputTypes[0] === 'reasoning' && contentTypes.length === 0) {
+      const retry = await doRequest(minimalPayload);
+      if (retry.res.ok) {
+        const retryText = extractResponsesText(retry.data);
+        if (retryText.trim()) {
+          return {
+            text: retryText,
+            finishReason: retry.data?.output?.[0]?.finish_reason ?? retry.data?.finish_reason ?? null,
+          };
+        }
+      }
+    }
 
     if (process.env.OPENAI_DEBUG === 'true') {
       console.error('OpenAI responses: empty text', {
