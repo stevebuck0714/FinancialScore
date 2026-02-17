@@ -55,6 +55,8 @@ async function createResponsesTextViaFetch(params: {
     input: params.input,
     ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
     // Enforce JSON when the model supports structured outputs.
+    // Responses API supports `text.format`; some SDKs/docs also mention `response_format`.
+    text: { format: { type: 'json_object' } },
     response_format: { type: 'json_object' },
   };
 
@@ -77,20 +79,47 @@ async function createResponsesTextViaFetch(params: {
     return { res, raw, data };
   };
 
+  const withoutTemperature = (p: any) => {
+    const { temperature: _t, ...rest } = p;
+    return rest;
+  };
+  const withoutResponseFormat = (p: any) => {
+    const { response_format: _rf, ...rest } = p;
+    return rest;
+  };
+  const withoutTextFormat = (p: any) => {
+    const { text: _text, ...rest } = p;
+    return rest;
+  };
+
   // Try with temperature first, then retry without it when the model rejects it.
   let out = await doRequest({ ...basePayload, temperature: params.temperature });
   if (!out.res.ok) {
     const msg = String(out.data?.error?.message || out.raw || '');
     if (out.res.status === 400 && msg.includes("Unsupported parameter: 'temperature'")) {
-      out = await doRequest(basePayload);
-    } else if (out.res.status === 400 && msg.toLowerCase().includes('unsupported parameter') && msg.includes('response_format')) {
-      // Some models may not support structured output; retry without it.
-      const { response_format: _rf, ...withoutFormat } = basePayload;
-      out = await doRequest({ ...withoutFormat, temperature: params.temperature });
+      out = await doRequest(withoutTemperature(basePayload));
+    } else if (out.res.status === 400 && msg.toLowerCase().includes('unsupported parameter')) {
+      // Retry by removing unsupported knobs, preferring to keep at least one JSON-enforcing flag.
+      if (msg.includes('response_format')) {
+        const p1 = withoutResponseFormat({ ...basePayload, temperature: params.temperature });
+        out = await doRequest(p1);
+        if (!out.res.ok && String(out.data?.error?.message || out.raw || '').includes("Unsupported parameter: 'temperature'")) {
+          out = await doRequest(withoutTemperature(p1));
+        }
+      } else if (msg.includes("'text'") || msg.includes('text.format') || msg.includes('text')) {
+        const p1 = withoutTextFormat({ ...basePayload, temperature: params.temperature });
+        out = await doRequest(p1);
+        if (!out.res.ok && String(out.data?.error?.message || out.raw || '').includes("Unsupported parameter: 'temperature'")) {
+          out = await doRequest(withoutTemperature(p1));
+        }
+      }
+
+      // If still failing because of both, drop both formatting flags.
       if (!out.res.ok) {
-        const msg2 = String(out.data?.error?.message || out.raw || '');
-        if (out.res.status === 400 && msg2.includes("Unsupported parameter: 'temperature'")) {
-          out = await doRequest(withoutFormat);
+        const p2 = withoutTextFormat(withoutResponseFormat({ ...basePayload, temperature: params.temperature }));
+        out = await doRequest(p2);
+        if (!out.res.ok && String(out.data?.error?.message || out.raw || '').includes("Unsupported parameter: 'temperature'")) {
+          out = await doRequest(withoutTemperature(p2));
         }
       }
     }
