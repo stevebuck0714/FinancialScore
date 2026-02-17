@@ -821,7 +821,44 @@ async function generateAskJson(params: {
     throw new Error('Failed to parse model JSON (empty model response)');
   }
 
-  const parsed = safeJsonParse(content) as AskOutput;
+  let parsed: AskOutput;
+  try {
+    parsed = safeJsonParse(content) as AskOutput;
+  } catch (e: any) {
+    // Some models occasionally emit non-JSON wrappers or minor JSON issues (quotes, fences).
+    // If that happens, do one fast "repair" pass that converts the output to strict JSON.
+    const repair = await createModelText({
+      openai,
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'You are a strict JSON repair tool.',
+            'Return VALID JSON only. Do not include markdown fences or any other text.',
+            'Fix quoting, remove trailing commas, and remove any non-JSON wrapper text.',
+            'Preserve the original meaning and values as much as possible.',
+            'The JSON MUST be a single object with the keys: shortAnswer, longAnswer, citedBullets, howThisImpactsUs, sources.',
+          ].join('\n'),
+        },
+        {
+          role: 'user',
+          content: [
+            'Convert this to valid JSON (single object) with the required keys only.',
+            '',
+            '---BEGIN---',
+            // Bound size to keep retry fast even if the model went off-script.
+            String(content).slice(0, 12000),
+            '---END---',
+          ].join('\n'),
+        },
+      ],
+      temperature: 0,
+      maxTokens: 1600,
+    });
+
+    parsed = safeJsonParse(repair.text) as AskOutput;
+  }
   return {
     parsed,
     finish_reason,
@@ -1274,7 +1311,9 @@ export async function POST(request: NextRequest) {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const defaultModel = process.env.OPENAI_MODEL || 'gpt-4o';
     const askModel = process.env.OPENAI_MODEL_ASK || defaultModel;
-    const docsModel = process.env.OPENAI_MODEL_DOCS || defaultModel;
+    // If you don't explicitly set a docs model, default documents to the same
+    // interactive model as Ask Corelytics (usually faster/more reliable than the global default).
+    const docsModel = process.env.OPENAI_MODEL_DOCS || askModel;
     const model = uiMode === 'document' ? docsModel : askModel;
 
     // Try full mode first; if truncated, retry once in compact mode.

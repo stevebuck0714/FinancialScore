@@ -88,6 +88,7 @@ export default function AIAnalysisView(props: {
   const [askLoading, setAskLoading] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [askResponse, setAskResponse] = useState<AskResponse | null>(null);
+  const askInputRef = useRef<HTMLInputElement | null>(null);
 
   // Document search (separate state so it doesn't leak from Ask Corelytics)
   const [docQuestion, setDocQuestion] = useState('');
@@ -557,8 +558,10 @@ export default function AIAnalysisView(props: {
                       <div key={`${category}-${idx}`} style={{ display: 'flex', gap: '6px', alignItems: 'stretch' }}>
                         <button
                           onClick={() => {
-                            setQuestion(q);
+                            setAskQuestion(q);
                             setTab('ask');
+                            // Make "suggested question" feel like a picker: focus the input so users can tweak it.
+                            setTimeout(() => askInputRef.current?.focus(), 0);
                           }}
                           style={{
                             textAlign: 'left',
@@ -639,6 +642,7 @@ export default function AIAnalysisView(props: {
             <div>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
                 <input
+                  ref={askInputRef}
                   value={askQuestion}
                   onChange={(e) => setAskQuestion(e.target.value)}
                   placeholder="Ask a question…"
