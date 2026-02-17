@@ -4,7 +4,17 @@ import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
 
 export async function POST(request: NextRequest) {
   try {
-    const { companyId, dataType = 'all', monthsBack = 12, secret, sectorCategory } = await request.json();
+    const {
+      companyId,
+      dataType = 'all',
+      monthsBack = 12,
+      secret,
+      sectorCategory,
+      // Safety: in prod, never overwrite real data unless explicitly requested.
+      replace = false,
+      // demo mode emits higher-signal patterns (concentration, deterioration, inventory build).
+      mode = 'demo',
+    } = await request.json();
 
     // Simple auth check using CRON_SECRET
     const expectedSecret = process.env.CRON_SECRET || 'dev-secret-change-me';
@@ -22,9 +32,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Extra guard for production: require explicit opt-in env var.
+    // This helps prevent accidental overwrites when real data starts flowing.
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isProd && process.env.ALLOW_PROD_DEMO_SEED !== 'true') {
+      return NextResponse.json(
+        { error: 'Demo seeding disabled in production. Set ALLOW_PROD_DEMO_SEED=true to enable.' },
+        { status: 403 }
+      );
+    }
+
     console.log('🌱 Seeding operational data for company:', companyId);
     console.log('📊 Data type:', dataType);
     console.log('📅 Months back:', monthsBack);
+    console.log('🧪 Mode:', mode, 'Replace:', replace);
 
     // Verify company exists
     const company = await prisma.company.findUnique({
@@ -51,11 +72,37 @@ export async function POST(request: NextRequest) {
       companyId,
       companyName: company.name,
       sectorCategory: profile.sectorCategory,
+      mode,
+      replace,
       seeded: {},
+      skipped: {},
+    };
+
+    // For safety, we skip (not delete+reseed) any table that already has rows unless replace=true.
+    // This keeps prod demo seeding safe once real imports begin.
+    const existingCounts = {
+      cash: await prisma.cashSnapshot.count({ where: { companyId } }),
+      ar: await prisma.aRAgingSnapshot.count({ where: { companyId } }),
+      ap: await prisma.aPAgingSnapshot.count({ where: { companyId } }),
+      customerSales: await prisma.customerSalesSnapshot.count({ where: { companyId } }),
+      productSales: await prisma.productSalesSnapshot.count({ where: { companyId } }),
+      inventory: await prisma.inventorySnapshot.count({ where: { companyId } }),
+    };
+
+    const canSeed = (key: keyof typeof existingCounts) => {
+      if (replace) return true;
+      if (existingCounts[key] > 0) {
+        results.skipped[key] = `Skipped: existing rows=${existingCounts[key]} (set replace=true to overwrite)`;
+        return false;
+      }
+      return true;
     };
 
     // Generate daily cash snapshots
     if (dataType === 'all' || dataType === 'cash') {
+      if (!canSeed('cash')) {
+        // no-op
+      } else {
       console.log('💰 Generating daily cash snapshots...');
       
       const cashSnapshots = [];
@@ -105,10 +152,8 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      // Delete existing cash snapshots for this company
-      await prisma.cashSnapshot.deleteMany({
-        where: { companyId },
-      });
+      // Delete existing cash snapshots for this company (guarded by replace/canSeed)
+      await prisma.cashSnapshot.deleteMany({ where: { companyId } });
       
       // Insert new snapshots
       await prisma.cashSnapshot.createMany({
@@ -117,10 +162,14 @@ export async function POST(request: NextRequest) {
       
       results.seeded.cashSnapshots = cashSnapshots.length;
       console.log(`✅ Created ${cashSnapshots.length} daily cash snapshots`);
+      }
     }
 
     // Generate AR Aging snapshots (monthly + daily)
     if (dataType === 'all' || dataType === 'ar') {
+      if (!canSeed('ar')) {
+        // no-op
+      } else {
       console.log('📊 Generating AR Aging snapshots (daily + monthly)...');
       
       const arSnapshots = [];
@@ -129,13 +178,27 @@ export async function POST(request: NextRequest) {
       // Monthly AR Aging
       for (let i = 0; i < monthsBack; i++) {
         const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
-        
-        const totalAR = 50000 + Math.random() * 100000;
-        const current = totalAR * (0.5 + Math.random() * 0.2);
-        const days1to30 = totalAR * (0.15 + Math.random() * 0.1);
-        const days31to60 = totalAR * (0.05 + Math.random() * 0.05);
-        const days61to90 = totalAR * (0.02 + Math.random() * 0.03);
-        const days90plus = totalAR - current - days1to30 - days31to60 - days61to90;
+
+        // Demo pattern: make AR stress slightly worse in more recent months so the analytics
+        // can surface a collections opportunity on demo data.
+        const idxFromOldest = monthsBack - 1 - i;
+        const late = monthsBack > 1 ? idxFromOldest / (monthsBack - 1) : 1;
+        const totalAR = (55000 + Math.random() * 120000) * (profile.scale || 1);
+
+        const stress = mode === 'demo' ? Math.min(0.18, 0.06 + late * 0.12) : 0.06;
+        const over60Pct = Math.min(0.35, stress + Math.random() * 0.03);
+        const over60 = totalAR * over60Pct;
+
+        const currentPct = Math.max(0.45, 0.62 - over60Pct * 0.7) + Math.random() * 0.05;
+        const days1to30Pct = 0.18 + Math.random() * 0.06;
+        const days31to60Pct = Math.max(0.04, 1 - currentPct - days1to30Pct - over60Pct) * 0.6;
+        const days61to90Pct = Math.max(0.02, 1 - currentPct - days1to30Pct - days31to60Pct - over60Pct) * 0.6;
+
+        const current = totalAR * currentPct;
+        const days1to30 = totalAR * days1to30Pct;
+        const days31to60 = totalAR * days31to60Pct;
+        const days61to90 = totalAR * days61to90Pct;
+        const days90plus = Math.max(0, totalAR - current - days1to30 - days31to60 - days61to90);
         
         arSnapshots.push({
           companyId,
@@ -185,10 +248,14 @@ export async function POST(request: NextRequest) {
       
       results.seeded.arSnapshots = arSnapshots.length;
       console.log(`✅ Created ${arSnapshots.length} AR Aging snapshots (${monthsBack} monthly + 91 daily)`);
+      }
     }
 
     // Generate AP Aging snapshots (monthly + daily)
     if (dataType === 'all' || dataType === 'ap') {
+      if (!canSeed('ap')) {
+        // no-op
+      } else {
       console.log('📊 Generating AP Aging snapshots (daily + monthly)...');
       
       const apSnapshots = [];
@@ -253,14 +320,29 @@ export async function POST(request: NextRequest) {
       
       results.seeded.apSnapshots = apSnapshots.length;
       console.log(`✅ Created ${apSnapshots.length} AP Aging snapshots (${monthsBack} monthly + 91 daily)`);
+      }
     }
 
     // Generate Customer Sales snapshots
     if (dataType === 'all' || dataType === 'customerSales') {
+      if (!canSeed('customerSales')) {
+        // no-op
+      } else {
       console.log('📊 Generating Customer Sales snapshots...');
       
       const customerSalesSnapshots = [];
       const customers = makeNames(profile.customerPrefix, 18, 'C');
+
+      // Demo pattern: enforce a power-law customer mix so concentration and "top accounts"
+      // opportunities become visible even without real CRM data.
+      const weightForCustomer = (idx: number) => {
+        if (mode !== 'demo') return 1;
+        if (idx === 0) return 4.5;
+        if (idx === 1) return 2.7;
+        if (idx === 2) return 1.9;
+        if (idx <= 5) return 1.1;
+        return 0.55;
+      };
       
       const today = new Date();
       for (let i = 0; i < monthsBack; i++) {
@@ -269,9 +351,10 @@ export async function POST(request: NextRequest) {
         const idxFromOldest = monthsBack - 1 - i;
         customers.forEach((customer, cIdx) => {
           // Add mild seasonality and a customer mix.
-          const base = (9000 + cIdx * 1200) * (profile.scale || 1);
+          const base = (9000 + cIdx * 1100) * (profile.scale || 1);
           const seasonal = 1 + Math.sin(idxFromOldest / 2.2) * 0.08;
-          const revenue = base * seasonal * (0.85 + Math.random() * 0.45);
+          const mixW = weightForCustomer(cIdx);
+          const revenue = base * seasonal * mixW * (0.85 + Math.random() * 0.35);
           const invoiceCount = Math.floor(2 + Math.random() * 8);
           
           customerSalesSnapshots.push({
@@ -293,10 +376,14 @@ export async function POST(request: NextRequest) {
       
       results.seeded.customerSalesSnapshots = customerSalesSnapshots.length;
       console.log(`✅ Created ${customerSalesSnapshots.length} Customer Sales snapshots`);
+      }
     }
 
     // Generate Product Sales snapshots
     if (dataType === 'all' || dataType === 'productSales') {
+      if (!canSeed('productSales')) {
+        // no-op
+      } else {
       console.log('📊 Generating Product Sales snapshots...');
       
       const productSalesSnapshots = [];
@@ -354,10 +441,14 @@ export async function POST(request: NextRequest) {
       
       results.seeded.productSalesSnapshots = productSalesSnapshots.length;
       console.log(`✅ Created ${productSalesSnapshots.length} Product Sales snapshots`);
+      }
     }
 
     // Generate Inventory snapshots
     if (dataType === 'all' || dataType === 'inventory') {
+      if (!canSeed('inventory')) {
+        // no-op
+      } else {
       console.log('📦 Generating Inventory snapshots...');
       
       const inventorySnapshots = [];
@@ -408,6 +499,7 @@ export async function POST(request: NextRequest) {
       
       results.seeded.inventorySnapshots = inventorySnapshots.length;
       console.log(`✅ Created ${inventorySnapshots.length} Inventory snapshots`);
+      }
     }
 
     console.log('✅ Operational data seeding complete');
