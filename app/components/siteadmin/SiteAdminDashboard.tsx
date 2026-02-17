@@ -867,7 +867,7 @@ export default function SiteAdminDashboard(props: any) {
                         });
 
                         if (orphanedBusinesses.length === 0) {
-                          alert('? No orphaned business records found!');
+                          alert('No orphaned business records found!');
                           return;
                         }
 
@@ -896,7 +896,7 @@ export default function SiteAdminDashboard(props: any) {
 
                           // Show results
                           if (errors.length === 0) {
-                            alert(`? Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
+                            alert(`Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
                           } else {
                             alert(`⚠️ Deleted ${deletedCount} of ${orphanedBusinesses.length} records.\n\nErrors:\n${errors.join('\n')}`);
                           }
@@ -1589,7 +1589,7 @@ export default function SiteAdminDashboard(props: any) {
                                 onClick={() => setExpandedAffiliateId(expandedAffiliateId === affiliate.id ? null : affiliate.id)}
                                 style={{ padding: '6px 12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                               >
-                                {expandedAffiliateId === affiliate.id ? '? Hide Details' : '? See Codes & Pricing'}
+                                {expandedAffiliateId === affiliate.id ? 'Hide Details' : 'See Codes & Pricing'}
                               </button>
                             </div>
 
@@ -2127,7 +2127,7 @@ export default function SiteAdminDashboard(props: any) {
                           });
                           
                           if (response.ok) {
-                            alert(`? Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
+                            alert(`Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
                           } else {
                             alert('❌ Failed to save pricing. Please try again.');
                           }
@@ -2222,7 +2222,7 @@ export default function SiteAdminDashboard(props: any) {
                           });
                           
                           if (response.ok) {
-                            alert(`? Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
+                            alert(`Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
                           } else {
                             alert('❌ Failed to save pricing. Please try again.');
                           }
@@ -2351,7 +2351,7 @@ export default function SiteAdminDashboard(props: any) {
                             setNewSiteAdminEmail('');
                             setNewSiteAdminPassword('');
                             setShowAddSiteAdminForm(false);
-                            alert('? Site administrator added successfully!');
+                            alert('Site administrator added successfully!');
                           } else {
                             const error = await response.json();
                             if (error.error && error.error.includes('Password does not meet requirements')) {
@@ -2433,7 +2433,7 @@ export default function SiteAdminDashboard(props: any) {
 
                                 if (response.ok) {
                                   setSiteAdmins(siteAdmins.filter((a: any) => a.id !== admin.id));
-                                  alert('? Site administrator deleted successfully!');
+                                  alert('Site administrator deleted successfully!');
                                 } else {
                                   alert('❌ Failed to delete site administrator');
                                 }

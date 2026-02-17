@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
-import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, ArrowLeft } from 'lucide-react';
+import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, ArrowLeft, CreditCard, MapPin, Lock } from 'lucide-react';
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
 import { assessmentData } from '../data/assessmentData';
 import { authApi, companiesApi, usersApi, consultantsApi, financialsApi, assessmentsApi, profilesApi, benchmarksApi, ApiError } from '@/lib/api-client';
@@ -324,7 +324,7 @@ function FinancialScorePage() {
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
     if (isPaymentRequired()) {
-      alert('?? Payment Required\n\nPlease complete your subscription payment before accessing other features.');
+      alert('Payment Required\n\nPlease complete your subscription payment before accessing other features.');
       setAdminDashboardTab('company-management');
       setCompanyManagementSubTab('payments');
       setCurrentView('admin');
@@ -344,7 +344,7 @@ function FinancialScorePage() {
 
     // Block other tabs if payment is required
     if (isPaymentRequired()) {
-      alert('?? Payment Required\n\nPlease complete your subscription payment in Company Management > Payments before accessing other features.');
+      alert('Payment Required\n\nPlease complete your subscription payment in Company Management > Payments before accessing other features.');
       setAdminDashboardTab('company-management');
       setCompanyManagementSubTab('payments');
       return;
@@ -1075,7 +1075,7 @@ function FinancialScorePage() {
       const result = await response.json();
       
       if (result.success) {
-        alert('? Payment method updated successfully!');
+        alert('Payment method updated successfully!');
         setShowUpdatePaymentModal(false);
         // Reset form
         setUpdatePaymentData({
@@ -1096,11 +1096,11 @@ function FinancialScorePage() {
           setActiveSubscription(subData.subscription);
         }
       } else {
-        alert(`? Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
+        alert(`Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
       }
     } catch (error) {
       console.error('Update payment method error:', error);
-      alert('? An error occurred while updating your payment method. Please try again.');
+      alert('An error occurred while updating your payment method. Please try again.');
     } finally {
       setUpdatingPayment(false);
     }
@@ -1124,12 +1124,12 @@ function FinancialScorePage() {
       // Handle both success and 404 (company already deleted/hidden)
       if (result.success || response.status === 404) {
         const message = result.hidden
-          ? `? Company "${companyToDelete.companyName}" has been removed from your dashboard.`
+          ? `Company "${companyToDelete.companyName}" has been removed from your dashboard.`
           : result.softDelete
-          ? `?? Company "${companyToDelete.companyName}" has been marked as deleted (temporary workaround). It will be fully removed after the next deployment.`
+          ? `Company "${companyToDelete.companyName}" has been marked as deleted.`
           : result.success
-          ? `? Company "${companyToDelete.companyName}" has been deleted successfully.`
-          : `? Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
+          ? `Company "${companyToDelete.companyName}" has been deleted successfully.`
+          : `Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
 
         alert(message);
 
@@ -1196,14 +1196,14 @@ function FinancialScorePage() {
 
         setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
 
-        alert(`? Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
+        alert(`Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
 
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       }
     } catch (error) {
       console.error('Error deleting company:', error);
-      alert('? An error occurred while deleting the company');
+      alert('An error occurred while deleting the company');
     }
   };
 
@@ -3670,7 +3670,7 @@ function FinancialScorePage() {
         safeSetCompanies(allCompanies);
       }
       
-      alert('? Subscription pricing saved successfully!');
+      alert('Subscription pricing saved successfully!');
     } catch (error) {
       console.error('? Error saving subscription pricing:', error);
       alert(error instanceof ApiError ? error.message : 'Failed to save subscription pricing');
@@ -3740,9 +3740,9 @@ function FinancialScorePage() {
       console.error('Error creating user:', error);
       if (error instanceof ApiError) {
         if (error.message.includes('already registered')) {
-          alert(`?? Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+          alert(`Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
         } else if (error.message.includes('Password does not meet requirements')) {
-          alert('?? Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+          alert('Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -3826,7 +3826,7 @@ function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('?? Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -3859,7 +3859,7 @@ function FinancialScorePage() {
         return newState;
       });
       
-      alert('? Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
+      alert('Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
     }
@@ -5771,7 +5771,16 @@ function FinancialScorePage() {
           )}
           
           {/* Tab Navigation */}
-          <div className="dashboard-tabs-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
+          <div
+            className="dashboard-tabs-print-hide"
+            style={{
+              display: 'flex',
+              gap: '8px',
+              // Data Mapping needs to sit tight to the content below.
+              marginBottom: (adminDashboardTab === 'data-mapping' || adminDashboardTab === 'data-review') ? '4px' : '12px',
+              borderBottom: '2px solid #e2e8f0'
+            }}
+          >
             <button
               onClick={() => handleAdminTabNavigation('company-management')}
               style={{
@@ -5974,9 +5983,9 @@ function FinancialScorePage() {
               {/* QuickBooks Data Verification Section */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks Data Verification</h2>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    ? Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
+                    Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
                   </p>
 
                   {/* Summary Stats */}
@@ -6067,7 +6076,7 @@ function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
                       • All {loadedMonthlyData.length} months have complete data<br/>
                       • Income Statement fields populated: Revenue, Expenses, COGS<br/>
@@ -6091,7 +6100,7 @@ function FinancialScorePage() {
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
                   <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
                   {error && <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>}
-                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>? Loaded: {file.name}</div>}
+                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>Loaded: {file.name}</div>}
                 </div>
 
               {file && columns.length > 0 && (
@@ -6179,7 +6188,10 @@ function FinancialScorePage() {
 
               {/* Trial Balance Import Section */}
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>?? Trial Balance Import</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FileSpreadsheet size={20} />
+                  Trial Balance Import
+                </h2>
                 
                 <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
                   <p style={{ fontSize: '14px', color: '#065f46', lineHeight: '1.6', margin: 0 }}>
@@ -6209,7 +6221,7 @@ function FinancialScorePage() {
                         // Save to localStorage for persistence across sessions
                         localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
                         setError(null);
-                        alert(`? Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
+                        alert(`Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
                       } catch (err: any) {
                         setError(`Failed to parse Trial Balance CSV: ${err.message}`);
                         setCsvTrialBalanceData(null);
@@ -6339,7 +6351,7 @@ function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? '? Connected' : qbStatus === 'ERROR' ? '? Error' : qbStatus === 'EXPIRED' ? '?? Token Expired' : '?? Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? 'Connected' : qbStatus === 'ERROR' ? 'Error' : qbStatus === 'EXPIRED' ? 'Token Expired' : 'Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -6435,7 +6447,7 @@ function FinancialScorePage() {
                     border: `1px solid ${xeroConnected && xeroStatus === 'ACTIVE' ? '#10b981' : xeroStatus === 'ERROR' ? '#ef4444' : xeroStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: xeroConnected && xeroStatus === 'ACTIVE' ? '#065f46' : xeroStatus === 'ERROR' ? '#991b1b' : xeroStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {xeroConnected && xeroStatus === 'ACTIVE' ? '? Connected' : xeroStatus === 'ERROR' ? '? Error' : xeroStatus === 'EXPIRED' ? '?? Token Expired' : '?? Status: Not Connected'}
+                      {xeroConnected && xeroStatus === 'ACTIVE' ? 'Connected' : xeroStatus === 'ERROR' ? 'Error' : xeroStatus === 'EXPIRED' ? 'Token Expired' : 'Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: xeroConnected && xeroStatus === 'ACTIVE' ? '#065f46' : xeroStatus === 'ERROR' ? '#991b1b' : xeroStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {xeroError || (xeroConnected && xeroStatus === 'ACTIVE' ? (xeroLastSync ? `Last synced: ${xeroLastSync.toLocaleString()}` : 'Ready to sync') : xeroStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -6513,9 +6525,9 @@ function FinancialScorePage() {
               {/* QuickBooks Data Verification */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h3>
+                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks Data Verification</h3>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    ? Synced successfully - {loadedMonthlyData.length} months of data imported
+                    Synced successfully - {loadedMonthlyData.length} months of data imported
                   </p>
 
                   {/* Summary Stats */}
@@ -6677,7 +6689,7 @@ function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
                       • All {loadedMonthlyData.length} months have complete data<br/>
                       • Income Statement: Revenue, Expenses, COGS populated<br/>
@@ -6867,7 +6879,10 @@ function FinancialScorePage() {
 
                   {/* USAePay Payment Form */}
                   <div style={{ marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>?? Payment Information</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CreditCard size={16} />
+                      Payment Information
+                    </h3>
                     
                     {/* Payment Form */}
                     <form onSubmit={async (e) => {
@@ -6900,17 +6915,17 @@ function FinancialScorePage() {
                         const result = await response.json();
                         
                         if (result.success) {
-                          alert(`? Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
+                          alert(`Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
                           setShowCheckoutModal(false);
                           setSelectedSubscriptionPlan(null);
                           // Refresh companies to show updated subscription
                           loadAllCompanies();
                         } else {
-                          alert(`? Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
+                          alert(`Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
                         }
                       } catch (error) {
                         console.error('Payment error:', error);
-                        alert('? An error occurred while processing your payment. Please try again.');
+                        alert('An error occurred while processing your payment. Please try again.');
                       }
                     }}>
                       {/* Card Information Section */}
@@ -6980,7 +6995,10 @@ function FinancialScorePage() {
                       
                       {/* Billing Address Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>?? Billing Address</h4>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <MapPin size={16} />
+                          Billing Address
+                        </h4>
                         
                         <div style={{ marginBottom: '12px' }}>
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
@@ -7099,7 +7117,7 @@ function FinancialScorePage() {
                     
                     {/* Security Notice */}
                     <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>??</span>
+                      <Lock size={16} color="#059669" />
                       <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
                         Secured by USAePay - Your payment information is encrypted
                       </span>
@@ -7109,7 +7127,7 @@ function FinancialScorePage() {
                   {/* Security Notice */}
                   <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>??</span>
+                      <Lock size={16} color="#059669" />
                       <span style={{ fontSize: '13px', fontWeight: '500', color: '#059669' }}>
                         Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                       </span>
@@ -7270,7 +7288,7 @@ function FinancialScorePage() {
 
                   {/* Security Notice */}
                   <div style={{ background: '#d1fae5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '12px', marginBottom: '20px', display: 'flex', alignItems: 'start', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>??</span>
+                    <Lock size={18} color="#065f46" />
                     <span style={{ fontSize: '13px', color: '#065f46', lineHeight: '1.5' }}>
                       Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                     </span>
@@ -7322,7 +7340,10 @@ function FinancialScorePage() {
                           Updating...
                         </>
                       ) : (
-                        '?? Update Payment Method'
+                        <>
+                          <CreditCard size={16} />
+                          Update Payment Method
+                        </>
                       )}
                     </button>
                   </div>
@@ -7334,25 +7355,27 @@ function FinancialScorePage() {
           {/* Data Mapping Tab - Content rendered through Financial Statements conditional below */}
 
           {!selectedCompanyId && adminDashboardTab === 'data-mapping' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to map QuickBooks accounts.</p>
             </div>
           )}
 
           {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !csvTrialBalanceData && !qbRawData && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '32px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
                 <p style={{ fontSize: '14px', color: '#94a3b8' }}>Sync QuickBooks/Xero data or upload a Trial Balance CSV to map accounts.</p>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', maxWidth: '1100px', margin: '0 auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', maxWidth: '1100px', margin: '0 auto' }}>
                 {/* QuickBooks Option */}
-                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>??</div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks API</div>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                    <DollarSign size={32} color="#667eea" />
+                  </div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>QuickBooks API</div>
+                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
                   <button
                     onClick={() => setAdminDashboardTab('api-connections')}
                     style={{
@@ -7371,10 +7394,12 @@ function FinancialScorePage() {
                 </div>
 
                 {/* Xero Option */}
-                <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '24px', border: '2px solid #fed7aa', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>??</div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Xero API</div>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to Xero to sync your financial data automatically.</p>
+                <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '16px', border: '2px solid #fed7aa', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                    <TrendingUp size={32} color="#fb923c" />
+                  </div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>Xero API</div>
+                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Connect to Xero to sync your financial data automatically.</p>
                   <button
                     onClick={() => setAdminDashboardTab('api-connections')}
                     style={{
@@ -7393,16 +7418,18 @@ function FinancialScorePage() {
                 </div>
                 
                 {/* Trial Balance Upload Option */}
-                <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '24px', border: '2px solid #86efac' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px', textAlign: 'center' }}>??</div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '8px', textAlign: 'center' }}>Trial Balance CSV</div>
-                  <p style={{ fontSize: '13px', color: '#047857', marginBottom: '16px', textAlign: 'center' }}>Upload a CSV with Acct Type, Acct ID, Description, and date columns.</p>
+                <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '16px', border: '2px solid #86efac' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                    <FileSpreadsheet size={32} color="#10b981" />
+                  </div>
+                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '6px', textAlign: 'center' }}>Trial Balance CSV</div>
+                  <p style={{ fontSize: '13px', color: '#047857', marginBottom: '12px', textAlign: 'center' }}>Upload a CSV with Acct Type, Acct ID, Description, and date columns.</p>
                   <input 
                     type="file" 
                     accept=".csv" 
                     onChange={handleTrialBalanceCsvSelected} 
                     style={{ 
-                      padding: '12px', 
+                      padding: '10px', 
                       border: '2px dashed #10b981', 
                       borderRadius: '8px', 
                       width: '100%', 
@@ -7431,12 +7458,21 @@ function FinancialScorePage() {
               (hasCsvData || hasSavedCsvInLocalStorage || latestFinancialSource === 'csv_trial_balance');
 
             return (
-              <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <div
+                key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`}
+                style={{
+                  maxWidth: '1800px',
+                  margin: '0 auto',
+                  // Pull the section up to reduce the large perceived gap under the admin tabs.
+                  marginTop: '-52px',
+                  padding: '0px 32px 16px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                   <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Account Mapping</h1>
                   {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
                 </div>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
                   {hasCsvData
                     ? `Map Trial Balance accounts to your standardized financial fields - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} - ${csvTrialBalanceData.dates?.length || 0} periods`
                     : `${aiMappings.length} saved account mappings loaded from database`
@@ -7445,8 +7481,8 @@ function FinancialScorePage() {
 
                 {/* Compact CSV Re-Upload (CSV Trial Balance only; API connections re-sync from Connections tab) */}
                 {shouldShowCsvReupload && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ background: '#f0fdf4', borderRadius: '10px', padding: '12px 14px', border: '1px solid #bbf7d0' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ background: '#f0fdf4', borderRadius: '10px', padding: '8px 12px', border: '1px solid #bbf7d0' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                         <div style={{ minWidth: '220px' }}>
                           <div style={{ fontSize: '13px', fontWeight: '700', color: '#065f46' }}>Trial Balance CSV</div>
@@ -7476,8 +7512,8 @@ function FinancialScorePage() {
 
                 {/* AI-Assisted Mapping Section for CSV */}
                 {hasCsvData && (
-                <div style={{ marginBottom: '32px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
                         <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
@@ -7557,7 +7593,7 @@ function FinancialScorePage() {
                     </div>
 
                     {/* Account Summary by Type */}
-                    <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                    <div style={{ marginTop: '12px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                       <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Type:</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {Object.entries(csvTrialBalanceData.accountsByType || {}).map(([type, accounts]: [string, any]) => (
@@ -7580,8 +7616,8 @@ function FinancialScorePage() {
 
                 {/* AI-Assisted Mapping Section for API synced accounts (QuickBooks/Xero) */}
                 {!hasCsvData && aiMappings.length > 0 && aiMappings.filter(m => m.targetField === 'unmapped').length > 0 && (
-                <div style={{ marginBottom: '32px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
                         <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
@@ -7688,8 +7724,8 @@ function FinancialScorePage() {
 
                 {/* Mapping Results Section */}
                 {showMappingSection && aiMappings.length > 0 && (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '32px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                         Account Mappings ({aiMappings.length} accounts)
                       </h2>
@@ -7707,7 +7743,7 @@ function FinancialScorePage() {
                     />
 
                     {/* Save Mappings Section */}
-                    <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+                    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
                       {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
                         <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #93c5fd' }}>
                           <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
@@ -7721,7 +7757,7 @@ function FinancialScorePage() {
                           </div>
                         </div>
                       )}
-                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
                           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
                           <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
@@ -7800,7 +7836,7 @@ function FinancialScorePage() {
                               // Update local state
                               setLoadedMonthlyData(processedData);
 
-                                alert(`? Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                                alert(`Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
                               } catch (error: any) {
                                 console.error('Error processing CSV data:', error);
                                 alert('Failed to process CSV data: ' + error.message);
@@ -7850,13 +7886,13 @@ function FinancialScorePage() {
                                 const result = await response.json();
                                 
                                 if (result.success) {
-                                  alert(`? ${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
+                                  alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
                                   // Switch to Data Review tab
                                   setAdminDashboardTab('data-review');
                                   // Trigger data reload by updating qbLastSync (this triggers the useEffect)
                                   setQbLastSync(Date.now());
                                 } else {
-                                  alert(`? Failed to reprocess: ${result.error}`);
+                                  alert(`Failed to reprocess: ${result.error}`);
                                 }
                               } catch (error: any) {
                                 console.error('Reprocess error:', error);
@@ -8763,7 +8799,7 @@ function FinancialScorePage() {
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
           console.error(`?? SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>? Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
@@ -11785,7 +11821,7 @@ function FinancialScorePage() {
           
           {currentUser?.role === 'consultant' && (
             <div style={{ background: '#fffbeb', border: '2px solid #fbbf24', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>? Consultant View Only</h3>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>Consultant View Only</h3>
               <p style={{ fontSize: '14px', color: '#78350f', margin: 0 }}>
                 As a consultant, you can view this questionnaire but cannot fill it out. Only company users can complete assessments. 
                 Navigate to "View Assessments" in the Administrator Dashboard to see user responses.
@@ -12400,7 +12436,7 @@ function FinancialScorePage() {
             {/* Info Box */}
             <div style={{ marginTop: '32px', padding: '16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px' }}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <span style={{ fontSize: '20px' }}>??</span>
+                <AlertCircle size={20} color="#1e40af" />
                 <div style={{ fontSize: '14px', color: '#1e40af', lineHeight: '1.6' }}>
                   <strong>How it works:</strong> Select the reports you want to include, then click "Generate Print Package" to create a combined PDF with all selected reports in a single document ready for printing.
                 </div>

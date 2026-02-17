@@ -145,10 +145,10 @@ export default function AccountMappingTable({
 
     return (
       <tr key={globalIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-        <td style={{ padding: '10px 12px', color: '#1e293b', fontWeight: '500', fontSize: '13px' }}>
+        <td style={{ padding: '8px 10px', color: '#1e293b', fontWeight: '500', fontSize: '13px' }}>
           {mapping.qbAccount}
         </td>
-        <td style={{ padding: '10px 12px', position: 'relative' }}>
+        <td style={{ padding: '8px 10px', position: 'relative' }}>
           {/* Target Field Dropdown */}
           <div style={{ position: 'relative' }}>
             <button
@@ -227,7 +227,7 @@ export default function AccountMappingTable({
         </td>
 
         {/* Allocation Method Dropdown */}
-        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
           <select
             value={mapping.allocationMethod || 'manual'}
             onChange={(e) => {
@@ -295,7 +295,7 @@ export default function AccountMappingTable({
 
               return (
                 <td key={lobIdx} style={{
-                  padding: '8px 4px',
+                  padding: '6px 4px',
                   borderLeft: lobIdx === 0 ? '2px solid #e2e8f0' : '1px solid #f1f5f9',
                   borderRight: lobIdx === activeLOBs.length - 1 ? '2px solid #e2e8f0' : 'none',
                   background: '#fafafa'
@@ -327,7 +327,7 @@ export default function AccountMappingTable({
               );
             })}
             <td style={{ 
-              padding: '8px', 
+              padding: '6px', 
               textAlign: 'center', 
               fontWeight: '600', 
               fontSize: '12px',
@@ -340,7 +340,7 @@ export default function AccountMappingTable({
         )}
         
         {/* Confidence */}
-        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
           <span style={{
             padding: '4px 8px',
             borderRadius: '4px',
@@ -359,7 +359,7 @@ export default function AccountMappingTable({
   return (
     <div>
       {/* Income Statement Sections */}
-      <div style={{ marginBottom: '24px', padding: '12px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '8px' }}>
+      <div style={{ marginBottom: '12px', padding: '8px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '8px' }}>
         <h3 style={{ margin: 0, color: 'white', fontSize: '16px', fontWeight: '600', letterSpacing: '0.5px' }}>
           📈 INCOME STATEMENT
         </h3>
@@ -373,7 +373,7 @@ export default function AccountMappingTable({
         const activeLOBs = linesOfBusiness.filter(lob => lob && lob.name && lob.name.trim() !== '');
 
         return (
-          <div key={section.key} style={{ marginBottom: '16px' }}>
+          <div key={section.key} style={{ marginBottom: '12px' }}>
             {/* Section Header */}
             <div 
               onClick={() => toggleSection(section.key)}
@@ -381,16 +381,16 @@ export default function AccountMappingTable({
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'space-between',
-                padding: '12px 16px', 
+                padding: '10px 12px', 
                 background: section.bgColor,
                 borderLeft: `4px solid ${section.color}`,
                 borderRadius: '6px',
                 cursor: 'pointer',
-                marginBottom: isCollapsed ? '0' : '8px',
+                marginBottom: isCollapsed ? '0' : '6px',
                 transition: 'all 0.2s'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '20px' }}>{section.icon}</span>
                 <span style={{ fontSize: '14px', fontWeight: '600', color: section.color }}>
                   {section.title}
@@ -410,9 +410,9 @@ export default function AccountMappingTable({
                 <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
                   <thead style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Account Name</th>
-                      <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
-                      <th style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Account Name</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
+                      <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
                       {activeLOBs.length > 0 && (
                         <>
                           {activeLOBs.map((lob, idx) => (
@@ -423,7 +423,7 @@ export default function AccountMappingTable({
                           <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569', fontSize: '11px' }}>Total %</th>
                         </>
                       )}
-                      <th style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#475569' }}>Confidence</th>
+                      <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569' }}>Confidence</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -437,7 +437,7 @@ export default function AccountMappingTable({
       })}
 
       {/* Balance Sheet Sections */}
-      <div style={{ marginBottom: '24px', marginTop: '32px', padding: '12px', background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)', borderRadius: '8px' }}>
+      <div style={{ marginBottom: '12px', marginTop: '16px', padding: '8px', background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)', borderRadius: '8px' }}>
         <h3 style={{ margin: 0, color: 'white', fontSize: '16px', fontWeight: '600', letterSpacing: '0.5px' }}>
           📊 BALANCE SHEET
         </h3>
@@ -451,7 +451,7 @@ export default function AccountMappingTable({
         const activeLOBs = linesOfBusiness.filter(lob => lob && lob.name && lob.name.trim() !== '');
 
         return (
-          <div key={section.key} style={{ marginBottom: '16px' }}>
+          <div key={section.key} style={{ marginBottom: '12px' }}>
             {/* Section Header */}
             <div 
               onClick={() => toggleSection(section.key)}
@@ -459,16 +459,16 @@ export default function AccountMappingTable({
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'space-between',
-                padding: '12px 16px', 
+                padding: '10px 12px', 
                 background: section.bgColor,
                 borderLeft: `4px solid ${section.color}`,
                 borderRadius: '6px',
                 cursor: 'pointer',
-                marginBottom: isCollapsed ? '0' : '8px',
+                marginBottom: isCollapsed ? '0' : '6px',
                 transition: 'all 0.2s'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '20px' }}>{section.icon}</span>
                 <span style={{ fontSize: '14px', fontWeight: '600', color: section.color }}>
                   {section.title}
@@ -488,9 +488,9 @@ export default function AccountMappingTable({
                 <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
                   <thead style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>Account Name</th>
-                      <th style={{ textAlign: 'left', padding: '12px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
-                      <th style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Account Name</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
+                      <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
                       {activeLOBs.length > 0 && (
                         <>
                           {activeLOBs.map((lob, idx) => (
@@ -501,7 +501,7 @@ export default function AccountMappingTable({
                           <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569', fontSize: '11px' }}>Total %</th>
                         </>
                       )}
-                      <th style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#475569' }}>Confidence</th>
+                      <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569' }}>Confidence</th>
                     </tr>
                   </thead>
                   <tbody>
