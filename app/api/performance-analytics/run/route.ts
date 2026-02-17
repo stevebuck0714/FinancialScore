@@ -2097,8 +2097,10 @@ export async function POST(request: NextRequest) {
     }
 
     // If we still have no opportunities (common when benchmarks/financials are missing),
-    // create 1–2 operational-snapshot-driven opportunities so Actions/Monitor is useful.
-    if (!findings.some((finding) => finding.type === 'opportunity')) {
+    // create additional operational-snapshot-driven opportunities so Actions/Monitor is useful.
+    // NOTE: we do this even if there is already 1 opportunity (e.g. "Scale channels...") so
+    // the page can show a richer 3–6 card set when ops snapshots are present.
+    if (!findings.some((f) => f.type === 'opportunity' && String(f.metric || '') === 'AR / Collections')) {
       const arMonthly = (arSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
       if (arMonthly.length >= 6 && opsMonthlySeries.length >= 6) {
         const recent = arMonthly.slice(-3);
@@ -2157,7 +2159,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!findings.some((finding) => finding.type === 'opportunity')) {
+    if (!findings.some((f) => f.type === 'opportunity' && String(f.metric || '') === 'Customer Concentration')) {
       const custMonthly = (customerSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
       if (custMonthly.length >= 6) {
         const latestDate = new Date(custMonthly[custMonthly.length - 1].snapshotDate).toISOString().slice(0, 10);
@@ -2213,7 +2215,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!findings.some((finding) => finding.type === 'opportunity')) {
+    if (!findings.some((f) => f.type === 'opportunity' && String(f.metric || '') === 'Pipeline / Growth')) {
       // Generic growth opportunity using ops-derived revenue trend when everything is "within bounds"
       // (or when benchmarks exist but don't match available fields yet).
       if (opsMonthlySeries.length >= 4) {
