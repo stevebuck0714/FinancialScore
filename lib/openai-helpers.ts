@@ -16,6 +16,11 @@ function extractResponsesText(response: any): string {
         if (c?.type === 'output_text' && typeof c?.text === 'string' && c.text.trim()) {
           return c.text;
         }
+        // Some variants return plain "text" blocks.
+        if (c?.type === 'text') {
+          if (typeof c?.text === 'string' && c.text.trim()) return c.text;
+          if (typeof c?.text?.value === 'string' && c.text.value.trim()) return c.text.value;
+        }
       }
     }
   }
@@ -76,7 +81,12 @@ async function createResponsesTextViaFetch(params: {
     } catch {
       data = null;
     }
-    return { res, raw, data };
+    const requestId =
+      res.headers.get('x-request-id') ||
+      res.headers.get('x-openai-request-id') ||
+      res.headers.get('x-requestid') ||
+      null;
+    return { res, raw, data, requestId };
   };
 
   const withoutTemperature = (p: any) => {
@@ -131,11 +141,38 @@ async function createResponsesTextViaFetch(params: {
     err.status = out.res.status;
     err.code = out.data?.error?.code ?? null;
     err.type = out.data?.error?.type ?? null;
+    err.requestId = out.requestId;
     throw err;
   }
 
   const text = extractResponsesText(out.data);
-  if (!text.trim()) throw new Error('Empty model response (responses)');
+  if (!text.trim()) {
+    // Make this debuggable in production without logging sensitive prompt text.
+    const output = Array.isArray(out.data?.output) ? out.data.output : [];
+    const outputTypes = output.map((x: any) => String(x?.type || 'unknown'));
+    const contentTypes = output
+      .flatMap((x: any) => (Array.isArray(x?.content) ? x.content : []))
+      .map((c: any) => String(c?.type || 'unknown'));
+
+    if (process.env.OPENAI_DEBUG === 'true') {
+      console.error('OpenAI responses: empty text', {
+        model: params.model,
+        requestId: out.requestId,
+        status: out.res.status,
+        outputTypes,
+        contentTypes,
+        hasOutputText: typeof out.data?.output_text === 'string' ? out.data.output_text.length : 0,
+      });
+    }
+
+    const err: any = new Error(
+      `Empty model response (responses). requestId=${out.requestId || 'unknown'} outputTypes=${JSON.stringify(
+        outputTypes.slice(0, 8),
+      )} contentTypes=${JSON.stringify(contentTypes.slice(0, 12))}`
+    );
+    err.requestId = out.requestId;
+    throw err;
+  }
   const finishReason = out.data?.output?.[0]?.finish_reason ?? out.data?.finish_reason ?? null;
   return { text, finishReason };
 }
