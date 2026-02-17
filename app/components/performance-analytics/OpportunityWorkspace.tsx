@@ -362,6 +362,70 @@ const evidenceLevel = (confidence?: number | null) => {
                <div style={{ marginTop: '12px', fontSize: '13px', color: '#475569' }}>
                 {selectedFinding.payload?.summary || selectedFinding.payload?.why?.join(' ') || 'No summary available yet.'}
                </div>
+              {selectedFinding.payload?.evidence?.columns?.length > 0 && Array.isArray(selectedFinding.payload?.evidence?.rows) && selectedFinding.payload.evidence.rows.length > 0 && (
+                <div style={{ marginTop: '14px', padding: '12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#9a3412', marginBottom: '8px' }}>
+                    {selectedFinding.payload.evidence.title || 'Top drivers'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#9a3412', marginBottom: '10px' }}>
+                    {selectedFinding.payload.evidence.methodology}
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: `minmax(180px, 1.6fr) repeat(${Math.max(0, selectedFinding.payload.evidence.columns.length - 1)}, minmax(90px, 0.8fr))`,
+                      gap: '8px',
+                      fontSize: '11px',
+                      color: '#7c2d12',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selectedFinding.payload.evidence.columns.map((c: any) => (
+                      <div key={c.key} style={{ textAlign: c.align || 'left' }}>
+                        {c.label}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: '6px', display: 'grid', gap: '6px' }}>
+                    {selectedFinding.payload.evidence.rows.slice(0, 10).map((row: any, idx: number) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: `minmax(180px, 1.6fr) repeat(${Math.max(0, selectedFinding.payload.evidence.columns.length - 1)}, minmax(90px, 0.8fr))`,
+                          gap: '8px',
+                          fontSize: '11px',
+                          color: '#7c2d12',
+                        }}
+                      >
+                        {selectedFinding.payload.evidence.columns.map((c: any) => {
+                          const v = row?.[c.key];
+                          const fmt = String(c.format || 'text');
+                          const align = c.align || (fmt === 'text' ? 'left' : 'right');
+                          let text = '—';
+                          if (v != null && v !== '') {
+                            if (typeof v === 'number') {
+                              if (fmt === 'money') text = `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+                              else if (fmt === 'pct') text = `${(v * 100).toFixed(0)}%`;
+                              else if (fmt === 'days') text = `${v.toFixed(0)}d`;
+                              else text = v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+                            } else {
+                              text = String(v);
+                            }
+                          }
+                          return (
+                            <div key={c.key} style={{ textAlign: align, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {text}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {selectedFinding.payload?.evidence?.topItems?.length > 0 && (
                 <div style={{ marginTop: '14px', padding: '12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 700, color: '#9a3412', marginBottom: '8px' }}>

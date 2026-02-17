@@ -1492,10 +1492,21 @@ export async function POST(request: NextRequest) {
         estimatedWeeksOnHand: number | null;
         recentGrossMarginPct: number | null;
       };
+      type EvidenceColumn = {
+        key: string;
+        label: string;
+        align?: 'left' | 'right';
+        format?: 'text' | 'number' | 'money' | 'pct' | 'days';
+      };
+      type EvidenceRow = Record<string, string | number | null>;
       type OpportunityEvidenceBundle = {
-        kind: 'inventory' | 'margin';
+        kind: 'inventory' | 'margin' | 'ar' | 'cash' | 'revenue';
+        title?: string;
         methodology: string;
-        topItems: EvidenceTopItem[];
+        topItems?: EvidenceTopItem[];
+        columns?: EvidenceColumn[];
+        rows?: EvidenceRow[];
+        meta?: Record<string, any>;
       };
 
       function normKey(input: string) {
@@ -1680,6 +1691,148 @@ export async function POST(request: NextRequest) {
         };
       }
 
+      function buildArAgingEvidence(): OpportunityEvidenceBundle | null {
+        const arMonthly = (arSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+        if (arMonthly.length < 4) return null;
+        const windowSize = arMonthly.length >= 6 ? 3 : 2;
+        const win = latestN(arMonthly, (r: any) => new Date(r.snapshotDate), windowSize);
+        if (win.recent.length === 0 || win.prior.length === 0) return null;
+
+        const sum = (rows: any[], key: string) => rows.reduce((s, r) => s + Number(r[key] || 0), 0);
+        const avgTotal = (rows: any[]) => avg(rows.map((r: any) => Number(r.totalAR || 0)));
+
+        const buckets = [
+          { key: 'current', label: '0-30 days' },
+          { key: 'days1to30', label: '31-60 days' },
+          { key: 'days31to60', label: '61-90 days' },
+          { key: 'days61to90', label: '91-120 days' },
+          { key: 'days90plus', label: '120+ days' },
+        ];
+
+        const recentTotal = avgTotal(win.recent);
+        const priorTotal = avgTotal(win.prior);
+        const recentOver60 = avg(win.recent.map((r: any) => Number((r.days31to60 || 0) + (r.days61to90 || 0) + (r.days90plus || 0))));
+        const priorOver60 = avg(win.prior.map((r: any) => Number((r.days31to60 || 0) + (r.days61to90 || 0) + (r.days90plus || 0))));
+        const over60RecentPct = recentTotal ? recentOver60 / recentTotal : 0;
+        const over60PriorPct = priorTotal ? priorOver60 / priorTotal : 0;
+
+        const rows: EvidenceRow[] = buckets.map((b) => {
+          const recent = sum(win.recent, b.key) / win.recent.length;
+          const prior = sum(win.prior, b.key) / win.prior.length;
+          return {
+            bucket: b.label,
+            recent,
+            prior,
+            delta: recent - prior,
+          };
+        });
+
+        return {
+          kind: 'ar',
+          title: 'AR aging breakdown',
+          methodology: `Recent ${windowSize} vs prior ${windowSize} months. Over-60 mix: ${(over60RecentPct * 100).toFixed(0)}% (${((over60RecentPct - over60PriorPct) * 100).toFixed(1)} pts).`,
+          columns: [
+            { key: 'bucket', label: 'Bucket', align: 'left', format: 'text' },
+            { key: 'recent', label: 'Recent $', align: 'right', format: 'money' },
+            { key: 'prior', label: 'Prior $', align: 'right', format: 'money' },
+            { key: 'delta', label: 'Δ $', align: 'right', format: 'money' },
+          ],
+          rows,
+        };
+      }
+
+      function buildCashEvidence(): OpportunityEvidenceBundle | null {
+        const cashDaily = (cashSnapshots || []).filter((r: any) => String(r.frequency || '') === 'daily');
+        if (cashDaily.length < 14) return null;
+
+        // Aggregate total cash by date (sum across accounts).
+        const byDate = new Map<string, { date: string; total: number }>();
+        for (const r of cashDaily) {
+          const d = new Date(r.snapshotDate).toISOString().slice(0, 10);
+          const prev = byDate.get(d) || { date: d, total: 0 };
+          prev.total += Number(r.cashBalance || 0);
+          byDate.set(d, prev);
+        }
+        const series = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+        if (series.length < 14) return null;
+
+        const recent = series.slice(-7);
+        const prior = series.slice(-14, -7);
+        const recentAvg = avg(recent.map((x) => x.total));
+        const priorAvg = avg(prior.map((x) => x.total));
+        const delta = recentAvg - priorAvg;
+
+        const latestDate = series[series.length - 1]?.date;
+        const latestAccounts = cashDaily.filter((r: any) => new Date(r.snapshotDate).toISOString().slice(0, 10) === latestDate);
+        const accounts = latestAccounts
+          .map((r: any) => ({ account: String(r.accountName || 'Cash'), balance: Number(r.cashBalance || 0) }))
+          .sort((a, b) => b.balance - a.balance)
+          .slice(0, 6);
+
+        return {
+          kind: 'cash',
+          title: 'Cash position (drivers)',
+          methodology: `7-day avg cash ${delta >= 0 ? 'up' : 'down'} by $${Math.abs(delta).toFixed(0)} vs prior 7-day window. Top accounts shown for latest date.`,
+          meta: { recentAvg, priorAvg, delta },
+          columns: [
+            { key: 'account', label: 'Account', align: 'left', format: 'text' },
+            { key: 'balance', label: 'Balance', align: 'right', format: 'money' },
+          ],
+          rows: accounts.map((a) => ({ account: a.account, balance: a.balance })),
+        };
+      }
+
+      function buildRevenueDriversEvidence(): OpportunityEvidenceBundle | null {
+        const custMonthly = (customerSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+        const prodMonthly = (productSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+        const base = custMonthly.length >= 8 ? custMonthly : prodMonthly.length >= 8 ? prodMonthly : [];
+        if (base.length < 8) return null;
+
+        const windowSize = base.length >= 18 ? 3 : 2;
+        const win = latestN(base, (r: any) => new Date(r.snapshotDate), windowSize);
+        if (win.recent.length === 0 || win.prior.length === 0) return null;
+
+        const isCustomer = base === custMonthly;
+        const keyOf = (r: any) => (isCustomer ? String(r.customerName || r.customerId || 'Customer') : String(r.itemName || r.itemId || 'Item'));
+
+        const recentTotals = new Map<string, number>();
+        const priorTotals = new Map<string, number>();
+        for (const r of win.recent) {
+          const k = keyOf(r);
+          recentTotals.set(k, (recentTotals.get(k) || 0) + Number(r.revenue || 0));
+        }
+        for (const r of win.prior) {
+          const k = keyOf(r);
+          priorTotals.set(k, (priorTotals.get(k) || 0) + Number(r.revenue || 0));
+        }
+
+        const totalRecent = Array.from(recentTotals.values()).reduce((s, n) => s + n, 0);
+        const rows = Array.from(new Set([...recentTotals.keys(), ...priorTotals.keys()]))
+          .map((k) => {
+            const recent = (recentTotals.get(k) || 0) / win.recent.length;
+            const prior = (priorTotals.get(k) || 0) / win.prior.length;
+            const delta = recent - prior;
+            const share = totalRecent > 0 ? recent / (totalRecent / win.recent.length) : 0;
+            return { name: k, recent, prior, delta, share };
+          })
+          .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+          .slice(0, 10);
+
+        return {
+          kind: 'revenue',
+          title: isCustomer ? 'Revenue drivers (customers)' : 'Revenue drivers (products)',
+          methodology: `Ranked by absolute revenue change (recent ${windowSize} vs prior ${windowSize} months).`,
+          columns: [
+            { key: 'name', label: isCustomer ? 'Customer' : 'Item', align: 'left', format: 'text' },
+            { key: 'delta', label: 'Δ Revenue', align: 'right', format: 'money' },
+            { key: 'recent', label: 'Recent', align: 'right', format: 'money' },
+            { key: 'prior', label: 'Prior', align: 'right', format: 'money' },
+            { key: 'share', label: 'Share', align: 'right', format: 'pct' },
+          ],
+          rows,
+        };
+      }
+
       const makeOpportunity = (input: {
         title: string;
         family: string;
@@ -1814,6 +1967,7 @@ export async function POST(request: NextRequest) {
       if (dso != null && dsoTarget != null && dso > dsoTarget + 5 && revenue > 0) {
         const dsoGap = dso - dsoTarget;
         const cashImpact = (dsoGap / 30) * revenue;
+        const arEvidence = buildArAgingEvidence();
         makeOpportunity({
           title: 'Tighten terms and collections to reduce DSO',
           family: 'Working capital (AR/AP/inventory)',
@@ -1822,6 +1976,10 @@ export async function POST(request: NextRequest) {
             `DSO ${formatDays(dso)} vs target ${formatDays(dsoTarget)}.`,
             'Cash conversion is slower than peer median.',
           ],
+          summary: arEvidence?.methodology
+            ? `DSO is above target; AR aging suggests where to focus. ${arEvidence.methodology}`
+            : undefined,
+          evidence: arEvidence,
           impactLow: cashImpact * 0.6,
           impactHigh: cashImpact * 0.9,
           impactUnit: 'Cash',
@@ -1850,8 +2008,61 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // Cash stability (when 7-day avg cash drops materially)
+      const cashEvidence = buildCashEvidence();
+      if (cashEvidence?.meta && typeof cashEvidence.meta.delta === 'number' && typeof cashEvidence.meta.priorAvg === 'number') {
+        const delta = Number(cashEvidence.meta.delta);
+        const priorAvg = Math.max(1, Number(cashEvidence.meta.priorAvg));
+        const pct = delta / priorAvg;
+        if (pct <= -0.06) {
+          const impact = Math.abs(delta) * 0.8;
+          makeOpportunity({
+            title: 'Stabilize cash and reduce volatility',
+            family: 'Cash management',
+            objective: 'Cash',
+            why: [
+              `7-day average cash is down ${(Math.abs(pct) * 100).toFixed(0)}% vs prior week.`,
+              'Cash volatility often hides timing issues (collections/payables cadence) or unplanned spend.',
+            ],
+            summary: cashEvidence.methodology,
+            evidence: cashEvidence,
+            impactLow: impact * 0.5,
+            impactHigh: impact,
+            impactUnit: 'Cash',
+            timeToSignalDays: 7,
+            timeToRunRateDays: 30,
+            dependencies: ['Cash forecast', 'AR/AP cadence', 'Spend approvals'],
+            peerEvidence: 'Teams that implement a weekly cash cadence (forecast + approvals) reduce volatility and avoid reactive cuts.',
+            tests: ['Run a 2-week cash cadence: weekly forecast, daily receipts/payables review, and approval threshold'],
+            guardrails: ['Do not pause customer delivery or critical supplier payments without owner sign-off'],
+            owner: 'Finance',
+            nextAction: 'Stand up a weekly cash cadence and forecast',
+            confidence: 0.55,
+            feasibility: 0.75,
+            metric: 'Cash',
+            nextActions: [
+              { description: 'Build a 13-week cash forecast and set weekly update cadence', owner: 'Finance', dueHorizon: 'today', dataReference: 'Cash + AR/AP snapshots' },
+              { description: 'Set approval threshold for non-essential spend; review top outflows weekly', owner: 'Finance', dueHorizon: '48 hours', dataReference: 'Spend log / GL' },
+              { description: 'Align AR collections and AP payment runs to forecast; avoid bunching payables', owner: 'Finance', dueHorizon: '7 days', dataReference: 'AR/AP cadence' },
+            ],
+            monitoring: {
+              primaryKpi: 'Cash balance (daily)',
+              leadingIndicators: ['Net cash change (daily)', 'Collections vs plan (weekly)', 'Payables due next 14 days (weekly)'],
+              timeWindowDays: 14,
+              stopContinueRule: 'If cash continues to decline after 14 days, escalate to spend freeze + collections sprint and re-forecast.',
+            },
+          });
+        }
+      }
+
       // Growth investment when margin strong + growth strong
       if (growth > 0.05 && (grossMarginBenchmark == null || grossMargin >= grossMarginBenchmark) && revenue > 0) {
+        const revenueEvidence = buildRevenueDriversEvidence();
+        const topNames =
+          revenueEvidence?.rows
+            ?.slice(0, 3)
+            .map((r: any) => String(r.name))
+            .filter(Boolean) ?? [];
         makeOpportunity({
           title: 'Scale channels while margin is strong',
           family: 'Sales efficiency & pipeline',
@@ -1859,7 +2070,12 @@ export async function POST(request: NextRequest) {
           why: [
             `Revenue growth ${formatPct(growth)} over last 3 months.`,
             `Gross margin ${formatPct(grossMargin)} ${grossMarginBenchmark != null ? `vs peer ${formatPct(grossMarginBenchmark)}` : 'is healthy'}.`,
+            ...(topNames.length ? [`Growth drivers include: ${topNames.join(', ')}.`] : []),
           ],
+          summary: topNames.length
+            ? `Growth is strong and margin is healthy. Recent revenue change is driven by ${topNames.join(', ')} — scale the channels that bring more of these wins.`
+            : undefined,
+          evidence: revenueEvidence,
           impactLow: revenue * 0.08,
           impactHigh: revenue * 0.15,
           impactUnit: 'Revenue',
@@ -2118,6 +2334,24 @@ export async function POST(request: NextRequest) {
 
         if (pctDelta >= 0.03 || (dsoRecent != null && dsoRecent >= 60) || recentPct >= 0.22) {
           const cashImpact = Math.max(0, recentOver60 * 0.25); // conservative: assume 25% collectible improvement in 60–120 days
+          const arEvidence = {
+            kind: 'ar',
+            title: 'AR aging breakdown',
+            methodology: `Recent 3 vs prior 3 months. Over-60 mix: ${(recentPct * 100).toFixed(0)}% (${((recentPct - priorPct) * 100).toFixed(1)} pts).`,
+            columns: [
+              { key: 'bucket', label: 'Bucket', align: 'left', format: 'text' },
+              { key: 'recent', label: 'Recent $', align: 'right', format: 'money' },
+              { key: 'prior', label: 'Prior $', align: 'right', format: 'money' },
+              { key: 'delta', label: 'Δ $', align: 'right', format: 'money' },
+            ],
+            rows: [
+              { bucket: '0-30 days', recent: average(recent.map((r: any) => Number(r.current || 0))), prior: average(prior.map((r: any) => Number(r.current || 0))), delta: average(recent.map((r: any) => Number(r.current || 0))) - average(prior.map((r: any) => Number(r.current || 0))) },
+              { bucket: '31-60 days', recent: average(recent.map((r: any) => Number(r.days1to30 || 0))), prior: average(prior.map((r: any) => Number(r.days1to30 || 0))), delta: average(recent.map((r: any) => Number(r.days1to30 || 0))) - average(prior.map((r: any) => Number(r.days1to30 || 0))) },
+              { bucket: '61-90 days', recent: average(recent.map((r: any) => Number(r.days31to60 || 0))), prior: average(prior.map((r: any) => Number(r.days31to60 || 0))), delta: average(recent.map((r: any) => Number(r.days31to60 || 0))) - average(prior.map((r: any) => Number(r.days31to60 || 0))) },
+              { bucket: '91-120 days', recent: average(recent.map((r: any) => Number(r.days61to90 || 0))), prior: average(prior.map((r: any) => Number(r.days61to90 || 0))), delta: average(recent.map((r: any) => Number(r.days61to90 || 0))) - average(prior.map((r: any) => Number(r.days61to90 || 0))) },
+              { bucket: '120+ days', recent: average(recent.map((r: any) => Number(r.days90plus || 0))), prior: average(prior.map((r: any) => Number(r.days90plus || 0))), delta: average(recent.map((r: any) => Number(r.days90plus || 0))) - average(prior.map((r: any) => Number(r.days90plus || 0))) },
+            ],
+          };
           findings.push({
             type: 'opportunity',
             metric: 'AR / Collections',
@@ -2128,6 +2362,7 @@ export async function POST(request: NextRequest) {
               type: 'Working capital (AR/AP/inventory)',
               objective: 'Cash',
               summary: `AR >60 days is ${Math.round(recentPct * 100)}% (${pctDelta >= 0 ? '+' : ''}${Math.round(pctDelta * 100)} pts vs prior).`,
+              evidence: arEvidence,
               why: [
                 `AR >60 days mix increased ${(pctDelta * 100).toFixed(1)} pts.`,
                 dsoRecent != null ? `Implied DSO ~${dsoRecent.toFixed(0)} days using operational revenue.` : 'Revenue basis not available to estimate DSO.',
@@ -2173,6 +2408,21 @@ export async function POST(request: NextRequest) {
           const top1Share = Number(ranked[0]?.revenue || 0) / totalRev;
           if (topShare >= 0.6 || top1Share >= 0.3) {
             const names = top.map((r: any) => String(r.customerName || 'Customer')).slice(0, 3);
+            const evidence = {
+              kind: 'revenue',
+              title: 'Top customers (latest month)',
+              methodology: 'Revenue concentration on a small set of customers increases volatility and reduces pricing power.',
+              columns: [
+                { key: 'name', label: 'Customer', align: 'left', format: 'text' },
+                { key: 'revenue', label: 'Revenue', align: 'right', format: 'money' },
+                { key: 'share', label: 'Share', align: 'right', format: 'pct' },
+              ],
+              rows: ranked.slice(0, 8).map((r: any) => ({
+                name: String(r.customerName || 'Customer'),
+                revenue: Number(r.revenue || 0),
+                share: totalRev > 0 ? Number(r.revenue || 0) / totalRev : 0,
+              })),
+            };
             findings.push({
               type: 'opportunity',
               metric: 'Customer Concentration',
@@ -2183,6 +2433,7 @@ export async function POST(request: NextRequest) {
                 type: 'Sales efficiency & pipeline',
                 objective: 'Risk',
                 summary: `Top customers represent ${Math.round(topShare * 100)}% of recent monthly revenue (${names.join(', ')}).`,
+                evidence,
                 why: [
                   `Top 1 customer share: ${Math.round(top1Share * 100)}%.`,
                   `Top 3 customer share: ${Math.round(topShare * 100)}%.`,
