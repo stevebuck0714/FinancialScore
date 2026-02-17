@@ -72,6 +72,14 @@ async function createResponsesTextViaFetch(params: {
     ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
   };
 
+  const minimalMessagePayload: any = {
+    model: params.model,
+    ...(params.instructions ? { instructions: params.instructions } : {}),
+    // Canonical "messages" shape tends to produce more consistent output than a raw string input.
+    input: [{ role: 'user', content: params.input }],
+    ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
+  };
+
   const doRequest = async (payload: any) => {
     const res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -165,16 +173,37 @@ async function createResponsesTextViaFetch(params: {
     // When that happens, retry once with a minimal payload (no formatting flags) to
     // force a normal text response.
     if (outputTypes.length === 1 && outputTypes[0] === 'reasoning' && contentTypes.length === 0) {
-      const retry = await doRequest(minimalPayload);
-      if (retry.res.ok) {
-        const retryText = extractResponsesText(retry.data);
+      const retry1 = await doRequest(minimalMessagePayload);
+      if (retry1.res.ok) {
+        const retryText = extractResponsesText(retry1.data);
         if (retryText.trim()) {
           return {
             text: retryText,
-            finishReason: retry.data?.output?.[0]?.finish_reason ?? retry.data?.finish_reason ?? null,
+            finishReason: retry1.data?.output?.[0]?.finish_reason ?? retry1.data?.finish_reason ?? null,
           };
         }
       }
+
+      // Last attempt: request plain text output explicitly (still expects JSON because our prompt says so).
+      const retry2 = await doRequest({ ...minimalMessagePayload, text: { format: { type: 'text' } } });
+      if (retry2.res.ok) {
+        const retryText = extractResponsesText(retry2.data);
+        if (retryText.trim()) {
+          return {
+            text: retryText,
+            finishReason: retry2.data?.output?.[0]?.finish_reason ?? retry2.data?.finish_reason ?? null,
+          };
+        }
+      }
+
+      const err: any = new Error(
+        `Empty model response (responses). requestId=${out.requestId || 'unknown'} retry1=${retry1.requestId || 'unknown'} retry2=${retry2.requestId || 'unknown'} outputTypes=${JSON.stringify(
+          outputTypes.slice(0, 8),
+        )} contentTypes=${JSON.stringify(contentTypes.slice(0, 12))}`,
+      );
+      err.requestId = out.requestId;
+      err.retryRequestId = retry1.requestId || retry2.requestId || null;
+      throw err;
     }
 
     if (process.env.OPENAI_DEBUG === 'true') {
