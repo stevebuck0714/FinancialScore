@@ -247,6 +247,12 @@ function normalizeSectorCategory(sectorCategory?: string | null): string {
   return fromNormalized[normalized] || '01';
 }
 
+export function getSectorMockProfile(sectorCategory?: string | null): SectorProfile & { sectorCategory: string } {
+  const code = normalizeSectorCategory(sectorCategory);
+  const profile = SECTOR_PROFILES[code] || SECTOR_PROFILES['01'];
+  return { sectorCategory: code, ...profile };
+}
+
 function listDates(startDate: Date, endDate: Date, frequency: Frequency): Date[] {
   const dates: Date[] = [];
   const cursor = new Date(startDate);

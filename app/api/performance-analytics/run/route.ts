@@ -508,6 +508,7 @@ export async function POST(request: NextRequest) {
         id: true,
         name: true,
         industrySector: true,
+        companySizeCategory: true,
       },
     });
 
@@ -522,16 +523,43 @@ export async function POST(request: NextRequest) {
     }
 
     const industryGroupId = company?.industrySector ? String(company.industrySector) : null;
-    const benchmarks = industryGroupId
-      ? await safeFindMany(
-          'industry benchmarks',
-          prisma.industryBenchmark.findMany({
-            where: { industryId: industryGroupId },
-            select: { metricName: true, fiveYearValue: true },
-            take: 200,
-          })
-        )
-      : [];
+    const assetSizeCategory = company?.companySizeCategory ? String(company.companySizeCategory) : 'DEFAULT';
+    let benchmarks: Array<{ metricName: string; fiveYearValue: number | null }> = [];
+    if (industryGroupId) {
+      // Prefer size-specific benchmarks, then fall back.
+      const primary = await safeFindMany(
+        'industry benchmarks',
+        prisma.industryBenchmark.findMany({
+          where: { industryId: industryGroupId, assetSizeCategory },
+          select: { metricName: true, fiveYearValue: true },
+          take: 200,
+        })
+      );
+      if (primary.length) {
+        benchmarks = primary;
+      } else {
+        const fallbackDefault = assetSizeCategory !== 'DEFAULT'
+          ? await safeFindMany(
+              'industry benchmarks (default size)',
+              prisma.industryBenchmark.findMany({
+                where: { industryId: industryGroupId, assetSizeCategory: 'DEFAULT' },
+                select: { metricName: true, fiveYearValue: true },
+                take: 200,
+              })
+            )
+          : [];
+        benchmarks = fallbackDefault.length
+          ? fallbackDefault
+          : await safeFindMany(
+              'industry benchmarks (any size)',
+              prisma.industryBenchmark.findMany({
+                where: { industryId: industryGroupId },
+                select: { metricName: true, fiveYearValue: true },
+                take: 200,
+              })
+            );
+      }
+    }
 
     const [
       monthlyFinancials,
@@ -1351,21 +1379,98 @@ export async function POST(request: NextRequest) {
     }
 
     // Opportunity Agent (signal-driven hypotheses)
-    if (latestFinancial && monthlyFinancials.length >= 6) {
-      const recent = monthlyFinancials.slice(-3);
-      const prior = monthlyFinancials.slice(-6, -3);
-      const revenue = latestFinancial.revenue || 0;
-      const cogs = latestFinancial.cogsTotal || 0;
-      const ar = latestFinancial.ar || 0;
-      const ap = latestFinancial.ap || 0;
-      const inventory = (latestFinancial as any).inventory || 0;
+    const opsMonthlySeries = (() => {
+      // If the company hasn't uploaded monthly financials yet, we can still build a usable
+      // "monthly series" from operational snapshots (customers/products/inventory + AR/AP/cash).
+      // This keeps Actions/Monitor from being empty in early onboarding.
+      const byDay = new Map<
+        string,
+        { monthDate: Date; revenue: number; cogsTotal: number; ar: number; ap: number; inventory: number; cash: number }
+      >();
+
+      function dayKey(d: Date) {
+        return d.toISOString().slice(0, 10);
+      }
+      function ensure(d: Date) {
+        const k = dayKey(d);
+        if (!byDay.has(k)) {
+          byDay.set(k, { monthDate: new Date(k), revenue: 0, cogsTotal: 0, ar: 0, ap: 0, inventory: 0, cash: 0 });
+        }
+        return byDay.get(k)!;
+      }
+
+      const custMonthly = (customerSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+      for (const r of custMonthly) {
+        const row = ensure(new Date(r.snapshotDate));
+        row.revenue += Number(r.revenue || 0);
+      }
+
+      const prodMonthly = (productSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+      for (const r of prodMonthly) {
+        const row = ensure(new Date(r.snapshotDate));
+        row.revenue += custMonthly.length ? 0 : Number(r.revenue || 0); // prefer customer revenue if present
+        row.cogsTotal += Number(r.cogs || 0);
+      }
+
+      const invMonthly = (inventorySnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+      for (const r of invMonthly) {
+        const row = ensure(new Date(r.snapshotDate));
+        row.inventory += Number(r.assetValue || 0);
+      }
+
+      const arMonthly = (arSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+      for (const r of arMonthly) {
+        const row = ensure(new Date(r.snapshotDate));
+        row.ar = Number(r.totalAR || 0);
+      }
+
+      const apMonthly = (apSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+      for (const r of apMonthly) {
+        const row = ensure(new Date(r.snapshotDate));
+        row.ap = Number(r.totalAP || 0);
+      }
+
+      const cashMonthly = (cashSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+      for (const r of cashMonthly) {
+        const row = ensure(new Date(r.snapshotDate));
+        row.cash += Number(r.cashBalance || 0);
+      }
+
+      return Array.from(byDay.values()).sort((a, b) => a.monthDate.getTime() - b.monthDate.getTime());
+    })();
+
+    const opportunityMonthly: any[] = (monthlyFinancials.length >= 4 ? (monthlyFinancials as any[]) : opsMonthlySeries) as any[];
+    const opportunityLatest: any | null = getLatest(opportunityMonthly);
+
+    // If we have enough monthly points (either financial uploads or ops-derived), generate opportunities.
+    if (opportunityLatest && opportunityMonthly.length >= 4) {
+      const windowSize = opportunityMonthly.length >= 6 ? 3 : 2;
+      const recent = opportunityMonthly.slice(-windowSize);
+      const prior = opportunityMonthly.slice(-(windowSize * 2), -windowSize);
+
+      const revenue = Number(opportunityLatest.revenue || 0);
+      const cogs = Number(opportunityLatest.cogsTotal || 0);
+
+      // MonthlyFinancial does not store AR/AP/inventory in this schema; always derive from snapshot tables.
+      const latestAr = (arSnapshots?.length ? (arSnapshots[arSnapshots.length - 1] as any).totalAR : 0) || 0;
+      const latestAp = (apSnapshots?.length ? (apSnapshots[apSnapshots.length - 1] as any).totalAP : 0) || 0;
+      const latestInvDate = inventorySnapshots?.length ? new Date((inventorySnapshots[inventorySnapshots.length - 1] as any).snapshotDate) : null;
+      const inventory =
+        latestInvDate && inventorySnapshots?.length
+          ? inventorySnapshots
+              .filter((r: any) => new Date(r.snapshotDate).toISOString().slice(0, 10) === latestInvDate.toISOString().slice(0, 10))
+              .reduce((sum: number, r: any) => sum + Number(r.assetValue || 0), 0)
+          : 0;
+      const ar = Number(latestAr || 0);
+      const ap = Number(latestAp || 0);
 
       const growth = percentChange(average(recent.map((m: any) => m.revenue || 0)), average(prior.map((m: any) => m.revenue || 0)));
       const grossMargin = revenue ? (revenue - cogs) / revenue : 0;
       const grossMarginBenchmark = findBenchmark(benchmarks, /gross\s*margin/i);
-      const dso = revenue > 0 ? (ar / revenue) * 365 : null;
-      const dio = cogs > 0 ? (inventory / cogs) * 365 : null;
-      const dpo = cogs > 0 ? (ap / cogs) * 365 : null;
+      // Revenue/COGS here are monthly totals; convert to "days" using ~30-day months.
+      const dso = revenue > 0 ? (ar / revenue) * 30 : null;
+      const dio = cogs > 0 ? (inventory / cogs) * 30 : null;
+      const dpo = cogs > 0 ? (ap / cogs) * 30 : null;
       const dsoBenchmark = findBenchmark(benchmarks, /days\s*(receivables|sales\s*outstanding|dso)/i);
       const dioBenchmark = findBenchmark(benchmarks, /days\s*inventory/i);
       const dpoBenchmark = findBenchmark(benchmarks, /days\s*payables/i);
@@ -1374,11 +1479,214 @@ export async function POST(request: NextRequest) {
       type NextActionTask = { description: string; owner?: string; dueHorizon: string; dataReference?: string };
       type MonitoringSpec = { primaryKpi: string; leadingIndicators: string[]; timeWindowDays: number; stopContinueRule: string };
 
+      type EvidenceTopItem = {
+        itemId: string | null;
+        itemName: string;
+        sku: string | null;
+        inventoryAssetDelta: number;
+        inventoryQtyDelta: number;
+        recentAssetValue: number;
+        recentQtyOnHand: number;
+        recentAvgMonthlyUnitsSold: number | null;
+        unitsSoldDelta: number | null;
+        estimatedWeeksOnHand: number | null;
+        recentGrossMarginPct: number | null;
+      };
+      type OpportunityEvidenceBundle = {
+        kind: 'inventory' | 'margin';
+        methodology: string;
+        topItems: EvidenceTopItem[];
+      };
+
+      function normKey(input: string) {
+        return String(input || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      }
+      function itemKey(itemId?: string | null, itemName?: string | null, sku?: string | null) {
+        const id = String(itemId || '').trim();
+        if (id) return `id:${id}`;
+        const s = String(sku || '').trim();
+        if (s) return `sku:${s.toLowerCase()}`;
+        const n = normKey(String(itemName || ''));
+        return n ? `name:${n}` : 'unknown';
+      }
+      function latestN<T>(rows: T[], getDate: (r: T) => Date, n: number): { recent: T[]; prior: T[] } {
+        const dates = Array.from(
+          new Set(
+            rows
+              .map((r) => getDate(r).toISOString().slice(0, 10))
+              .filter(Boolean),
+          ),
+        ).sort();
+        const recentDates = new Set(dates.slice(-n));
+        const priorDates = new Set(dates.slice(-(n * 2), -n));
+        return {
+          recent: rows.filter((r) => recentDates.has(getDate(r).toISOString().slice(0, 10))),
+          prior: rows.filter((r) => priorDates.has(getDate(r).toISOString().slice(0, 10))),
+        };
+      }
+      function avg(nums: number[]) {
+        if (!nums.length) return 0;
+        return nums.reduce((s, n) => s + n, 0) / nums.length;
+      }
+
+      function buildInventoryEvidence(): OpportunityEvidenceBundle | null {
+        // Requires item-level inventory + product snapshots for a meaningful drill-down.
+        if (!Array.isArray(inventorySnapshots) || inventorySnapshots.length < 8) return null;
+
+        // We only use monthly inventory/product snapshots for now (best aligned with DIO).
+        const invMonthly = inventorySnapshots.filter((r: any) => String(r.frequency || '') === 'monthly');
+        const prodMonthly = Array.isArray(productSnapshots)
+          ? productSnapshots.filter((r: any) => String(r.frequency || '') === 'monthly')
+          : [];
+        if (invMonthly.length < 8) return null;
+
+        const invWindow = latestN(invMonthly, (r: any) => new Date(r.snapshotDate), 3);
+        const prodWindow = latestN(prodMonthly, (r: any) => new Date(r.snapshotDate), 3);
+
+        const invByItem = new Map<string, any>();
+        for (const r of invMonthly) {
+          const k = itemKey(r.itemId, r.itemName, r.sku);
+          const list = invByItem.get(k) || [];
+          list.push(r);
+          invByItem.set(k, list);
+        }
+        const prodByItem = new Map<string, any>();
+        for (const r of prodMonthly) {
+          const k = itemKey(r.itemId, r.itemName, r.sku);
+          const list = prodByItem.get(k) || [];
+          list.push(r);
+          prodByItem.set(k, list);
+        }
+
+        const out: EvidenceTopItem[] = [];
+        for (const [k, invRows] of invByItem.entries()) {
+          const recentInv = invRows.filter((r: any) => invWindow.recent.includes(r));
+          const priorInv = invRows.filter((r: any) => invWindow.prior.includes(r));
+          if (recentInv.length === 0 || priorInv.length === 0) continue;
+
+          const recentAsset = avg(recentInv.map((r: any) => Number(r.assetValue || 0)));
+          const priorAsset = avg(priorInv.map((r: any) => Number(r.assetValue || 0)));
+          const recentQty = avg(recentInv.map((r: any) => Number(r.qtyOnHand || 0)));
+          const priorQty = avg(priorInv.map((r: any) => Number(r.qtyOnHand || 0)));
+
+          const invAssetDelta = recentAsset - priorAsset;
+          if (invAssetDelta <= 0) continue; // focus on inventory build first
+
+          const invQtyDelta = recentQty - priorQty;
+
+          const prodRows = prodByItem.get(k) || [];
+          const recentProd = prodRows.filter((r: any) => prodWindow.recent.includes(r));
+          const priorProd = prodRows.filter((r: any) => prodWindow.prior.includes(r));
+
+          const recentUnits = recentProd.length ? avg(recentProd.map((r: any) => Number(r.quantitySold || 0))) : null;
+          const priorUnits = priorProd.length ? avg(priorProd.map((r: any) => Number(r.quantitySold || 0))) : null;
+          const unitsDelta = recentUnits != null && priorUnits != null ? recentUnits - priorUnits : null;
+
+          const recentGmPct = recentProd.length
+            ? avg(recentProd.map((r: any) => (typeof r.grossMarginPct === 'number' ? r.grossMarginPct : 0))).toFixed(2)
+            : null;
+
+          const avgMonthlyUnits = recentUnits;
+          const weeksOnHand = avgMonthlyUnits && avgMonthlyUnits > 0 ? (recentQty / avgMonthlyUnits) * 4.33 : null;
+
+          const sample = recentInv[0] || invRows[invRows.length - 1];
+          out.push({
+            itemId: sample?.itemId ? String(sample.itemId) : null,
+            itemName: String(sample?.itemName || 'Item'),
+            sku: sample?.sku ? String(sample.sku) : null,
+            inventoryAssetDelta: Number(invAssetDelta.toFixed(2)),
+            inventoryQtyDelta: Number(invQtyDelta.toFixed(2)),
+            recentAssetValue: Number(recentAsset.toFixed(2)),
+            recentQtyOnHand: Number(recentQty.toFixed(2)),
+            recentAvgMonthlyUnitsSold: avgMonthlyUnits != null ? Number(avgMonthlyUnits.toFixed(2)) : null,
+            unitsSoldDelta: unitsDelta != null ? Number(unitsDelta.toFixed(2)) : null,
+            estimatedWeeksOnHand: weeksOnHand != null ? Number(weeksOnHand.toFixed(1)) : null,
+            recentGrossMarginPct: recentGmPct != null ? Number(recentGmPct) : null,
+          });
+        }
+
+        out.sort((a, b) => b.inventoryAssetDelta - a.inventoryAssetDelta);
+        return {
+          kind: 'inventory',
+          methodology: 'Top items by inventory asset value increase (recent 3-month avg vs prior 3-month avg), joined to product sales by itemId/sku/name.',
+          topItems: out.slice(0, 10),
+        };
+      }
+
+      function buildMarginEvidence(params: { targetBenchmarkPct: number | null }): OpportunityEvidenceBundle | null {
+        const { targetBenchmarkPct } = params;
+        if (!Array.isArray(productSnapshots) || productSnapshots.length < 8) return null;
+        const prodMonthly = productSnapshots.filter((r: any) => String(r.frequency || '') === 'monthly');
+        if (prodMonthly.length < 8) return null;
+
+        const window = latestN(prodMonthly, (r: any) => new Date(r.snapshotDate), 3);
+        const recent = window.recent;
+        const prior = window.prior;
+        if (recent.length === 0 || prior.length === 0) return null;
+
+        type Agg = { itemId: string | null; itemName: string; sku: string | null; rev: number; cogs: number; qty: number; gmPct: number | null };
+        const by = new Map<string, Agg>();
+        for (const r of recent) {
+          const k = itemKey(r.itemId, r.itemName, r.sku);
+          const prev = by.get(k) || {
+            itemId: r.itemId ? String(r.itemId) : null,
+            itemName: String(r.itemName || 'Item'),
+            sku: r.sku ? String(r.sku) : null,
+            rev: 0,
+            cogs: 0,
+            qty: 0,
+            gmPct: null,
+          };
+          const rev = Number(r.revenue || 0);
+          const cogs = Number(r.cogs || 0);
+          prev.rev += rev;
+          prev.cogs += cogs;
+          prev.qty += Number(r.quantitySold || 0);
+          by.set(k, prev);
+        }
+        const rows = Array.from(by.values()).map((a) => {
+          const gmPct = a.rev > 0 ? ((a.rev - a.cogs) / a.rev) * 100 : null;
+          return { ...a, gmPct };
+        });
+
+        // Choose "low margin but material revenue" items.
+        const benchmark = targetBenchmarkPct != null ? targetBenchmarkPct * 100 : null;
+        const low = rows
+          .filter((r) => r.rev > 0)
+          .sort((a, b) => b.rev - a.rev)
+          .slice(0, 25)
+          .filter((r) => (benchmark != null ? (r.gmPct != null && r.gmPct < benchmark - 1) : true))
+          .sort((a, b) => ((a.gmPct ?? 999) - (b.gmPct ?? 999)))
+          .slice(0, 10)
+          .map((r) => ({
+            itemId: r.itemId,
+            itemName: r.itemName,
+            sku: r.sku,
+            inventoryAssetDelta: 0,
+            inventoryQtyDelta: 0,
+            recentAssetValue: 0,
+            recentQtyOnHand: 0,
+            recentAvgMonthlyUnitsSold: r.qty / 3,
+            unitsSoldDelta: null,
+            estimatedWeeksOnHand: null,
+            recentGrossMarginPct: r.gmPct != null ? Number(r.gmPct.toFixed(2)) : null,
+          }));
+
+        if (low.length === 0) return null;
+        return {
+          kind: 'margin',
+          methodology: 'Low gross-margin items by revenue (recent 3 months), surfaced as candidates for pricing/mix action.',
+          topItems: low,
+        };
+      }
+
       const makeOpportunity = (input: {
         title: string;
         family: string;
         objective: 'Growth' | 'Margin' | 'Cash' | 'Risk';
         why: string[];
+        summary?: string;
+        evidence?: OpportunityEvidenceBundle | null;
         impactLow: number | null;
         impactHigh: number | null;
         impactUnit: 'EBITDA' | 'Cash' | 'Revenue';
@@ -1414,6 +1722,8 @@ export async function POST(request: NextRequest) {
             title: input.title,
             type: input.family,
             objective: input.objective,
+            summary: input.summary || undefined,
+            evidence: input.evidence || null,
             why: input.why,
             impact: {
               unit: input.impactUnit,
@@ -1448,18 +1758,27 @@ export async function POST(request: NextRequest) {
       };
 
       // Pricing & packaging (margin gap)
-      if (grossMarginBenchmark != null && grossMargin < grossMarginBenchmark - 0.02 && revenue > 0) {
-        const gap = grossMarginBenchmark - grossMargin;
+      const defaultGrossMarginFloor = playbook.sector === 'PROFESSIONAL_SERVICES' ? 0.35 : 0.30;
+      const grossMarginTarget = grossMarginBenchmark ?? defaultGrossMarginFloor;
+      if (grossMarginTarget != null && grossMargin < grossMarginTarget - 0.02 && revenue > 0) {
+        const gap = grossMarginTarget - grossMargin;
         const impactLow = revenue * gap * 0.5;
         const impactHigh = revenue * gap * 0.9;
+        const marginEvidence = buildMarginEvidence({ targetBenchmarkPct: grossMarginBenchmark });
+        const worstItems = (marginEvidence?.topItems || []).slice(0, 5).map((x) => x.itemName);
         makeOpportunity({
           title: 'Reduce discount leakage on high-margin segments',
           family: 'Pricing & packaging',
           objective: 'Margin',
           why: [
-            `Gross margin ${formatPct(grossMargin)} vs peer ${formatPct(grossMarginBenchmark)}.`,
+            `Gross margin ${formatPct(grossMargin)} vs target ${formatPct(grossMarginTarget)}.`,
             'Margin gap suggests pricing or mix improvement potential.',
+            ...(worstItems.length ? [`Low-margin revenue is concentrated in: ${worstItems.join(', ')}.`] : []),
           ],
+          summary: worstItems.length
+            ? `Gross margin is below target. Recent product mix shows low-margin revenue concentrated in ${worstItems.slice(0, 3).join(', ')}.`
+            : `Gross margin is below target; focus on discount leakage and product mix.`,
+          evidence: marginEvidence,
           impactLow,
           impactHigh,
           impactUnit: 'EBITDA',
@@ -1475,7 +1794,7 @@ export async function POST(request: NextRequest) {
           feasibility: 0.7,
           metric: 'Gross Margin',
           nextActions: [
-            { description: 'Export segment margin by product/customer from P&L; flag segments below target margin', owner: 'Finance', dueHorizon: 'today', dataReference: 'P&L by segment' },
+            { description: worstItems.length ? `Pull margin detail for these items and top customers: ${worstItems.slice(0, 5).join(', ')}` : 'Export segment margin by product/customer from P&L; flag segments below target margin', owner: 'Finance', dueHorizon: 'today', dataReference: 'Product margin + customer mix' },
             { description: 'Define price floor and max discount % by segment; publish to quote tool', owner: 'Sales', dueHorizon: '48 hours', dataReference: 'Pricing policy' },
             { description: 'Pilot price floors on top 3 segments for 14 days; track win rate and discount variance', owner: 'Sales', dueHorizon: '7 days', dataReference: 'Win/loss + discount %' },
             { description: 'Review gross margin % and scrap/expedite; if no improvement in 14 days escalate to pricing committee', owner: 'Finance', dueHorizon: '14 days', dataReference: 'Gross margin %' },
@@ -1490,15 +1809,17 @@ export async function POST(request: NextRequest) {
       }
 
       // Working capital (DSO)
-      if (dsoBenchmark != null && dso != null && dso > dsoBenchmark + 5 && revenue > 0) {
-        const dsoGap = dso - dsoBenchmark;
-        const cashImpact = (dsoGap / 365) * revenue;
+      const defaultDsoTarget = playbook.sector === 'PROFESSIONAL_SERVICES' ? 45 : 55;
+      const dsoTarget = dsoBenchmark ?? defaultDsoTarget;
+      if (dso != null && dsoTarget != null && dso > dsoTarget + 5 && revenue > 0) {
+        const dsoGap = dso - dsoTarget;
+        const cashImpact = (dsoGap / 30) * revenue;
         makeOpportunity({
           title: 'Tighten terms and collections to reduce DSO',
           family: 'Working capital (AR/AP/inventory)',
           objective: 'Cash',
           why: [
-            `DSO ${formatDays(dso)} vs peer ${formatDays(dsoBenchmark)}.`,
+            `DSO ${formatDays(dso)} vs target ${formatDays(dsoTarget)}.`,
             'Cash conversion is slower than peer median.',
           ],
           impactLow: cashImpact * 0.6,
@@ -1608,16 +1929,25 @@ export async function POST(request: NextRequest) {
       }
 
       // Inventory drag (if available)
-      if (dioBenchmark != null && dio != null && dio > dioBenchmark + 5 && cogs > 0) {
-        const cashImpact = ((dio - dioBenchmark) / 365) * cogs;
+      const defaultDioTarget = 60;
+      const dioTarget = dioBenchmark ?? defaultDioTarget;
+      if (dio != null && dioTarget != null && dio > dioTarget + 5 && cogs > 0 && inventory > 0) {
+        const cashImpact = ((dio - dioTarget) / 30) * cogs;
+        const invEvidence = buildInventoryEvidence();
+        const topBuildItems = (invEvidence?.topItems || []).slice(0, 5).map((x) => x.itemName);
         makeOpportunity({
           title: 'Reduce inventory drag to free cash',
           family: 'COGS / procurement / supplier terms',
           objective: 'Cash',
           why: [
-            `Inventory days ${formatDays(dio)} vs peer ${formatDays(dioBenchmark)}.`,
+            `Inventory days ${formatDays(dio)} vs target ${formatDays(dioTarget)}.`,
             'Inventory turns imply excess working capital tied up.',
+            ...(topBuildItems.length ? [`Inventory build is concentrated in: ${topBuildItems.join(', ')}.`] : []),
           ],
+          summary: topBuildItems.length
+            ? `Inventory days are above peer benchmark; inventory build is concentrated in ${topBuildItems.slice(0, 3).join(', ')}.`
+            : `Inventory days are above peer benchmark; prioritize slow-moving/excess items.`,
+          evidence: invEvidence,
           impactLow: cashImpact * 0.5,
           impactHigh: cashImpact * 0.8,
           impactUnit: 'Cash',
@@ -1633,7 +1963,7 @@ export async function POST(request: NextRequest) {
           feasibility: 0.55,
           metric: 'Inventory Days',
           nextActions: [
-            { description: 'Export slow-moving and excess inventory by SKU ($ and days); assign owners by category', owner: 'Ops', dueHorizon: 'today', dataReference: 'Inventory aging report' },
+            { description: topBuildItems.length ? `Review these top inventory-build items first: ${topBuildItems.join(', ')} (asset value up); confirm demand and reorder logic` : 'Export slow-moving and excess inventory by SKU ($ and days); assign owners by category', owner: 'Ops', dueHorizon: 'today', dataReference: 'Inventory + product sales by item' },
             { description: 'Review reorder points for top 10 SKUs; propose new targets with demand and lead time', owner: 'Ops', dueHorizon: '48 hours', dataReference: 'Reorder points + demand' },
             { description: 'Implement reorder point changes; track stockout rate and inventory days for 14 days', owner: 'Ops', dueHorizon: '7 days', dataReference: 'Stockout % + inventory days' },
             { description: 'Measure inventory days and cash released at 30 days; roll back if stockout >2%', owner: 'Ops', dueHorizon: '30 days', dataReference: 'Inventory days + stockout %' },
@@ -1766,6 +2096,172 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // If we still have no opportunities (common when benchmarks/financials are missing),
+    // create 1–2 operational-snapshot-driven opportunities so Actions/Monitor is useful.
+    if (!findings.some((finding) => finding.type === 'opportunity')) {
+      const arMonthly = (arSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+      if (arMonthly.length >= 6 && opsMonthlySeries.length >= 6) {
+        const recent = arMonthly.slice(-3);
+        const prior = arMonthly.slice(-6, -3);
+        const recentTotal = average(recent.map((r: any) => Number(r.totalAR || 0)));
+        const priorTotal = average(prior.map((r: any) => Number(r.totalAR || 0)));
+        const recentOver60 = average(recent.map((r: any) => Number((r.days31to60 || 0) + (r.days61to90 || 0) + (r.days90plus || 0))));
+        const priorOver60 = average(prior.map((r: any) => Number((r.days31to60 || 0) + (r.days61to90 || 0) + (r.days90plus || 0))));
+        const recentPct = recentTotal ? recentOver60 / recentTotal : 0;
+        const priorPct = priorTotal ? priorOver60 / priorTotal : 0;
+        const pctDelta = recentPct - priorPct;
+
+        const revRecent = average(opsMonthlySeries.slice(-3).map((m: any) => Number(m.revenue || 0)));
+        const dsoRecent = revRecent > 0 ? (recentTotal / revRecent) * 30 : null;
+
+        if (pctDelta >= 0.03 || (dsoRecent != null && dsoRecent >= 60) || recentPct >= 0.22) {
+          const cashImpact = Math.max(0, recentOver60 * 0.25); // conservative: assume 25% collectible improvement in 60–120 days
+          findings.push({
+            type: 'opportunity',
+            metric: 'AR / Collections',
+            severity: cashImpact >= 100000 ? 'high' : cashImpact >= 40000 ? 'medium' : 'low',
+            confidence: 0.55,
+            payload: {
+              title: 'Run a 2-week collections sprint on top overdue accounts',
+              type: 'Working capital (AR/AP/inventory)',
+              objective: 'Cash',
+              summary: `AR >60 days is ${Math.round(recentPct * 100)}% (${pctDelta >= 0 ? '+' : ''}${Math.round(pctDelta * 100)} pts vs prior).`,
+              why: [
+                `AR >60 days mix increased ${(pctDelta * 100).toFixed(1)} pts.`,
+                dsoRecent != null ? `Implied DSO ~${dsoRecent.toFixed(0)} days using operational revenue.` : 'Revenue basis not available to estimate DSO.',
+              ],
+              impact: { unit: 'Cash', low: cashImpact * 0.5, high: cashImpact, basis: 'Over-60 AR × assumed collectible lift' },
+              timeToImpact: { signalDays: 7, runRateDays: 45, label: '45 days' },
+              dependencies: ['Accurate AR aging', 'Customer contact list', 'Dispute resolution queue'],
+              peerEvidence: 'Teams that prioritize top-dollar past-due invoices and clear disputes first typically reduce >60-day mix within 4–8 weeks.',
+              validationTests: ['Work top 15 invoices by $ for 10 business days; measure promises-to-pay and cash collected'],
+              guardrails: ['Customer escalation volume spike > 20% triggers review'],
+              owner: 'Finance',
+              status: 'Discover',
+              nextAction: 'Generate top past-due list and assign owners',
+              nextActions: [
+                { description: 'Pull top 25 past-due invoices by $ and days; tag dispute vs collectable; assign owners', owner: 'Finance', dueHorizon: 'today', dataReference: 'AR aging' },
+                { description: 'Create daily 15-minute standup for collections sprint; track promises-to-pay and receipts', owner: 'Finance', dueHorizon: '48 hours', dataReference: 'Collections tracker' },
+                { description: 'Implement dispute SLA (POD/price) and escalation path; clear top blockers', owner: 'Ops', dueHorizon: '7 days', dataReference: 'Dispute queue' },
+              ],
+              monitoring: {
+                primaryKpi: 'AR >60 days % (weekly)',
+                leadingIndicators: ['Cash collected from past-due (daily)', 'Disputes opened vs closed (weekly)'],
+                timeWindowDays: 14,
+                stopContinueRule: 'If >60-day mix does not improve within 14 days, escalate to credit policy + exec outreach for top accounts.',
+              },
+              score: { value: 0.35, impact: 0.35, confidence: 0.55, feasibility: 0.75, timePenalty: 0.0, reason: 'Operational fallback opportunity (no benchmarks/financial uploads).' },
+            },
+          });
+        }
+      }
+    }
+
+    if (!findings.some((finding) => finding.type === 'opportunity')) {
+      const custMonthly = (customerSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
+      if (custMonthly.length >= 6) {
+        const latestDate = new Date(custMonthly[custMonthly.length - 1].snapshotDate).toISOString().slice(0, 10);
+        const latestRows = custMonthly.filter((r: any) => new Date(r.snapshotDate).toISOString().slice(0, 10) === latestDate);
+        const totalRev = latestRows.reduce((sum: number, r: any) => sum + Number(r.revenue || 0), 0);
+        if (totalRev > 0) {
+          const ranked = [...latestRows].sort((a: any, b: any) => Number(b.revenue || 0) - Number(a.revenue || 0));
+          const top = ranked.slice(0, 3);
+          const topRev = top.reduce((sum: number, r: any) => sum + Number(r.revenue || 0), 0);
+          const topShare = topRev / totalRev;
+          const top1Share = Number(ranked[0]?.revenue || 0) / totalRev;
+          if (topShare >= 0.6 || top1Share >= 0.3) {
+            const names = top.map((r: any) => String(r.customerName || 'Customer')).slice(0, 3);
+            findings.push({
+              type: 'opportunity',
+              metric: 'Customer Concentration',
+              severity: top1Share >= 0.4 || topShare >= 0.75 ? 'high' : topShare >= 0.6 ? 'medium' : 'low',
+              confidence: 0.55,
+              payload: {
+                title: 'Reduce customer concentration risk and smooth revenue',
+                type: 'Sales efficiency & pipeline',
+                objective: 'Risk',
+                summary: `Top customers represent ${Math.round(topShare * 100)}% of recent monthly revenue (${names.join(', ')}).`,
+                why: [
+                  `Top 1 customer share: ${Math.round(top1Share * 100)}%.`,
+                  `Top 3 customer share: ${Math.round(topShare * 100)}%.`,
+                ],
+                impact: { unit: 'Revenue', low: totalRev * 0.03, high: totalRev * 0.08, basis: 'Reduce volatility via pipeline diversification' },
+                timeToImpact: { signalDays: 30, runRateDays: 120, label: '120 days' },
+                dependencies: ['Pipeline tracking', 'Segmented outreach list', 'Offer/package clarity'],
+                peerEvidence: 'Diversified client mix reduces forecast volatility and improves pricing power over time.',
+                validationTests: ['Stand up a 30-day outbound pilot targeting 2 new segments; track meetings booked and qualified pipeline'],
+                guardrails: ['Do not over-discount to win diversification logos'],
+                owner: 'Sales',
+                status: 'Discover',
+                nextAction: 'Define 2 target segments to diversify revenue',
+                nextActions: [
+                  { description: `Identify 2–3 target segments adjacent to current work; define ICP and offer`, owner: 'Sales', dueHorizon: 'today', dataReference: 'Customer list + win/loss' },
+                  { description: 'Build a 50-account outreach list per segment; assign owners and cadence', owner: 'Sales', dueHorizon: '48 hours', dataReference: 'CRM / contact list' },
+                  { description: 'Launch 30-day outreach pilot; measure meetings, SQLs, and pipeline added', owner: 'Sales', dueHorizon: '7 days', dataReference: 'Pipeline dashboard' },
+                ],
+                monitoring: {
+                  primaryKpi: 'Top 3 customer revenue share (monthly)',
+                  leadingIndicators: ['Qualified pipeline added outside top accounts (weekly)', 'Meetings booked per segment (weekly)'],
+                  timeWindowDays: 30,
+                  stopContinueRule: 'If pipeline diversification does not improve within 30 days, revisit segments and messaging; avoid discounting below floor.',
+                },
+                score: { value: 0.34, impact: 0.30, confidence: 0.55, feasibility: 0.7, timePenalty: 0.0, reason: 'Operational fallback opportunity (customer snapshot concentration).' },
+              },
+            });
+          }
+        }
+      }
+    }
+
+    if (!findings.some((finding) => finding.type === 'opportunity')) {
+      // Generic growth opportunity using ops-derived revenue trend when everything is "within bounds"
+      // (or when benchmarks exist but don't match available fields yet).
+      if (opsMonthlySeries.length >= 4) {
+        const windowSize = opsMonthlySeries.length >= 6 ? 3 : 2;
+        const recentRev = average(opsMonthlySeries.slice(-windowSize).map((m: any) => Number(m.revenue || 0)));
+        const priorRev = average(opsMonthlySeries.slice(-(windowSize * 2), -windowSize).map((m: any) => Number(m.revenue || 0)));
+        const growth = percentChange(recentRev, priorRev);
+        if (Number.isFinite(growth) && growth < 0.03) {
+          findings.push({
+            type: 'opportunity',
+            metric: 'Pipeline / Growth',
+            severity: growth < -0.02 ? 'high' : growth < 0.01 ? 'medium' : 'low',
+            confidence: 0.5,
+            payload: {
+              title: 'Tighten pipeline and replicate what is working',
+              type: 'Sales efficiency & pipeline',
+              objective: 'Growth',
+              summary: `Operational revenue trend looks flat (recent vs prior: ${formatPct(growth)}).`,
+              why: [
+                'With flat growth, the fastest win is usually pipeline hygiene + focusing on highest-converting segments.',
+              ],
+              impact: { unit: 'Revenue', low: Math.max(0, recentRev) * 0.03, high: Math.max(0, recentRev) * 0.08, basis: 'Revenue × lift from conversion + segment focus' },
+              timeToImpact: { signalDays: 30, runRateDays: 90, label: '90 days' },
+              dependencies: ['Defined ICP', 'Pipeline stages + conversion tracking', 'Outbound list'],
+              peerEvidence: 'Peers with consistent growth typically run weekly pipeline reviews and focus on segments with repeatable conversion.',
+              validationTests: ['Pick top 2 segments; run 2-week outreach sprint; measure meetings booked and SQL conversion'],
+              guardrails: ['Avoid discounting below floor to “buy” growth'],
+              owner: 'Sales',
+              status: 'Discover',
+              nextAction: 'Pick segments and instrument conversion',
+              nextActions: [
+                { description: 'Pull last 90 days wins/losses; identify top 2 segments by conversion and margin', owner: 'Sales', dueHorizon: 'today', dataReference: 'Customer + product snapshots / CRM' },
+                { description: 'Define 2-week outreach sprint (50 targets per segment); track meetings + SQLs', owner: 'Sales', dueHorizon: '48 hours', dataReference: 'Outreach list + tracker' },
+                { description: 'Run weekly pipeline review; remove stalled deals; enforce stage exit criteria', owner: 'Sales', dueHorizon: '7 days', dataReference: 'Pipeline stage report' },
+              ],
+              monitoring: {
+                primaryKpi: 'Qualified pipeline added (weekly)',
+                leadingIndicators: ['Meetings booked (weekly)', 'SQL conversion % (weekly)', 'Discount % (weekly)'],
+                timeWindowDays: 30,
+                stopContinueRule: 'If meetings and SQL conversion do not improve in 30 days, change segments/messaging and revisit offer.',
+              },
+              score: { value: 0.32, impact: 0.28, confidence: 0.5, feasibility: 0.7, timePenalty: 0.0, reason: 'Operational fallback opportunity (flat growth).' },
+            },
+          });
+        }
+      }
+    }
+
     if (!findings.some((finding) => finding.type === 'opportunity')) {
       findings.push({
         type: 'opportunity',
@@ -1889,6 +2385,25 @@ export async function POST(request: NextRequest) {
           }))
       : undefined;
 
+    const debug = body?.includeDebug
+      ? {
+          industryGroupId,
+          assetSizeCategory,
+          benchmarksCount: benchmarks.length,
+          monthlyFinancialCount: monthlyFinancials.length,
+          opsMonthlyCount: opsMonthlySeries.length,
+          opportunityMonthlySource: monthlyFinancials.length >= 4 ? 'monthlyFinancials' : 'opsDerived',
+          snapshotCounts: {
+            cash: cashSnapshots.length,
+            ar: arSnapshots.length,
+            ap: apSnapshots.length,
+            customers: customerSnapshots.length,
+            products: productSnapshots.length,
+            inventory: inventorySnapshots.length,
+          },
+        }
+      : undefined;
+
     return NextResponse.json({
       success: true,
       inserted: findings.length,
@@ -1898,6 +2413,7 @@ export async function POST(request: NextRequest) {
         expense: expenseGoals[0]?.goals || {},
         operational: operationalGoals[0]?.goals || {},
       },
+      ...(debug ? { debug } : {}),
       ...(includeCovenantDebug ? { debugCovenants, debugCovenantMeta } : {}),
     });
   } catch (error) {

@@ -12,7 +12,7 @@
    { id: 'pa-focus-board', label: 'Focus Board' },
    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
-   { id: 'pa-opportunity-workspace', label: 'Opportunity Workspace' }
+   { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
  ];
  
  export default function PerformanceAnalyticsNav({

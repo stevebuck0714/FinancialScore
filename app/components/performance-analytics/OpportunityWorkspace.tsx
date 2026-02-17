@@ -362,6 +362,36 @@ const evidenceLevel = (confidence?: number | null) => {
                <div style={{ marginTop: '12px', fontSize: '13px', color: '#475569' }}>
                 {selectedFinding.payload?.summary || selectedFinding.payload?.why?.join(' ') || 'No summary available yet.'}
                </div>
+              {selectedFinding.payload?.evidence?.topItems?.length > 0 && (
+                <div style={{ marginTop: '14px', padding: '12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#9a3412', marginBottom: '8px' }}>
+                    Top drivers (item-level)
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#9a3412', marginBottom: '10px' }}>
+                    {selectedFinding.payload.evidence.methodology}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.7fr 0.7fr 0.7fr 0.7fr', gap: '8px', fontSize: '11px', color: '#7c2d12', fontWeight: 700 }}>
+                    <div>Item</div>
+                    <div style={{ textAlign: 'right' }}>Inv $ Δ</div>
+                    <div style={{ textAlign: 'right' }}>Qty Δ</div>
+                    <div style={{ textAlign: 'right' }}>Weeks OH</div>
+                    <div style={{ textAlign: 'right' }}>GM%</div>
+                  </div>
+                  <div style={{ marginTop: '6px', display: 'grid', gap: '6px' }}>
+                    {selectedFinding.payload.evidence.topItems.slice(0, 8).map((it: any, idx: number) => (
+                      <div key={`${it.itemId || it.itemName}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.7fr 0.7fr 0.7fr 0.7fr', gap: '8px', fontSize: '11px', color: '#7c2d12' }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {it.itemName}{it.sku ? ` (${it.sku})` : ''}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>{Number(it.inventoryAssetDelta || 0).toLocaleString()}</div>
+                        <div style={{ textAlign: 'right' }}>{Number(it.inventoryQtyDelta || 0).toLocaleString()}</div>
+                        <div style={{ textAlign: 'right' }}>{it.estimatedWeeksOnHand != null ? it.estimatedWeeksOnHand : '—'}</div>
+                        <div style={{ textAlign: 'right' }}>{it.recentGrossMarginPct != null ? `${Number(it.recentGrossMarginPct).toFixed(1)}%` : '—'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {selectedFinding.payload?.impact && (
                  <div style={{ marginTop: '12px', fontSize: '13px', color: '#1e293b' }}>
                   <strong>Impact estimate:</strong> {formatImpactRange(selectedFinding.payload.impact)}

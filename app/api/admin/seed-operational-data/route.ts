@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
 
 export async function POST(request: NextRequest) {
   try {
-    const { companyId, dataType = 'all', monthsBack = 12, secret } = await request.json();
+    const { companyId, dataType = 'all', monthsBack = 12, secret, sectorCategory } = await request.json();
 
     // Simple auth check using CRON_SECRET
     const expectedSecret = process.env.CRON_SECRET || 'dev-secret-change-me';
@@ -37,9 +38,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const profile = getSectorMockProfile(sectorCategory || (company as any)?.industrySectorCategory || '01');
+
+    // Helpers (keep deterministic-ish per company)
+    const makeNames = (prefix: string, count: number, kind: 'C' | 'P' | 'V') =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `${kind}${String(i + 1).padStart(3, '0')}`,
+        name: `${prefix} ${String(i + 1).padStart(2, '0')}`,
+      }));
+
     const results: any = {
       companyId,
       companyName: company.name,
+      sectorCategory: profile.sectorCategory,
       seeded: {},
     };
 
@@ -51,8 +62,8 @@ export async function POST(request: NextRequest) {
       const today = new Date();
       const daysToGenerate = monthsBack * 30; // Approximate days
       
-      // Starting cash balance
-      let currentBalance = 50000 + Math.random() * 50000; // $50k-$100k starting
+      // Starting cash balance (scale slightly by sector)
+      let currentBalance = (50000 + Math.random() * 50000) * (profile.scale || 1); // $50k-$100k starting
       
       for (let i = daysToGenerate; i >= 0; i--) {
         const snapshotDate = new Date(today);
@@ -75,18 +86,22 @@ export async function POST(request: NextRequest) {
         if (snapshotDate.getDate() === 1) {
           currentBalance -= 5000 + Math.random() * 3000; // $5k-$8k rent
         }
-        
-        cashSnapshots.push({
-          companyId,
-          snapshotDate,
-          frequency: 'daily',
-          accountId: 'CASH_MAIN',
-          accountName: 'Operating Cash',
-          cashBalance: currentBalance,
-          changeAmount: dailyChange,
-          changePercent: ((dailyChange / (currentBalance - dailyChange)) * 100),
-          createdAt: new Date(),
-          updatedAt: new Date(),
+
+        const accounts = (profile.cashAccounts && profile.cashAccounts.length > 0) ? profile.cashAccounts : ['Operating Cash'];
+        accounts.forEach((accountName, idx) => {
+          // Split across accounts so "total cash" has components.
+          const splitPct = accounts.length === 1 ? 1 : idx === 0 ? 0.78 : 0.22;
+          cashSnapshots.push({
+            companyId,
+            snapshotDate,
+            frequency: 'daily',
+            accountId: `CASH_${idx + 1}`,
+            accountName,
+            cashBalance: currentBalance * splitPct,
+            changeAmount: dailyChange * splitPct,
+            changePercent: ((dailyChange / Math.max(1, (currentBalance - dailyChange))) * 100),
+            createdAt: new Date(),
+          });
         });
       }
       
@@ -133,7 +148,6 @@ export async function POST(request: NextRequest) {
           days61to90,
           days90plus: Math.max(days90plus, 0),
           createdAt: new Date(),
-          updatedAt: new Date(),
         });
       }
       
@@ -163,7 +177,6 @@ export async function POST(request: NextRequest) {
           days61to90,
           days90plus: Math.max(days90plus, 0),
           createdAt: new Date(),
-          updatedAt: new Date(),
         });
       }
       
@@ -203,7 +216,6 @@ export async function POST(request: NextRequest) {
           days61to90,
           days90plus: Math.max(days90plus, 0),
           createdAt: new Date(),
-          updatedAt: new Date(),
         });
       }
       
@@ -233,7 +245,6 @@ export async function POST(request: NextRequest) {
           days61to90,
           days90plus: Math.max(days90plus, 0),
           createdAt: new Date(),
-          updatedAt: new Date(),
         });
       }
       
@@ -249,20 +260,18 @@ export async function POST(request: NextRequest) {
       console.log('📊 Generating Customer Sales snapshots...');
       
       const customerSalesSnapshots = [];
-      const customers = [
-        { id: 'CUST001', name: 'Acme Corporation' },
-        { id: 'CUST002', name: 'Global Industries' },
-        { id: 'CUST003', name: 'Tech Solutions Inc' },
-        { id: 'CUST004', name: 'ABC Manufacturing' },
-        { id: 'CUST005', name: 'XYZ Services' },
-      ];
+      const customers = makeNames(profile.customerPrefix, 18, 'C');
       
       const today = new Date();
       for (let i = 0; i < monthsBack; i++) {
         const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
         
-        customers.forEach(customer => {
-          const revenue = 10000 + Math.random() * 40000;
+        const idxFromOldest = monthsBack - 1 - i;
+        customers.forEach((customer, cIdx) => {
+          // Add mild seasonality and a customer mix.
+          const base = (9000 + cIdx * 1200) * (profile.scale || 1);
+          const seasonal = 1 + Math.sin(idxFromOldest / 2.2) * 0.08;
+          const revenue = base * seasonal * (0.85 + Math.random() * 0.45);
           const invoiceCount = Math.floor(2 + Math.random() * 8);
           
           customerSalesSnapshots.push({
@@ -275,7 +284,6 @@ export async function POST(request: NextRequest) {
             invoiceCount,
             avgInvoiceSize: revenue / invoiceCount,
             createdAt: new Date(),
-            updatedAt: new Date(),
           });
         });
       }
@@ -292,21 +300,37 @@ export async function POST(request: NextRequest) {
       console.log('📊 Generating Product Sales snapshots...');
       
       const productSalesSnapshots = [];
-      const products = [
-        { id: 'PROD001', name: 'Premium Widget', sku: 'WDG-001' },
-        { id: 'PROD002', name: 'Standard Service', sku: 'SVC-100' },
-        { id: 'PROD003', name: 'Deluxe Package', sku: 'PKG-200' },
-        { id: 'PROD004', name: 'Basic License', sku: 'LIC-001' },
-      ];
+      const products = Array.from({ length: 28 }, (_, i) => {
+        const n = String(i + 1).padStart(2, '0');
+        return {
+          id: `ITEM_${n}`,
+          name: `${profile.productPrefix} ${n}`,
+          sku: `${profile.sectorCategory}-${n}`,
+        };
+      });
+
+      // Create a few intentionally "problem" items to enable drill-down analysis.
+      const buildInventoryIds = new Set(products.slice(0, 4).map((p) => p.id)); // inventory rising, sales slowing
+      const fastMoverIds = new Set(products.slice(4, 8).map((p) => p.id)); // strong sales, tighter inventory
       
       const today = new Date();
       for (let i = 0; i < monthsBack; i++) {
         const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
         
-        products.forEach(product => {
-          const quantitySold = 10 + Math.random() * 90;
-          const revenue = quantitySold * (100 + Math.random() * 400);
-          const cogs = revenue * (0.3 + Math.random() * 0.2);
+        const idxFromOldest = monthsBack - 1 - i;
+        products.forEach((product, pIdx) => {
+          const baseUnits = (18 + pIdx * 3) * (profile.scale || 1);
+          const season = 1 + Math.sin(idxFromOldest / 2.0) * 0.06;
+          const noise = 0.85 + Math.random() * 0.45;
+
+          let trendMult = 1;
+          if (buildInventoryIds.has(product.id)) trendMult = Math.max(0.6, 1 - idxFromOldest * 0.02);
+          if (fastMoverIds.has(product.id)) trendMult = 1 + idxFromOldest * 0.015;
+
+          const quantitySold = Math.max(0, baseUnits * season * noise * trendMult);
+          const price = 90 + Math.random() * 520; // $90 - $610 unit price
+          const revenue = quantitySold * price;
+          const cogs = revenue * (0.35 + Math.random() * 0.25);
           
           productSalesSnapshots.push({
             companyId,
@@ -318,8 +342,9 @@ export async function POST(request: NextRequest) {
             quantitySold,
             revenue,
             cogs,
+            grossMargin: revenue - cogs,
+            grossMarginPct: revenue > 0 ? ((revenue - cogs) / revenue) * 100 : null,
             createdAt: new Date(),
-            updatedAt: new Date(),
           });
         });
       }
@@ -336,19 +361,31 @@ export async function POST(request: NextRequest) {
       console.log('📦 Generating Inventory snapshots...');
       
       const inventorySnapshots = [];
-      const inventoryItems = [
-        { id: 'INV001', name: 'Raw Materials', sku: 'RAW-001' },
-        { id: 'INV002', name: 'Finished Goods', sku: 'FIN-001' },
-        { id: 'INV003', name: 'Components', sku: 'CMP-001' },
-      ];
+      const inventoryItems = Array.from({ length: 28 }, (_, i) => {
+        const n = String(i + 1).padStart(2, '0');
+        return {
+          id: `ITEM_${n}`, // align with productSales itemIds for drill-down
+          name: `${profile.productPrefix} ${n}`,
+          sku: `${profile.sectorCategory}-${n}`,
+        };
+      });
+
+      const buildInventoryIds = new Set(inventoryItems.slice(0, 4).map((p) => p.id));
+      const fastMoverIds = new Set(inventoryItems.slice(4, 8).map((p) => p.id));
       
       const today = new Date();
       for (let i = 0; i < monthsBack; i++) {
         const snapshotDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
         
-        inventoryItems.forEach(item => {
-          const qtyOnHand = 100 + Math.random() * 400;
-          const avgCost = 20 + Math.random() * 80;
+        const idxFromOldest = monthsBack - 1 - i;
+        inventoryItems.forEach((item, itemIdx) => {
+          const baseQty = (90 + itemIdx * 12) * (profile.scale || 1);
+          let trendMult = 1;
+          if (buildInventoryIds.has(item.id)) trendMult = 1 + idxFromOldest * 0.06; // rising on-hand
+          if (fastMoverIds.has(item.id)) trendMult = Math.max(0.55, 1 - idxFromOldest * 0.035); // tightening inventory
+
+          const qtyOnHand = Math.max(0, baseQty * trendMult * (0.85 + Math.random() * 0.4));
+          const avgCost = (18 + (itemIdx % 7) * 6 + Math.random() * 25) * (profile.scale || 1);
           const assetValue = qtyOnHand * avgCost;
           
           inventorySnapshots.push({
@@ -362,7 +399,6 @@ export async function POST(request: NextRequest) {
             assetValue,
             avgCost,
             createdAt: new Date(),
-            updatedAt: new Date(),
           });
         });
       }
