@@ -25,6 +25,68 @@ interface LoansManagementProps {
   onLoanSelected?: (loan: Loan) => void;
 }
 
+type LoanDoc = {
+  id: string;
+  category: 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'OTHER';
+  originalFileName: string;
+  extractionStatus: string;
+  indexStatus?: string | null;
+  createdAt: string;
+};
+
+type DocAskResponse = {
+  shortAnswer: string;
+  longAnswer: string;
+  citedBullets: Array<{ text: string; citations: Array<{ url: string; title?: string; publishedDate?: string | null }> }>;
+  howThisImpactsUs: string;
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+};
+
+function FormRow(props: {
+  label: string;
+  htmlFor: string;
+  required?: boolean;
+  fullWidth?: boolean;
+  alignTop?: boolean;
+  children: React.ReactNode;
+}) {
+  const { label, htmlFor, required, fullWidth, alignTop, children } = props;
+  return (
+    <div
+      style={{
+        ...(fullWidth ? { gridColumn: '1 / -1' } : null),
+        // Use an internal 2-col grid so the input can't overflow into adjacent
+        // columns when the outer form uses a multi-column CSS grid.
+        display: 'grid',
+        gridTemplateColumns: '110px minmax(0, 1fr)',
+        alignItems: alignTop ? 'start' : 'center',
+        columnGap: '8px',
+        rowGap: '6px',
+        width: '100%',
+        minWidth: 0,
+        padding: '2px 0',
+      }}
+    >
+      <label
+        htmlFor={htmlFor}
+        style={{
+          fontSize: '12px',
+          fontWeight: '600',
+          color: '#475569',
+          lineHeight: '1.2',
+          paddingTop: alignTop ? '8px' : '0',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {label} {required && <span style={{ color: '#ef4444' }}>*</span>}
+      </label>
+      <div style={{ minWidth: 0, width: '90%', justifySelf: 'start' }}>{children}</div>
+    </div>
+  );
+}
+
 export default function LoansManagement({ companyId, onLoanSelected }: LoansManagementProps) {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,10 +109,91 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
     notes: '',
   });
 
+  // Loan-doc search (Option A: only Loan Documents)
+  const [loanDocs, setLoanDocs] = useState<LoanDoc[]>([]);
+  const [loanDocsLoading, setLoanDocsLoading] = useState(false);
+  const [loanDocsError, setLoanDocsError] = useState<string | null>(null);
+  const [selectedLoanDocId, setSelectedLoanDocId] = useState<string>('');
+  const [loanDocQuestion, setLoanDocQuestion] = useState<string>('');
+  const [loanDocAskLoading, setLoanDocAskLoading] = useState(false);
+  const [loanDocAskError, setLoanDocAskError] = useState<string | null>(null);
+  const [loanDocAskResponse, setLoanDocAskResponse] = useState<DocAskResponse | null>(null);
+
   // Fetch loans for this company
   useEffect(() => {
     fetchLoans();
   }, [companyId]);
+
+  useEffect(() => {
+    // Only load docs when the add/edit form is visible.
+    if (!isAddingLoan) return;
+    if (!companyId) return;
+
+    const load = async () => {
+      try {
+        setLoanDocsLoading(true);
+        setLoanDocsError(null);
+        const res = await fetch(`/api/company-documents?companyId=${encodeURIComponent(companyId)}`);
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || 'Failed to load company documents');
+
+        const docs: LoanDoc[] = Array.isArray(data?.documents) ? data.documents : [];
+        const loanOnly = docs
+          .filter((d) => String(d?.category || '') === 'LOAN_DOCUMENTS')
+          .map((d) => ({
+            id: String(d.id),
+            category: d.category,
+            originalFileName: String(d.originalFileName || ''),
+            extractionStatus: String(d.extractionStatus || ''),
+            indexStatus: d.indexStatus ? String(d.indexStatus) : null,
+            createdAt: String(d.createdAt || ''),
+          }));
+        setLoanDocs(loanOnly);
+      } catch (e: any) {
+        setLoanDocsError(e?.message || 'Failed to load loan documents');
+        setLoanDocs([]);
+      } finally {
+        setLoanDocsLoading(false);
+      }
+    };
+
+    load();
+  }, [companyId, isAddingLoan]);
+
+  async function runLoanDocAsk() {
+    const q = loanDocQuestion.trim();
+    if (!q) return;
+    if (!selectedLoanDocId) {
+      setLoanDocAskError('Select a loan document first.');
+      return;
+    }
+
+    try {
+      setLoanDocAskLoading(true);
+      setLoanDocAskError(null);
+      setLoanDocAskResponse(null);
+
+      const res = await fetch('/api/ai-analysis/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          companyName: '',
+          question: q,
+          mode: 'document',
+          documentId: selectedLoanDocId,
+          useExternalSources: false,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Document search failed');
+      setLoanDocAskResponse(data as DocAskResponse);
+    } catch (e: any) {
+      setLoanDocAskError(e?.message || 'Document search failed');
+    } finally {
+      setLoanDocAskLoading(false);
+    }
+  }
 
   const fetchLoans = async () => {
     try {
@@ -140,6 +283,10 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
     });
     setEditingLoanId(null);
     setIsAddingLoan(false);
+    setSelectedLoanDocId('');
+    setLoanDocQuestion('');
+    setLoanDocAskError(null);
+    setLoanDocAskResponse(null);
   };
 
   const formatCurrency = (amount: number) => {
@@ -202,127 +349,109 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
 
       {/* Add/Edit Form */}
       {isAddingLoan && (
-        <form onSubmit={handleSubmit} style={{ marginBottom: '24px' }}>
-          <div style={{ background: 'white', borderRadius: '6px', padding: '20px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+        <form onSubmit={handleSubmit} style={{ marginBottom: '16px' }}>
+          <div style={{ background: 'white', borderRadius: '6px', padding: '16px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
               {editingLoanId ? 'Edit Loan' : 'Add New Loan'}
             </h3>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Loan Name <span style={{ color: '#ef4444' }}>*</span>
-                </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '10px 16px' }}>
+              <FormRow label="Loan Name" htmlFor="loanName" required>
                 <input
+                  id="loanName"
                   type="text"
                   required
                   value={formData.loanName}
                   onChange={(e) => setFormData({ ...formData, loanName: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                   placeholder="e.g., Equipment Finance Loan"
                 />
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Loan ID Number
-                </label>
+              <FormRow label="Loan ID Number" htmlFor="loanIdNumber">
                 <input
+                  id="loanIdNumber"
                   type="text"
                   value={formData.loanIdNumber}
                   onChange={(e) => setFormData({ ...formData, loanIdNumber: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                   placeholder="e.g., 12345-ABC"
                 />
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Lender Name
-                </label>
+              <FormRow label="Lender Name" htmlFor="lenderName">
                 <input
+                  id="lenderName"
                   type="text"
                   value={formData.lenderName}
                   onChange={(e) => setFormData({ ...formData, lenderName: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                   placeholder="e.g., Wells Fargo"
                 />
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Loan Amount <span style={{ color: '#ef4444' }}>*</span>
-                </label>
+              <FormRow label="Loan Amount" htmlFor="loanAmount" required>
                 <input
+                  id="loanAmount"
                   type="number"
                   step="0.01"
                   required
                   value={formData.loanAmount}
                   onChange={(e) => setFormData({ ...formData, loanAmount: parseFloat(e.target.value) || 0 })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                   placeholder="0.00"
                 />
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Interest Rate (%)
-                </label>
+              <FormRow label="Interest Rate (%)" htmlFor="interestRate">
                 <input
+                  id="interestRate"
                   type="number"
                   step="0.01"
                   value={formData.interestRate}
                   onChange={(e) => setFormData({ ...formData, interestRate: parseFloat(e.target.value) || 0 })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                   placeholder="0.00"
                 />
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Term (Months)
-                </label>
+              <FormRow label="Term (Months)" htmlFor="termMonths">
                 <input
+                  id="termMonths"
                   type="number"
                   value={formData.termMonths}
                   onChange={(e) => setFormData({ ...formData, termMonths: parseInt(e.target.value) || 0 })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                   placeholder="0"
                 />
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Start Date
-                </label>
+              <FormRow label="Start Date" htmlFor="startDate">
                 <input
+                  id="startDate"
                   type="date"
                   value={formData.startDate as string}
                   onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                 />
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  End Date (Maturity)
-                </label>
+              <FormRow label="End Date (Maturity)" htmlFor="endDate">
                 <input
+                  id="endDate"
                   type="date"
                   value={formData.endDate as string}
                   onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                 />
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Loan Type
-                </label>
+              <FormRow label="Loan Type" htmlFor="loanType">
                 <select
+                  id="loanType"
                   value={formData.loanType}
                   onChange={(e) => setFormData({ ...formData, loanType: e.target.value as any })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px', background: 'white' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', background: 'white' }}
                 >
                   <option value="TERM">Term Loan</option>
                   <option value="REVOLVER">Revolver</option>
@@ -331,16 +460,14 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                   <option value="MORTGAGE">Mortgage</option>
                   <option value="OTHER">Other</option>
                 </select>
-              </div>
+              </FormRow>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Status
-                </label>
+              <FormRow label="Status" htmlFor="status">
                 <select
+                  id="status"
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px', background: 'white' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', background: 'white' }}
                 >
                   <option value="ACTIVE">Active</option>
                   <option value="MATURING">Maturing</option>
@@ -348,23 +475,159 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                   <option value="DEFAULTED">Defaulted</option>
                   <option value="INACTIVE">Inactive</option>
                 </select>
-              </div>
+              </FormRow>
 
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#64748b', marginBottom: '6px' }}>
-                  Notes
-                </label>
+              <FormRow label="Notes" htmlFor="notes" fullWidth alignTop>
                 <textarea
+                  id="notes"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={3}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '14px', resize: 'vertical' }}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', resize: 'vertical' }}
                   placeholder="Any additional notes about this loan..."
                 />
+              </FormRow>
+
+              <div style={{ gridColumn: '1 / -1', marginTop: '6px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>Search Loan Documents</div>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>
+                      Pick a loan document uploaded in Documents, then ask a question (e.g., “list financial covenants”).
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.open('/?view=admin', '_blank', 'noreferrer')}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      background: '#fff',
+                      color: '#0f172a',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title="Open Documents tab in a new window"
+                  >
+                    Open Documents
+                  </button>
+                </div>
+
+                {loanDocsError && (
+                  <div style={{ marginBottom: '10px', padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '8px', fontSize: '13px' }}>
+                    {loanDocsError}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '110px', fontSize: '12px', fontWeight: 600, color: '#475569' }}>Loan doc</div>
+                      <select
+                        value={selectedLoanDocId}
+                        onChange={(e) => setSelectedLoanDocId(e.target.value)}
+                        style={{ width: '420px', maxWidth: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', background: 'white' }}
+                        disabled={loanDocsLoading}
+                      >
+                        <option value="">{loanDocsLoading ? 'Loading…' : loanDocs.length ? 'Select a loan document…' : 'No loan documents found'}</option>
+                        {loanDocs.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.originalFileName}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedLoanDocId && (
+                        <button
+                          type="button"
+                          onClick={() => window.open(`/api/company-documents/${selectedLoanDocId}/open`, '_blank', 'noreferrer')}
+                          style={{
+                            padding: '7px 10px',
+                            borderRadius: '8px',
+                            border: '1px solid #e2e8f0',
+                            background: '#fff',
+                            color: '#0f172a',
+                            fontSize: '12px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Open
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch', flexWrap: 'wrap' }}>
+                    <input
+                      value={loanDocQuestion}
+                      onChange={(e) => setLoanDocQuestion(e.target.value)}
+                      placeholder="Ask about covenants in the selected loan document…"
+                      style={{
+                        flex: '1 1 520px',
+                        minWidth: '320px',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1px solid #cbd5e1',
+                        outline: 'none',
+                        fontSize: '14px',
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                          runLoanDocAsk();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={runLoanDocAsk}
+                      disabled={loanDocAskLoading || !loanDocQuestion.trim() || !selectedLoanDocId}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: loanDocAskLoading ? '#94a3b8' : '#0ea5e9',
+                        color: 'white',
+                        fontWeight: '800',
+                        cursor: loanDocAskLoading ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title="Run (Ctrl/Cmd+Enter)"
+                    >
+                      {loanDocAskLoading ? 'Searching…' : 'Search Document'}
+                    </button>
+                  </div>
+
+                  {loanDocAskError && (
+                    <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '10px', fontSize: '13px' }}>
+                      {loanDocAskError}
+                    </div>
+                  )}
+
+                  {loanDocAskResponse && (
+                    <div style={{ padding: '12px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>Answer</div>
+                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', color: '#0f172a', fontSize: '13px' }}>
+                        {loanDocAskResponse.shortAnswer}
+                      </div>
+                      {Array.isArray(loanDocAskResponse.citedBullets) && loanDocAskResponse.citedBullets.length > 0 && (
+                        <div style={{ marginTop: '10px', display: 'grid', gap: '8px' }}>
+                          {loanDocAskResponse.citedBullets.slice(0, 6).map((b, idx) => (
+                            <div key={idx} style={{ padding: '8px 10px', background: '#fff', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ color: '#0f172a', lineHeight: '1.55', fontSize: '13px' }}>• {b.text}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '14px', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 onClick={resetForm}
