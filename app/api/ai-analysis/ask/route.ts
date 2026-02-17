@@ -179,14 +179,50 @@ function safeJsonParse(rawContent: string): any {
   let s = raw.replace(/^\uFEFF/, '').trim();
   s = s.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
 
+  function extractFirstJsonValue(text: string): string | null {
+    const startObj = text.indexOf('{');
+    const startArr = text.indexOf('[');
+    const start =
+      startObj === -1 ? startArr : startArr === -1 ? startObj : Math.min(startObj, startArr);
+    if (start < 0) return null;
+    const open = text[start];
+    const close = open === '{' ? '}' : ']';
+    let depth = 0;
+    let inStr = false;
+    let escape = false;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (inStr) {
+        if (escape) {
+          escape = false;
+        } else if (ch === '\\') {
+          escape = true;
+        } else if (ch === '"') {
+          inStr = false;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+        continue;
+      }
+      if (ch === open) depth += 1;
+      if (ch === close) {
+        depth -= 1;
+        if (depth === 0) {
+          return text.slice(start, i + 1);
+        }
+      }
+    }
+    return null;
+  }
+
   try {
     return JSON.parse(s);
   } catch {
-    // Best-effort extraction of a JSON object from surrounding text.
-    const start = s.indexOf('{');
-    const end = s.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-      const candidate = s.slice(start, end + 1);
+    // Best-effort extraction of first JSON value from surrounding text.
+    const candidate = extractFirstJsonValue(s);
+    if (candidate) {
       try {
         return JSON.parse(candidate);
       } catch {

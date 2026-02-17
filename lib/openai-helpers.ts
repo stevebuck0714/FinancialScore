@@ -54,6 +54,8 @@ async function createResponsesTextViaFetch(params: {
     ...(params.instructions ? { instructions: params.instructions } : {}),
     input: params.input,
     ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
+    // Enforce JSON when the model supports structured outputs.
+    response_format: { type: 'json_object' },
   };
 
   const doRequest = async (payload: any) => {
@@ -81,6 +83,16 @@ async function createResponsesTextViaFetch(params: {
     const msg = String(out.data?.error?.message || out.raw || '');
     if (out.res.status === 400 && msg.includes("Unsupported parameter: 'temperature'")) {
       out = await doRequest(basePayload);
+    } else if (out.res.status === 400 && msg.toLowerCase().includes('unsupported parameter') && msg.includes('response_format')) {
+      // Some models may not support structured output; retry without it.
+      const { response_format: _rf, ...withoutFormat } = basePayload;
+      out = await doRequest({ ...withoutFormat, temperature: params.temperature });
+      if (!out.res.ok) {
+        const msg2 = String(out.data?.error?.message || out.raw || '');
+        if (out.res.status === 400 && msg2.includes("Unsupported parameter: 'temperature'")) {
+          out = await doRequest(withoutFormat);
+        }
+      }
     }
   }
 
