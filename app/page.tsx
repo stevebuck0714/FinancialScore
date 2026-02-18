@@ -3683,6 +3683,15 @@ function FinancialScorePage() {
     return users.filter(u => u.companyId === companyId && u.role === 'user');
   };
   const getCurrentCompany = () => Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+  const handleCompanyUpdated = (updatedCompany: any) => {
+    if (!updatedCompany?.id) return;
+    setCompanies((prev) => {
+      const prevCompanies = Array.isArray(prev) ? prev : [];
+      const exists = prevCompanies.some((c: any) => c.id === updatedCompany.id);
+      if (!exists) return [...prevCompanies, updatedCompany];
+      return prevCompanies.map((c: any) => (c.id === updatedCompany.id ? { ...c, ...updatedCompany } : c));
+    });
+  };
 
   const handleSelectCompany = (companyId: string) => {
     const company = Array.isArray(companies) ? companies.find(c => c.id === companyId) : undefined;
@@ -3703,6 +3712,10 @@ function FinancialScorePage() {
       alert('Please select an industry sector'); 
       return; 
     }
+    if (!accountingSystem) {
+      alert('Please select an accounting system');
+      return;
+    }
     setIsLoading(true);
     try {
       const { company } = await companiesApi.update(editingCompanyId, {
@@ -3712,7 +3725,7 @@ function FinancialScorePage() {
         addressZip: companyAddressZip,
         addressCountry: companyAddressCountry,
         industrySector: companyIndustrySector as number,
-        accountingSystem: accountingSystem || null,
+        accountingSystem,
         companySizeCategory: companySizeCategory || null,
         industrySectorCategory: industrySectorCategory || null
       });
@@ -4967,6 +4980,41 @@ function FinancialScorePage() {
   // Main Logged-In View with Header
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
+  const selectedAccountingSystem = company?.accountingSystem || '';
+  const selectedAccountingSystemLabel = (() => {
+    switch (selectedAccountingSystem) {
+      case 'ACUMATICA':
+        return 'Acumatica';
+      case 'CERTINIA':
+        return 'Certinia';
+      case 'CSV_FILE':
+        return 'CSV file';
+      case 'DYNAMICS':
+        return 'Dynamics';
+      case 'EPICOR':
+        return 'Epicor';
+      case 'FUSION_CLOUD':
+        return 'Fusion Cloud';
+      case 'IFS':
+        return 'IFS';
+      case 'INFOR_M3':
+        return 'Infor M3';
+      case 'NETSUITE':
+        return 'NetSuite';
+      case 'QAD':
+        return 'QAD';
+      case 'QUICKBOOKS':
+        return 'QuickBooks';
+      case 'SAGE':
+        return 'Sage';
+      case 'SAGE_INTACCT':
+        return 'Sage Intacct';
+      case 'XERO':
+        return 'Xero';
+      default:
+        return selectedAccountingSystem ? selectedAccountingSystem : 'Not set';
+    }
+  })();
 
   // Custom Print Package Handler
   const handleGeneratePrintPackage = () => {
@@ -6035,6 +6083,7 @@ function FinancialScorePage() {
               monthly={monthly}
               trendData={trendData}
               setIsLoading={setIsLoading}
+              onCompanyUpdated={handleCompanyUpdated}
               paymentsSelectedCompany={paymentsSelectedCompany}
               selectedSubscriptionPlan={selectedSubscriptionPlan}
               setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
@@ -6425,9 +6474,32 @@ function FinancialScorePage() {
               <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
                 Connect to accounting platforms to automatically import financial data for {companyName || 'your company'}.
               </p>
+              <div style={{ marginBottom: '16px', padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', color: '#475569' }}>
+                Selected Accounting System: <span style={{ fontWeight: '700', color: '#1e293b' }}>{selectedAccountingSystemLabel}</span>
+              </div>
 
-              {/* QuickBooks Connection */}
+              {!selectedAccountingSystem && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
+                  Please select an Accounting System on the Company Profile page to enable the correct connector.
+                </div>
+              )}
+
+              {selectedAccountingSystem === 'CSV_FILE' && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '13px', color: '#065f46' }}>
+                  CSV file does not require an API connection. Use the Trial Balance CSV upload in Data Mapping (or Excel Import) to load data.
+                </div>
+              )}
+
+              {selectedAccountingSystem &&
+                !['QUICKBOOKS', 'XERO', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                  <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
+                    {selectedAccountingSystemLabel} is not supported yet.
+                  </div>
+                )}
+
+              {selectedAccountingSystem === 'QUICKBOOKS' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+              {/* QuickBooks Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '24px', fontWeight: '700', color: '#2ca01c' }}>QB</div>
@@ -6521,9 +6593,11 @@ function FinancialScorePage() {
                   )}
                 </div>
               </div>
+              )}
 
-              {/* Xero Connection */}
+              {selectedAccountingSystem === 'XERO' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+              {/* Xero Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '24px', fontWeight: '700', color: '#13B5EA' }}>X</div>
@@ -6617,6 +6691,7 @@ function FinancialScorePage() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* QuickBooks Data Verification */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
@@ -6825,8 +6900,9 @@ function FinancialScorePage() {
               )}
 
 
-              {/* Sage Connection */}
+              {(selectedAccountingSystem === 'SAGE' || selectedAccountingSystem === 'SAGE_INTACCT') && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0', opacity: 0.6 }}>
+              {/* Sage Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#00a851' }}>S</div>
@@ -6840,9 +6916,11 @@ function FinancialScorePage() {
                   Coming Soon
                 </div>
               </div>
+              )}
 
-              {/* NetSuite Connection */}
+              {selectedAccountingSystem === 'NETSUITE' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0', opacity: 0.6 }}>
+              {/* NetSuite Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#E91C24' }}>NS</div>
@@ -6856,9 +6934,11 @@ function FinancialScorePage() {
                   Coming Soon
                 </div>
               </div>
+              )}
 
-              {/* Dynamics Connection */}
+              {selectedAccountingSystem === 'DYNAMICS' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', opacity: 0.6 }}>
+              {/* Dynamics Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#0078D4' }}>D</div>
@@ -6872,6 +6952,7 @@ function FinancialScorePage() {
                   Coming Soon
                 </div>
               </div>
+              )}
 
               <div style={{ marginTop: '24px', padding: '16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
                 <p style={{ fontSize: '13px', color: '#0c4a6e', margin: 0, lineHeight: '1.6' }}>
@@ -7453,7 +7534,7 @@ function FinancialScorePage() {
           {!selectedCompanyId && adminDashboardTab === 'data-mapping' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to map QuickBooks accounts.</p>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to map accounts.</p>
             </div>
           )}
 
@@ -7461,83 +7542,83 @@ function FinancialScorePage() {
             <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
-                <p style={{ fontSize: '14px', color: '#94a3b8' }}>Sync QuickBooks/Xero data or upload a Trial Balance CSV to map accounts.</p>
+                <p style={{ fontSize: '14px', color: '#94a3b8' }}>
+                  Selected Accounting System: {selectedAccountingSystemLabel}. Connect your accounting system or upload a Trial Balance CSV to map accounts.
+                </p>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', maxWidth: '1100px', margin: '0 auto' }}>
-                {/* QuickBooks Option */}
-                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
-                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
-                    <DollarSign size={32} color="#667eea" />
-                  </div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>QuickBooks API</div>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
-                  <button
-                    onClick={() => setAdminDashboardTab('api-connections')}
-                    style={{
-                      padding: '10px 20px',
-                      background: '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Connect QuickBooks
-                  </button>
-                </div>
+              <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+                {(() => {
+                  if (selectedAccountingSystem === 'QUICKBOOKS') {
+                    return (
+                      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                          <DollarSign size={32} color="#667eea" />
+                        </div>
+                        <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>QuickBooks API</div>
+                        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
+                        <button
+                          onClick={() => setAdminDashboardTab('api-connections')}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#667eea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Connect QuickBooks
+                        </button>
+                      </div>
+                    );
+                  }
 
-                {/* Xero Option */}
-                <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '16px', border: '2px solid #fed7aa', textAlign: 'center' }}>
-                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
-                    <TrendingUp size={32} color="#fb923c" />
-                  </div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>Xero API</div>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Connect to Xero to sync your financial data automatically.</p>
-                  <button
-                    onClick={() => setAdminDashboardTab('api-connections')}
-                    style={{
-                      padding: '10px 20px',
-                      background: '#fb923c',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Connect Xero
-                  </button>
-                </div>
-                
-                {/* Trial Balance Upload Option */}
-                <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '16px', border: '2px solid #86efac' }}>
-                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
-                    <FileSpreadsheet size={32} color="#10b981" />
-                  </div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '6px', textAlign: 'center' }}>Trial Balance CSV</div>
-                  <p style={{ fontSize: '13px', color: '#047857', marginBottom: '12px', textAlign: 'center' }}>Upload a CSV with Acct Type, Acct ID, Description, and date columns.</p>
-                  <input 
-                    type="file" 
-                    accept=".csv" 
-                    onChange={handleTrialBalanceCsvSelected} 
-                    style={{ 
-                      padding: '10px', 
-                      border: '2px dashed #10b981', 
-                      borderRadius: '8px', 
-                      width: '100%', 
-                      cursor: 'pointer', 
-                      background: 'white',
-                      fontSize: '13px'
-                    }} 
-                  />
-                  {error && error.includes('Trial Balance') && (
-                    <div style={{ padding: '8px', background: '#fee2e2', color: '#991b1b', borderRadius: '6px', marginTop: '12px', fontSize: '12px' }}>{error}</div>
-                  )}
-                </div>
+                  if (selectedAccountingSystem === 'XERO') {
+                    return (
+                      <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '16px', border: '2px solid #fed7aa', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                          <TrendingUp size={32} color="#fb923c" />
+                        </div>
+                        <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>Xero API</div>
+                        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Connect to Xero to sync your financial data automatically.</p>
+                        <button
+                          onClick={() => setAdminDashboardTab('api-connections')}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#fb923c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Connect Xero
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  // CSV Trial Balance option: always available and used as the fallback for "not supported yet".
+                  const isUnsupported =
+                    !!selectedAccountingSystem &&
+                    !['CSV_FILE', 'QUICKBOOKS', 'XERO'].includes(selectedAccountingSystem);
+
+                  return (
+                    <div style={{ background: isUnsupported ? '#fff7ed' : '#f0fdf4', borderRadius: '12px', padding: '16px', border: `2px solid ${isUnsupported ? '#fed7aa' : '#86efac'}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                        <FileSpreadsheet size={32} color={isUnsupported ? '#fb923c' : '#10b981'} />
+                      </div>
+                      <div style={{ fontSize: '16px', fontWeight: '600', color: isUnsupported ? '#9a3412' : '#065f46', marginBottom: '6px', textAlign: 'center' }}>
+                        {isUnsupported ? `${selectedAccountingSystemLabel} (Not supported yet)` : 'Trial Balance CSV'}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -7568,43 +7649,15 @@ function FinancialScorePage() {
                   <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Account Mapping</h1>
                   {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
                 </div>
+                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '6px' }}>
+                  Accounting System: <span style={{ fontWeight: '700', color: '#475569' }}>{selectedAccountingSystemLabel}</span>
+                </div>
                 <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
                   {hasCsvData
                     ? `Map Trial Balance accounts to your standardized financial fields - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} - ${csvTrialBalanceData.dates?.length || 0} periods`
                     : `${aiMappings.length} saved account mappings loaded from database`
                   }
                 </p>
-
-                {/* Compact CSV Re-Upload (CSV Trial Balance only; API connections re-sync from Connections tab) */}
-                {shouldShowCsvReupload && (
-                  <div style={{ marginBottom: '12px' }}>
-                    <div style={{ background: '#f0fdf4', borderRadius: '10px', padding: '8px 12px', border: '1px solid #bbf7d0' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                        <div style={{ minWidth: '220px' }}>
-                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#065f46' }}>Trial Balance CSV</div>
-                          <div style={{ fontSize: '12px', color: '#047857' }}>
-                            {hasCsvData ? `Current: ${csvTrialBalanceData.fileName || 'CSV Upload'}` : 'Upload a corrected CSV to re-run mapping.'}
-                          </div>
-                        </div>
-                        <input
-                          type="file"
-                          accept=".csv"
-                          onChange={handleTrialBalanceCsvSelected}
-                          style={{
-                            fontSize: '12px',
-                            padding: '8px 10px',
-                            background: 'white',
-                            borderRadius: '8px',
-                            border: '1px dashed #10b981',
-                            cursor: 'pointer',
-                            maxWidth: '360px'
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
 
                 {/* AI-Assisted Mapping Section for CSV */}
                 {hasCsvData && (

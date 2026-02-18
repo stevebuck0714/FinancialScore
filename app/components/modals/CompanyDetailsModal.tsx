@@ -55,7 +55,8 @@ export default function CompanyDetailsModal({
   if (!show) return null;
   const missingIndustryGroup = !companyIndustrySector;
   const missingIndustrySector = !industrySectorCategory;
-  const canSave = !missingIndustryGroup && !missingIndustrySector;
+  const missingAccountingSystem = !accountingSystem;
+  const canSave = !missingIndustryGroup && !missingIndustrySector && !missingAccountingSystem;
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
@@ -106,7 +107,9 @@ export default function CompanyDetailsModal({
           
           {/* Accounting System Dropdown */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Accounting System</label>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+              Accounting System <span style={{ color: '#ef4444' }}>*</span>
+            </label>
             <select 
               value={accountingSystem} 
               onChange={(e) => setAccountingSystem(e.target.value)} 
@@ -116,6 +119,11 @@ export default function CompanyDetailsModal({
                 <option key={system.value} value={system.value}>{system.label}</option>
               ))}
             </select>
+            {missingAccountingSystem && (
+              <div style={{ marginTop: '6px', fontSize: '12px', color: '#ef4444' }}>
+                Accounting System is required.
+              </div>
+            )}
           </div>
 
           {/* Industry Sector (new dropdown for reporting) */}

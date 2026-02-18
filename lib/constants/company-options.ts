@@ -2,19 +2,20 @@
 
 export const ACCOUNTING_SYSTEMS = [
   { value: '', label: 'Select Accounting System' },
-  { value: 'QUICKBOOKS', label: 'QuickBooks' },
-  { value: 'XERO', label: 'Xero' },
+  { value: 'ACUMATICA', label: 'Acumatica' },
+  { value: 'CERTINIA', label: 'Certinia' },
+  { value: 'CSV_FILE', label: 'CSV file' },
+  { value: 'DYNAMICS', label: 'Dynamics' },
+  { value: 'EPICOR', label: 'Epicor' },
+  { value: 'FUSION_CLOUD', label: 'Fusion Cloud' },
+  { value: 'IFS', label: 'IFS' },
+  { value: 'INFOR_M3', label: 'Infor M3' },
   { value: 'NETSUITE', label: 'NetSuite' },
+  { value: 'QAD', label: 'QAD' },
+  { value: 'QUICKBOOKS', label: 'QuickBooks' },
   { value: 'SAGE', label: 'Sage' },
   { value: 'SAGE_INTACCT', label: 'Sage Intacct' },
-  { value: 'DYNAMICS', label: 'Dynamics' },
-  { value: 'INFOR_M3', label: 'Infor M3' },
-  { value: 'ACUMATICA', label: 'Acumatica' },
-  { value: 'FUSION_CLOUD', label: 'Fusion Cloud' },
-  { value: 'EPICOR', label: 'Epicor' },
-  { value: 'IFS', label: 'IFS' },
-  { value: 'QAD', label: 'QAD' },
-  { value: 'CERTINIA', label: 'Certinia' },
+  { value: 'XERO', label: 'Xero' },
 ] as const;
 
 export const COMPANY_SIZES = [

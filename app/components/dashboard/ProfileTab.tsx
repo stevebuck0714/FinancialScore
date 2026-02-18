@@ -16,6 +16,7 @@ interface ProfileTabProps {
   trendData: any[];
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
+  onCompanyUpdated?: (company: Company) => void;
   setEditingCompanyId?: (id: string) => void;
   setCompanyAddressStreet?: (street: string) => void;
   setCompanyAddressCity?: (city: string) => void;
@@ -39,6 +40,7 @@ export default function ProfileTab({
   trendData,
   isLoading,
   setIsLoading,
+  onCompanyUpdated,
 }: ProfileTabProps) {
   // State for LOB management
   const [linesOfBusiness, setLinesOfBusiness] = React.useState<string[]>(['', '', '', '', '']);
@@ -53,7 +55,6 @@ export default function ProfileTab({
   const [companyAddressState, setCompanyAddressState] = React.useState('');
   const [companyAddressZip, setCompanyAddressZip] = React.useState('');
   const [companyAddressCountry, setCompanyAddressCountry] = React.useState('USA');
-  const [printOrientation, setPrintOrientation] = React.useState<'portrait' | 'landscape'>('portrait');
 
   // Load LOB data when component mounts or company changes
   React.useEffect(() => {
@@ -166,6 +167,43 @@ export default function ProfileTab({
 
   // Get industry info
   const industry = INDUSTRY_SECTORS.find(i => i.id === companyIndustryGroup);
+
+  const handleSaveProfile = async () => {
+    if (!companyAccountingSystem) {
+      alert('Please select an Accounting System before saving.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const companyUpdatePayload: any = {
+        addressStreet: companyAddressStreet || '',
+        addressCity: companyAddressCity || '',
+        addressState: companyAddressState || '',
+        addressZip: companyAddressZip || '',
+        addressCountry: companyAddressCountry || '',
+        accountingSystem: companyAccountingSystem,
+        companySizeCategory: companySize || null,
+        industrySectorCategory: companyIndustrySectorCode || null
+      };
+      // Industry Group is optional; only send if selected so the API doesn't reject it.
+      if (companyIndustryGroup) {
+        companyUpdatePayload.industrySector = Number(companyIndustryGroup);
+      }
+
+      const [, companyUpdateResult] = await Promise.all([
+        profilesApi.save(selectedCompanyId, profile!),
+        companiesApi.update(selectedCompanyId, companyUpdatePayload)
+      ]);
+      if (companyUpdateResult?.company) {
+        onCompanyUpdated?.(companyUpdateResult.company as Company);
+      }
+      alert('Profile saved successfully!');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to save profile');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   // Calculate Last 12 months for ratio table
   // Get up to last 12 trend data points (or fewer if less data available)
@@ -180,7 +218,7 @@ export default function ProfileTab({
       <style>{`
         @media print {
           @page {
-            size: ${printOrientation};
+            size: portrait;
             margin: 0.75in 0.75in 0.75in 0.75in;
           }
           
@@ -265,33 +303,26 @@ export default function ProfileTab({
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
               Company Profile
             </h2>
-            <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <select
-                value={printOrientation}
-                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
-              >
-                <option value="portrait">Portrait</option>
-                <option value="landscape">Landscape</option>
-              </select>
-              <button
-                onClick={() => window.print()}
-                style={{ 
-                  padding: '8px 16px', 
-                  background: '#667eea', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '6px', 
-                  fontSize: '13px', 
-                  fontWeight: '600', 
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                🖨️ Print
-              </button>
-            </div>
+            <button
+              className="no-print"
+              onClick={handleSaveProfile}
+              disabled={isLoading}
+              style={{
+                padding: '8px 16px',
+                background: isLoading ? '#94a3b8' : '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                whiteSpace: 'nowrap',
+                opacity: isLoading ? 0.8 : 1
+              }}
+            >
+              {isLoading ? 'Saving...' : 'Save'}
+            </button>
           </div>
         
         {/* Company Header Info */}
@@ -360,7 +391,9 @@ export default function ProfileTab({
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '10px 12px', alignItems: 'center', fontSize: '13px', color: '#64748b' }}>
             <div>
-              <span style={{ fontWeight: '600' }}>Accounting System:</span>
+              <span style={{ fontWeight: '600' }}>
+                Accounting System: <span style={{ color: '#ef4444' }}>*</span>
+              </span>
             </div>
             <div>
               <select
@@ -658,21 +691,23 @@ export default function ProfileTab({
             </h2>
             <button
               className="no-print"
-              onClick={() => window.print()}
+              onClick={handleSaveProfile}
+              disabled={isLoading}
               style={{ 
                 padding: '8px 16px', 
-                background: '#667eea', 
+                background: isLoading ? '#94a3b8' : '#10b981',
                 color: 'white', 
                 border: 'none', 
                 borderRadius: '6px', 
                 fontSize: '13px', 
-                fontWeight: '600', 
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)',
-                whiteSpace: 'nowrap'
+                fontWeight: '700',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                whiteSpace: 'nowrap',
+                opacity: isLoading ? 0.8 : 1
               }}
             >
-              🖨️ Print
+              {isLoading ? 'Saving...' : 'Save'}
             </button>
           </div>
         
@@ -777,34 +812,7 @@ export default function ProfileTab({
 
       <div className="no-print" style={{ textAlign: 'center', padding: '24px' }}>
         <button
-          onClick={async () => {
-            if (!companyIndustryGroup) {
-              alert('Please select an Industry Group before saving.');
-              return;
-            }
-            setIsLoading(true);
-            try {
-              await Promise.all([
-                profilesApi.save(selectedCompanyId, profile),
-                companiesApi.update(selectedCompanyId, {
-                  addressStreet: companyAddressStreet || '',
-                  addressCity: companyAddressCity || '',
-                  addressState: companyAddressState || '',
-                  addressZip: companyAddressZip || '',
-                  addressCountry: companyAddressCountry || '',
-                  industrySector: Number(companyIndustryGroup),
-                  accountingSystem: companyAccountingSystem || null,
-                  companySizeCategory: companySize || null,
-                  industrySectorCategory: companyIndustrySectorCode || null
-                })
-              ]);
-              alert('Profile saved successfully!');
-            } catch (error) {
-              alert(error instanceof ApiError ? error.message : 'Failed to save profile');
-            } finally {
-              setIsLoading(false);
-            }
-          }}
+          onClick={handleSaveProfile}
           disabled={isLoading}
           style={{ 
             padding: '12px 32px', 

@@ -754,6 +754,12 @@ export async function PATCH(request: NextRequest) {
       }
     }
     if (updateFields.accountingSystem !== undefined) {
+      if (!updateFields.accountingSystem || typeof updateFields.accountingSystem !== 'string') {
+        return NextResponse.json(
+          { error: "Accounting System is required" },
+          { status: 400 },
+        );
+      }
       try {
         const accountingSystemColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
           SELECT EXISTS(

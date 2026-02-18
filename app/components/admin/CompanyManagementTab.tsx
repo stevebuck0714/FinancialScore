@@ -59,6 +59,7 @@ interface CompanyManagementTabProps {
   setCompanyProfiles: (profiles: any[]) => void;
   trendData: any;
   setIsLoading: (loading: boolean) => void;
+  onCompanyUpdated?: (company: any) => void;
 
   // Payments (moved under Company Management)
   paymentsSelectedCompany: any;
@@ -177,6 +178,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
               trendData={props.trendData}
               isLoading={props.isLoading}
               setIsLoading={props.setIsLoading}
+              onCompanyUpdated={props.onCompanyUpdated}
               setEditingCompanyId={props.setEditingCompanyId}
               setCompanyAddressStreet={props.setCompanyAddressStreet}
               setCompanyAddressCity={props.setCompanyAddressCity}
