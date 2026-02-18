@@ -34,6 +34,7 @@ interface ConsultantDashboardProps {
   selectedCompanyId?: string;
   monthly?: any[];
   companyName?: string;
+  onAddCompany: () => void;
 }
 
 export default function ConsultantDashboard({
@@ -57,7 +58,8 @@ export default function ConsultantDashboard({
   isLoading,
   selectedCompanyId,
   monthly,
-  companyName
+  companyName,
+  onAddCompany
 }: ConsultantDashboardProps) {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
@@ -134,6 +136,7 @@ export default function ConsultantDashboard({
           setCompanyManagementSubTab={setCompanyManagementSubTab}
           setCompanyToDelete={setCompanyToDelete}
           setShowDeleteConfirmation={setShowDeleteConfirmation}
+          onAddCompany={onAddCompany}
         />
       )}
 

@@ -24,6 +24,7 @@ const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerifica
 const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.LineChart), { ssr: false });
 const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 const CompanyDetailsModal = dynamic(() => import('./components/modals/CompanyDetailsModal'), { ssr: false });
+const AddCompanyModal = dynamic(() => import('./components/modals/AddCompanyModal'), { ssr: false });
 const DataReviewTab = dynamic(() => import('./components/dashboard/DataReviewTab'), { ssr: false });
 const TeamManagementTab = dynamic(() => import('./components/dashboard/TeamManagementTab'), { ssr: false });
 const ProfileTab = dynamic(() => import('./components/dashboard/ProfileTab'), { ssr: false });
@@ -265,6 +266,7 @@ function FinancialScorePage() {
   
   // State - Company Details
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false);
+  const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
   const [editingCompanyId, setEditingCompanyId] = useState('');
   const [companyAddressStreet, setCompanyAddressStreet] = useState('');
   const [companyAddressCity, setCompanyAddressCity] = useState('');
@@ -3200,37 +3202,93 @@ function FinancialScorePage() {
       return;
     }
     
+    const trimmedName = newCompanyName.trim();
+    const trimmedAffiliateCode = selectedAffiliateCodeForNewCompany?.trim();
+
     setIsLoading(true);
     try {
       console.log('Creating company:', {
-        name: newCompanyName,
+        name: trimmedName,
         consultantId: currentUser.consultantId,
-        affiliateCode: selectedAffiliateCodeForNewCompany || undefined,
-        affiliateCodeRaw: selectedAffiliateCodeForNewCompany,
-        affiliateCodeUpper: selectedAffiliateCodeForNewCompany?.toUpperCase()
+        affiliateCode: trimmedAffiliateCode || undefined,
+        affiliateCodeRaw: trimmedAffiliateCode,
+        affiliateCodeUpper: trimmedAffiliateCode?.toUpperCase(),
       });
+
       const { company } = await companiesApi.create({
-        name: newCompanyName,
+        name: trimmedName,
         consultantId: currentUser.consultantId,
-        affiliateCode: selectedAffiliateCodeForNewCompany || undefined
+        affiliateCode: trimmedAffiliateCode ? trimmedAffiliateCode.toUpperCase() : undefined,
       });
+
       console.log('Company created:', company);
-      console.log('Company pricing in response:', {
-        monthly: company.subscriptionMonthlyPrice,
-        quarterly: company.subscriptionQuarterlyPrice,
-        annual: company.subscriptionAnnualPrice,
-        hasPricing: !!(company.subscriptionMonthlyPrice || company.subscriptionQuarterlyPrice || company.subscriptionAnnualPrice)
-      });
       safeSetCompanies(Array.isArray(companies) ? [...companies, company] : [company]);
+
       setNewCompanyName('');
       setSelectedAffiliateCodeForNewCompany('');
-      
+
       // Automatically select the newly created company
       setSelectedCompanyId(company.id);
 
-      // Redirect to payments tab for new company setup
+      // Existing behavior (non-modal flows): send user to payments for setup.
       setAdminDashboardTab('company-management');
       setCompanyManagementSubTab('payments');
+
+      alert('Company created successfully!');
+    } catch (error) {
+      console.error('Error creating company:', error);
+      alert(error instanceof ApiError ? error.message : 'Failed to create company');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openAddCompanyModal = () => {
+    // Prevent stale input from previous attempts.
+    setNewCompanyName('');
+    setSelectedAffiliateCodeForNewCompany('');
+    setShowAddCompanyModal(true);
+  };
+
+  const addCompanyFromConsultantModal = async () => {
+    if (!currentUser) {
+      alert('Please login again.');
+      return;
+    }
+    if (!currentUser.consultantId) {
+      alert('Error: No consultant ID found. Please log out and log back in.');
+      console.error('Current user:', currentUser);
+      return;
+    }
+
+    const trimmedName = newCompanyName.trim();
+    const trimmedAffiliateCode = selectedAffiliateCodeForNewCompany?.trim();
+
+    if (!trimmedName) {
+      alert('Please enter a company name');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { company } = await companiesApi.create({
+        name: trimmedName,
+        consultantId: currentUser.consultantId,
+        affiliateCode: trimmedAffiliateCode ? trimmedAffiliateCode.toUpperCase() : undefined,
+      });
+
+      safeSetCompanies(Array.isArray(companies) ? [...companies, company] : [company]);
+
+      // Clear and close modal before navigation to avoid flicker.
+      setNewCompanyName('');
+      setSelectedAffiliateCodeForNewCompany('');
+      setShowAddCompanyModal(false);
+
+      // Select and redirect to Company Management -> Profile for the new company.
+      setSelectedCompanyId(company.id);
+      setCurrentView('admin');
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('profile');
 
       alert('Company created successfully!');
     } catch (error) {
@@ -5731,6 +5789,7 @@ function FinancialScorePage() {
                 selectedCompanyId={selectedCompanyId}
                 monthly={monthly}
                 companyName={companyName}
+                onAddCompany={openAddCompanyModal}
               />
             </div>
           )}
@@ -8079,6 +8138,18 @@ function FinancialScorePage() {
         industrySectorCategory={industrySectorCategory}
         setIndustrySectorCategory={setIndustrySectorCategory}
         onSave={saveCompanyDetails}
+      />
+
+      {/* Consultant: Add Company Modal */}
+      <AddCompanyModal
+        show={showAddCompanyModal}
+        onClose={() => setShowAddCompanyModal(false)}
+        companyName={newCompanyName}
+        setCompanyName={setNewCompanyName}
+        affiliateCode={selectedAffiliateCodeForNewCompany}
+        setAffiliateCode={setSelectedAffiliateCodeForNewCompany}
+        onSave={addCompanyFromConsultantModal}
+        isLoading={isLoading}
       />
 
       {/* Content Area - Requires Company Selection */}
