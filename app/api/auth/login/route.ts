@@ -146,16 +146,19 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Auto-fix: Set companyRole to 'admin' for business users without companyRole
-    // Business users who registered their own company should be admins
+    // Auto-fix: Set companyRole to 'admin' for standalone business owners without companyRole.
+    // IMPORTANT: Do NOT auto-promote consultant-managed company users.
     console.log('🔍 Checking companyRole auto-fix:', {
       role: user.role,
       companyId: user.companyId,
       userType: user.userType,
+      isPrimaryContact: user.isPrimaryContact,
+      companyConsultantId: user.company?.consultantId,
       currentCompanyRole: user.companyRole
     });
     
-    if (user.role === 'USER' && user.companyId && user.userType === 'COMPANY' && !user.companyRole) {
+    const isStandaloneBusiness = user.role === 'USER' && user.userType === 'COMPANY' && !!user.companyId && !user.company?.consultantId;
+    if (isStandaloneBusiness && user.isPrimaryContact && !user.companyRole) {
       console.log(`🔧 Auto-fixing companyRole for business user: ${user.email}`);
       await prisma.user.update({
         where: { id: user.id },
@@ -178,6 +181,7 @@ export async function POST(request: NextRequest) {
         role: user.role,
         userType: user.userType,
         companyRole: user.companyRole,
+        sidebarAccess: user.sidebarAccess,
         companyId: user.companyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,

@@ -6,6 +6,8 @@ interface User {
   name: string | null;
   role?: string;
   userType?: string;
+  companyRole?: string | null;
+  sidebarAccess?: string[] | null;
 }
 
 interface HeaderProps {
@@ -25,6 +27,20 @@ export default function Header({
   handleNavigation
 }: HeaderProps) {
   const [showFinancialReportsMenu, setShowFinancialReportsMenu] = useState(false);
+  const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
+  const isCompanyAdmin = isCompanyUser && currentUser?.companyRole === 'admin';
+
+  const allowedSections = (isCompanyUser && !isCompanyAdmin && Array.isArray(currentUser?.sidebarAccess))
+    ? currentUser.sidebarAccess
+    : null;
+
+  const canAccess = (sectionId: string) => {
+    if (!isCompanyUser) return true;
+    if (isCompanyAdmin) return true;
+    // If permissions are missing, default to full access rather than locking people out.
+    if (!allowedSections) return true;
+    return allowedSections.includes(sectionId);
+  };
 
   const financialReportsViews = [
     { id: 'kpis', label: 'Ratios' },
@@ -127,7 +143,16 @@ export default function Header({
         <div style={{ display: 'flex', alignItems: 'center', gap: '176px', minWidth: 0, flex: 1 }}>
         <div 
           style={{ fontSize: '28px', fontWeight: '700', color: '#1F70C1', cursor: 'pointer', letterSpacing: '-0.5px', paddingTop: '4px', flexShrink: 0 }} 
-          onClick={() => currentUser.role === 'consultant' ? setCurrentView('consultant-dashboard') : setCurrentView('dashboard')}
+          onClick={() => {
+            if (currentUser.role === 'consultant') {
+              setCurrentView('consultant-dashboard');
+              return;
+            }
+            // Company users may be restricted from the dashboard.
+            if (canAccess('company-dashboard')) {
+              handleNavigation('dashboard');
+            }
+          }}
         >
           Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
         </div>
@@ -135,19 +160,21 @@ export default function Header({
           <nav style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'nowrap' }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
               <button
-                onClick={() => handleNavigation('dashboard')}
+                onClick={() => canAccess('company-dashboard') && handleNavigation('dashboard')}
+                title={!canAccess('company-dashboard') ? 'Access restricted' : undefined}
                 style={{
                   background: currentView === 'dashboard' ? '#eef2ff' : 'none',
                   border: 'none',
                   fontSize: '16px',
                   fontWeight: '600',
                   color: '#000',
-                  cursor: 'pointer',
+                  cursor: canAccess('company-dashboard') ? 'pointer' : 'not-allowed',
                   padding: '8px 12px',
                   borderRadius: '6px',
                   borderBottom: currentView === 'dashboard' ? '3px solid #000' : '3px solid transparent',
                   lineHeight: '1.1',
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  opacity: canAccess('company-dashboard') ? 1 : 0.4
                 }}
               >
                 <span style={{ display: 'block' }}>FINANCIAL</span>
@@ -264,34 +291,40 @@ export default function Header({
             </div>
             <button
               onClick={() => handleNavigation('valuation')}
+              disabled={!canAccess('valuation')}
+              title={!canAccess('valuation') ? 'Access restricted' : undefined}
               style={{
                 background: currentView === 'valuation' ? '#eef2ff' : 'none',
                 border: 'none',
                 fontSize: '16px',
                 fontWeight: '600',
                 color: '#000',
-                cursor: 'pointer',
+                cursor: canAccess('valuation') ? 'pointer' : 'not-allowed',
                 padding: '8px 12px',
                 borderRadius: '6px',
                 borderBottom: currentView === 'valuation' ? '3px solid #000' : '3px solid transparent',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                opacity: canAccess('valuation') ? 1 : 0.4
               }}
             >
               Valuation
             </button>
             <button
               onClick={() => handleNavigation('financial-statements')}
+              disabled={!canAccess('financial-statements')}
+              title={!canAccess('financial-statements') ? 'Access restricted' : undefined}
               style={{
                 background: currentView === 'financial-statements' ? '#eef2ff' : 'none',
                 border: 'none',
                 fontSize: '16px',
                 fontWeight: '600',
                 color: '#000',
-                cursor: 'pointer',
+                cursor: canAccess('financial-statements') ? 'pointer' : 'not-allowed',
                 padding: '8px 12px',
                 borderRadius: '6px',
                 borderBottom: currentView === 'financial-statements' ? '3px solid #000' : '3px solid transparent',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                opacity: canAccess('financial-statements') ? 1 : 0.4
               }}
             >
               Financial Statements

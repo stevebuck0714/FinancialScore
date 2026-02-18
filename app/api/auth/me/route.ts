@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
         role: user.role,
         userType: user.userType,
         companyRole: user.companyRole,
+        sidebarAccess: user.sidebarAccess,
         companyId: user.companyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,

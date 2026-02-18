@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
         userType: true,
         role: true,
         companyRole: true,
+        sidebarAccess: true,
         companyId: true,
         createdAt: true
       },

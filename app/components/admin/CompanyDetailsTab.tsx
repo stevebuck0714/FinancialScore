@@ -122,6 +122,17 @@ export default function CompanyDetailsTab({
   setNewAssessmentUserPassword,
   setSelectedCompanyId,
 }: CompanyDetailsTabProps) {
+  const RESTRICTABLE_SECTIONS: { id: string; label: string }[] = [
+    { id: "company-dashboard", label: "Company Dashboard" },
+    { id: "performance-analytics", label: "Performance Analytics" },
+    { id: "valuation", label: "Valuation" },
+    { id: "financial-statements", label: "Financial Statements" },
+    { id: "management-assessment", label: "Team Assessment" },
+  ];
+
+  // Stored in DB as allowed/visible sections for a company user.
+  const DEFAULT_ALLOWED_SECTIONS = RESTRICTABLE_SECTIONS.map((s) => s.id);
+
   // State for user permissions
   const [userPermissions, setUserPermissions] = React.useState<{
     [userId: string]: {
@@ -139,12 +150,7 @@ export default function CompanyDetailsTab({
       .forEach((u) => {
         permissions[u.id] = {
           role: (u as any).companyRole || "user",
-          sidebarAccess: (u as any).sidebarAccess || [
-            "company-dashboard",
-            "valuation",
-            "financial-statements",
-            "management-assessment",
-          ],
+          sidebarAccess: (u as any).sidebarAccess || DEFAULT_ALLOWED_SECTIONS,
         };
       });
     setUserPermissions(permissions);
@@ -179,18 +185,19 @@ export default function CompanyDetailsTab({
     }
   };
 
-  const toggleSidebarAccess = (userId: string, section: string) => {
+  const toggleRestrictedSection = (userId: string, section: string) => {
     setUserPermissions((prev) => {
-      const current = prev[userId]?.sidebarAccess || [];
-      const updated = current.includes(section)
-        ? current.filter((s) => s !== section)
-        : [...current, section];
+      const currentAllowed = prev[userId]?.sidebarAccess || DEFAULT_ALLOWED_SECTIONS;
+      // In the UI we toggle "restricted". Stored value remains "allowed".
+      const updatedAllowed = currentAllowed.includes(section)
+        ? currentAllowed.filter((s) => s !== section)
+        : [...currentAllowed, section];
 
       return {
         ...prev,
         [userId]: {
           ...prev[userId],
-          sidebarAccess: updated,
+          sidebarAccess: updatedAllowed,
         },
       };
     });
@@ -422,16 +429,12 @@ export default function CompanyDetailsTab({
                     .map((u) => {
                       const userPerm = userPermissions[u.id] || {
                         role: "user",
-                        sidebarAccess: [
-                          "company-dashboard",
-                          "performance-analytics",
-                          "valuation",
-                          "financial-statements",
-                          "financial-score",
-                          "management-assessment",
-                        ],
+                        sidebarAccess: DEFAULT_ALLOWED_SECTIONS,
                       };
                       const isAdmin = userPerm.role === "admin";
+                      const allowedSections = userPerm.sidebarAccess?.length
+                        ? userPerm.sidebarAccess
+                        : DEFAULT_ALLOWED_SECTIONS;
 
                       return (
                         <div
@@ -615,7 +618,7 @@ export default function CompanyDetailsTab({
                                     marginBottom: "6px",
                                   }}
                                 >
-                                  Access Rights (check items user can access):
+                                  Access Rights (check restricted sections):
                                 </div>
                                 <div
                                   style={{
@@ -625,21 +628,9 @@ export default function CompanyDetailsTab({
                                     fontSize: "11px",
                                   }}
                                 >
-                                  {[
-                                    {
-                                      id: "company-dashboard",
-                                      label: "Company Dashboard",
-                                    },
-                                    { id: "valuation", label: "Valuation" },
-                                    {
-                                      id: "financial-statements",
-                                      label: "Financial Statements",
-                                    },
-                                    {
-                                      id: "management-assessment",
-                                      label: "Team Assessment",
-                                    },
-                                  ].map((section) => (
+                                  {RESTRICTABLE_SECTIONS.map((section) => {
+                                    const isRestricted = !allowedSections.includes(section.id);
+                                    return (
                                     <label
                                       key={section.id}
                                       style={{
@@ -651,17 +642,16 @@ export default function CompanyDetailsTab({
                                     >
                                       <input
                                         type="checkbox"
-                                        checked={userPerm.sidebarAccess.includes(
-                                          section.id
-                                        )}
+                                        checked={isRestricted}
                                         onChange={() =>
-                                          toggleSidebarAccess(u.id, section.id)
+                                          toggleRestrictedSection(u.id, section.id)
                                         }
                                         style={{ cursor: "pointer" }}
                                       />
                                       <span>{section.label}</span>
                                     </label>
-                                  ))}
+                                  );
+                                  })}
                                 </div>
                               </>
                             )}

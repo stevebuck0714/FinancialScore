@@ -323,8 +323,38 @@ function FinancialScorePage() {
     return allowedViews.includes(view);
   };
 
+  // Company user access control (non-admin company users only).
+  const COMPANY_USER_SECTIONS = ['company-dashboard', 'performance-analytics', 'valuation', 'financial-statements', 'management-assessment'] as const;
+  const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
+  const isCompanyAdmin = isCompanyUser && (currentUser as any)?.companyRole === 'admin';
+  const allowedSectionsForCompanyUser = useMemo(() => {
+    const raw = (currentUser as any)?.sidebarAccess;
+    if (!isCompanyUser || isCompanyAdmin) return null;
+    // If missing, default to full access to avoid locking out users due to legacy data.
+    if (!Array.isArray(raw)) return COMPANY_USER_SECTIONS as unknown as string[];
+    return raw as string[];
+  }, [currentUser, isCompanyUser, isCompanyAdmin]);
+
+  const viewToCompanySection = (view: string): string | null => {
+    if (view === 'dashboard') return 'company-dashboard';
+    if (view === 'valuation') return 'valuation';
+    if (view === 'financial-statements') return 'financial-statements';
+    if (view.startsWith('pa-')) return 'performance-analytics';
+    if (view.startsWith('ma-')) return 'management-assessment';
+    return null;
+  };
+
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
+    const section = viewToCompanySection(view);
+    if (section && isCompanyUser && !isCompanyAdmin) {
+      const allowed = allowedSectionsForCompanyUser || (COMPANY_USER_SECTIONS as unknown as string[]);
+      if (!allowed.includes(section)) {
+        alert('Access Restricted\n\nYour account does not have access to this section.');
+        return;
+      }
+    }
+
     if (isPaymentRequired()) {
       alert('Payment Required\n\nPlease complete your subscription payment before accessing other features.');
       setAdminDashboardTab('company-management');
@@ -377,7 +407,8 @@ function FinancialScorePage() {
             userType: user.userType?.toLowerCase(),
             consultantType: user.consultantType, // Preserve consultantType
             consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
-            consultantId: user.consultantId // Preserve consultant ID
+            consultantId: user.consultantId, // Preserve consultant ID
+            sidebarAccess: user.sidebarAccess ?? null,
           };
           
           setCurrentUser(normalizedUser);
@@ -1653,7 +1684,7 @@ function FinancialScorePage() {
       setCurrentView('admin');
     }
     if (view === 'ma-welcome') {
-      setCurrentView('ma-welcome');
+      handleNavigation('ma-welcome');
     }
 
     // Set admin dashboard tab if specified
@@ -2625,7 +2656,8 @@ function FinancialScorePage() {
         consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
         consultantType: user.consultantType, // Preserve consultant type
         consultantId: user.consultantId, // Preserve consultant ID
-        isPrimaryContact: user.isPrimaryContact // Preserve primary contact status
+        isPrimaryContact: user.isPrimaryContact, // Preserve primary contact status
+        sidebarAccess: user.sidebarAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -2770,7 +2802,8 @@ function FinancialScorePage() {
         consultantCompanyName: user.consultantCompanyName,
         consultantType: user.consultantType,
         consultantId: user.consultantId,
-        isPrimaryContact: user.isPrimaryContact
+        isPrimaryContact: user.isPrimaryContact,
+        sidebarAccess: user.sidebarAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -2864,7 +2897,8 @@ function FinancialScorePage() {
         consultantCompanyName: user.consultantCompanyName,
         consultantType: user.consultantType,
         consultantId: user.consultantId,
-        isPrimaryContact: user.isPrimaryContact
+        isPrimaryContact: user.isPrimaryContact,
+        sidebarAccess: user.sidebarAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -3037,7 +3071,8 @@ function FinancialScorePage() {
         userType: loginUser.userType?.toLowerCase(),
         consultantType: loginUser.consultantType,
         consultantCompanyName: loginUser.consultantCompanyName,
-        consultantId: loginUser.consultantId
+        consultantId: loginUser.consultantId,
+        sidebarAccess: (loginUser as any).sidebarAccess ?? null,
       };
 
       setCurrentUser(normalizedUser);
@@ -5275,45 +5310,47 @@ function FinancialScorePage() {
               <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '1px 24px', marginBottom: '8px' }}>
                 Expert Analysis
               </h3>
-              <div style={{ paddingLeft: '28px' }}>
-                {[
-                  { id: 'pa-overview', label: 'Overview' },
-                  { id: 'pa-focus-board', label: 'Focus Board' },
-                  { id: 'pa-trend-explorer', label: 'Trend Explorer' },
-                  { id: 'pa-anomaly-inbox', label: 'Anomalies' },
-                  { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
-                ].map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => handleNavigation(item.id)}
-                    style={{
-                      fontSize: '16px',
-                      color: currentView === item.id ? '#1F70C1' : '#475569',
-                      padding: '6px 12px',
-                      cursor: 'pointer',
-                      borderRadius: '6px',
-                      marginBottom: '4px',
-                      background: currentView === item.id ? '#e0f2fe' : 'transparent',
-                      fontWeight: currentView === item.id ? '600' : '400',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (currentView !== item.id) {
-                        e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#1F70C1';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentView !== item.id) {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#475569';
-                      }
-                    }}
-                  >
-                    {currentView === item.id && '› '}{item.label}
-                  </div>
-                ))}
-              </div>
+              {(!isCompanyUser || isCompanyAdmin || (allowedSectionsForCompanyUser || []).includes('performance-analytics')) && (
+                <div style={{ paddingLeft: '28px' }}>
+                  {[
+                    { id: 'pa-overview', label: 'Overview' },
+                    { id: 'pa-focus-board', label: 'Focus Board' },
+                    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
+                    { id: 'pa-anomaly-inbox', label: 'Anomalies' },
+                    { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
+                  ].map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleNavigation(item.id)}
+                      style={{
+                        fontSize: '16px',
+                        color: currentView === item.id ? '#1F70C1' : '#475569',
+                        padding: '6px 12px',
+                        cursor: 'pointer',
+                        borderRadius: '6px',
+                        marginBottom: '4px',
+                        background: currentView === item.id ? '#e0f2fe' : 'transparent',
+                        fontWeight: currentView === item.id ? '600' : '400',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (currentView !== item.id) {
+                          e.currentTarget.style.background = '#f8fafc';
+                          e.currentTarget.style.color = '#1F70C1';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (currentView !== item.id) {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.color = '#475569';
+                        }
+                      }}
+                    >
+                      {currentView === item.id && '› '}{item.label}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Financial Score Section - removed from sidebar; functionality commented out below */}
@@ -5321,12 +5358,12 @@ function FinancialScorePage() {
             {/* Team Assessment - moved to Support page; link there goes to /?view=ma-welcome */}
 
             {/* Company Dashboard Section - For Business Users (Company Users) */}
-            {currentUser?.role === 'user' && currentUser?.userType === 'company' && (
+            {currentUser?.role === 'user' && currentUser?.userType === 'company' && (!allowedSectionsForCompanyUser || allowedSectionsForCompanyUser.includes('company-dashboard')) && (
               <div style={{ marginBottom: '12px' }}>
                 <h3 
                   onClick={() => {
                     if (selectedCompanyId) {
-                      setCurrentView('dashboard');
+                      handleNavigation('dashboard');
                     } else {
                       setCurrentView('admin');
                       setAdminDashboardTab('company-management');
