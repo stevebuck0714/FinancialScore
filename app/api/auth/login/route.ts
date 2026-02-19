@@ -64,15 +64,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DEV MODE: Skip MFA in development
-    // TEMPORARY: Commented out to test trusted device feature
-    // const isDev = process.env.NODE_ENV === 'development' || process.env.DISABLE_MFA_DEV === 'true';
-    // if (isDev) {
-    //   console.log('🔓 DEV MODE: Skipping MFA check');
-    //   // Skip MFA checks in development
-    // } else {
-    if (true) {
-      // SECURITY: MFA is mandatory for all users in production
+    // MFA policy:
+    // - Production runtime should require MFA.
+    // - Dev/staging should allow disabling MFA for simple access/testing.
+    const isVercelProd = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
+    const requireMfa = isVercelProd && process.env.DISABLE_MFA !== 'true' && process.env.DISABLE_MFA_DEV !== 'true';
+
+    if (requireMfa) {
+      // SECURITY: MFA is mandatory in production runtime
       if (!user.mfaEnabled) {
         console.log('🔒 MFA not enabled - enrollment required');
         return NextResponse.json({
@@ -119,7 +118,9 @@ export async function POST(request: NextRequest) {
           });
         }
       }
-    } // End of if (true) - was if (isDev) check
+    } else {
+      console.log('🔓 MFA check skipped (non-production or disabled).');
+    }
 
     console.log('✅ Login successful');
     

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { formatDateYYYYMMDDLocal } from './billing/dateMath';
 
 // USAePay API Configuration
 const USAEPAY_API_KEY = process.env.USAEPAY_API_KEY || '';
@@ -555,13 +556,14 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
       annual: 'annually',
     };
 
-    // Format dates as YYYY-MM-DD
+    // Format dates as YYYY-MM-DD (LOCAL calendar date).
+    // Using toISOString() can shift the date due to timezone offsets.
     const nextDate = billingData.startDate || new Date();
-    const nextDateFormatted = nextDate.toISOString().split('T')[0];
-    
-    // Calculate start_date (same as next_date for immediate start)
+    const nextDateFormatted = formatDateYYYYMMDDLocal(nextDate);
+
+    // start_date is required by USAePay; keep aligned to next_date.
     const startDate = billingData.startDate || new Date();
-    const startDateFormatted = startDate.toISOString().split('T')[0];
+    const startDateFormatted = formatDateYYYYMMDDLocal(startDate);
 
     // Map schedule to skip_count (frequency interval)
     const skipCountMap = {

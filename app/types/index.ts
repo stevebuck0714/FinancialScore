@@ -166,6 +166,7 @@ export interface Company {
   subscriptionMonthlyPrice?: number;
   subscriptionQuarterlyPrice?: number;
   subscriptionAnnualPrice?: number;
+  subscriptionSetupFee?: number;
   selectedSubscriptionPlan?: string | null;
 }
 

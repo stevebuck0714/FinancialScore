@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { calculateBillingPeriod } from '@/lib/billing/invoiceGenerator';
 import { verifyWebhookSignature } from '@/lib/usaepay';
+import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
 
 /**
  * Webhook handler for USAePay notifications
@@ -68,8 +69,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    // Process based on event type and status
-    if (type === 'recurring' || type === 'transaction') {
+    // Process based on event type and status.
+    // Important: one-time setup fee charges can arrive as type='transaction' without schedule_id.
+    const isRecurringEvent = type === 'recurring' || !!schedule_id;
+    const isStandaloneTransaction = type === 'transaction' && !schedule_id;
+
+    if (isStandaloneTransaction) {
+      const txnId = key || refnum;
+      if (txnId && subscription.setupFeeTransactionId && txnId === subscription.setupFeeTransactionId) {
+        console.log('[USAePay Webhook] ℹ️ Setup fee transaction webhook received; already recorded:', txnId);
+      } else {
+        console.log('[USAePay Webhook] ℹ️ Non-recurring transaction webhook ignored (no schedule_id):', {
+          transactionId: txnId,
+          status,
+          amount,
+        });
+      }
+      return NextResponse.json({ received: true });
+    }
+
+    if (isRecurringEvent) {
       if (status === 'Approved') {
         // Successful payment
         await handleSuccessfulPayment(subscription, {
@@ -134,16 +153,12 @@ async function handleSuccessfulPayment(
       return;
     }
 
-    // Calculate next billing date
+    // Calculate next billing date (calendar-clamped).
     const now = new Date();
-    const nextBillingDate = new Date(now);
-    if (subscription.plan === 'monthly') {
-      nextBillingDate.setMonth(now.getMonth() + 1);
-    } else if (subscription.plan === 'quarterly') {
-      nextBillingDate.setMonth(now.getMonth() + 3);
-    } else if (subscription.plan === 'annual') {
-      nextBillingDate.setFullYear(now.getFullYear() + 1);
-    }
+    const nextBillingDate = addMonthsClamped(
+      now,
+      billingIntervalMonths(subscription.plan as 'monthly' | 'quarterly' | 'annual')
+    );
 
     // Calculate billing period
     const planType = subscription.plan as 'monthly' | 'quarterly' | 'annual';

@@ -17,6 +17,7 @@ import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, Asse
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
+import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
 const MFAEnrollmentModal = dynamic(() => import('./components/auth/MFAEnrollmentModal'), { ssr: false });
 const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerificationModal'), { ssr: false });
@@ -285,9 +286,11 @@ function FinancialScorePage() {
   const [defaultBusinessMonthlyPrice, setDefaultBusinessMonthlyPrice] = useState(195);
   const [defaultBusinessQuarterlyPrice, setDefaultBusinessQuarterlyPrice] = useState(500);
   const [defaultBusinessAnnualPrice, setDefaultBusinessAnnualPrice] = useState(1750);
+  const [defaultBusinessSetupFee, setDefaultBusinessSetupFee] = useState(0);
   const [defaultConsultantMonthlyPrice, setDefaultConsultantMonthlyPrice] = useState(195);
   const [defaultConsultantQuarterlyPrice, setDefaultConsultantQuarterlyPrice] = useState(500);
   const [defaultConsultantAnnualPrice, setDefaultConsultantAnnualPrice] = useState(1750);
+  const [defaultConsultantSetupFee, setDefaultConsultantSetupFee] = useState(0);
   
   // State - Projections
   const [defaultBestCaseRevMult, setDefaultBestCaseRevMult] = useState(1.5);
@@ -685,6 +688,7 @@ function FinancialScorePage() {
   const [subscriptionMonthlyPrice, setSubscriptionMonthlyPrice] = useState<number | undefined>();
   const [subscriptionQuarterlyPrice, setSubscriptionQuarterlyPrice] = useState<number | undefined>();
   const [subscriptionAnnualPrice, setSubscriptionAnnualPrice] = useState<number | undefined>();
+  const [subscriptionSetupFee, setSubscriptionSetupFee] = useState<number | undefined>();
 
   // Affiliate pricing cache removed - pricing now stored permanently in database
 
@@ -703,22 +707,27 @@ function FinancialScorePage() {
     const defaultMonthly = isBusinessUser ? (defaultBusinessMonthlyPrice ?? 195) : (defaultConsultantMonthlyPrice ?? 195);
     const defaultQuarterly = isBusinessUser ? (defaultBusinessQuarterlyPrice ?? 500) : (defaultConsultantQuarterlyPrice ?? 500);
     const defaultAnnual = isBusinessUser ? (defaultBusinessAnnualPrice ?? 1750) : (defaultConsultantAnnualPrice ?? 1750);
+    const defaultSetupFee = isBusinessUser ? (defaultBusinessSetupFee ?? 0) : (defaultConsultantSetupFee ?? 0);
 
     return {
       monthly: subscriptionMonthlyPrice ?? defaultMonthly,
       quarterly: subscriptionQuarterlyPrice ?? defaultQuarterly,
       annual: subscriptionAnnualPrice ?? defaultAnnual,
+      setupFee: subscriptionSetupFee ?? defaultSetupFee,
     };
   }, [
     subscriptionMonthlyPrice,
     subscriptionQuarterlyPrice,
     subscriptionAnnualPrice,
+    subscriptionSetupFee,
     defaultBusinessMonthlyPrice,
     defaultBusinessQuarterlyPrice,
     defaultBusinessAnnualPrice,
+    defaultBusinessSetupFee,
     defaultConsultantMonthlyPrice,
     defaultConsultantQuarterlyPrice,
     defaultConsultantAnnualPrice,
+    defaultConsultantSetupFee,
     currentUser?.userType,
     currentUser?.role,
     currentUser?.consultantId,
@@ -743,6 +752,7 @@ function FinancialScorePage() {
     let monthly = selectedCompany.subscriptionMonthlyPrice;
     let quarterly = selectedCompany.subscriptionQuarterlyPrice;
     let annual = selectedCompany.subscriptionAnnualPrice;
+    let setupFee = (selectedCompany as any).subscriptionSetupFee;
 
     // Fall back to userDefinedAllocations if dedicated fields are null/undefined
     if ((monthly === null || monthly === undefined) &&
@@ -766,14 +776,15 @@ function FinancialScorePage() {
     }
 
     // Check if explicitly free (all prices are exactly $0 OR isFree flag is true)
-    if (isExplicitlyFree || (monthly === 0 && quarterly === 0 && annual === 0)) {
-      console.log('?? Company has $0 pricing - no payment required', { monthly, quarterly, annual, isExplicitlyFree });
+    const effectiveSetupFee = setupFee ?? subscriptionSetupFee ?? 0;
+    if (isExplicitlyFree || (monthly === 0 && quarterly === 0 && annual === 0 && effectiveSetupFee === 0)) {
+      console.log('?? Company has $0 pricing - no payment required', { monthly, quarterly, annual, setupFee: effectiveSetupFee, isExplicitlyFree });
       return false;
     }
 
     // If ANY price is > $0, payment is required
-    if ((monthly ?? 0) > 0 || (quarterly ?? 0) > 0 || (annual ?? 0) > 0) {
-      console.log('?? Payment required - non-zero pricing detected', { monthly, quarterly, annual });
+    if ((monthly ?? 0) > 0 || (quarterly ?? 0) > 0 || (annual ?? 0) > 0 || effectiveSetupFee > 0) {
+      console.log('?? Payment required - non-zero pricing detected', { monthly, quarterly, annual, setupFee: effectiveSetupFee });
       return true;
     }
 
@@ -785,7 +796,7 @@ function FinancialScorePage() {
 
     // Default: no payment required (shouldn't reach here, but safe fallback)
     return false;
-  }, [selectedCompanyId, currentUser, companies]);
+  }, [selectedCompanyId, currentUser, companies, subscriptionSetupFee]);
 
   // State - Team Assessment
   const [assessmentResponses, setAssessmentResponses] = useState<AssessmentResponses>({});
@@ -1647,19 +1658,23 @@ function FinancialScorePage() {
           setDefaultBusinessMonthlyPrice(data.settings.businessMonthlyPrice ?? 195);
           setDefaultBusinessQuarterlyPrice(data.settings.businessQuarterlyPrice ?? 500);
           setDefaultBusinessAnnualPrice(data.settings.businessAnnualPrice ?? 1750);
+          setDefaultBusinessSetupFee(data.settings.businessSetupFee ?? 0);
           setDefaultConsultantMonthlyPrice(data.settings.consultantMonthlyPrice ?? 195);
           setDefaultConsultantQuarterlyPrice(data.settings.consultantQuarterlyPrice ?? 500);
           setDefaultConsultantAnnualPrice(data.settings.consultantAnnualPrice ?? 1750);
+          setDefaultConsultantSetupFee(data.settings.consultantSetupFee ?? 0);
           console.log('? Loaded default pricing from SystemSettings:', {
             business: {
               monthly: data.settings.businessMonthlyPrice ?? 195,
               quarterly: data.settings.businessQuarterlyPrice ?? 500,
-              annual: data.settings.businessAnnualPrice ?? 1750
+              annual: data.settings.businessAnnualPrice ?? 1750,
+              setupFee: data.settings.businessSetupFee ?? 0,
             },
             consultant: {
               monthly: data.settings.consultantMonthlyPrice ?? 195,
               quarterly: data.settings.consultantQuarterlyPrice ?? 500,
-              annual: data.settings.consultantAnnualPrice ?? 1750
+              annual: data.settings.consultantAnnualPrice ?? 1750,
+              setupFee: data.settings.consultantSetupFee ?? 0,
             }
           });
         }
@@ -2041,13 +2056,15 @@ function FinancialScorePage() {
               id: company.id,
               monthly: company.subscriptionMonthlyPrice,
               quarterly: company.subscriptionQuarterlyPrice,
-              annual: company.subscriptionAnnualPrice
+              annual: company.subscriptionAnnualPrice,
+              setupFee: (company as any).subscriptionSetupFee
             });
 
             // Load pricing from database (try dedicated fields first, then userDefinedAllocations)
             let monthly = company.subscriptionMonthlyPrice;
             let quarterly = company.subscriptionQuarterlyPrice;
             let annual = company.subscriptionAnnualPrice;
+            const setupFee = (company as any).subscriptionSetupFee;
 
             // If dedicated pricing fields are null/undefined, try userDefinedAllocations backup
             if ((monthly === null || monthly === undefined) &&
@@ -2075,6 +2092,7 @@ function FinancialScorePage() {
               setSubscriptionMonthlyPrice(monthly);
               setSubscriptionQuarterlyPrice(quarterly);
               setSubscriptionAnnualPrice(annual);
+              setSubscriptionSetupFee(setupFee ?? 0);
               console.log('? Loaded existing company pricing from database (preserved from registration):', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
             } else if (isExplicitlyFree) {
               // Explicitly free (affiliate code with $0 pricing)
@@ -2082,6 +2100,7 @@ function FinancialScorePage() {
               setSubscriptionMonthlyPrice(0);
               setSubscriptionQuarterlyPrice(0);
               setSubscriptionAnnualPrice(0);
+              setSubscriptionSetupFee(0);
             } else {
               // No pricing data = company was created before pricing was saved
               // This should only happen for very old companies - use current default pricing
@@ -2102,15 +2121,20 @@ function FinancialScorePage() {
                     const defaultAnnual = isBusinessUser
                       ? (data.settings.businessAnnualPrice ?? 1750)
                       : (data.settings.consultantAnnualPrice ?? 1750);
+                    const defaultSetupFee = isBusinessUser
+                      ? (data.settings.businessSetupFee ?? 0)
+                      : (data.settings.consultantSetupFee ?? 0);
                     setSubscriptionMonthlyPrice(defaultMonthly);
                     setSubscriptionQuarterlyPrice(defaultQuarterly);
                     setSubscriptionAnnualPrice(defaultAnnual);
-                    console.log('? Loaded default pricing for company without saved pricing:', { defaultMonthly, defaultQuarterly, defaultAnnual, isBusinessUser });
+                    setSubscriptionSetupFee(defaultSetupFee);
+                    console.log('? Loaded default pricing for company without saved pricing:', { defaultMonthly, defaultQuarterly, defaultAnnual, defaultSetupFee, isBusinessUser });
                   } else {
                     // Fallback to hardcoded defaults
                     setSubscriptionMonthlyPrice(195);
                     setSubscriptionQuarterlyPrice(500);
                     setSubscriptionAnnualPrice(1750);
+                    setSubscriptionSetupFee(0);
                   }
                 })
                 .catch(err => {
@@ -2119,6 +2143,7 @@ function FinancialScorePage() {
                   setSubscriptionMonthlyPrice(195);
                   setSubscriptionQuarterlyPrice(500);
                   setSubscriptionAnnualPrice(1750);
+                  setSubscriptionSetupFee(0);
                 });
             }
 
@@ -2574,7 +2599,9 @@ function FinancialScorePage() {
     setLoginError('');
     setIsLoading(true);
     
-    if (!loginEmail || !loginPassword) {
+    const normalizedEmail = (loginEmail || '').toLowerCase().trim();
+
+    if (!normalizedEmail || !loginPassword) {
       setLoginError('Please enter both email and password');
       setIsLoading(false);
       return;
@@ -2583,13 +2610,23 @@ function FinancialScorePage() {
     try {
       // First, create NextAuth session for API authentication
       const { signIn, getSession } = await import('next-auth/react');
-      const signInResult = await signIn('credentials', {
-        email: loginEmail,
-        password: loginPassword,
-        redirect: false,
-      });
+      let signInResult: any = null;
+      try {
+        signInResult = await signIn('credentials', {
+          email: normalizedEmail,
+          password: loginPassword,
+          redirect: false,
+        });
+      } catch (e) {
+        console.error('❌ NextAuth signIn threw:', e);
+        setLoginError(`Login failed (auth session). Please try again.`);
+        setIsLoading(false);
+        return;
+      }
       
       if (signInResult?.error || !signInResult?.ok) {
+        console.warn('⚠️ NextAuth signIn failed:', signInResult);
+        // NextAuth returns opaque error codes; keep message user-friendly.
         setLoginError('Invalid email or password');
         setIsLoading(false);
         return;
@@ -2612,7 +2649,7 @@ function FinancialScorePage() {
       const loginResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+        body: JSON.stringify({ email: normalizedEmail, password: loginPassword }),
       });
       
       if (!loginResponse.ok) {
@@ -2627,7 +2664,7 @@ function FinancialScorePage() {
       if (loginData.mfaEnrollmentRequired) {
         console.log('?? MFA enrollment required');
         setMfaUserId(loginData.userId);
-        setMfaUserEmail(loginData.email || loginEmail);
+        setMfaUserEmail(loginData.email || normalizedEmail);
         setTrustDurationDays(loginData.trustDurationDays || null);
         setShowMFAEnrollment(true);
         setIsLoading(false);
@@ -2638,7 +2675,7 @@ function FinancialScorePage() {
       if (loginData.mfaRequired) {
         console.log('?? MFA verification required');
         setMfaUserId(loginData.userId);
-        setMfaUserEmail(loginEmail);
+        setMfaUserEmail(normalizedEmail);
         setTrustDurationDays(loginData.trustDurationDays || null);
         setShowMFAVerification(true);
         setIsLoading(false);
@@ -3763,7 +3800,13 @@ function FinancialScorePage() {
     }
     setIsLoading(true);
     try {
-      const { company } = await companiesApi.updatePricing(selectedCompanyId, subscriptionMonthlyPrice || 0, subscriptionQuarterlyPrice || 0, subscriptionAnnualPrice || 0);
+      const { company } = await companiesApi.updatePricing(
+        selectedCompanyId,
+        subscriptionMonthlyPrice || 0,
+        subscriptionQuarterlyPrice || 0,
+        subscriptionAnnualPrice || 0,
+        subscriptionSetupFee || 0
+      );
       
       console.log('?? Subscription pricing saved:', company);
       
@@ -3941,9 +3984,9 @@ function FinancialScorePage() {
     }
   };
 
-  const updateCompanyPricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number }) => {
+  const updateCompanyPricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number }) => {
     try {
-      await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual);
+      await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual, pricing.setupFee);
       
       // Update local state
       safeSetCompanies(Array.isArray(companies) ? companies.map(c => 
@@ -3953,6 +3996,7 @@ function FinancialScorePage() {
               subscriptionMonthlyPrice: pricing.monthly,
               subscriptionQuarterlyPrice: pricing.quarterly,
               subscriptionAnnualPrice: pricing.annual,
+              subscriptionSetupFee: pricing.setupFee,
               selectedSubscriptionPlan: null // Reset selected plan when pricing changes
             } 
           : c
@@ -5737,12 +5781,17 @@ function FinancialScorePage() {
               setDefaultBusinessQuarterlyPrice={setDefaultBusinessQuarterlyPrice}
               defaultBusinessAnnualPrice={defaultBusinessAnnualPrice}
               setDefaultBusinessAnnualPrice={setDefaultBusinessAnnualPrice}
+              defaultBusinessSetupFee={defaultBusinessSetupFee}
+              setDefaultBusinessSetupFee={setDefaultBusinessSetupFee}
               defaultConsultantMonthlyPrice={defaultConsultantMonthlyPrice}
               setDefaultConsultantMonthlyPrice={setDefaultConsultantMonthlyPrice}
               defaultConsultantQuarterlyPrice={defaultConsultantQuarterlyPrice}
               setDefaultConsultantQuarterlyPrice={setDefaultConsultantQuarterlyPrice}
               defaultConsultantAnnualPrice={defaultConsultantAnnualPrice}
               setDefaultConsultantAnnualPrice={setDefaultConsultantAnnualPrice}
+              defaultConsultantSetupFee={defaultConsultantSetupFee}
+              setDefaultConsultantSetupFee={setDefaultConsultantSetupFee}
+              updateCompanyPricing={updateCompanyPricing}
               affiliates={affiliates}
               setAffiliates={setAffiliates}
               showAddAffiliateForm={showAddAffiliateForm}
@@ -6095,6 +6144,7 @@ function FinancialScorePage() {
               subscriptionMonthlyPrice={paymentsPricing.monthly}
               subscriptionQuarterlyPrice={paymentsPricing.quarterly}
               subscriptionAnnualPrice={paymentsPricing.annual}
+              subscriptionSetupFee={paymentsPricing.setupFee}
             />
           )}
 
@@ -7025,6 +7075,11 @@ function FinancialScorePage() {
                              (subscriptionAnnualPrice ?? 0);
             const planPeriod = selectedSubscriptionPlan === 'monthly' ? '/month' :
                               selectedSubscriptionPlan === 'quarterly' ? '/quarter' : '/year';
+            const setupFee = paymentsPricing.setupFee ?? 0;
+            const firstRecurringBillDatePreview = addMonthsClamped(
+              new Date(),
+              billingIntervalMonths(selectedSubscriptionPlan as 'monthly' | 'quarterly' | 'annual')
+            );
 
             return (
               <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
@@ -7039,17 +7094,29 @@ function FinancialScorePage() {
                     </button>
                   </div>
 
-                  {/* Selected Plan Summary */}
-                  <div style={{ background: '#f0f9ff', border: '2px solid #667eea', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Selected Plan</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  {/* Setup Fee + Recurring Summary */}
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '24px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#334155', marginBottom: '10px' }}>Order Summary</div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', textTransform: 'capitalize' }}>{selectedSubscriptionPlan} Plan</div>
-                        <div style={{ fontSize: '13px', color: '#64748b' }}>Billed {selectedSubscriptionPlan}</div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>Setup fee (due today)</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>One-time onboarding charge</div>
                       </div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>
+                      <div style={{ fontSize: '18px', fontWeight: '800', color: '#10b981' }}>${setupFee.toFixed(2)}</div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b', textTransform: 'capitalize' }}>{selectedSubscriptionPlan} subscription</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>
+                          ${planPrice.toFixed(2)}{planPeriod} starting{' '}
+                          {firstRecurringBillDatePreview.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: '800', color: '#667eea' }}>
                         ${planPrice.toFixed(2)}
-                        <span style={{ fontSize: '14px', fontWeight: '500', color: '#64748b' }}>{planPeriod}</span>
+                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748b' }}>{planPeriod}</span>
                       </div>
                     </div>
                   </div>
@@ -7071,6 +7138,7 @@ function FinancialScorePage() {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
+                            // Note: server charges setup fee and schedules recurring; amount is used as a fallback for recurring pricing.
                             amount: planPrice,
                             companyId: selectedCompanyId,
                             subscriptionPlan: `${selectedSubscriptionPlan} Plan`,
@@ -7092,7 +7160,10 @@ function FinancialScorePage() {
                         const result = await response.json();
                         
                         if (result.success) {
-                          alert(`Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
+                          const scheduleMsg = result.recurringScheduled
+                            ? `Recurring billing scheduled. First recurring payment: ${new Date(result.firstRecurringBillDate).toLocaleDateString()}`
+                            : `Setup fee paid, but recurring billing could not be scheduled automatically. Please use admin retry.`;
+                          alert(`Payment successful!\n\nTransaction ID: ${result.transactionId || 'n/a'}\n\n${scheduleMsg}`);
                           setShowCheckoutModal(false);
                           setSelectedSubscriptionPlan(null);
                           // Refresh companies to show updated subscription
@@ -7241,11 +7312,12 @@ function FinancialScorePage() {
                       {/* Payment Summary */}
                       <div style={{ background: '#eff6ff', border: '2px solid #3b82f6', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Total Amount:</span>
-                          <span style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>${planPrice.toFixed(2)}</span>
+                          <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Due Today:</span>
+                          <span style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>${setupFee.toFixed(2)}</span>
                         </div>
                         <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', marginBottom: 0 }}>
-                          {selectedSubscriptionPlan} plan - Billed {planPeriod}
+                          Setup fee charged today. Recurring {selectedSubscriptionPlan} subscription begins on{' '}
+                          {firstRecurringBillDatePreview.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.
                         </p>
                       </div>
                       
@@ -7287,7 +7359,7 @@ function FinancialScorePage() {
                             gap: '8px'
                           }}
                         >
-                          💳 Complete Payment - ${planPrice.toFixed(2)}
+                          💳 {setupFee > 0 ? `Complete Setup Fee Payment - $${setupFee.toFixed(2)}` : 'Save Payment Method & Schedule'}
                         </button>
                       </div>
                     </form>

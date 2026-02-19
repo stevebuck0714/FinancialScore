@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
+          subscriptionSetupFee: true,
           // Skip affiliateCode in production (not needed)
           ...(process.env.NODE_ENV === "production"
             ? {}
@@ -104,6 +105,7 @@ export async function GET(request: NextRequest) {
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
+          subscriptionSetupFee: true,
           ...(process.env.NODE_ENV === "production"
             ? {}
             : {
@@ -273,6 +275,7 @@ export async function POST(request: NextRequest) {
     let monthlyPrice: number;
     let quarterlyPrice: number;
     let annualPrice: number;
+    let setupFee: number = 0;
     let affiliateId: string | undefined;
     let validatedAffiliateCode: string | undefined;
     let useAffiliatePricing = false;
@@ -403,6 +406,16 @@ export async function POST(request: NextRequest) {
           affiliateCode: validatedAffiliateCode,
           isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0
         });
+
+        // Setup fee is not part of affiliate code pricing (currently).
+        // Use the current default setup fee based on user type.
+        try {
+          const defaults = await prisma.systemSettings.findUnique({ where: { key: "default_pricing" } });
+          const isBusinessUser = consultant?.type === "business";
+          setupFee = isBusinessUser ? (defaults?.businessSetupFee ?? 0) : (defaults?.consultantSetupFee ?? 0);
+        } catch (e) {
+          setupFee = 0;
+        }
       } catch (affiliateError) {
         console.error(
           "❌ Database error during affiliate code validation:",
@@ -466,9 +479,11 @@ export async function POST(request: NextRequest) {
               businessMonthlyPrice: 195,
               businessQuarterlyPrice: 500,
               businessAnnualPrice: 1750,
+              businessSetupFee: 0,
               consultantMonthlyPrice: 195,
               consultantQuarterlyPrice: 500,
               consultantAnnualPrice: 1750,
+              consultantSetupFee: 0,
             },
           });
           console.log(
@@ -490,17 +505,22 @@ export async function POST(request: NextRequest) {
           annualPrice = isBusinessUser
             ? (defaultPricing.businessAnnualPrice ?? 1750)
             : (defaultPricing.consultantAnnualPrice ?? 1750);
+          setupFee = isBusinessUser
+            ? (defaultPricing.businessSetupFee ?? 0)
+            : (defaultPricing.consultantSetupFee ?? 0);
         } else {
           // Fallback pricing
           monthlyPrice = 195;
           quarterlyPrice = 500;
           annualPrice = 1750;
+          setupFee = 0;
         }
 
         console.log("🔍 Final pricing:", {
           monthlyPrice,
           quarterlyPrice,
           annualPrice,
+          setupFee,
         });
       } catch (settingsError) {
         console.error("❌ Error with SystemSettings lookup:", settingsError);
@@ -509,6 +529,7 @@ export async function POST(request: NextRequest) {
         monthlyPrice = 195;
         quarterlyPrice = 500;
         annualPrice = 1750;
+        setupFee = 0;
       }
     }
 
@@ -522,6 +543,7 @@ export async function POST(request: NextRequest) {
       addressCountry,
       industrySector,
       pricingUsed: { monthlyPrice, quarterlyPrice, annualPrice }, // Pricing determined but not stored in Company table
+      setupFee,
       affiliateCode: validatedAffiliateCode,
       affiliateId: affiliateId,
     });
@@ -548,6 +570,7 @@ export async function POST(request: NextRequest) {
           subscriptionMonthlyPrice: monthlyPrice ?? 0,
           subscriptionQuarterlyPrice: quarterlyPrice ?? 0,
           subscriptionAnnualPrice: annualPrice ?? 0,
+          subscriptionSetupFee: setupFee ?? 0,
           subscriptionStatus:
             monthlyPrice === 0 &&
             quarterlyPrice === 0 &&
@@ -592,6 +615,7 @@ export async function POST(request: NextRequest) {
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
+          subscriptionSetupFee: true,
           createdAt: true,
         },
       });
@@ -885,6 +909,85 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(
       { error: "Failed to update company", details: error.message },
       { status: 500 },
+    );
+  }
+}
+
+// PUT update company subscription pricing (site admin)
+export async function PUT(request: NextRequest) {
+  try {
+    const context = await requireAuth();
+
+    if (context.role !== 'SITEADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden: Only site administrators can update pricing' },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const {
+      id,
+      subscriptionMonthly,
+      subscriptionQuarterly,
+      subscriptionAnnual,
+      subscriptionSetupFee,
+    } = body || {};
+
+    if (!id) {
+      return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
+    }
+
+    // SECURITY: Validate company access (site admin should pass, but keep consistent)
+    const hasAccess = await validateCompanyAccess(id);
+    if (!hasAccess) {
+      await auditForbiddenAccess('Company', id, 'UPDATE_PRICING');
+      return NextResponse.json({ error: 'Forbidden: Access denied' }, { status: 403 });
+    }
+
+    const monthly = Number(subscriptionMonthly);
+    const quarterly = Number(subscriptionQuarterly);
+    const annual = Number(subscriptionAnnual);
+    const setupFee = subscriptionSetupFee === undefined ? undefined : Number(subscriptionSetupFee);
+
+    if (![monthly, quarterly, annual].every((v) => Number.isFinite(v) && v >= 0)) {
+      return NextResponse.json({ error: 'Invalid pricing values' }, { status: 400 });
+    }
+    if (setupFee !== undefined && (!Number.isFinite(setupFee) || setupFee < 0)) {
+      return NextResponse.json({ error: 'Invalid setup fee value' }, { status: 400 });
+    }
+
+    const company = await prisma.company.update({
+      where: { id },
+      data: {
+        subscriptionMonthlyPrice: monthly,
+        subscriptionQuarterlyPrice: quarterly,
+        subscriptionAnnualPrice: annual,
+        ...(setupFee !== undefined ? { subscriptionSetupFee: setupFee } : {}),
+        // Reset selected plan so the UI doesn't show a stale selection.
+        selectedSubscriptionPlan: null,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        name: true,
+        consultantId: true,
+        subscriptionMonthlyPrice: true,
+        subscriptionQuarterlyPrice: true,
+        subscriptionAnnualPrice: true,
+        subscriptionSetupFee: true,
+        selectedSubscriptionPlan: true,
+      },
+    });
+
+    await auditCompanyOperation('COMPANY_PRICING_UPDATED', id);
+
+    return NextResponse.json({ company }, { status: 200 });
+  } catch (error: any) {
+    console.error('Error updating company pricing:', error);
+    return NextResponse.json(
+      { error: 'Failed to update pricing', details: error.message },
+      { status: 500 }
     );
   }
 }

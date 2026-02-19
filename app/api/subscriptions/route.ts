@@ -8,6 +8,7 @@ import {
   cancelRecurringBilling,
   getRecurringBillingStatus,
 } from '@/lib/usaepay';
+import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
 
 // GET - Get subscription details for a company
 export async function GET(request: NextRequest) {
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!companyId || !plan || !amount || !cardNumber || !cardholderName || !expirationMonth || !expirationYear || !cvv) {
+    if (!companyId || !plan || amount === null || amount === undefined || !cardNumber || !cardholderName || !expirationMonth || !expirationYear || !cvv) {
       return NextResponse.json(
         { error: 'Missing required payment information' },
         { status: 400 }
@@ -139,16 +140,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 2: Calculate next billing date based on initial payment date (today)
+    // Step 2: Calculate first recurring billing date (calendar-clamped)
     const initialPaymentDate = new Date();
-    const nextBillingDate = new Date(initialPaymentDate);
-    if (plan === 'monthly') {
-      nextBillingDate.setMonth(initialPaymentDate.getMonth() + 1);
-    } else if (plan === 'quarterly') {
-      nextBillingDate.setMonth(initialPaymentDate.getMonth() + 3);
-    } else if (plan === 'annual') {
-      nextBillingDate.setFullYear(initialPaymentDate.getFullYear() + 1);
-    }
+    const nextBillingDate = addMonthsClamped(
+      initialPaymentDate,
+      billingIntervalMonths(plan as 'monthly' | 'quarterly' | 'annual')
+    );
 
     // Step 3: Create recurring billing schedule with proper payment method and start date
     const billingResult = await createRecurringBilling({

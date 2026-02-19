@@ -16,9 +16,11 @@ export default function SiteAdminDashboard(props: any) {
     defaultBusinessMonthlyPrice, setDefaultBusinessMonthlyPrice,
     defaultBusinessQuarterlyPrice, setDefaultBusinessQuarterlyPrice,
     defaultBusinessAnnualPrice, setDefaultBusinessAnnualPrice,
+    defaultBusinessSetupFee, setDefaultBusinessSetupFee,
     defaultConsultantMonthlyPrice, setDefaultConsultantMonthlyPrice,
     defaultConsultantQuarterlyPrice, setDefaultConsultantQuarterlyPrice,
     defaultConsultantAnnualPrice, setDefaultConsultantAnnualPrice,
+    defaultConsultantSetupFee, setDefaultConsultantSetupFee,
     affiliates, setAffiliates,
     showAddAffiliateForm, setShowAddAffiliateForm,
     editingAffiliate, setEditingAffiliate,
@@ -50,6 +52,10 @@ export default function SiteAdminDashboard(props: any) {
     newSiteAdminPassword, setNewSiteAdminPassword,
     showAddSiteAdminForm, setShowAddSiteAdminForm
   } = props;
+
+  const updateCompanyPricing = props.updateCompanyPricing as
+    | undefined
+    | ((companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number }) => void);
 
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
@@ -731,7 +737,7 @@ export default function SiteAdminDashboard(props: any) {
                                           <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                             <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h6>
                                             {editing ? (
-                                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                                                 <div>
                                                   <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
                                                   <input
@@ -768,9 +774,25 @@ export default function SiteAdminDashboard(props: any) {
                                                     style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                                   />
                                                 </div>
-                                                <div style={{ display: 'flex', gap: '6px', gridColumn: 'span 3' }}>
+                                                <div>
+                                                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Setup Fee ($)</label>
+                                                  <input
+                                                    type="number"
+                                                    value={editing.setupFee ?? 0}
+                                                    onChange={(e) => setEditingPricing({
+                                                      ...editingPricing,
+                                                      [company.id]: { ...editing, setupFee: parseFloat(e.target.value) || 0 }
+                                                    })}
+                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                  />
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '6px', gridColumn: 'span 4' }}>
                                                   <button
                                                     onClick={() => {
+                                                      if (!updateCompanyPricing) {
+                                                        alert('Update pricing function is not configured.');
+                                                        return;
+                                                      }
                                                       updateCompanyPricing(company.id, editing);
                                                     }}
                                                     style={{ padding: '4px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
@@ -797,6 +819,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   <div><strong>Monthly:</strong> ${company.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
                                                   <div><strong>Quarterly:</strong> ${company.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
                                                   <div><strong>Annual:</strong> ${company.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
+                                                  <div><strong>Setup Fee:</strong> ${company.subscriptionSetupFee?.toFixed(2) ?? '0.00'}</div>
                                                 </div>
                                                 <button
                                                   onClick={() => {
@@ -805,7 +828,8 @@ export default function SiteAdminDashboard(props: any) {
                                                       [company.id]: {
                                                         monthly: company.subscriptionMonthlyPrice ?? 0,
                                                         quarterly: company.subscriptionQuarterlyPrice ?? 0,
-                                                        annual: company.subscriptionAnnualPrice ?? 0
+                                                        annual: company.subscriptionAnnualPrice ?? 0,
+                                                        setupFee: company.subscriptionSetupFee ?? 0,
                                                       }
                                                     });
                                                   }}
@@ -1115,7 +1139,7 @@ export default function SiteAdminDashboard(props: any) {
                                 <div style={{ padding: '8px', background: '#fef3c7', borderRadius: '6px' }}>
                                   <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h4>
                                   {editing ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                                       <div>
                                         <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
                                         <input
@@ -1152,9 +1176,25 @@ export default function SiteAdminDashboard(props: any) {
                                           style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                         />
                                       </div>
+                                      <div>
+                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Setup Fee ($)</label>
+                                        <input
+                                          type="number"
+                                          value={editing.setupFee ?? 0}
+                                          onChange={(e) => setEditingPricing({
+                                            ...editingPricing,
+                                            [businessCompany.id]: { ...editing, setupFee: parseFloat(e.target.value) || 0 }
+                                          })}
+                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                        />
+                                      </div>
                                       <button
                                         onClick={() => {
                                           if (businessCompany) {
+                                            if (!updateCompanyPricing) {
+                                              alert('Update pricing function is not configured.');
+                                              return;
+                                            }
                                             updateCompanyPricing(businessCompany.id, editing);
                                           }
                                         }}
@@ -1181,6 +1221,7 @@ export default function SiteAdminDashboard(props: any) {
                                         <div><strong>Monthly:</strong> ${businessCompany?.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
                                         <div><strong>Quarterly:</strong> ${businessCompany?.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
                                         <div><strong>Annual:</strong> ${businessCompany?.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
+                                        <div><strong>Setup Fee:</strong> ${businessCompany?.subscriptionSetupFee?.toFixed(2) ?? '0.00'}</div>
                                       </div>
                                       <button
                                         onClick={() => {
@@ -1189,7 +1230,8 @@ export default function SiteAdminDashboard(props: any) {
                                             [businessCompany.id]: {
                                               monthly: businessCompany?.subscriptionMonthlyPrice ?? 0,
                                               quarterly: businessCompany?.subscriptionQuarterlyPrice ?? 0,
-                                              annual: businessCompany?.subscriptionAnnualPrice ?? 0
+                                              annual: businessCompany?.subscriptionAnnualPrice ?? 0,
+                                              setupFee: businessCompany?.subscriptionSetupFee ?? 0,
                                             }
                                           });
                                         }}
@@ -2063,7 +2105,7 @@ export default function SiteAdminDashboard(props: any) {
                       🏢 Default Business Pricing
                     </h3>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                           Monthly Price ($)
@@ -2108,6 +2150,20 @@ export default function SiteAdminDashboard(props: any) {
                         />
                         <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
                       </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Setup Fee ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultBusinessSetupFee}
+                          onChange={(e) => setDefaultBusinessSetupFee(parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>One-time fee due at onboarding</div>
+                      </div>
                     </div>
 
                     <button
@@ -2120,16 +2176,19 @@ export default function SiteAdminDashboard(props: any) {
                               businessMonthlyPrice: defaultBusinessMonthlyPrice,
                               businessQuarterlyPrice: defaultBusinessQuarterlyPrice,
                               businessAnnualPrice: defaultBusinessAnnualPrice,
+                              businessSetupFee: defaultBusinessSetupFee,
                               consultantMonthlyPrice: defaultConsultantMonthlyPrice,
                               consultantQuarterlyPrice: defaultConsultantQuarterlyPrice,
-                              consultantAnnualPrice: defaultConsultantAnnualPrice
+                              consultantAnnualPrice: defaultConsultantAnnualPrice,
+                              consultantSetupFee: defaultConsultantSetupFee,
                             })
                           });
                           
                           if (response.ok) {
                             alert(`Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
                           } else {
-                            alert('❌ Failed to save pricing. Please try again.');
+                            const data = await response.json().catch(() => null);
+                            alert(`❌ Failed to save pricing.\n\n${data?.error || 'Unknown error'}${data?.details ? `\n${data.details}` : ''}`);
                           }
                         } catch (error) {
                           console.error('Error saving pricing:', error);
@@ -2158,7 +2217,7 @@ export default function SiteAdminDashboard(props: any) {
                       👤 Default Consultant Pricing
                     </h3>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                           Monthly Price ($)
@@ -2203,6 +2262,20 @@ export default function SiteAdminDashboard(props: any) {
                         />
                         <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
                       </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Setup Fee ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultConsultantSetupFee}
+                          onChange={(e) => setDefaultConsultantSetupFee(parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>One-time fee due at onboarding</div>
+                      </div>
                     </div>
 
                     <button
@@ -2215,16 +2288,19 @@ export default function SiteAdminDashboard(props: any) {
                               businessMonthlyPrice: defaultBusinessMonthlyPrice,
                               businessQuarterlyPrice: defaultBusinessQuarterlyPrice,
                               businessAnnualPrice: defaultBusinessAnnualPrice,
+                              businessSetupFee: defaultBusinessSetupFee,
                               consultantMonthlyPrice: defaultConsultantMonthlyPrice,
                               consultantQuarterlyPrice: defaultConsultantQuarterlyPrice,
-                              consultantAnnualPrice: defaultConsultantAnnualPrice
+                              consultantAnnualPrice: defaultConsultantAnnualPrice,
+                              consultantSetupFee: defaultConsultantSetupFee,
                             })
                           });
                           
                           if (response.ok) {
                             alert(`Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
                           } else {
-                            alert('❌ Failed to save pricing. Please try again.');
+                            const data = await response.json().catch(() => null);
+                            alert(`❌ Failed to save pricing.\n\n${data?.error || 'Unknown error'}${data?.details ? `\n${data.details}` : ''}`);
                           }
                         } catch (error) {
                           console.error('Error saving pricing:', error);

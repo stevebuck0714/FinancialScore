@@ -51,6 +51,8 @@ model Company {
   subscriptionMonthlyPrice   Float?
   subscriptionQuarterlyPrice Float?
   subscriptionAnnualPrice    Float?
+  // One-time setup fee charged at onboarding (before recurring begins)
+  subscriptionSetupFee       Float?                 @default(0)
   createdAt                  DateTime               @default(now())
   updatedAt                  DateTime               @updatedAt
   selectedSubscriptionPlan   String?
@@ -518,9 +520,11 @@ model SystemSettings {
   businessMonthlyPrice     Float?   @default(0)
   businessQuarterlyPrice   Float?   @default(0)
   businessAnnualPrice      Float?   @default(0)
+  businessSetupFee         Float?   @default(0)
   consultantMonthlyPrice   Float?   @default(0)
   consultantQuarterlyPrice Float?   @default(0)
   consultantAnnualPrice    Float?   @default(0)
+  consultantSetupFee       Float?   @default(0)
   updatedAt                DateTime @updatedAt
   createdAt                DateTime @default(now())
 
@@ -572,6 +576,14 @@ model Subscription {
   companyId          String               @unique
   usaepayCustomerId  String?
   usaepayBillingId   String?
+  // One-time setup fee (required before recurring is activated)
+  setupFeeAmount         Float            @default(0)
+  setupFeeStatus         String           @default("PENDING") // PENDING | PAID | FAILED | WAIVED
+  setupFeePaidAt         DateTime?
+  setupFeeTransactionId  String?
+  // Recurring billing schedule (anchored to setupFeePaidAt)
+  billingAnchorDate      DateTime?
+  firstRecurringBillDate DateTime?
   plan               String
   amount             Float
   status             SubscriptionStatus   @default(PENDING)
@@ -734,6 +746,7 @@ enum PaymentStatus {
 
 enum PaymentType {
   INITIAL
+  SETUP_FEE
   RECURRING
   MANUAL
   REFUND

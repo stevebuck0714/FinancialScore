@@ -105,14 +105,15 @@ export const companiesApi = {
     });
   },
 
-  async updatePricing(id: string, monthly: number, quarterly: number, annual: number) {
+  async updatePricing(id: string, monthly: number, quarterly: number, annual: number, setupFee?: number) {
     return fetchApi('/api/companies', {
       method: 'PUT',
       body: JSON.stringify({ 
         id, 
         subscriptionMonthly: monthly,
         subscriptionQuarterly: quarterly,
-        subscriptionAnnual: annual
+        subscriptionAnnual: annual,
+        ...(setupFee !== undefined ? { subscriptionSetupFee: setupFee } : {})
       }),
     });
   },

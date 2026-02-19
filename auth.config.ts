@@ -21,8 +21,9 @@ export const authConfig: NextAuthConfig = {
         }
 
         try {
+          const normalizedEmail = String(credentials.email).toLowerCase().trim();
           const user = await prisma.user.findUnique({
-            where: { email: credentials.email as string },
+            where: { email: normalizedEmail },
             include: {
               company: true,
               primaryConsultant: true

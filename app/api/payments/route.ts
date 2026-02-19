@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processPayment, PaymentDetails, addCustomerToVault, createRecurringBilling } from '@/lib/usaepay';
 import prisma from '@/lib/prisma';
 import { calculateBillingPeriod } from '@/lib/billing/invoiceGenerator';
+import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +25,8 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!amount || !companyId || !subscriptionPlan || !billingPeriod) {
+    // Note: amount may be 0 (e.g., free recurring plan); treat null/undefined as missing.
+    if (amount === null || amount === undefined || !companyId || !subscriptionPlan || !billingPeriod) {
       return NextResponse.json(
         { success: false, error: 'Missing required payment information' },
         { status: 400 }
@@ -70,186 +72,286 @@ export async function POST(request: NextRequest) {
     }
 
     if (createSubscription) {
-      // === RECURRING SUBSCRIPTION FLOW (USAePay Recommended Approach) ===
-      
-      // Step 1: Process initial sale with customer save flags
-      console.log(`💳 Processing initial sale with customer vault for company: ${company.name}`);
-      
-      const paymentDetails: PaymentDetails = {
-        amount: parseFloat(amount),
-        cardNumber,
-        cardholderName,
-        expirationMonth,
-        expirationYear,
-        cvv,
-        billingAddress: {
-          street: billingAddress.street,
-          city: billingAddress.city,
-          state: billingAddress.state,
-          zip: billingAddress.zip,
-        },
-        description: `${company.name} - Initial ${billingPeriod} payment`,
-        invoice: `SUB-${companyId}-${Date.now()}`,
-        customerId: companyId,
-        companyName: company.name, // Include company name in customer profile
-        saveCustomer: true, // Save customer and payment method to vault
-      };
+      // === SETUP FEE + DELAYED RECURRING SUBSCRIPTION FLOW ===
+      // Charge a one-time setup fee now, then schedule recurring billing to start
+      // one interval after the setup fee payment date (clamped to last day-of-month).
 
-      const paymentResult = await processPayment(paymentDetails);
+      const schedule = billingPeriod as 'monthly' | 'quarterly' | 'annual';
 
-      if (!paymentResult.success || !paymentResult.custkey) {
+      // Server-side pricing (authoritative when available).
+      const recurringAmount =
+        schedule === 'monthly'
+          ? (company.subscriptionMonthlyPrice ?? parseFloat(amount))
+          : schedule === 'quarterly'
+            ? (company.subscriptionQuarterlyPrice ?? parseFloat(amount))
+            : (company.subscriptionAnnualPrice ?? parseFloat(amount));
+
+      const setupFeeAmount = company.subscriptionSetupFee ?? 0;
+
+      // Prevent nonsense charges.
+      if (!Number.isFinite(recurringAmount) || recurringAmount < 0) {
         return NextResponse.json(
-          {
-            success: false,
-            error: paymentResult.error || 'Payment processing failed',
-            message: paymentResult.message,
-          },
+          { success: false, error: 'Invalid recurring amount configured for this company' },
+          { status: 400 }
+        );
+      }
+      if (!Number.isFinite(setupFeeAmount) || setupFeeAmount < 0) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid setup fee configured for this company' },
           { status: 400 }
         );
       }
 
-      const usaepayCustomerId = paymentResult.custkey!;
-      const cardLast4 = paymentResult.last4;
-      const cardType = paymentResult.cardType;
-
-      console.log(`✅ Payment successful. Customer ID: ${usaepayCustomerId}`);
-
-      // Step 2: Retrieve payment method key
-      console.log(`🔍 Retrieving payment method for customer: ${usaepayCustomerId}`);
-      
-      const { getCustomerPaymentMethod } = await import('@/lib/usaepay');
-      const paymentMethodResult = await getCustomerPaymentMethod(usaepayCustomerId);
-
-      if (!paymentMethodResult.success || !paymentMethodResult.paymentMethodKey) {
-        console.error('⚠️ Failed to retrieve payment method, but payment was successful');
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Payment processed but recurring billing setup incomplete',
-            message: `Payment was approved (Transaction ID: ${paymentResult.transactionId}). However, we could not set up automatic recurring billing. Please contact support to complete your subscription setup.`,
-            transactionId: paymentResult.transactionId,
-            authCode: paymentResult.authCode,
-          },
-          { status: 400 }
-        );
-      }
-
-      const paymentMethodKey = paymentMethodResult.paymentMethodKey;
-      console.log(`✅ Payment method key retrieved: ${paymentMethodKey}`);
-
-      // Step 3: Create recurring billing schedule
-      const billingResult = await createRecurringBilling({
-        customerId: usaepayCustomerId,
-        paymentMethodId: paymentMethodKey,
-        amount: parseFloat(amount),
-        schedule: billingPeriod as 'monthly' | 'quarterly' | 'annual',
-        description: `${company.name} - ${billingPeriod} subscription`,
-      });
-
-      if (!billingResult.success || !billingResult.billingId) {
-        console.error('⚠️ Failed to create recurring billing, but payment was successful');
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Payment processed but recurring billing setup incomplete',
-            message: `Payment was approved (Transaction ID: ${paymentResult.transactionId}). However, we could not set up automatic recurring billing. Please contact support to complete your subscription setup. Error: ${billingResult.error}`,
-            transactionId: paymentResult.transactionId,
-            authCode: paymentResult.authCode,
-          },
-          { status: 400 }
-        );
-      }
-
-      // Step 4: Calculate next billing date
       const now = new Date();
-      const nextBillingDate = new Date(now);
-      if (billingPeriod === 'monthly') {
-        nextBillingDate.setMonth(now.getMonth() + 1);
-      } else if (billingPeriod === 'quarterly') {
-        nextBillingDate.setMonth(now.getMonth() + 3);
-      } else if (billingPeriod === 'annual') {
-        nextBillingDate.setFullYear(now.getFullYear() + 1);
+      const anchorDate = now;
+      const firstRecurringBillDate = addMonthsClamped(anchorDate, billingIntervalMonths(schedule));
+
+      let usaepayCustomerId: string | undefined;
+      let paymentTransactionId: string | undefined;
+      let paymentAuthCode: string | undefined;
+      let cardLast4: string | undefined;
+      let cardType: string | undefined;
+      let paymentMethodKey: string | undefined;
+
+      if (setupFeeAmount > 0) {
+        // Step 1: Charge setup fee and save payment method to vault
+        console.log(`💳 Charging setup fee with vault save for company: ${company.name}`);
+
+        const paymentDetails: PaymentDetails = {
+          amount: setupFeeAmount,
+          cardNumber,
+          cardholderName,
+          expirationMonth,
+          expirationYear,
+          cvv,
+          billingAddress: {
+            street: billingAddress.street,
+            city: billingAddress.city,
+            state: billingAddress.state,
+            zip: billingAddress.zip,
+          },
+          description: `${company.name} - Setup fee`,
+          invoice: `SETUP-${companyId}-${Date.now()}`,
+          customerId: companyId,
+          companyName: company.name,
+          saveCustomer: true,
+        };
+
+        const paymentResult = await processPayment(paymentDetails);
+
+        if (!paymentResult.success || !paymentResult.custkey) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: paymentResult.error || 'Payment processing failed',
+              message: paymentResult.message,
+            },
+            { status: 400 }
+          );
+        }
+
+        usaepayCustomerId = paymentResult.custkey;
+        paymentTransactionId = paymentResult.transactionId;
+        paymentAuthCode = paymentResult.authCode;
+        cardLast4 = paymentResult.last4;
+        cardType = paymentResult.cardType;
+
+        console.log(`✅ Setup fee payment successful. Customer ID: ${usaepayCustomerId}`);
+
+        // Step 2: Retrieve payment method key
+        const { getCustomerPaymentMethod } = await import('@/lib/usaepay');
+        const paymentMethodResult = await getCustomerPaymentMethod(usaepayCustomerId);
+        if (!paymentMethodResult.success || !paymentMethodResult.paymentMethodKey) {
+          // We still consider setup fee paid; recurring can be scheduled later.
+          paymentMethodKey = undefined;
+        } else {
+          paymentMethodKey = paymentMethodResult.paymentMethodKey;
+        }
+      } else {
+        // No setup fee: just vault the payment method and proceed to scheduling.
+        console.log(`💳 Saving payment method (no setup fee) for company: ${company.name}`);
+        const vaultResult = await addCustomerToVault({
+          companyId,
+          companyName: company.name,
+          cardNumber,
+          expirationMonth,
+          expirationYear,
+          cvv,
+          cardholderName,
+          billingAddress: {
+            street: billingAddress.street,
+            city: billingAddress.city,
+            state: billingAddress.state,
+            zip: billingAddress.zip,
+          },
+          email,
+          phone,
+        });
+
+        if (!vaultResult.success || !vaultResult.customerId) {
+          return NextResponse.json(
+            { success: false, error: vaultResult.error || 'Failed to save payment method' },
+            { status: 400 }
+          );
+        }
+
+        usaepayCustomerId = vaultResult.customerId;
+        cardLast4 = vaultResult.cardLast4;
+        cardType = vaultResult.cardType;
+
+        const { getCustomerPaymentMethod } = await import('@/lib/usaepay');
+        const paymentMethodResult = await getCustomerPaymentMethod(usaepayCustomerId);
+        if (paymentMethodResult.success && paymentMethodResult.paymentMethodKey) {
+          paymentMethodKey = paymentMethodResult.paymentMethodKey;
+        }
       }
 
-      // Step 5: Create subscription record in database
+      if (!usaepayCustomerId) {
+        return NextResponse.json(
+          { success: false, error: 'Payment method could not be saved to the payment processor' },
+          { status: 400 }
+        );
+      }
+
+      // Step 3: Create subscription record first (so we can track setup fee even if scheduling fails)
       const subscription = await prisma.subscription.create({
         data: {
           companyId,
-          usaepayCustomerId: usaepayCustomerId,
-          usaepayBillingId: billingResult.billingId,
-          plan: billingPeriod,
-          amount: parseFloat(amount),
-          status: 'ACTIVE',
-          nextBillingDate: billingResult.nextBillingDate || nextBillingDate,
-          lastPaymentDate: now,
+          usaepayCustomerId,
+          // usaepayBillingId set after schedule creation succeeds
+          plan: schedule,
+          amount: recurringAmount,
+          status: 'PENDING',
+          setupFeeAmount,
+          setupFeeStatus: setupFeeAmount > 0 ? 'PAID' : 'WAIVED',
+          setupFeePaidAt: setupFeeAmount > 0 ? now : null,
+          setupFeeTransactionId: setupFeeAmount > 0 ? (paymentTransactionId || null) : null,
+          billingAnchorDate: now,
+          firstRecurringBillDate,
+          nextBillingDate: firstRecurringBillDate,
           billingStartDate: now,
-          cardLast4: cardLast4,
-          cardType: cardType,
+          cardLast4,
+          cardType,
           cardExpMonth: expirationMonth,
           cardExpYear: expirationYear,
         },
       });
 
-      // Step 6: Create initial transaction record
-      await prisma.paymentTransaction.create({
-        data: {
-          subscriptionId: subscription.id,
-          companyId,
-          amount: parseFloat(amount),
-          status: 'SUCCESS',
-          type: 'INITIAL',
-          transactionId: paymentResult.transactionId,
-          authCode: paymentResult.authCode,
-          cardLast4: cardLast4,
-          cardType: cardType,
-          description: `Initial ${billingPeriod} subscription payment`,
-          invoice: paymentDetails.invoice,
-        },
-      });
+      // Step 3b: Record the setup fee transaction + revenue (if applicable)
+      if (setupFeeAmount > 0) {
+        await prisma.paymentTransaction.create({
+          data: {
+            subscriptionId: subscription.id,
+            companyId,
+            amount: setupFeeAmount,
+            status: 'SUCCESS',
+            type: 'SETUP_FEE',
+            transactionId: paymentTransactionId,
+            authCode: paymentAuthCode,
+            cardLast4,
+            cardType,
+            description: `One-time setup fee`,
+            invoice: `SETUP-${companyId}-${Date.now()}`,
+          },
+        });
 
-      // Step 6b: Create revenue record for initial payment
-      const planType = billingPeriod as 'monthly' | 'quarterly' | 'annual';
-      const { start, end } = calculateBillingPeriod(now, planType);
-      
-      const companyDetails = await prisma.company.findUnique({
-        where: { id: companyId },
-        select: { consultantId: true, name: true }
-      });
+        // Setup fee is platform revenue (no consultant share).
+        await prisma.revenueRecord.create({
+          data: {
+            transactionId: paymentTransactionId || `SETUP-${companyId}-${Date.now()}`,
+            companyId,
+            consultantId: null,
+            amount: setupFeeAmount,
+            paymentDate: now,
+            paymentStatus: 'received',
+            subscriptionPlan: 'setup_fee',
+            billingPeriodStart: now,
+            billingPeriodEnd: now,
+            notes: `Setup fee - ${company.name}`,
+          },
+        });
+      }
 
-      await prisma.revenueRecord.create({
-        data: {
-          transactionId: paymentResult.transactionId!,
-          companyId,
-          consultantId: companyDetails?.consultantId || null,
-          amount: parseFloat(amount),
-          paymentDate: now,
-          paymentStatus: 'received',
-          subscriptionPlan: billingPeriod,
-          billingPeriodStart: start,
-          billingPeriodEnd: end,
-          notes: `Initial subscription payment - ${companyDetails?.name || 'Unknown company'}`
+      // Step 4: Create recurring billing schedule (may be retried later if it fails)
+      if (paymentMethodKey) {
+        const billingResult = await createRecurringBilling({
+          customerId: usaepayCustomerId,
+          paymentMethodId: paymentMethodKey,
+          amount: recurringAmount,
+          schedule,
+          description: `${company.name} - ${schedule} subscription`,
+          startDate: firstRecurringBillDate,
+        });
+
+        if (billingResult.success && billingResult.billingId) {
+          await prisma.subscription.update({
+            where: { id: subscription.id },
+            data: {
+              usaepayBillingId: billingResult.billingId,
+              status: 'ACTIVE',
+              nextBillingDate: billingResult.nextBillingDate || firstRecurringBillDate,
+              lastFailureReason: null,
+            },
+          });
+
+          await prisma.subscriptionEvent.create({
+            data: {
+              companyId,
+              eventType: 'recurring_scheduled',
+              newValue: billingResult.billingId,
+              notes: `Recurring scheduled: ${schedule} $${recurringAmount.toFixed(2)} starting ${firstRecurringBillDate.toISOString()}`,
+            },
+          });
+        } else {
+          // Keep subscription as PENDING; admin can retry schedule creation.
+          await prisma.subscriptionEvent.create({
+            data: {
+              companyId,
+              eventType: 'recurring_schedule_failed',
+              newValue: 'none',
+              notes: `Setup fee paid, but recurring schedule creation failed: ${billingResult.error || 'unknown error'}`,
+            },
+          });
         }
-      });
+      } else {
+        await prisma.subscriptionEvent.create({
+          data: {
+            companyId,
+            eventType: 'recurring_schedule_failed',
+            newValue: 'none',
+            notes: `Setup fee paid, but payment method key could not be retrieved from vault. Recurring must be scheduled by admin retry.`,
+          },
+        });
+      }
 
-      // Step 7: Update company's selected plan
+      // Step 5: Update company's selected plan (for UI display)
       await prisma.company.update({
         where: { id: companyId },
         data: {
-          selectedSubscriptionPlan: billingPeriod,
+          selectedSubscriptionPlan: schedule,
           updatedAt: new Date(),
         },
       });
 
-      return NextResponse.json({
-        success: true,
-        subscription,
-        transactionId: paymentResult.transactionId,
-        authCode: paymentResult.authCode,
-        message: 'Payment successful! Your subscription is now active and will renew automatically.',
-        cardType: cardType,
-        last4: cardLast4,
+      const refreshedSubscription = await prisma.subscription.findUnique({
+        where: { companyId },
       });
 
+      const recurringScheduled = !!refreshedSubscription?.usaepayBillingId;
+
+      return NextResponse.json({
+        success: true,
+        subscription: refreshedSubscription,
+        transactionId: paymentTransactionId,
+        authCode: paymentAuthCode,
+        message: recurringScheduled
+          ? 'Setup fee paid. Recurring subscription is scheduled and will bill automatically.'
+          : 'Setup fee paid. Recurring subscription could not be scheduled automatically; an admin can retry schedule creation.',
+        recurringScheduled,
+        firstRecurringBillDate,
+        cardType,
+        last4: cardLast4,
+      });
     } else {
       // === ONE-TIME PAYMENT FLOW (Legacy) ===
       

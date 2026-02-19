@@ -73,6 +73,7 @@ interface CompanyManagementTabProps {
   subscriptionMonthlyPrice: number;
   subscriptionQuarterlyPrice: number;
   subscriptionAnnualPrice: number;
+  subscriptionSetupFee: number;
 }
 
 export default function CompanyManagementTab(props: CompanyManagementTabProps) {
@@ -222,6 +223,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
               subscriptionMonthlyPrice={props.subscriptionMonthlyPrice}
               subscriptionQuarterlyPrice={props.subscriptionQuarterlyPrice}
               subscriptionAnnualPrice={props.subscriptionAnnualPrice}
+              subscriptionSetupFee={props.subscriptionSetupFee}
             />
           )}
         </>

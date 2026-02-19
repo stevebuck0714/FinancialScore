@@ -1,12 +1,18 @@
 'use client';
 
 import React from 'react';
+import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
 
 interface Subscription {
   status: string;
   plan: string;
   amount: number;
   nextBillingDate?: string;
+  firstRecurringBillDate?: string;
+  usaepayBillingId?: string | null;
+  setupFeeAmount?: number;
+  setupFeeStatus?: string;
+  setupFeePaidAt?: string | null;
   cardLast4?: string;
   cardType?: string;
   cardExpMonth?: string;
@@ -36,6 +42,7 @@ interface PaymentsTabProps {
   subscriptionMonthlyPrice?: number;
   subscriptionQuarterlyPrice?: number;
   subscriptionAnnualPrice?: number;
+  subscriptionSetupFee?: number;
 }
 
 export default function PaymentsTab({
@@ -50,11 +57,13 @@ export default function PaymentsTab({
   selectedCompanyId,
   subscriptionMonthlyPrice = 0,
   subscriptionQuarterlyPrice = 0,
-  subscriptionAnnualPrice = 0
+  subscriptionAnnualPrice = 0,
+  subscriptionSetupFee = 0
 }: PaymentsTabProps) {
   const monthlyPrice = subscriptionMonthlyPrice;
   const quarterlyPrice = subscriptionQuarterlyPrice;
   const annualPrice = subscriptionAnnualPrice;
+  const setupFee = subscriptionSetupFee;
 
   return (
     <>
@@ -72,7 +81,7 @@ export default function PaymentsTab({
             
             {/* Show "No Payment Required" only if ALL three prices are exactly $0 */}
             {/* Do NOT treat null as free - null means "use default pricing" which requires payment */}
-            {(monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0) ? (
+            {(monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0 && setupFee === 0) ? (
               <div style={{ background: '#d1fae5', border: '1px solid #10b981', borderRadius: '8px', padding: '12px' }}>
                 <p style={{ fontSize: '14px', color: '#065f46', fontWeight: '600' }}>
                   No Payment Required
@@ -173,7 +182,7 @@ export default function PaymentsTab({
                       {selectedSubscriptionPlan} Plan
                     </div>
                     <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                      Billed {selectedSubscriptionPlan === 'monthly' ? 'monthly' : selectedSubscriptionPlan === 'quarterly' ? 'quarterly' : 'annually'}
+                      Recurring billing: {selectedSubscriptionPlan === 'monthly' ? 'monthly' : selectedSubscriptionPlan === 'quarterly' ? 'quarterly' : 'annually'}
                     </div>
                   </div>
                   <div style={{ fontSize: '18px', fontWeight: '700', color: '#667eea' }}>
@@ -199,19 +208,33 @@ export default function PaymentsTab({
               </div>
 
               <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '12px', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Total</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
-                    ${selectedSubscriptionPlan === 'monthly' ? monthlyPrice.toFixed(2) : 
-                       selectedSubscriptionPlan === 'quarterly' ? quarterlyPrice.toFixed(2) : 
-                       annualPrice.toFixed(2)}
-                  </div>
-                </div>
-                <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
-                  {selectedSubscriptionPlan === 'monthly' && 'Per month'}
-                  {selectedSubscriptionPlan === 'quarterly' && 'Per quarter'}
-                  {selectedSubscriptionPlan === 'annual' && 'Per year'}
-                </div>
+                {(() => {
+                  const recurringPrice =
+                    selectedSubscriptionPlan === 'monthly'
+                      ? monthlyPrice
+                      : selectedSubscriptionPlan === 'quarterly'
+                        ? quarterlyPrice
+                        : annualPrice;
+                  const firstBillDate = addMonthsClamped(
+                    new Date(),
+                    billingIntervalMonths(selectedSubscriptionPlan as 'monthly' | 'quarterly' | 'annual')
+                  );
+
+                  return (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Due Today (Setup Fee)</div>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981' }}>
+                          ${setupFee.toFixed(2)}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
+                        Recurring: ${recurringPrice.toFixed(2)} billed {selectedSubscriptionPlan === 'monthly' ? 'monthly' : selectedSubscriptionPlan === 'quarterly' ? 'every 3 months' : 'annually'} starting{' '}
+                        {firstBillDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
               
               <button
@@ -232,10 +255,10 @@ export default function PaymentsTab({
                 onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
                 onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
               >
-                🛒 Proceed to Checkout
+                💳 {setupFee > 0 ? 'Pay Setup Fee & Schedule Subscription' : 'Save Payment Method & Schedule Subscription'}
               </button>
               <p style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', marginTop: '12px' }}>
-                Subscription activates immediately after checkout
+                Setup fee (if any) is charged today; recurring billing begins on the scheduled date.
               </p>
             </div>
           )}
@@ -265,6 +288,57 @@ export default function PaymentsTab({
                   </span>
                 </div>
 
+                {/* Setup fee / scheduling status */}
+                {!activeSubscription.usaepayBillingId && (
+                  <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '8px', padding: '12px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'start', gap: '10px' }}>
+                      <span style={{ fontSize: '18px' }}>⚠️</span>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: '13px', fontWeight: '700', color: '#92400e', margin: 0 }}>Recurring not scheduled</p>
+                        <p style={{ fontSize: '12px', color: '#78350f', marginTop: '6px', marginBottom: '10px' }}>
+                          The setup fee may be paid, but automatic recurring billing was not fully scheduled. You can retry schedule creation.
+                        </p>
+                        <button
+                          onClick={async () => {
+                            try {
+                              if (!selectedCompanyId) {
+                                alert('No company selected.');
+                                return;
+                              }
+                              const res = await fetch('/api/subscriptions/schedule', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ companyId: selectedCompanyId }),
+                              });
+                              const data = await res.json();
+                              if (data?.success && data?.subscription) {
+                                setActiveSubscription(data.subscription);
+                                alert('Recurring billing scheduled successfully.');
+                              } else {
+                                alert(data?.error || 'Failed to schedule recurring billing.');
+                              }
+                            } catch (e) {
+                              alert('Failed to schedule recurring billing.');
+                            }
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            background: '#92400e',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Retry Schedule Creation
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                   <div>
                     <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Plan</p>
@@ -276,14 +350,16 @@ export default function PaymentsTab({
                   </div>
                 </div>
 
-                {activeSubscription.nextBillingDate && (
+                {(activeSubscription.firstRecurringBillDate || activeSubscription.nextBillingDate) && (
                   <div style={{ background: '#dbeafe', border: '1px solid #93c5fd', borderRadius: '8px', padding: '12px', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ fontSize: '20px' }}>📅</span>
                       <div>
-                        <p style={{ fontSize: '11px', color: '#1e40af', fontWeight: '500' }}>Next Billing Date</p>
+                        <p style={{ fontSize: '11px', color: '#1e40af', fontWeight: '500' }}>
+                          {activeSubscription.firstRecurringBillDate ? 'First Recurring Billing Date' : 'Next Billing Date'}
+                        </p>
                         <p style={{ fontSize: '13px', fontWeight: '600', color: '#1e3a8a' }}>
-                          {new Date(activeSubscription.nextBillingDate).toLocaleDateString('en-US', { 
+                          {new Date(activeSubscription.firstRecurringBillDate || activeSubscription.nextBillingDate as string).toLocaleDateString('en-US', { 
                             weekday: 'long', 
                             year: 'numeric', 
                             month: 'long', 
