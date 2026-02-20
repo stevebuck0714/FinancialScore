@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { requireAuth } from '@/lib/tenant-security';
+import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 
 const prisma = new PrismaClient();
 
@@ -82,14 +82,60 @@ export async function DELETE(
   try {
     const context = await requireAuth();
     const { id: companyId } = await params;
-    console.warn(`Blocked DELETE for company ${companyId} requested by ${context.email}`);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Company deletion is disabled by policy.',
+
+    if (!companyId) {
+      return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
+    }
+
+    if (context.role !== 'SITEADMIN' && context.role !== 'CONSULTANT') {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only consultants and site admins can remove companies.' },
+        { status: 403 }
+      );
+    }
+
+    const hasAccess = await validateCompanyAccess(companyId);
+    if (!hasAccess) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Access to this company denied' },
+        { status: 403 }
+      );
+    }
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, name: true },
+    });
+
+    if (!company) {
+      return NextResponse.json({
+        success: true,
+        hidden: true,
+        softDelete: true,
+        message: 'Company was already removed.',
+      });
+    }
+
+    const softDeletedName = company.name.includes(' (DELETED)')
+      ? company.name
+      : `${company.name} (DELETED)`;
+
+    await prisma.company.update({
+      where: { id: companyId },
+      data: {
+        name: softDeletedName,
+        consultantId: null,
+        updatedAt: new Date(),
       },
-      { status: 403 }
-    );
+    });
+
+    console.log(`Soft-removed company ${companyId} requested by ${context.email}`);
+    return NextResponse.json({
+      success: true,
+      hidden: true,
+      softDelete: true,
+      message: 'Company removed from consultant list.',
+    });
   } catch (error: any) {
     console.error('Error in delete operation:', error);
     return NextResponse.json({
