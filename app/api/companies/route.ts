@@ -3,6 +3,23 @@ import prisma from "@/lib/prisma";
 import { requireAuth, validateCompanyAccess, validateConsultantAccess, getCompanyAccessFilter } from "@/lib/tenant-security";
 import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger";
 
+async function hasCompanyColumn(columnName: string): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS(
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'Company'
+          AND column_name = ${columnName}
+      ) as "exists"
+    `;
+    return rows[0]?.exists === true;
+  } catch (error) {
+    console.warn(`Could not verify Company.${columnName} column`, error);
+    return false;
+  }
+}
+
 // GET all companies (optionally filtered by consultant or company ID)
 export async function GET(request: NextRequest) {
   try {
@@ -47,6 +64,7 @@ export async function GET(request: NextRequest) {
       where.id = companyId;
     }
 
+    const includeSetupFee = await hasCompanyColumn("subscriptionSetupFee");
     let companies;
     try {
       companies = await prisma.company.findMany({
@@ -71,7 +89,7 @@ export async function GET(request: NextRequest) {
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
-          subscriptionSetupFee: true,
+          ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
           // Skip affiliateCode in production (not needed)
           ...(process.env.NODE_ENV === "production"
             ? {}
@@ -105,7 +123,7 @@ export async function GET(request: NextRequest) {
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
-          subscriptionSetupFee: true,
+          ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
           ...(process.env.NODE_ENV === "production"
             ? {}
             : {
@@ -548,6 +566,8 @@ export async function POST(request: NextRequest) {
       affiliateId: affiliateId,
     });
 
+    const includeSetupFee = await hasCompanyColumn("subscriptionSetupFee");
+
     try {
       const company = await prisma.company.create({
         data: {
@@ -570,7 +590,7 @@ export async function POST(request: NextRequest) {
           subscriptionMonthlyPrice: monthlyPrice ?? 0,
           subscriptionQuarterlyPrice: quarterlyPrice ?? 0,
           subscriptionAnnualPrice: annualPrice ?? 0,
-          subscriptionSetupFee: setupFee ?? 0,
+          ...(includeSetupFee ? { subscriptionSetupFee: setupFee ?? 0 } : {}),
           subscriptionStatus:
             monthlyPrice === 0 &&
             quarterlyPrice === 0 &&
@@ -615,7 +635,7 @@ export async function POST(request: NextRequest) {
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
-          subscriptionSetupFee: true,
+          ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
           createdAt: true,
         },
       });
