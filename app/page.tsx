@@ -7688,6 +7688,22 @@ function FinancialScorePage() {
                       <div style={{ fontSize: '16px', fontWeight: '600', color: isUnsupported ? '#9a3412' : '#065f46', marginBottom: '6px', textAlign: 'center' }}>
                         {isUnsupported ? `${selectedAccountingSystemLabel} (Not supported yet)` : 'Trial Balance CSV'}
                       </div>
+                      <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px', textAlign: 'center' }}>
+                        Upload your Trial Balance CSV to start account mapping.
+                      </p>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleTrialBalanceCsvSelected}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '2px dashed #10b981',
+                          borderRadius: '8px',
+                          background: '#ffffff',
+                          cursor: 'pointer'
+                        }}
+                      />
                     </div>
                   );
                 })()}
