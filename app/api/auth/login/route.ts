@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { verifyPassword } from '@/lib/auth';
 import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/audit-logger';
 import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
+import { getMfaAppScope } from '@/lib/mfa-app-scope';
+import { resolveStoredMFASecret } from '@/lib/mfa';
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,22 +71,34 @@ export async function POST(request: NextRequest) {
     // - Dev/staging should allow disabling MFA for simple access/testing.
     const isVercelProd = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
     const requireMfa = isVercelProd && process.env.DISABLE_MFA !== 'true' && process.env.DISABLE_MFA_DEV !== 'true';
+    const appScope = getMfaAppScope(request);
+
+    const hasScopedMfaForCurrentApp = (() => {
+      if (!user.mfaEnabled || !user.mfaSecret) return false;
+      try {
+        const parsed = resolveStoredMFASecret(user.mfaSecret);
+        return Boolean(parsed.appScope && parsed.appScope === appScope);
+      } catch {
+        return false;
+      }
+    })();
 
     if (requireMfa) {
       // SECURITY: MFA is mandatory in production runtime
-      if (!user.mfaEnabled) {
+      if (!user.mfaEnabled || !hasScopedMfaForCurrentApp) {
         console.log('🔒 MFA not enabled - enrollment required');
+        await auditMFAOperation('MFA_FAILED', user.id, true);
         return NextResponse.json({
           mfaEnrollmentRequired: true,
           userId: user.id,
           email: user.email,
           trustDurationDays: getTrustDurationDays(),
-          message: 'MFA enrollment is required for your account',
+          message: 'MFA enrollment is required for this app',
         });
       }
 
       // Check if MFA is enabled (they have enrolled)
-      if (user.mfaEnabled) {
+      if (user.mfaEnabled && hasScopedMfaForCurrentApp) {
         // Check for trusted device BEFORE requiring MFA
         const deviceToken = request.cookies.get('mfa_device_token')?.value;
         if (deviceToken) {

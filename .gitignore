@@ -24,3 +24,4 @@ staging_full.dump
 *.tsbuildinfo
 ~$*
 .vercel
+*.ionapi.txt

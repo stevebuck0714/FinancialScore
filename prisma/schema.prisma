@@ -720,6 +720,7 @@ enum AccountingPlatform {
   SAGE
   NETSUITE
   DYNAMICS365
+  INFOR_M3
 }
 
 enum ConnectionStatus {

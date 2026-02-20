@@ -2,6 +2,18 @@ import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import crypto from 'crypto';
 
+type StoredMFASecretPayload = {
+  secret: string;
+  appScope?: string;
+  version?: number;
+};
+
+type ParsedMFASecret = {
+  secret: string;
+  appScope?: string;
+  isLegacy: boolean;
+};
+
 function deriveKeyBuffer(rawKey: string): Buffer {
   const key = (rawKey || '').trim();
   if (/^[0-9a-fA-F]{64}$/.test(key)) {
@@ -85,8 +97,45 @@ export async function generateQRCode(otpauthUrl: string): Promise<string> {
   }
 }
 
+function parseStoredSecretPayload(decryptedSecret: string): ParsedMFASecret {
+  try {
+    const parsed = JSON.parse(decryptedSecret) as StoredMFASecretPayload;
+    if (parsed && typeof parsed.secret === 'string' && parsed.secret.trim()) {
+      return {
+        secret: parsed.secret.trim(),
+        appScope: typeof parsed.appScope === 'string' ? parsed.appScope.trim().toLowerCase() : undefined,
+        isLegacy: false,
+      };
+    }
+  } catch {
+    // Legacy format: plain base32 secret.
+  }
+
+  return {
+    secret: decryptedSecret.trim(),
+    appScope: undefined,
+    isLegacy: true,
+  };
+}
+
+export function resolveStoredMFASecret(encryptedSecret: string): ParsedMFASecret {
+  let decrypted = '';
+  try {
+    decrypted = decryptSecret(encryptedSecret);
+  } catch {
+    // Backward compatibility: support previously stored plain base32 secrets.
+    decrypted = encryptedSecret;
+  }
+
+  return parseStoredSecretPayload(decrypted);
+}
+
 // Verify TOTP token
-export function verifyTOTP(token: string, encryptedSecret: string): boolean {
+export function verifyTOTP(
+  token: string,
+  encryptedSecret: string,
+  options?: { expectedAppScope?: string; allowLegacyScope?: boolean }
+): boolean {
   try {
     const normalizedToken = String(token || '').replace(/\s+/g, '');
     if (!/^\d{6}$/.test(normalizedToken)) {
@@ -95,14 +144,26 @@ export function verifyTOTP(token: string, encryptedSecret: string): boolean {
     }
 
     console.log('🔓 Resolving MFA secret...');
-    let secret = '';
-    try {
-      secret = decryptSecret(encryptedSecret);
-    } catch {
-      // Backward compatibility: support previously stored plain base32 secrets.
-      secret = encryptedSecret;
+    const parsed = resolveStoredMFASecret(encryptedSecret);
+
+    const expectedAppScope = options?.expectedAppScope?.trim().toLowerCase();
+    const allowLegacyScope = options?.allowLegacyScope ?? true;
+
+    if (expectedAppScope) {
+      if (!parsed.appScope && !allowLegacyScope) {
+        console.log('❌ MFA scope missing for strict app-scoped verification');
+        return false;
+      }
+      if (parsed.appScope && parsed.appScope !== expectedAppScope) {
+        console.log('❌ MFA scope mismatch', {
+          expectedAppScope,
+          storedAppScope: parsed.appScope,
+        });
+        return false;
+      }
     }
-    console.log('✅ Secret decrypted, length:', secret.length);
+    const secret = parsed.secret;
+    console.log('✅ Secret resolved, length:', secret.length, 'legacy:', parsed.isLegacy);
     
     console.log('🔐 Verifying TOTP with token:', normalizedToken);
     const result = speakeasy.totp.verify({

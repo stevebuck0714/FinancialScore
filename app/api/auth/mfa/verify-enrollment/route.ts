@@ -3,10 +3,12 @@ import prisma from '@/lib/prisma';
 import { verifyTOTP } from '@/lib/mfa';
 import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
 import { sendTrustedDeviceNotification } from '@/lib/email';
+import { getMfaAppScope } from '@/lib/mfa-app-scope';
 
 export async function POST(request: NextRequest) {
   try {
     console.log('🔐 MFA Verify Enrollment API called');
+    const appScope = getMfaAppScope(request);
     const { userId, token, rememberDevice, trustDurationDays } = await request.json();
     console.log('👤 User ID:', userId);
     console.log('🔢 Token received:', token);
@@ -47,7 +49,10 @@ export async function POST(request: NextRequest) {
 
     // Verify the token
     console.log('🔐 Verifying TOTP token...');
-    const isValid = verifyTOTP(token, user.mfaSecret);
+    const isValid = verifyTOTP(token, user.mfaSecret, {
+      expectedAppScope: appScope,
+      allowLegacyScope: false,
+    });
     console.log('✅ TOTP verification result:', isValid);
 
     if (!isValid) {

@@ -3,9 +3,11 @@ import prisma from '@/lib/prisma';
 import { verifyTOTP, verifyBackupCode, encryptBackupCodes } from '@/lib/mfa';
 import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
 import { sendTrustedDeviceNotification } from '@/lib/email';
+import { getMfaAppScope } from '@/lib/mfa-app-scope';
 
 export async function POST(request: NextRequest) {
   try {
+    const appScope = getMfaAppScope(request);
     const { userId, token, isBackupCode, rememberDevice, trustDurationDays: requestedTrustDurationDays } =
       await request.json();
 
@@ -60,7 +62,10 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Verify TOTP token
-      isValid = verifyTOTP(token, user.mfaSecret);
+      isValid = verifyTOTP(token, user.mfaSecret, {
+        expectedAppScope: appScope,
+        allowLegacyScope: false,
+      });
     }
 
     if (!isValid) {

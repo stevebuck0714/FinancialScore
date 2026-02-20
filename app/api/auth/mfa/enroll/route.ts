@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { generateMFASecret, generateQRCode, encryptMFASecret, generateBackupCodes, encryptBackupCodes } from '@/lib/mfa';
+import { generateMFASecret, generateQRCode, encryptMFASecret, generateBackupCodes, encryptBackupCodes, resolveStoredMFASecret } from '@/lib/mfa';
+import { getMfaAppScope } from '@/lib/mfa-app-scope';
 
 export async function POST(request: NextRequest) {
   try {
     console.log('🔐 MFA Enroll API called');
+    const appScope = getMfaAppScope(request);
     const { userId } = await request.json();
     console.log('👤 User ID:', userId);
 
@@ -32,13 +34,20 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ User found:', user.email);
 
-    // Check if MFA is already enabled
+    // Check if MFA is already enabled for this app scope
     if (user.mfaEnabled) {
-      console.error('❌ MFA already enabled for:', user.email);
-      return NextResponse.json(
-        { error: 'MFA is already enabled for this user' },
-        { status: 400 }
-      );
+      const stored = user.mfaSecret ? resolveStoredMFASecret(user.mfaSecret) : null;
+      const storedScope = stored?.appScope?.toLowerCase();
+
+      if (storedScope && storedScope === appScope) {
+        console.error('❌ MFA already enabled for:', user.email);
+        return NextResponse.json(
+          { error: 'MFA is already enabled for this user in this app' },
+          { status: 400 }
+        );
+      }
+
+      console.log('ℹ️ Re-enrolling MFA for new app scope', { appScope, storedScope: storedScope || 'legacy-or-none' });
     }
 
     // Generate MFA secret
@@ -54,11 +63,16 @@ export async function POST(request: NextRequest) {
     const backupCodes = generateBackupCodes(10);
     console.log('✅ Generated', backupCodes.length, 'backup codes');
 
-    // Encrypt and temporarily store in database (not yet enabled)
+    // Encrypt and temporarily store app-scoped secret in database (not yet enabled)
+    const scopedSecretPayload = JSON.stringify({
+      version: 1,
+      appScope,
+      secret,
+    });
     await prisma.user.update({
       where: { id: userId },
       data: {
-        mfaSecret: encryptMFASecret(secret),
+        mfaSecret: encryptMFASecret(scopedSecretPayload),
         backupCodes: encryptBackupCodes(backupCodes),
         mfaEnabled: false, // Not enabled until verified
       },

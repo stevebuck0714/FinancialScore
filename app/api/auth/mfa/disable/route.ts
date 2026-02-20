@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyTOTP } from '@/lib/mfa';
+import { getMfaAppScope } from '@/lib/mfa-app-scope';
 
 export async function POST(request: NextRequest) {
   try {
+    const appScope = getMfaAppScope(request);
     const { userId, token } = await request.json();
 
     if (!userId || !token) {
@@ -33,7 +35,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify the token before disabling
-    const isValid = verifyTOTP(token, user.mfaSecret);
+    const isValid = verifyTOTP(token, user.mfaSecret, {
+      expectedAppScope: appScope,
+      allowLegacyScope: false,
+    });
 
     if (!isValid) {
       return NextResponse.json(
