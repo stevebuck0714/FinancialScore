@@ -97,13 +97,8 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
     addUser
   } = props;
   const normalizedRole = String(currentUser?.role || '').toUpperCase();
-  const prodDeletionEnabled =
-    process.env.NODE_ENV !== 'production' ||
-    process.env.NEXT_PUBLIC_ALLOW_PROD_COMPANY_DELETE === 'true';
   const canDeleteCompany =
-    prodDeletionEnabled &&
-    (normalizedRole === 'CONSULTANT' || normalizedRole === 'SITEADMIN') &&
-    currentUser?.consultantType !== 'business';
+    normalizedRole === 'CONSULTANT' || normalizedRole === 'SITEADMIN';
 
   return (
     <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>

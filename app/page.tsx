@@ -1154,16 +1154,6 @@ function FinancialScorePage() {
   const handleDeleteCompany = async () => {
     if (!companyToDelete) return;
 
-    const prodDeletionEnabled =
-      process.env.NODE_ENV !== 'production' ||
-      process.env.NEXT_PUBLIC_ALLOW_PROD_COMPANY_DELETE === 'true';
-    if (!prodDeletionEnabled) {
-      alert('Company deletion is disabled in production.');
-      setShowDeleteConfirmation(false);
-      setCompanyToDelete(null);
-      return;
-    }
-
     const normalizedRole = String(currentUser?.role || '').toUpperCase();
     const canDeleteCompany = normalizedRole === 'CONSULTANT' || normalizedRole === 'SITEADMIN';
     if (!canDeleteCompany) {
@@ -1178,6 +1168,9 @@ function FinancialScorePage() {
     try {
       const response = await fetch(`/api/companies/${companyToDelete.companyId}`, {
         method: 'DELETE',
+        headers: {
+          'x-confirm-delete': 'true',
+        },
       });
 
       console.log('Delete response status:', response.status);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { auditCompanyOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 
 const prisma = new PrismaClient();
 
@@ -80,15 +81,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const isProduction = process.env.NODE_ENV === 'production';
-    const allowProdCompanyDelete = process.env.ALLOW_PROD_COMPANY_DELETE === 'true';
-    if (isProduction && !allowProdCompanyDelete) {
-      return NextResponse.json(
-        { success: false, error: 'Company deletion is disabled in production.' },
-        { status: 403 }
-      );
-    }
-
     const context = await requireAuth();
     const normalizedRole = String(context.role || '').toUpperCase();
     const { id: companyId } = await params;
@@ -97,7 +89,17 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
     }
 
+    const hasDeleteConfirmation = request.headers.get('x-confirm-delete') === 'true';
+    if (!hasDeleteConfirmation) {
+      await auditForbiddenAccess('Company', companyId, 'DELETE_MISSING_CONFIRMATION');
+      return NextResponse.json(
+        { success: false, error: 'Delete confirmation header is required.' },
+        { status: 400 }
+      );
+    }
+
     if (normalizedRole !== 'SITEADMIN' && normalizedRole !== 'CONSULTANT') {
+      await auditForbiddenAccess('Company', companyId, 'DELETE');
       return NextResponse.json(
         { success: false, error: 'Forbidden: Only consultants and site admins can remove companies.' },
         { status: 403 }
@@ -106,6 +108,7 @@ export async function DELETE(
 
     const hasAccess = await validateCompanyAccess(companyId);
     if (!hasAccess) {
+      await auditForbiddenAccess('Company', companyId, 'DELETE');
       return NextResponse.json(
         { success: false, error: 'Forbidden: Access to this company denied' },
         { status: 403 }
@@ -118,6 +121,10 @@ export async function DELETE(
     });
 
     if (!company) {
+      await auditCompanyOperation('COMPANY_DELETED', companyId, {
+        mode: 'soft-delete',
+        result: 'already-removed',
+      });
       return NextResponse.json({
         success: true,
         hidden: true,
@@ -140,6 +147,11 @@ export async function DELETE(
     });
 
     console.log(`Soft-removed company ${companyId} requested by ${context.email}`);
+    await auditCompanyOperation('COMPANY_DELETED', companyId, {
+      mode: 'soft-delete',
+      removedBy: context.email,
+      removedByRole: normalizedRole,
+    });
     return NextResponse.json({
       success: true,
       hidden: true,
