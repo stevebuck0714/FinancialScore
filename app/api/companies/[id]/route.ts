@@ -80,14 +80,24 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const allowProdCompanyDelete = process.env.ALLOW_PROD_COMPANY_DELETE === 'true';
+    if (isProduction && !allowProdCompanyDelete) {
+      return NextResponse.json(
+        { success: false, error: 'Company deletion is disabled in production.' },
+        { status: 403 }
+      );
+    }
+
     const context = await requireAuth();
+    const normalizedRole = String(context.role || '').toUpperCase();
     const { id: companyId } = await params;
 
     if (!companyId) {
       return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
     }
 
-    if (context.role !== 'SITEADMIN' && context.role !== 'CONSULTANT') {
+    if (normalizedRole !== 'SITEADMIN' && normalizedRole !== 'CONSULTANT') {
       return NextResponse.json(
         { success: false, error: 'Forbidden: Only consultants and site admins can remove companies.' },
         { status: 403 }

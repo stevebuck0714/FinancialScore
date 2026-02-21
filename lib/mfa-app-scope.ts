@@ -5,10 +5,17 @@ function normalizeHost(raw: string | undefined): string {
 }
 
 export function getMfaAppScope(request: NextRequest): string {
-  const requestHost = normalizeHost(request.nextUrl.hostname);
+  const explicitScope = (process.env.MFA_APP_SCOPE || '').trim().toLowerCase();
+  if (explicitScope) {
+    return explicitScope;
+  }
+
   const configuredUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || '';
   const configuredHost = normalizeHost(configuredUrl);
+  if (configuredHost) {
+    return configuredHost;
+  }
 
-  // Prefer request host in runtime so each deployed app/domain scopes MFA correctly.
-  return requestHost || configuredHost || 'unknown-app-scope';
+  const requestHost = normalizeHost(request.nextUrl.hostname);
+  return requestHost || 'unknown-app-scope';
 }

@@ -1154,6 +1154,25 @@ function FinancialScorePage() {
   const handleDeleteCompany = async () => {
     if (!companyToDelete) return;
 
+    const prodDeletionEnabled =
+      process.env.NODE_ENV !== 'production' ||
+      process.env.NEXT_PUBLIC_ALLOW_PROD_COMPANY_DELETE === 'true';
+    if (!prodDeletionEnabled) {
+      alert('Company deletion is disabled in production.');
+      setShowDeleteConfirmation(false);
+      setCompanyToDelete(null);
+      return;
+    }
+
+    const normalizedRole = String(currentUser?.role || '').toUpperCase();
+    const canDeleteCompany = normalizedRole === 'CONSULTANT' || normalizedRole === 'SITEADMIN';
+    if (!canDeleteCompany) {
+      alert('Only consultants and site admins can delete companies.');
+      setShowDeleteConfirmation(false);
+      setCompanyToDelete(null);
+      return;
+    }
+
     console.log('Attempting to delete company:', companyToDelete);
 
     try {
@@ -1165,7 +1184,7 @@ function FinancialScorePage() {
       const result = await response.json();
       console.log('Delete result:', result);
 
-      // Handle both success and 404 (company already deleted/hidden)
+      // Only update local UI after server confirms success.
       if (result.success || response.status === 404) {
         const message = result.hidden
           ? `Company "${companyToDelete.companyName}" has been removed from your dashboard.`
@@ -1213,35 +1232,8 @@ function FinancialScorePage() {
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       } else {
-        // Even if the server says it failed, still remove from UI for better UX
-        console.log('Server reported failure, but removing from UI anyway for better user experience');
-
-        safeSetCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
-
-        // Clear localStorage companies data to prevent reappearance on navigation
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('fs_companies');
-          console.log('??ï¸ Cleared localStorage companies data after deletion (server error)');
-        }
-
-        // Force reload companies from API to ensure deletion took effect
-        if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
-          console.log('?? Reloading companies from API after deletion (server error)');
-          setTimeout(async () => {
-            try {
-              const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
-              safeSetCompanies(freshCompanies || []);
-              console.log('? Reloaded companies after deletion (server error):', freshCompanies?.length || 0, 'companies');
-            } catch (error) {
-              console.error('? Failed to reload companies after deletion (server error):', error);
-            }
-          }, 1000); // Small delay to ensure deletion is processed
-        }
-
-        setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
-
-        alert(`Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
-
+        const errorMessage = result?.error || 'Delete request was rejected by the server.';
+        alert(`Could not delete company "${companyToDelete.companyName}". ${errorMessage}`);
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       }
@@ -5048,7 +5040,9 @@ function FinancialScorePage() {
       case 'QAD':
         return 'QAD';
       case 'QUICKBOOKS':
-        return 'QuickBooks';
+        return 'QuickBooks Online';
+      case 'QUICKBOOKS_DESKTOP':
+        return 'QuickBooks Desktop';
       case 'SAGE':
         return 'Sage';
       case 'SAGE_INTACCT':

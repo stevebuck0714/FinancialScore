@@ -96,6 +96,14 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
     setNewAssessmentUserPassword,
     addUser
   } = props;
+  const normalizedRole = String(currentUser?.role || '').toUpperCase();
+  const prodDeletionEnabled =
+    process.env.NODE_ENV !== 'production' ||
+    process.env.NEXT_PUBLIC_ALLOW_PROD_COMPANY_DELETE === 'true';
+  const canDeleteCompany =
+    prodDeletionEnabled &&
+    (normalizedRole === 'CONSULTANT' || normalizedRole === 'SITEADMIN') &&
+    currentUser?.consultantType !== 'business';
 
   return (
     <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -166,8 +174,8 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                       <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{comp.name}</h3>
                       <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>✓ Active Company</div>
                     </div>
-                    {/* Only show Delete button for regular consultants, not business users */}
-                    {currentUser.consultantType !== 'business' && (
+                    {/* Only consultants/site admins can delete companies */}
+                    {canDeleteCompany && (
                       <button onClick={() => deleteCompany(comp.id)} style={{ padding: '8px 16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: '600' }}>Delete Company</button>
                     )}
                   </div>

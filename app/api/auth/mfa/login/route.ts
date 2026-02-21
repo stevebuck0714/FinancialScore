@@ -4,6 +4,7 @@ import { verifyTOTP, verifyBackupCode, encryptBackupCodes } from '@/lib/mfa';
 import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
 import { sendTrustedDeviceNotification } from '@/lib/email';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
+import { getMfaCookieDomain } from '@/lib/mfa-cookie-domain';
 
 export async function POST(request: NextRequest) {
   try {
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
         // Set cookie with device token
         const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();
         const isProduction = process.env.NODE_ENV === 'production';
-        const cookieDomain = process.env.MFA_COOKIE_DOMAIN;
+        const cookieDomain = getMfaCookieDomain(request);
 
         response.cookies.set('mfa_device_token', deviceToken, {
           httpOnly: true,
