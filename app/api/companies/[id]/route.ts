@@ -154,7 +154,6 @@ export async function DELETE(
       await tx.accountingConnection.deleteMany({ where: { companyId } });
       await tx.accountMapping.deleteMany({ where: { companyId } });
       await tx.apiSyncLog.deleteMany({ where: { companyId } });
-      await tx.xeroTransaction.deleteMany({ where: { companyId } });
       await tx.companyDocumentChunk.deleteMany({ where: { companyId } });
       await tx.companyDocument.deleteMany({ where: { companyId } });
       await tx.loan.deleteMany({ where: { companyId } });
