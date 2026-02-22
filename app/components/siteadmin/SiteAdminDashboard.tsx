@@ -1493,11 +1493,11 @@ export default function SiteAdminDashboard(props: any) {
                                     <div key={company.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '8px' : '0' }}>
                                         <div style={{ flex: 1 }}>
-                                          <h5 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>{company.name}</h5>
-                                          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>
-                                            <span style={{ fontWeight: '600' }}>ID:</span> <span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{company.id}</span>
+                                          <h5 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>{company.name}</h5>
+                                          <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>
+                                            <span style={{ fontWeight: '600' }}>ID:</span> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company.id}</span>
                                           </div>
-                                          <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                          <div style={{ fontSize: '13px', color: '#64748b' }}>
                                             <span style={{ fontWeight: '600' }}>Industry:</span> {
                                               company.industrySector 
                                                 ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` 
@@ -1506,7 +1506,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </div>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                          <div style={{ fontSize: '11px', fontWeight: '600', color: '#667eea' }}>
+                                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#667eea' }}>
                                             {companyUsers.length} user{companyUsers.length !== 1 ? 's' : ''}
                                           </div>
                                           <button
@@ -1547,12 +1547,12 @@ export default function SiteAdminDashboard(props: any) {
                                               });
                                             }}
                                             style={{ 
-                                              padding: '4px 10px', 
+                                              padding: '6px 12px', 
                                               background: isCompanyExpanded ? '#f1f5f9' : '#667eea', 
                                               color: isCompanyExpanded ? '#475569' : 'white', 
                                               border: 'none', 
                                               borderRadius: '4px', 
-                                              fontSize: '11px', 
+                                              fontSize: '13px', 
                                               fontWeight: '600', 
                                               cursor: 'pointer' 
                                             }}
@@ -2626,8 +2626,8 @@ export default function SiteAdminDashboard(props: any) {
                                           </div>
                                           
                                           {/* Subscription Pricing */}
-                                          <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                            <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h6>
+                                          <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
                                             {editing ? (
                                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                                                 <div>
@@ -2707,7 +2707,7 @@ export default function SiteAdminDashboard(props: any) {
                                               </div>
                                             ) : (
                                               <div>
-                                                <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
+                                                <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.7', marginBottom: '8px' }}>
                                                   <div><strong>Monthly:</strong> ${company.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
                                                   <div><strong>Quarterly:</strong> ${company.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
                                                   <div><strong>Annual:</strong> ${company.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
@@ -2725,7 +2725,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       }
                                                     });
                                                   }}
-                                                  style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                                  style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
                                                 >
                                                   Edit Pricing
                                                 </button>
