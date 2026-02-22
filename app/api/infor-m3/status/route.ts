@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { resolveAuthorizedCompanyId } from '@/lib/infor-m3/request-context';
+import { requireAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const requestedCompanyId = request.nextUrl.searchParams.get('companyId');
-    const { companyId } = await resolveAuthorizedCompanyId(requestedCompanyId);
+    const { companyId } = await requireAuthorizedInforCompany(request);
 
     const connection = await prisma.accountingConnection.findUnique({
       where: {

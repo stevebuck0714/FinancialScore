@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
+import { shouldAllowInforM3EnvFallback } from '@/lib/infor-m3/security-config';
 
 export interface InforM3Credentials {
   tenantId: string;
@@ -193,7 +194,7 @@ export async function getInforM3CredentialsWithOptionalEnvFallback(
     return { credentials: dbCredentials, source: 'database' };
   }
 
-  const allowEnvFallback = process.env.INFOR_M3_ALLOW_ENV_FALLBACK !== 'false';
+  const allowEnvFallback = shouldAllowInforM3EnvFallback();
   if (!allowEnvFallback) {
     return { credentials: null, source: null };
   }

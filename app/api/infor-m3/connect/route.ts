@@ -5,7 +5,7 @@ import {
   getInforM3CredentialsFromEnv,
   saveInforM3CredentialsForCompany,
 } from '@/lib/infor-m3/credentials';
-import { resolveAuthorizedCompanyId } from '@/lib/infor-m3/request-context';
+import { requireAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,8 +65,7 @@ function isCompleteCredentials(value: Partial<InforM3Credentials>): value is Inf
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const requestedCompanyId = normalizeString(body.companyId) || request.nextUrl.searchParams.get('companyId');
-    const { companyId } = await resolveAuthorizedCompanyId(requestedCompanyId);
+    const { companyId } = await requireAuthorizedInforCompany(request, body);
 
     const useEnvFallback = body.useEnvFallback === true;
     const bodyCredentials = parseBodyCredentials(body);
