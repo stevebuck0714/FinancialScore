@@ -2288,16 +2288,14 @@ function FinancialScorePage() {
         }));
         setConsultants(mappedConsultants);
         
-        // Build consultant-linked companies for consultant views only.
-        const allCompanies: any[] = [];
-        for (const consultant of loadedConsultants || []) {
-          if (consultant.companies) {
-            allCompanies.push(...consultant.companies);
+        // Always load full company records so consultant cards have complete fields
+        // (e.g., accountingSystem) required by Site Admin integration containers.
+        const companiesRes = await fetch('/api/companies', { cache: 'no-store' });
+        if (companiesRes.ok) {
+          const companiesData = await companiesRes.json();
+          if (Array.isArray(companiesData?.companies)) {
+            safeSetCompanies(companiesData.companies);
           }
-        }
-        // Do not overwrite the businesses dataset while on the Businesses tab.
-        if (siteAdminTab !== 'businesses') {
-          safeSetCompanies(allCompanies);
         }
       } catch (error) {
         console.error('Error loading consultants:', error);
