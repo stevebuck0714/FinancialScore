@@ -79,6 +79,85 @@ export default function SiteAdminDashboard(props: any) {
     }));
   };
 
+  const [accountingProgramsByCompany, setAccountingProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; miProgram: string }>>
+  >({});
+
+  const defaultAccountingPrograms = [
+    { module: 'Accounts', miProgram: 'CRS630MI' },
+    { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI' },
+    { module: 'AR', miProgram: 'ARS200MI' },
+    { module: 'AP', miProgram: 'APS200MI' },
+    { module: 'Customer', miProgram: 'CRS610MI' },
+    { module: 'Supplier', miProgram: 'CRS620MI' },
+    { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI' },
+    { module: 'Sales', miProgram: 'OIS100MI' },
+  ];
+
+  const getCompanyPrograms = (companyId: string) =>
+    accountingProgramsByCompany[companyId] || defaultAccountingPrograms;
+
+  const setCompanyPrograms = (companyId: string, programs: Array<{ module: string; miProgram: string }>) => {
+    setAccountingProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+
+  const updateCompanyProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'miProgram',
+    value: string
+  ) => {
+    const current = getCompanyPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setCompanyPrograms(companyId, next);
+  };
+
+  const addCompanyProgram = (companyId: string) => {
+    const current = getCompanyPrograms(companyId);
+    setCompanyPrograms(companyId, [...current, { module: '', miProgram: '' }]);
+  };
+
+  const deleteCompanyProgram = (companyId: string, index: number) => {
+    const current = getCompanyPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setCompanyPrograms(companyId, next.length > 0 ? next : [{ module: '', miProgram: '' }]);
+  };
+
+  const loadCompanyPrograms = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok || !Array.isArray(data?.programs)) return;
+      setCompanyPrograms(companyId, data.programs);
+    } catch (error) {
+      console.error('Failed to load accounting programs:', error);
+    }
+  };
+
+  const saveCompanyPrograms = async (companyId: string) => {
+    try {
+      const programs = getCompanyPrograms(companyId);
+      const response = await fetch('/api/infor-m3/programs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          programs,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save accounting programs');
+      }
+      alert('Accounting programs saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save accounting programs: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
       <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Site Administration</h1>
@@ -986,6 +1065,7 @@ export default function SiteAdminDashboard(props: any) {
                         const isExpanded = expandedBusinessIds.has(businessCompany.id);
                         const editing = editingPricing?.[businessCompany.id];
                         const operationalSettings = getCompanyOperationalSettings(businessCompany.id);
+                        const accountingPrograms = getCompanyPrograms(businessCompany.id);
                         
                         return (
                           <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
@@ -1079,6 +1159,7 @@ export default function SiteAdminDashboard(props: any) {
                                         setSelectedCompanyId(businessCompany.id);
                                         if (businessCompany.accountingSystem === 'INFOR_M3') {
                                           loadInforM3Credentials?.(businessCompany.id);
+                                          loadCompanyPrograms(businessCompany.id);
                                           checkInforM3Status?.(businessCompany.id).then((statusData: any) => {
                                             if (!statusData) return;
                                             const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
@@ -1142,7 +1223,7 @@ export default function SiteAdminDashboard(props: any) {
                               <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '10px', paddingTop: '10px' }}>
 
                                 {businessCompany?.accountingSystem === 'INFOR_M3' ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '30% 70%', gap: '8px', marginBottom: '8px' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
                                       <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
                                       <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
@@ -1222,7 +1303,7 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     </div>
 
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
                                       {[
                                         { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
                                         { key: 'clientName', label: 'Client Name', type: 'text' },
@@ -1314,6 +1395,72 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     )}
                                   </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addCompanyProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveCompanyPrograms(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {accountingPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.miProgram}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'miProgram', e.target.value)}
+                                                    placeholder="MI Program"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteCompanyProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
                                   </div>
                                 ) : (
                                   <div style={{ marginBottom: '8px' }}>
