@@ -274,6 +274,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           setSelectedCompanyId={props.setSelectedCompanyId}
         />
       )}
+
     </div>
   );
 }

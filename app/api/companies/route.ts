@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, validateCompanyAccess, validateConsultantAccess, getCompanyAccessFilter } from "@/lib/tenant-security";
 import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger";
+import { sendAccountingSystemSelectionNotification } from "@/lib/email";
 
 async function hasCompanyColumn(columnName: string): Promise<boolean> {
   try {
@@ -36,7 +37,15 @@ export async function GET(request: NextRequest) {
       : undefined;
 
     // SECURITY: Build where clause based on user access
-    let where: any = await getCompanyAccessFilter();
+    let where: any = {
+      ...(await getCompanyAccessFilter()),
+      // Hide legacy soft-deleted companies from all listings.
+      NOT: {
+        name: {
+          contains: ' (DELETED)',
+        },
+      },
+    };
 
     // SECURITY: Validate consultant access if consultantId filter is requested
     if (consultantId) {
@@ -744,6 +753,17 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const existingCompany = await prisma.company.findUnique({
+      where: { id: targetCompanyId },
+      select: { id: true, name: true, accountingSystem: true },
+    });
+    if (!existingCompany) {
+      return NextResponse.json(
+        { error: "Company not found" },
+        { status: 404 }
+      );
+    }
+
     console.log("🔄 Target company ID:", targetCompanyId);
     console.log("🔄 Update fields:", updateFields);
 
@@ -914,6 +934,37 @@ export async function PATCH(request: NextRequest) {
     
     // AUDIT: Log company update
     await auditCompanyOperation('COMPANY_UPDATED', targetCompanyId);
+
+    const requestedAccountingSystem =
+      typeof updateFields.accountingSystem === 'string'
+        ? updateFields.accountingSystem.trim()
+        : null;
+    const previousAccountingSystem = (existingCompany.accountingSystem || '').trim();
+    const accountingSystemChanged =
+      !!requestedAccountingSystem && requestedAccountingSystem !== previousAccountingSystem;
+
+    // Notify site admins only when accounting system is newly selected/changed.
+    if (accountingSystemChanged) {
+      try {
+        const siteAdmins = await prisma.user.findMany({
+          where: { role: 'SITEADMIN' },
+          select: { email: true },
+        });
+        const recipients = siteAdmins.map((admin) => admin.email).filter(Boolean);
+        if (recipients.length > 0) {
+          await sendAccountingSystemSelectionNotification({
+            recipients,
+            companyName: existingCompany.name,
+            companyId: existingCompany.id,
+            accountingSystem: requestedAccountingSystem,
+            changedByEmail: context.email,
+            changedByRole: context.role,
+          });
+        }
+      } catch (notificationError) {
+        console.error('⚠️ Failed to send accounting system selection notification:', notificationError);
+      }
+    }
     
     return NextResponse.json({ company }, { status: 200 });
   } catch (error: any) {

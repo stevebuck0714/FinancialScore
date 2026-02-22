@@ -46,6 +46,9 @@ export default function SiteAdminDashboard(props: any) {
     addConsultant, deleteConsultant, updateConsultantInfo, getConsultantCompanies,
     setCurrentUser, setSiteAdminViewingAs, setCurrentView, setLoadedConsultantId, setCompanies, currentUser,
     setSelectedCompanyId, setCompanyToDelete, setShowDeleteConfirmation,
+    inforConnected, inforStatus, inforLastSync, inforError, inforBusy,
+    inforCredentials, setInforCredentials, inforProbePath, setInforProbePath, inforProbeSummary,
+    checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
     newSiteAdminEmail, setNewSiteAdminEmail,
@@ -56,6 +59,25 @@ export default function SiteAdminDashboard(props: any) {
   const updateCompanyPricing = props.updateCompanyPricing as
     | undefined
     | ((companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number }) => void);
+  const [operationalSyncSettingsByCompany, setOperationalSyncSettingsByCompany] = React.useState<
+    Record<string, { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }>
+  >({});
+
+  const getCompanyOperationalSettings = (companyId: string) =>
+    operationalSyncSettingsByCompany[companyId] || { frequency: 'daily', pullTime: '08:00' };
+
+  const setCompanyOperationalSettings = (
+    companyId: string,
+    next: Partial<{ frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }>
+  ) => {
+    setOperationalSyncSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        frequency: next.frequency || prev[companyId]?.frequency || 'daily',
+        pullTime: next.pullTime || prev[companyId]?.pullTime || '08:00',
+      },
+    }));
+  };
 
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
@@ -963,6 +985,7 @@ export default function SiteAdminDashboard(props: any) {
                         const businessUser = users.find(u => u.companyId === businessCompany.id);
                         const isExpanded = expandedBusinessIds.has(businessCompany.id);
                         const editing = editingPricing?.[businessCompany.id];
+                        const operationalSettings = getCompanyOperationalSettings(businessCompany.id);
                         
                         return (
                           <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
@@ -1030,7 +1053,7 @@ export default function SiteAdminDashboard(props: any) {
                                         });
                                     }}
                                     style={{ 
-                                      fontSize: '15px', 
+                                      fontSize: '18px', 
                                       fontWeight: '600', 
                                       color: '#667eea', 
                                       margin: 0,
@@ -1053,11 +1076,27 @@ export default function SiteAdminDashboard(props: any) {
                                         newSet.delete(businessCompany.id);
                                       } else {
                                         newSet.add(businessCompany.id);
+                                        setSelectedCompanyId(businessCompany.id);
+                                        if (businessCompany.accountingSystem === 'INFOR_M3') {
+                                          loadInforM3Credentials?.(businessCompany.id);
+                                          checkInforM3Status?.(businessCompany.id).then((statusData: any) => {
+                                            if (!statusData) return;
+                                            const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
+                                            const pullTime =
+                                              typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+                                            if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
+                                              setCompanyOperationalSettings(businessCompany.id, {
+                                                frequency,
+                                                pullTime,
+                                              });
+                                            }
+                                          });
+                                        }
                                       }
                                       return newSet;
                                     });
                                   }}
-                                  style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                  style={{ padding: '8px 14px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
                                 >
                                   {isExpanded ? 'Collapse' : 'Expand'}
                                 </button>
@@ -1080,12 +1119,12 @@ export default function SiteAdminDashboard(props: any) {
                                     }
                                   }}
                                   style={{ 
-                                    padding: '6px 12px', 
+                                    padding: '8px 14px', 
                                     background: '#ef4444', 
                                     color: 'white', 
                                     border: 'none', 
                                     borderRadius: '6px', 
-                                    fontSize: '12px', 
+                                    fontSize: '14px', 
                                     fontWeight: '600', 
                                     cursor: 'pointer',
                                     transition: 'background 0.2s'
@@ -1102,46 +1141,208 @@ export default function SiteAdminDashboard(props: any) {
                             {isExpanded && (
                               <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '10px', paddingTop: '10px' }}>
 
-                                {/* Business Information */}
-                                <div style={{ marginBottom: '8px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
-                                  <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Business Information</h4>
-                                  <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                    <div><strong>Type:</strong> Standalone Business</div>
-                                    <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                    <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                    <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                    <div><strong>Address:</strong> {
-                                      businessCompany && (businessCompany.addressStreet || businessCompany.addressCity) ? (
-                                        <>
-                                          {businessCompany.addressStreet && <>{businessCompany.addressStreet}<br /></>}
-                                          {businessCompany.addressCity && businessCompany.addressCity}
-                                          {businessCompany.addressState && `, ${businessCompany.addressState}`}
-                                          {businessCompany.addressZip && ` ${businessCompany.addressZip}`}
-                                          {businessCompany.addressCountry && <><br />{businessCompany.addressCountry}</>}
-                                        </>
-                                      ) : 'Not provided'
-                                    }</div>
-                                  </div>
-                                </div>
+                                {businessCompany?.accountingSystem === 'INFOR_M3' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '30% 70%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
 
-                                {/* Company Details */}
-                                {businessCompany && (
-                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#f0f9ff', borderRadius: '6px' }}>
-                                    <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Company Details</h4>
-                                    <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                      <div><strong>Company Name:</strong> {businessCompany.name}</div>
-                                      <div><strong>Industry:</strong> {businessCompany.industrySector || 'Not set'}</div>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                      <div>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                        <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                          Infor M3 credentials for <strong>{businessCompany.name}</strong>
+                                        </div>
+                                      </div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                        <button
+                                          onClick={() =>
+                                            saveInforM3Credentials?.(businessCompany.id, {
+                                              frequency: operationalSettings.frequency,
+                                              pullTime: operationalSettings.pullTime,
+                                            })
+                                          }
+                                          disabled={inforBusy}
+                                          style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          onClick={() => connectInforM3?.(businessCompany.id)}
+                                          disabled={inforBusy}
+                                          style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')}
+                                        </button>
+                                        <button
+                                          onClick={() => testInforM3Token?.(businessCompany.id)}
+                                          disabled={inforBusy || !inforConnected}
+                                          style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Test Token
+                                        </button>
+                                        <button
+                                          onClick={() => disconnectInforM3?.(businessCompany.id)}
+                                          disabled={inforBusy || !inforConnected}
+                                          style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Disconnect
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        marginBottom: '8px',
+                                        padding: '8px',
+                                        background: inforConnected && inforStatus === 'ACTIVE' ? '#d1fae5' : inforStatus === 'ERROR' ? '#fee2e2' : inforStatus === 'EXPIRED' ? '#fed7aa' : '#fef3c7',
+                                        border: `1px solid ${inforConnected && inforStatus === 'ACTIVE' ? '#10b981' : inforStatus === 'ERROR' ? '#ef4444' : inforStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}`,
+                                        borderRadius: '6px',
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                                        {inforConnected && inforStatus === 'ACTIVE' ? 'Connected' : inforStatus === 'ERROR' ? 'Error' : inforStatus === 'EXPIRED' ? 'Token Expired' : 'Not Connected'}
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#475569' }}>
+                                        {inforError || (inforLastSync ? `Last synced: ${new Date(inforLastSync).toLocaleString()}` : 'Enter credentials and connect')}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                      {[
+                                        { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
+                                        { key: 'clientName', label: 'Client Name', type: 'text' },
+                                        { key: 'clientId', label: 'Client ID *', type: 'text' },
+                                        { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                        { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
+                                        { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
+                                        { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
+                                        { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
+                                      ].map((field) => (
+                                        <label key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                          <input
+                                            type={field.type}
+                                            value={inforCredentials?.[field.key] || ''}
+                                            onChange={(e) => setInforCredentials?.((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
+                                            placeholder={field.label.replace(' *', '')}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px', marginBottom: '8px' }}>
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                        <span style={{ fontWeight: 600 }}>Operational Pull Frequency</span>
+                                        <select
+                                          value={operationalSettings.frequency}
+                                          onChange={(e) =>
+                                            setCompanyOperationalSettings(businessCompany.id, {
+                                              frequency: e.target.value as 'daily' | 'weekly' | 'monthly',
+                                            })
+                                          }
+                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                        >
+                                          <option value="daily">Daily</option>
+                                          <option value="weekly">Weekly</option>
+                                          <option value="monthly">Monthly</option>
+                                        </select>
+                                      </label>
+
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                        <span style={{ fontWeight: 600 }}>Auto Pull Time (Local)</span>
+                                        <select
+                                          value={operationalSettings.pullTime}
+                                          onChange={(e) =>
+                                            setCompanyOperationalSettings(businessCompany.id, {
+                                              pullTime: e.target.value,
+                                            })
+                                          }
+                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                        >
+                                          {Array.from({ length: 24 }).map((_, hour) => {
+                                            const hh = String(hour).padStart(2, '0');
+                                            const value = `${hh}:00`;
+                                            return (
+                                              <option key={value} value={value}>
+                                                {value}
+                                              </option>
+                                            );
+                                          })}
+                                        </select>
+                                      </label>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'end' }}>
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                        <span style={{ fontWeight: 600 }}>Read-Only Probe Path</span>
+                                        <input
+                                          type="text"
+                                          value={inforProbePath || ''}
+                                          onChange={(e) => setInforProbePath?.(e.target.value)}
+                                          placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
+                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                        />
+                                      </label>
+                                      <button
+                                        onClick={() => probeInforM3?.(businessCompany.id)}
+                                        disabled={inforBusy || !inforConnected}
+                                        style={{ padding: '8px 12px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                      >
+                                        Probe
+                                      </button>
+                                    </div>
+
+                                    {inforProbeSummary && (
+                                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px', padding: '8px' }}>
+                                        {inforProbeSummary}
+                                      </div>
+                                    )}
+                                  </div>
+                                  </div>
+                                ) : (
+                                  <div style={{ marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
                                     </div>
                                   </div>
                                 )}
 
                                 {/* Subscription Pricing */}
-                                <div style={{ padding: '8px', background: '#fef3c7', borderRadius: '6px' }}>
-                                  <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h4>
+                                <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px' }}>
+                                  <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
                                   {editing ? (
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                                       <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
+                                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Monthly ($)</label>
                                         <input
                                           type="number"
                                           value={editing.monthly}
@@ -1149,11 +1350,11 @@ export default function SiteAdminDashboard(props: any) {
                                             ...editingPricing,
                                             [businessCompany.id]: { ...editing, monthly: parseFloat(e.target.value) || 0 }
                                           })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                                         />
                                       </div>
                                       <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Quarterly ($)</label>
+                                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Quarterly ($)</label>
                                         <input
                                           type="number"
                                           value={editing.quarterly}
@@ -1161,11 +1362,11 @@ export default function SiteAdminDashboard(props: any) {
                                             ...editingPricing,
                                             [businessCompany.id]: { ...editing, quarterly: parseFloat(e.target.value) || 0 }
                                           })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                                         />
                                       </div>
                                       <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Annual ($)</label>
+                                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Annual ($)</label>
                                         <input
                                           type="number"
                                           value={editing.annual}
@@ -1173,11 +1374,11 @@ export default function SiteAdminDashboard(props: any) {
                                             ...editingPricing,
                                             [businessCompany.id]: { ...editing, annual: parseFloat(e.target.value) || 0 }
                                           })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                                         />
                                       </div>
                                       <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Setup Fee ($)</label>
+                                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Setup Fee ($)</label>
                                         <input
                                           type="number"
                                           value={editing.setupFee ?? 0}
@@ -1185,7 +1386,7 @@ export default function SiteAdminDashboard(props: any) {
                                             ...editingPricing,
                                             [businessCompany.id]: { ...editing, setupFee: parseFloat(e.target.value) || 0 }
                                           })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                                         />
                                       </div>
                                       <button
@@ -1198,7 +1399,7 @@ export default function SiteAdminDashboard(props: any) {
                                             updateCompanyPricing(businessCompany.id, editing);
                                           }
                                         }}
-                                        style={{ padding: '4px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                        style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                       >
                                         Save
                                       </button>
@@ -1210,14 +1411,14 @@ export default function SiteAdminDashboard(props: any) {
                                             return newState;
                                           });
                                         }}
-                                        style={{ padding: '4px 10px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                        style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                       >
                                         Cancel
                                       </button>
                                     </div>
                                   ) : (
                                     <div>
-                                      <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
+                                      <div style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.6', marginBottom: '8px' }}>
                                         <div><strong>Monthly:</strong> ${businessCompany?.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
                                         <div><strong>Quarterly:</strong> ${businessCompany?.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
                                         <div><strong>Annual:</strong> ${businessCompany?.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
@@ -1235,7 +1436,7 @@ export default function SiteAdminDashboard(props: any) {
                                             }
                                           });
                                         }}
-                                        style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                        style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                       >
                                         Edit Pricing
                                       </button>

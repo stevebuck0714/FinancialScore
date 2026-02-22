@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requestInforM3AccessToken } from '@/lib/infor-m3/client';
+import prisma from '@/lib/prisma';
 import {
   type InforM3Credentials,
-  getInforM3CredentialsFromEnv,
   saveInforM3CredentialsForCompany,
 } from '@/lib/infor-m3/credentials';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 
 export const dynamic = 'force-dynamic';
-
-function redact(value: string | undefined): string {
-  if (!value) return 'MISSING';
-  if (value.length <= 8) return 'SET';
-  return `${value.slice(0, 6)}...${value.slice(-4)}`;
-}
+type Frequency = 'daily' | 'weekly' | 'monthly';
 
 function normalizeString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -62,20 +56,30 @@ function isCompleteCredentials(value: Partial<InforM3Credentials>): value is Inf
   );
 }
 
+function normalizeFrequency(value: unknown): Frequency | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'daily' || normalized === 'weekly' || normalized === 'monthly') {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizePullTime(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
-
-    const useEnvFallback = body.useEnvFallback === true;
     const bodyCredentials = parseBodyCredentials(body);
-    const envCredentials = useEnvFallback ? getInforM3CredentialsFromEnv() : null;
-    const mergedCredentials: Partial<InforM3Credentials> = {
-      ...envCredentials,
-      ...bodyCredentials,
-    };
+    const frequency = normalizeFrequency(body.frequency);
+    const pullTime = normalizePullTime(body.pullTime);
 
-    if (!isCompleteCredentials(mergedCredentials)) {
+    if (!isCompleteCredentials(bodyCredentials)) {
       return NextResponse.json(
         {
           error: 'Missing required Infor M3 credential fields.',
@@ -88,63 +92,61 @@ export async function POST(request: NextRequest) {
             'serviceAccountAccessKey',
             'serviceAccountSecretKey',
           ],
-          note: 'You can set useEnvFallback=true temporarily to source missing fields from env.',
         },
         { status: 400 }
       );
     }
 
-    const tokenResult = await requestInforM3AccessToken(mergedCredentials, 12000);
-    if (!tokenResult.ok) {
-      return NextResponse.json(
-        {
-          ok: false,
-          companyId,
-          tokenEndpoint: tokenResult.tokenEndpoint,
-          response: {
-            status: tokenResult.status,
-            error: tokenResult.error,
-            errorDescription: tokenResult.errorDescription,
+    await saveInforM3CredentialsForCompany(companyId, bodyCredentials);
+
+    if (frequency && pullTime) {
+      const existing = await prisma.accountingConnection.findUnique({
+        where: {
+          companyId_platform: {
+            companyId,
+            platform: 'INFOR_M3',
           },
         },
-        { status: tokenResult.status }
-      );
-    }
+        select: {
+          connectionMetadata: true,
+        },
+      });
 
-    await saveInforM3CredentialsForCompany(companyId, mergedCredentials);
+      const existingMetadata =
+        existing?.connectionMetadata && typeof existing.connectionMetadata === 'object'
+          ? (existing.connectionMetadata as Record<string, unknown>)
+          : {};
+
+      await prisma.accountingConnection.update({
+        where: {
+          companyId_platform: {
+            companyId,
+            platform: 'INFOR_M3',
+          },
+        },
+        data: {
+          autoSync: true,
+          syncFrequency: frequency,
+          connectionMetadata: {
+            ...existingMetadata,
+            operationalPullTime: pullTime,
+            operationalScheduleUpdatedAt: new Date().toISOString(),
+          },
+        },
+      });
+    }
 
     return NextResponse.json({
       ok: true,
       companyId,
-      message: 'Infor M3 credentials validated and saved for this company.',
-      token: {
-        tokenEndpoint: tokenResult.tokenEndpoint,
-        tokenType: tokenResult.tokenType,
-        expiresIn: tokenResult.expiresIn,
-        accessTokenPreview: redact(tokenResult.accessToken),
-      },
-      saved: {
-        tenantId: mergedCredentials.tenantId,
-        clientId: redact(mergedCredentials.clientId),
-        serviceAccountAccessKey: redact(mergedCredentials.serviceAccountAccessKey),
-      },
+      message: 'Infor M3 credentials and schedule saved for this company.',
     });
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      return NextResponse.json(
-        {
-          error: 'Infor M3 connect request timed out',
-          details: 'No response from Infor SSO token endpoint within 12 seconds.',
-        },
-        { status: 504 }
-      );
-    }
-
     const message = error instanceof Error ? error.message : 'Unknown error';
     const status = message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 500;
     return NextResponse.json(
       {
-        error: 'Failed to connect Infor M3',
+        error: 'Failed to save Infor M3 credentials',
         details: message,
       },
       { status }

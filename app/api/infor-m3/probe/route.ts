@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
-import { requireAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +13,7 @@ function isAllowedReadPath(path: string): boolean {
 
 export async function GET(request: NextRequest) {
   try {
-    const { companyId } = await requireAuthorizedInforCompany(request);
+    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
 
     const { credentials, source } = await getInforM3CredentialsWithOptionalEnvFallback(companyId);
     if (!credentials) {

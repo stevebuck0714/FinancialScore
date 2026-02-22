@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { requireAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const { companyId } = await requireAuthorizedInforCompany(request);
+    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
 
     const connection = await prisma.accountingConnection.findUnique({
       where: {
@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
         lastSyncAt: true,
         autoSync: true,
         syncFrequency: true,
+        connectionMetadata: true,
         updatedAt: true,
       },
     });
@@ -38,6 +39,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       connected: connection.status === 'ACTIVE',
       companyId,
+      autoSyncTime:
+        typeof (connection.connectionMetadata as any)?.operationalPullTime === 'string'
+          ? (connection.connectionMetadata as any).operationalPullTime
+          : null,
       ...connection,
     });
   } catch (error) {

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { resolveAuthorizedCompanyId } from '@/lib/infor-m3/request-context';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 function normalizeOptionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -27,4 +28,12 @@ export async function requireAuthorizedInforCompany(
   const requestedCompanyId = getRequestedCompanyId(request, body);
   const { companyId } = await resolveAuthorizedCompanyId(requestedCompanyId);
   return { companyId };
+}
+
+export async function requireSiteAdminAuthorizedInforCompany(
+  request: NextRequest,
+  body?: Record<string, unknown>
+): Promise<{ companyId: string }> {
+  await requireSiteAdmin();
+  return requireAuthorizedInforCompany(request, body);
 }

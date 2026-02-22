@@ -122,41 +122,56 @@ export async function DELETE(
 
     if (!company) {
       await auditCompanyOperation('COMPANY_DELETED', companyId, {
-        mode: 'soft-delete',
+        mode: 'hard-delete',
         result: 'already-removed',
       });
       return NextResponse.json({
         success: true,
-        hidden: true,
-        softDelete: true,
+        hardDelete: true,
         message: 'Company was already removed.',
       });
     }
 
-    const softDeletedName = company.name.includes(' (DELETED)')
-      ? company.name
-      : `${company.name} (DELETED)`;
+    // Hard delete all data scoped to this company.
+    // Some models do not have FK cascades, so we explicitly clean them.
+    await prisma.$transaction(async (tx) => {
+      await tx.paymentTransaction.deleteMany({ where: { companyId } });
+      await tx.customerSalesSnapshot.deleteMany({ where: { companyId } });
+      await tx.aRAgingSnapshot.deleteMany({ where: { companyId } });
+      await tx.aPAgingSnapshot.deleteMany({ where: { companyId } });
+      await tx.productSalesSnapshot.deleteMany({ where: { companyId } });
+      await tx.inventorySnapshot.deleteMany({ where: { companyId } });
+      await tx.cashSnapshot.deleteMany({ where: { companyId } });
 
-    await prisma.company.update({
-      where: { id: companyId },
-      data: {
-        name: softDeletedName,
-        consultantId: null,
-        updatedAt: new Date(),
-      },
+      // Keep this explicit even when some tables have FK cascade.
+      await tx.subscriptionEvent.deleteMany({ where: { companyId } });
+      await tx.subscription.deleteMany({ where: { companyId } });
+      await tx.revenueRecord.deleteMany({ where: { companyId } });
+      await tx.companyProfile.deleteMany({ where: { companyId } });
+      await tx.financialRecord.deleteMany({ where: { companyId } });
+      await tx.assessmentRecord.deleteMany({ where: { companyId } });
+      await tx.user.deleteMany({ where: { companyId } });
+      await tx.accountingConnection.deleteMany({ where: { companyId } });
+      await tx.accountMapping.deleteMany({ where: { companyId } });
+      await tx.apiSyncLog.deleteMany({ where: { companyId } });
+      await tx.xeroTransaction.deleteMany({ where: { companyId } });
+      await tx.companyDocumentChunk.deleteMany({ where: { companyId } });
+      await tx.companyDocument.deleteMany({ where: { companyId } });
+      await tx.loan.deleteMany({ where: { companyId } });
+
+      await tx.company.delete({ where: { id: companyId } });
     });
 
-    console.log(`Soft-removed company ${companyId} requested by ${context.email}`);
+    console.log(`Hard-deleted company ${companyId} requested by ${context.email}`);
     await auditCompanyOperation('COMPANY_DELETED', companyId, {
-      mode: 'soft-delete',
-      removedBy: context.email,
-      removedByRole: normalizedRole,
+      mode: 'hard-delete',
+      deletedBy: context.email,
+      deletedByRole: normalizedRole,
     });
     return NextResponse.json({
       success: true,
-      hidden: true,
-      softDelete: true,
-      message: 'Company removed from consultant list.',
+      hardDelete: true,
+      message: 'Company and related data deleted successfully.',
     });
   } catch (error: any) {
     console.error('Error in delete operation:', error);

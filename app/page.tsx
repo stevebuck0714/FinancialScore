@@ -961,8 +961,6 @@ function FinancialScorePage() {
   });
   const [inforProbePath, setInforProbePath] = useState('/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
-  type InforCredentialKey = keyof typeof inforCredentials;
-
   // State - Financial Statements
   const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent'>('income-statement');
   const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
@@ -2166,8 +2164,10 @@ function FinancialScorePage() {
         await checkQBStatus(selectedCompanyId);
         // Check Xero connection status
         await checkXeroStatus(selectedCompanyId);
-        // Check Infor M3 connection status
-        await checkInforM3Status(selectedCompanyId);
+        // Infor M3 setup/status is restricted to site admins.
+        if (String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' && company?.accountingSystem === 'INFOR_M3') {
+          await checkInforM3Status(selectedCompanyId);
+        }
       } catch (error) {
         console.error('Error loading company data:', error);
       }
@@ -3737,14 +3737,38 @@ function FinancialScorePage() {
         setInforLastSync(null);
         setInforError(null);
       }
+      return data;
     } catch (error) {
       console.error('Failed to check Infor M3 status:', error);
       setInforError('Failed to check Infor M3 connection status');
+      return null;
     }
   };
 
-  const connectInforM3 = async () => {
-    if (!selectedCompanyId) {
+  const loadInforM3Credentials = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/infor-m3/credentials?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (!data?.credentials) return;
+      setInforCredentials({
+        tenantId: data.credentials.tenantId || '',
+        clientName: data.credentials.clientName || '',
+        clientId: data.credentials.clientId || '',
+        clientSecret: data.credentials.clientSecret || '',
+        ionApiBaseUrl: data.credentials.ionApiBaseUrl || '',
+        ssoBaseUrl: data.credentials.ssoBaseUrl || '',
+        serviceAccountAccessKey: data.credentials.serviceAccountAccessKey || '',
+        serviceAccountSecretKey: data.credentials.serviceAccountSecretKey || '',
+      });
+    } catch (error) {
+      console.error('Failed to load Infor M3 credentials:', error);
+    }
+  };
+
+  const connectInforM3 = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) {
       alert('Please select a company first');
       return;
     }
@@ -3772,7 +3796,7 @@ function FinancialScorePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId: selectedCompanyId,
+          companyId,
           ...inforCredentials,
         }),
       });
@@ -3781,7 +3805,7 @@ function FinancialScorePage() {
         throw new Error(data.details || data.error || 'Infor M3 connect failed');
       }
 
-      await checkInforM3Status(selectedCompanyId);
+      await checkInforM3Status(companyId);
       alert('Infor M3 credentials validated and saved for this company.');
     } catch (error: any) {
       console.error('Infor M3 connect error:', error);
@@ -3793,12 +3817,65 @@ function FinancialScorePage() {
     }
   };
 
-  const testInforM3Token = async () => {
-    if (!selectedCompanyId) return;
+  const saveInforM3Credentials = async (
+    targetCompanyId?: string,
+    schedule?: { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }
+  ) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) {
+      alert('Please select a company first');
+      return;
+    }
+
+    const requiredFields: Array<keyof typeof inforCredentials> = [
+      'tenantId',
+      'clientId',
+      'clientSecret',
+      'ionApiBaseUrl',
+      'ssoBaseUrl',
+      'serviceAccountAccessKey',
+      'serviceAccountSecretKey',
+    ];
+    const missing = requiredFields.filter((field) => !inforCredentials[field]?.trim());
+    if (missing.length > 0) {
+      alert(`Missing required Infor M3 fields: ${missing.join(', ')}`);
+      return;
+    }
+
     setInforBusy(true);
     setInforError(null);
     try {
-      const response = await fetch(`/api/infor-m3/test-token?companyId=${selectedCompanyId}`);
+      const response = await fetch('/api/infor-m3/save-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          ...inforCredentials,
+          ...(schedule ? { frequency: schedule.frequency, pullTime: schedule.pullTime } : {}),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.details || data.error || 'Save failed');
+      }
+      await checkInforM3Status(companyId);
+      alert('Infor M3 credentials saved for this company.');
+    } catch (error: any) {
+      const message = error?.message || 'Failed to save Infor M3 credentials';
+      setInforError(message);
+      alert(`Failed to save Infor M3 credentials:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+    }
+  };
+
+  const testInforM3Token = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+    setInforBusy(true);
+    setInforError(null);
+    try {
+      const response = await fetch(`/api/infor-m3/test-token?companyId=${companyId}`);
       const data = await response.json();
       if (!response.ok || !data.ok) {
         throw new Error(data.details || data.error || 'Token test failed');
@@ -3814,8 +3891,9 @@ function FinancialScorePage() {
     }
   };
 
-  const probeInforM3 = async () => {
-    if (!selectedCompanyId) return;
+  const probeInforM3 = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
     if (!inforProbePath.trim()) {
       alert('Please enter an Infor M3 probe path');
       return;
@@ -3824,7 +3902,7 @@ function FinancialScorePage() {
     setInforError(null);
     try {
       const response = await fetch(
-        `/api/infor-m3/probe?companyId=${selectedCompanyId}&path=${encodeURIComponent(inforProbePath.trim())}`
+        `/api/infor-m3/probe?companyId=${companyId}&path=${encodeURIComponent(inforProbePath.trim())}`
       );
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -3845,8 +3923,9 @@ function FinancialScorePage() {
     }
   };
 
-  const disconnectInforM3 = async () => {
-    if (!selectedCompanyId) return;
+  const disconnectInforM3 = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
     if (!confirm('Are you sure you want to disconnect Infor M3?')) {
       return;
     }
@@ -3856,7 +3935,7 @@ function FinancialScorePage() {
       const response = await fetch('/api/infor-m3/disconnect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId: selectedCompanyId }),
+        body: JSON.stringify({ companyId }),
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -6019,6 +6098,23 @@ function FinancialScorePage() {
               setSelectedCompanyId={setSelectedCompanyId}
               setCompanyToDelete={setCompanyToDelete}
               setShowDeleteConfirmation={setShowDeleteConfirmation}
+              inforConnected={inforConnected}
+              inforStatus={inforStatus}
+              inforLastSync={inforLastSync}
+              inforError={inforError}
+              inforBusy={inforBusy}
+              inforCredentials={inforCredentials}
+              setInforCredentials={setInforCredentials}
+              inforProbePath={inforProbePath}
+              setInforProbePath={setInforProbePath}
+              inforProbeSummary={inforProbeSummary}
+              checkInforM3Status={checkInforM3Status}
+              loadInforM3Credentials={loadInforM3Credentials}
+              saveInforM3Credentials={saveInforM3Credentials}
+              connectInforM3={connectInforM3}
+              testInforM3Token={testInforM3Token}
+              probeInforM3={probeInforM3}
+              disconnectInforM3={disconnectInforM3}
               newSiteAdminFirstName={newSiteAdminFirstName}
               setNewSiteAdminFirstName={setNewSiteAdminFirstName}
               newSiteAdminLastName={newSiteAdminLastName}
@@ -6095,7 +6191,7 @@ function FinancialScorePage() {
           )}
 
           {/* Admin Dashboard */}
-          {currentView === 'admin' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
+          {currentView === 'admin' && (currentUser?.role === 'siteadmin' || currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           {/* Exit Preview Mode button (only when site admin is previewing) */}
           {siteAdminViewingAs && (
@@ -6910,171 +7006,9 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem === 'INFOR_M3' && (
-              <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
-              {/* Infor M3 Connection */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
-                  <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#1d4ed8' }}>M3</div>
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Infor M3</h3>
-                    <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Infor ION API (manual credential connection)</p>
-                  </div>
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', color: '#475569' }}>
+                  Infor M3 credential setup is managed in <strong>Site Administration &gt; Businesses</strong> and is restricted to site administrators.
                 </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                  <div style={{
-                    flex: 1,
-                    padding: '12px',
-                    background: inforConnected && inforStatus === 'ACTIVE' ? '#d1fae5' : inforStatus === 'ERROR' ? '#fee2e2' : inforStatus === 'EXPIRED' ? '#fed7aa' : '#fef3c7',
-                    borderRadius: '8px',
-                    border: `1px solid ${inforConnected && inforStatus === 'ACTIVE' ? '#10b981' : inforStatus === 'ERROR' ? '#ef4444' : inforStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}`
-                  }}>
-                    <div style={{ fontSize: '12px', fontWeight: '600', color: inforConnected && inforStatus === 'ACTIVE' ? '#065f46' : inforStatus === 'ERROR' ? '#991b1b' : inforStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {inforConnected && inforStatus === 'ACTIVE' ? 'Connected' : inforStatus === 'ERROR' ? 'Error' : inforStatus === 'EXPIRED' ? 'Token Expired' : 'Status: Not Connected'}
-                    </div>
-                    <div style={{ fontSize: '12px', color: inforConnected && inforStatus === 'ACTIVE' ? '#065f46' : inforStatus === 'ERROR' ? '#991b1b' : inforStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
-                      {inforError || (inforConnected && inforStatus === 'ACTIVE' ? (inforLastSync ? `Last synced: ${inforLastSync.toLocaleString()}` : 'Ready to test token/probe') : 'Enter credentials and connect')}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', color: '#1e3a8a' }}>
-                  Sync/import for Infor M3 is not implemented yet. Use this panel to validate and store credentials, test token acquisition, and probe read-only API paths.
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))', gap: '12px', marginBottom: '16px' }}>
-                  {([
-                    { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
-                    { key: 'clientName', label: 'Client Name', type: 'text' },
-                    { key: 'clientId', label: 'Client ID *', type: 'text' },
-                    { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
-                    { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
-                    { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
-                    { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
-                    { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
-                  ] as Array<{ key: InforCredentialKey; label: string; type: string }>).map((field) => (
-                    <label key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: '#334155' }}>
-                      <span style={{ fontWeight: 600 }}>{field.label}</span>
-                      <input
-                        type={field.type}
-                        value={inforCredentials[field.key]}
-                        onChange={(e) => setInforCredentials((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                        placeholder={field.label.replace(' *', '')}
-                        style={{
-                          width: '100%',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '8px',
-                          padding: '10px',
-                          fontSize: '13px',
-                          color: '#1e293b',
-                          background: 'white'
-                        }}
-                      />
-                    </label>
-                  ))}
-                </div>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
-                  <button
-                    onClick={connectInforM3}
-                    disabled={inforBusy}
-                    style={{
-                      padding: '10px 18px',
-                      background: '#1d4ed8',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      cursor: inforBusy ? 'not-allowed' : 'pointer',
-                      opacity: inforBusy ? 0.7 : 1
-                    }}
-                  >
-                    {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')} Infor M3
-                  </button>
-
-                  <button
-                    onClick={testInforM3Token}
-                    disabled={inforBusy || !inforConnected}
-                    style={{
-                      padding: '10px 18px',
-                      background: 'white',
-                      color: '#1e293b',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '8px',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer',
-                      opacity: inforBusy || !inforConnected ? 0.7 : 1
-                    }}
-                  >
-                    Test Token
-                  </button>
-
-                  <button
-                    onClick={disconnectInforM3}
-                    disabled={inforBusy || !inforConnected}
-                    style={{
-                      padding: '10px 18px',
-                      background: 'white',
-                      color: '#ef4444',
-                      border: '1px solid #ef4444',
-                      borderRadius: '8px',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer',
-                      opacity: inforBusy || !inforConnected ? 0.7 : 1
-                    }}
-                  >
-                    Disconnect
-                  </button>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px', alignItems: 'end' }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: '#334155' }}>
-                    <span style={{ fontWeight: 600 }}>Read-Only Probe Path</span>
-                    <input
-                      type="text"
-                      value={inforProbePath}
-                      onChange={(e) => setInforProbePath(e.target.value)}
-                      placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
-                      style={{
-                        width: '100%',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '8px',
-                        padding: '10px',
-                        fontSize: '13px',
-                        color: '#1e293b',
-                        background: 'white'
-                      }}
-                    />
-                  </label>
-                  <button
-                    onClick={probeInforM3}
-                    disabled={inforBusy || !inforConnected}
-                    style={{
-                      padding: '10px 18px',
-                      background: '#0ea5e9',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer',
-                      opacity: inforBusy || !inforConnected ? 0.7 : 1
-                    }}
-                  >
-                    Probe Path
-                  </button>
-                </div>
-
-                {inforProbeSummary && (
-                  <div style={{ marginTop: '12px', fontSize: '12px', color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px' }}>
-                    {inforProbeSummary}
-                  </div>
-                )}
-              </div>
               )}
 
               {/* QuickBooks Data Verification */}
