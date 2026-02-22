@@ -6888,9 +6888,26 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem &&
-                !['QUICKBOOKS', 'XERO', 'INFOR_M3', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
                     {selectedAccountingSystemLabel} is not supported yet.
+                  </div>
+                )}
+
+              {selectedAccountingSystem &&
+                ['QUICKBOOKS_DESKTOP', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAGE_INTACCT'].includes(selectedAccountingSystem) && (
+                  <div style={{ marginBottom: '16px', padding: '12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', fontSize: '13px', color: '#0c4a6e' }}>
+                    {String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' ? (
+                      <>
+                        {selectedAccountingSystemLabel} configuration is managed in <strong>Site Administration &gt; Consultants/Businesses</strong> for this company.
+                        Use that admin-only section to save credentials, programs, and schedule settings.
+                      </>
+                    ) : (
+                      <>
+                        {selectedAccountingSystemLabel} is configured by your administrator.
+                        This page shows operational status/actions only; contact your administrator for credential or program changes.
+                      </>
+                    )}
                   </div>
                 )}
 
