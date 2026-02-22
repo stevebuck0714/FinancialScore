@@ -55,6 +55,7 @@ export default function SiteAdminDashboard(props: any) {
     newSiteAdminPassword, setNewSiteAdminPassword,
     showAddSiteAdminForm, setShowAddSiteAdminForm
   } = props;
+  const businessesLoading = Boolean(props.businessesLoading);
 
   const updateCompanyPricing = props.updateCompanyPricing as
     | undefined
@@ -155,6 +156,78 @@ export default function SiteAdminDashboard(props: any) {
       alert('Accounting programs saved for this company.');
     } catch (error: any) {
       alert(`Failed to save accounting programs: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const parseInforCredentialsFromJson = (raw: string) => {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Invalid JSON object');
+    }
+
+    const source = parsed as Record<string, unknown>;
+    const read = (...keys: string[]) => {
+      for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'string' && value.trim().length > 0) {
+          return value.trim();
+        }
+      }
+      return '';
+    };
+
+    const mapped = {
+      tenantId: read('tenantId', 'ti'),
+      clientName: read('clientName', 'cn'),
+      clientId: read('clientId', 'ci'),
+      clientSecret: read('clientSecret', 'cs'),
+      ionApiBaseUrl: read('ionApiBaseUrl', 'iu'),
+      ssoBaseUrl: read('ssoBaseUrl', 'pu'),
+      oauthAuthPath: read('oauthAuthPath', 'oa'),
+      oauthTokenPath: read('oauthTokenPath', 'ot'),
+      oauthRevokePath: read('oauthRevokePath', 'or'),
+      serviceAccountAccessKey: read('serviceAccountAccessKey', 'saak'),
+      serviceAccountSecretKey: read('serviceAccountSecretKey', 'sask'),
+    };
+
+    const requiredMissing = [
+      'tenantId',
+      'clientId',
+      'clientSecret',
+      'ionApiBaseUrl',
+      'ssoBaseUrl',
+      'serviceAccountAccessKey',
+      'serviceAccountSecretKey',
+    ].filter((key) => !(mapped as Record<string, string>)[key]);
+
+    if (requiredMissing.length > 0) {
+      throw new Error(`Missing required keys in file: ${requiredMissing.join(', ')}`);
+    }
+
+    return mapped;
+  };
+
+  const handleInforCredentialsFileImport = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    companyId: string,
+    companyName: string
+  ) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      const raw = await file.text();
+      const mapped = parseInforCredentialsFromJson(raw);
+      setInforCredentials?.((prev: any) => ({
+        ...prev,
+        ...mapped,
+      }));
+      alert(`Imported Infor credentials into form for ${companyName}. Click Save to persist for this company.`);
+    } catch (error: any) {
+      alert(`Failed to import Infor credentials file: ${error?.message || 'Invalid file format'}`);
+    } finally {
+      input.value = '';
     }
   };
 
@@ -1051,7 +1124,12 @@ export default function SiteAdminDashboard(props: any) {
                     </button>
                   </div>
 
-                  {Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).length === 0 ? (
+                  {businessesLoading ? (
+                    <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                      <div style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Loading businesses...</div>
+                      <p style={{ fontSize: '13px', color: '#94a3b8' }}>Please wait while company data is retrieved.</p>
+                    </div>
+                  ) : Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses registered yet</h3>
@@ -1262,6 +1340,25 @@ export default function SiteAdminDashboard(props: any) {
                                         </div>
                                       </div>
                                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                        <input
+                                          id={`infor-json-file-${businessCompany.id}`}
+                                          type="file"
+                                          accept=".json,.txt,.ionapi"
+                                          style={{ display: 'none' }}
+                                          onChange={(event) =>
+                                            handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
+                                          }
+                                        />
+                                        <button
+                                          onClick={() => {
+                                            const fileInput = document.getElementById(`infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
+                                            fileInput?.click();
+                                          }}
+                                          disabled={inforBusy}
+                                          style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Import JSON
+                                        </button>
                                         <button
                                           onClick={() =>
                                             saveInforM3Credentials?.(businessCompany.id, {

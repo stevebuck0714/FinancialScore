@@ -569,6 +569,7 @@ function FinancialScorePage() {
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation'>('profile');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
+  const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
 
   // Back-compat: if something sets the legacy top-level 'payments' tab,
   // redirect it into Company Management > Payments.
@@ -956,6 +957,9 @@ function FinancialScorePage() {
     clientSecret: '',
     ionApiBaseUrl: '',
     ssoBaseUrl: '',
+    oauthAuthPath: '',
+    oauthTokenPath: '',
+    oauthRevokePath: '',
     serviceAccountAccessKey: '',
     serviceAccountSecretKey: '',
   });
@@ -1616,43 +1620,71 @@ function FinancialScorePage() {
 
   // Load all companies and users when Businesses tab is opened in site admin
   useEffect(() => {
+    let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const loadBusinessesData = async () => {
+      if (cancelled) return;
+      setSiteAdminBusinessesLoading(true);
+
+      try {
+        const loadWithRetry = async (url: string, maxAttempts = 5) => {
+          let lastError: Error | null = null;
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+              const res = await fetch(url, { cache: 'no-store' });
+              if (!res.ok) {
+                throw new Error(`Request failed (${res.status}) for ${url}`);
+              }
+              return await res.json();
+            } catch (error: any) {
+              lastError = error instanceof Error ? error : new Error(String(error));
+              if (attempt < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, Math.min(1500 * attempt, 4000)));
+              }
+            }
+          }
+          throw lastError || new Error(`Failed request for ${url}`);
+        };
+
+        const [companiesData, usersData] = await Promise.all([
+          loadWithRetry('/api/companies'),
+          loadWithRetry('/api/users'),
+        ]);
+
+        if (!Array.isArray(companiesData?.companies)) {
+          throw new Error('Invalid companies response payload');
+        }
+        if (!Array.isArray(usersData?.users)) {
+          throw new Error('Invalid users response payload');
+        }
+
+        if (cancelled) return;
+        safeSetCompanies(companiesData.companies);
+        setUsers(usersData.users);
+        setSiteAdminBusinessesLoading(false);
+      } catch (err) {
+        console.error('? Error loading businesses tab data, retrying:', err);
+        if (!cancelled) {
+          // Keep previous data rendered and retry again shortly.
+          setSiteAdminBusinessesLoading(true);
+          retryTimeout = setTimeout(loadBusinessesData, 3000);
+        }
+      }
+    };
+
     if (siteAdminTab === 'businesses' && currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
       console.log('?? Loading all companies and users for site admin businesses tab...');
-      
-      // Load companies
-      fetch('/api/companies')
-        .then(res => res.json())
-        .then(data => {
-          if (data.companies && Array.isArray(data.companies)) {
-            safeSetCompanies(data.companies);
-            console.log(`? Loaded ${data.companies.length} companies for businesses tab`);
-          } else {
-            console.warn('?? No companies array in response:', data);
-            safeSetCompanies([]);
-          }
-        })
-        .catch(err => {
-          console.error('? Error loading companies for businesses tab:', err);
-          safeSetCompanies([]);
-        });
-      
-      // Load users to find business users
-      fetch('/api/users')
-        .then(res => res.json())
-        .then(data => {
-          if (data.users && Array.isArray(data.users)) {
-            setUsers(data.users);
-            console.log(`? Loaded ${data.users.length} users for businesses tab`);
-          } else {
-            console.warn('?? No users array in response:', data);
-            setUsers([]);
-          }
-        })
-        .catch(err => {
-          console.error('? Error loading users for businesses tab:', err);
-          setUsers([]);
-        });
+      loadBusinessesData();
     }
+
+    return () => {
+      cancelled = true;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+      setSiteAdminBusinessesLoading(false);
+    };
   }, [siteAdminTab, currentView, currentUser?.role]);
 
   // Load default pricing on page load and when Default Pricing tab is opened
@@ -2256,22 +2288,24 @@ function FinancialScorePage() {
         }));
         setConsultants(mappedConsultants);
         
-        // Also load all companies and users for display
+        // Build consultant-linked companies for consultant views only.
         const allCompanies: any[] = [];
-        const allUsers: any[] = [];
         for (const consultant of loadedConsultants || []) {
           if (consultant.companies) {
             allCompanies.push(...consultant.companies);
           }
         }
-        safeSetCompanies(allCompanies);
+        // Do not overwrite the businesses dataset while on the Businesses tab.
+        if (siteAdminTab !== 'businesses') {
+          safeSetCompanies(allCompanies);
+        }
       } catch (error) {
         console.error('Error loading consultants:', error);
       }
     };
     
     loadConsultants();
-  }, [currentUser]);
+  }, [currentUser, siteAdminTab]);
 
   // Load financial data when company is selected
   useEffect(() => {
@@ -3763,6 +3797,9 @@ function FinancialScorePage() {
         clientSecret: data.credentials.clientSecret || '',
         ionApiBaseUrl: data.credentials.ionApiBaseUrl || '',
         ssoBaseUrl: data.credentials.ssoBaseUrl || '',
+        oauthAuthPath: data.credentials.oauthAuthPath || '',
+        oauthTokenPath: data.credentials.oauthTokenPath || '',
+        oauthRevokePath: data.credentials.oauthRevokePath || '',
         serviceAccountAccessKey: data.credentials.serviceAccountAccessKey || '',
         serviceAccountSecretKey: data.credentials.serviceAccountSecretKey || '',
       });
@@ -6174,6 +6211,7 @@ function FinancialScorePage() {
               setNewSiteAdminPassword={setNewSiteAdminPassword}
               showAddSiteAdminForm={showAddSiteAdminForm}
               setShowAddSiteAdminForm={setShowAddSiteAdminForm}
+              businessesLoading={siteAdminBusinessesLoading}
             />
           )}
 
