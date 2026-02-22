@@ -361,7 +361,7 @@ export default function SiteAdminDashboard(props: any) {
                           cursor: 'pointer' 
                         }}
                       >
-                        {showAddConsultantForm ? '?' : '?'}
+                        {showAddConsultantForm ? 'Collapse' : 'Expand'}
                       </button>
                     </div>
                     {showAddConsultantForm && (
@@ -369,7 +369,7 @@ export default function SiteAdminDashboard(props: any) {
                         {/* Personal Information Section */}
                         <div style={{ marginBottom: '16px' }}>
                           <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Contact Person Information</h4>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
                         <input
                           type="text"
                           placeholder="Type *"
@@ -391,6 +391,12 @@ export default function SiteAdminDashboard(props: any) {
                           onChange={(e) => setNewConsultantEmail(e.target.value)}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
+                        <PasswordInput
+                          placeholder="Password *"
+                          value={newConsultantPassword}
+                          onChange={setNewConsultantPassword}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
                         <input
                           type="tel"
                           placeholder="(555) 777-1212"
@@ -398,16 +404,8 @@ export default function SiteAdminDashboard(props: any) {
                           onChange={(e) => setNewConsultantPhone(formatPhoneNumber(e.target.value))}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
-                        <div style={{ gridColumn: 'span 2' }}>
-                          <PasswordInput
-                            placeholder="Password *"
-                            value={newConsultantPassword}
-                            onChange={setNewConsultantPassword}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                          />
-                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', lineHeight: '1.4' }}>
-                            Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
-                          </div>
+                        <div style={{ gridColumn: 'span 3', fontSize: '11px', color: '#64748b', lineHeight: '1.4', alignSelf: 'center' }}>
+                          Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
                         </div>
                       </div>
                     </div>
@@ -415,59 +413,57 @@ export default function SiteAdminDashboard(props: any) {
                     {/* Company Information Section */}
                     <div style={{ marginBottom: '12px' }}>
                       <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Company Information (Optional)</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '8px' }}>
                         <input
                           type="text"
                           placeholder="Company Name"
                           value={newConsultantCompanyName}
                           onChange={(e) => setNewConsultantCompanyName(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                          style={{ gridColumn: 'span 2', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
                         <input
                           type="text"
                           placeholder="Company Address Line 1"
                           value={newConsultantCompanyAddress1}
                           onChange={(e) => setNewConsultantCompanyAddress1(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                          style={{ gridColumn: 'span 2', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="url"
+                          placeholder="Company Website"
+                          value={newConsultantCompanyWebsite}
+                          onChange={(e) => setNewConsultantCompanyWebsite(e.target.value)}
+                          style={{ gridColumn: 'span 2', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
                         <input
                           type="text"
                           placeholder="Company Address Line 2"
                           value={newConsultantCompanyAddress2}
                           onChange={(e) => setNewConsultantCompanyAddress2(e.target.value)}
+                          style={{ gridColumn: 'span 2', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="City"
+                          value={newConsultantCompanyCity}
+                          onChange={(e) => setNewConsultantCompanyCity(e.target.value)}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px' }}>
-                          <input
-                            type="text"
-                            placeholder="City"
-                            value={newConsultantCompanyCity}
-                            onChange={(e) => setNewConsultantCompanyCity(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                          />
-                          <select
-                            value={newConsultantCompanyState}
-                            onChange={(e) => setNewConsultantCompanyState(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: 'white' }}
-                          >
-                            {US_STATES.map(state => (
-                              <option key={state.code} value={state.code}>{state.code || 'State'}</option>
-                            ))}
-                          </select>
-                          <input
-                            type="text"
-                            placeholder="ZIP"
-                            value={newConsultantCompanyZip}
-                            onChange={(e) => setNewConsultantCompanyZip(e.target.value)}
-                            maxLength={10}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                          />
-                        </div>
+                        <select
+                          value={newConsultantCompanyState}
+                          onChange={(e) => setNewConsultantCompanyState(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: 'white' }}
+                        >
+                          {US_STATES.map(state => (
+                            <option key={state.code} value={state.code}>{state.code || 'State'}</option>
+                          ))}
+                        </select>
                         <input
-                          type="url"
-                          placeholder="Company Website"
-                          value={newConsultantCompanyWebsite}
-                          onChange={(e) => setNewConsultantCompanyWebsite(e.target.value)}
+                          type="text"
+                          placeholder="ZIP"
+                          value={newConsultantCompanyZip}
+                          onChange={(e) => setNewConsultantCompanyZip(e.target.value)}
+                          maxLength={10}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
                       </div>
@@ -866,11 +862,30 @@ export default function SiteAdminDashboard(props: any) {
                                           </div>
                                           <button
                                             onClick={() => {
-                                              setExpandedCompanyIds(prev => 
-                                                prev.includes(company.id) 
-                                                  ? prev.filter(id => id !== company.id)
-                                                  : [...prev, company.id]
-                                              );
+                                              setExpandedCompanyIds(prev => {
+                                                const isExpandedNow = prev.includes(company.id);
+                                                if (isExpandedNow) {
+                                                  return prev.filter(id => id !== company.id);
+                                                }
+                                                setSelectedCompanyId(company.id);
+                                                if (company.accountingSystem === 'INFOR_M3') {
+                                                  loadInforM3Credentials?.(company.id);
+                                                  loadCompanyPrograms(company.id);
+                                                  checkInforM3Status?.(company.id).then((statusData: any) => {
+                                                    if (!statusData) return;
+                                                    const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
+                                                    const pullTime =
+                                                      typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+                                                    if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
+                                                      setCompanyOperationalSettings(company.id, {
+                                                        frequency,
+                                                        pullTime,
+                                                      });
+                                                    }
+                                                  });
+                                                }
+                                                return [...prev, company.id];
+                                              });
                                             }}
                                             style={{ 
                                               padding: '4px 10px', 
@@ -883,7 +898,7 @@ export default function SiteAdminDashboard(props: any) {
                                               cursor: 'pointer' 
                                             }}
                                           >
-                                            {isCompanyExpanded ? '?' : '?'}
+                                            {isCompanyExpanded ? 'Collapse' : 'Expand'}
                                           </button>
                                         </div>
                                       </div>
@@ -891,21 +906,273 @@ export default function SiteAdminDashboard(props: any) {
                                       {/* Expanded Details */}
                                       {isCompanyExpanded && (
                                         <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
-                                          {/* Company Address */}
-                                          {(company.addressStreet || company.addressCity) && (
-                                            <div style={{ marginBottom: '8px', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                              <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Address</h6>
-                                              <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                                {company.addressStreet && <div>{company.addressStreet}</div>}
-                                                <div>
-                                                  {company.addressCity && company.addressCity}
-                                                  {company.addressState && `, ${company.addressState}`}
-                                                  {company.addressZip && ` ${company.addressZip}`}
-                                                </div>
-                                                {company.addressCountry && <div>{company.addressCountry}</div>}
+                                          <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                              <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Company Information</h4>
+                                              <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                                <div><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
+                                                <div><strong>Industry:</strong> {company?.industrySector || 'Not set'}</div>
+                                                <div><strong>Type:</strong> Consultant Business</div>
+                                                <div><strong>Address Street:</strong> {company?.addressStreet || 'Not provided'}</div>
+                                                <div><strong>Address City:</strong> {company?.addressCity || 'Not provided'}</div>
+                                                <div><strong>Address State:</strong> {company?.addressState || 'Not provided'}</div>
+                                                <div><strong>Address ZIP:</strong> {company?.addressZip || 'Not provided'}</div>
+                                                <div><strong>Address Country:</strong> {company?.addressCountry || 'Not provided'}</div>
                                               </div>
                                             </div>
-                                          )}
+
+                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                                <div>
+                                                  <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
+                                                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                                    Configuration for <strong>{company.name}</strong>
+                                                  </div>
+                                                </div>
+                                                {company.accountingSystem === 'INFOR_M3' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <input
+                                                      id={`consultant-infor-json-file-${company.id}`}
+                                                      type="file"
+                                                      accept=".json,.txt,.ionapi"
+                                                      style={{ display: 'none' }}
+                                                      onChange={(event) =>
+                                                        handleInforCredentialsFileImport(event, company.id, company.name)
+                                                      }
+                                                    />
+                                                    <button
+                                                      onClick={() => {
+                                                        const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
+                                                        fileInput?.click();
+                                                      }}
+                                                      disabled={inforBusy}
+                                                      style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Import JSON
+                                                    </button>
+                                                    <button
+                                                      onClick={() =>
+                                                        saveInforM3Credentials?.(company.id, {
+                                                          frequency: getCompanyOperationalSettings(company.id).frequency,
+                                                          pullTime: getCompanyOperationalSettings(company.id).pullTime,
+                                                        })
+                                                      }
+                                                      disabled={inforBusy}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      onClick={() => connectInforM3?.(company.id)}
+                                                      disabled={inforBusy}
+                                                      style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')}
+                                                    </button>
+                                                    <button
+                                                      onClick={() => testInforM3Token?.(company.id)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Test Token
+                                                    </button>
+                                                    <button
+                                                      onClick={() => disconnectInforM3?.(company.id)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Disconnect
+                                                    </button>
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                              {company.accountingSystem === 'INFOR_M3' ? (
+                                                <>
+                                                  <div
+                                                    style={{
+                                                      marginBottom: '8px',
+                                                      padding: '8px',
+                                                      background: inforConnected && inforStatus === 'ACTIVE' ? '#d1fae5' : inforStatus === 'ERROR' ? '#fee2e2' : inforStatus === 'EXPIRED' ? '#fed7aa' : '#fef3c7',
+                                                      border: `1px solid ${inforConnected && inforStatus === 'ACTIVE' ? '#10b981' : inforStatus === 'ERROR' ? '#ef4444' : inforStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}`,
+                                                      borderRadius: '6px',
+                                                    }}
+                                                  >
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                                                      {inforConnected && inforStatus === 'ACTIVE' ? 'Connected' : inforStatus === 'ERROR' ? 'Error' : inforStatus === 'EXPIRED' ? 'Token Expired' : 'Not Connected'}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#475569' }}>
+                                                      {inforError || (inforLastSync ? `Last synced: ${new Date(inforLastSync).toLocaleString()}` : 'Enter credentials and connect')}
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
+                                                      { key: 'clientName', label: 'Client Name', type: 'text' },
+                                                      { key: 'clientId', label: 'Client ID *', type: 'text' },
+                                                      { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                                      { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
+                                                      { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
+                                                      { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
+                                                      { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type}
+                                                          value={inforCredentials?.[field.key] || ''}
+                                                          onChange={(e) => setInforCredentials?.((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px', marginBottom: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Operational Pull Frequency</span>
+                                                      <select
+                                                        value={getCompanyOperationalSettings(company.id).frequency}
+                                                        onChange={(e) =>
+                                                          setCompanyOperationalSettings(company.id, {
+                                                            frequency: e.target.value as 'daily' | 'weekly' | 'monthly',
+                                                          })
+                                                        }
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Auto Pull Time (Local)</span>
+                                                      <select
+                                                        value={getCompanyOperationalSettings(company.id).pullTime}
+                                                        onChange={(e) =>
+                                                          setCompanyOperationalSettings(company.id, {
+                                                            pullTime: e.target.value,
+                                                          })
+                                                        }
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'end' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Read-Only Probe Path</span>
+                                                      <input
+                                                        type="text"
+                                                        value={inforProbePath || ''}
+                                                        onChange={(e) => setInforProbePath?.(e.target.value)}
+                                                        placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
+                                                    </label>
+                                                    <button
+                                                      onClick={() => probeInforM3?.(company.id)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Probe
+                                                    </button>
+                                                  </div>
+
+                                                  {inforProbeSummary && (
+                                                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px', padding: '8px' }}>
+                                                      {inforProbeSummary}
+                                                    </div>
+                                                  )}
+                                                </>
+                                              ) : (
+                                                <div style={{ fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', padding: '10px' }}>
+                                                  {company.accountingSystem
+                                                    ? `${company.accountingSystem} integration configuration will render here for this company.`
+                                                    : 'No accounting system selected for this company.'}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                  <button
+                                                    onClick={() => addCompanyProgram(company.id)}
+                                                    style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    + Add
+                                                  </button>
+                                                  <button
+                                                    onClick={() => saveCompanyPrograms(company.id)}
+                                                    style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Save
+                                                  </button>
+                                                </div>
+                                              </div>
+                                              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                                Programs called by the integration
+                                              </div>
+                                              <div style={{ overflowX: 'auto' }}>
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                  <thead>
+                                                    <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
+                                                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {getCompanyPrograms(company.id).map((row, index) => (
+                                                      <tr key={`${company.id}-consultant-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                        <td style={{ padding: '6px' }}>
+                                                          <input
+                                                            type="text"
+                                                            value={row.module}
+                                                            onChange={(e) => updateCompanyProgram(company.id, index, 'module', e.target.value)}
+                                                            placeholder="Module"
+                                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                          />
+                                                        </td>
+                                                        <td style={{ padding: '6px' }}>
+                                                          <input
+                                                            type="text"
+                                                            value={row.miProgram}
+                                                            onChange={(e) => updateCompanyProgram(company.id, index, 'miProgram', e.target.value)}
+                                                            placeholder="MI Program"
+                                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                          />
+                                                        </td>
+                                                        <td style={{ padding: '6px' }}>
+                                                          <button
+                                                            onClick={() => deleteCompanyProgram(company.id, index)}
+                                                            style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                          >
+                                                            Delete
+                                                          </button>
+                                                        </td>
+                                                      </tr>
+                                                    ))}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            </div>
+                                          </div>
                                           
                                           {/* Subscription Pricing */}
                                           <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
