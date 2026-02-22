@@ -256,6 +256,28 @@ export default function SiteAdminDashboard(props: any) {
   const [sageIntacctProgramsByCompany, setSageIntacctProgramsByCompany] = React.useState<
     Record<string, Array<{ module: string; objectName: string }>>
   >({});
+  const [odooSettingsByCompany, setOdooSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        baseUrl: string;
+        database: string;
+        username: string;
+        password: string;
+        apiKey: string;
+        companyId: string;
+        odooVersion: string;
+        authMethod: 'PASSWORD' | 'API_KEY' | '';
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [odooProgramsByCompany, setOdooProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; modelOrEndpoint: string }>>
+  >({});
 
   const defaultQbDesktopSettings = {
     integrationType: 'WEB_CONNECTOR' as 'WEB_CONNECTOR' | 'SDK' | '',
@@ -355,6 +377,28 @@ export default function SiteAdminDashboard(props: any) {
     { module: 'AP', objectName: 'APBILL' },
     { module: 'Sales', objectName: 'SODOCUMENT' },
   ];
+  const defaultOdooSettings = {
+    baseUrl: '',
+    database: '',
+    username: '',
+    password: '',
+    apiKey: '',
+    companyId: '',
+    odooVersion: '',
+    authMethod: 'PASSWORD' as 'PASSWORD' | 'API_KEY' | '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultOdooPrograms = [
+    { module: 'Chart of Accounts', modelOrEndpoint: 'account.account' },
+    { module: 'Customers', modelOrEndpoint: 'res.partner' },
+    { module: 'Vendors', modelOrEndpoint: 'res.partner' },
+    { module: 'AR', modelOrEndpoint: 'account.move (out_invoice)' },
+    { module: 'AP', modelOrEndpoint: 'account.move (in_invoice)' },
+    { module: 'Sales', modelOrEndpoint: 'sale.order' },
+  ];
 
   const getQbDesktopSettings = (companyId: string) =>
     qbDesktopSettingsByCompany[companyId] || defaultQbDesktopSettings;
@@ -372,6 +416,10 @@ export default function SiteAdminDashboard(props: any) {
     sageIntacctSettingsByCompany[companyId] || defaultSageIntacctSettings;
   const getSageIntacctPrograms = (companyId: string) =>
     sageIntacctProgramsByCompany[companyId] || defaultSageIntacctPrograms;
+  const getOdooSettings = (companyId: string) =>
+    odooSettingsByCompany[companyId] || defaultOdooSettings;
+  const getOdooPrograms = (companyId: string) =>
+    odooProgramsByCompany[companyId] || defaultOdooPrograms;
 
   const setQbDesktopSetting = (
     companyId: string,
@@ -450,6 +498,25 @@ export default function SiteAdminDashboard(props: any) {
       [companyId]: programs,
     }));
   };
+  const setOdooSetting = (
+    companyId: string,
+    field: keyof typeof defaultOdooSettings,
+    value: string
+  ) => {
+    setOdooSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultOdooSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setOdooPrograms = (companyId: string, programs: Array<{ module: string; modelOrEndpoint: string }>) => {
+    setOdooProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
 
   const updateQbDesktopProgram = (
     companyId: string,
@@ -508,6 +575,20 @@ export default function SiteAdminDashboard(props: any) {
     const current = getSageIntacctPrograms(companyId);
     setSageIntacctPrograms(companyId, [...current, { module: '', objectName: '' }]);
   };
+  const updateOdooProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'modelOrEndpoint',
+    value: string
+  ) => {
+    const current = getOdooPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setOdooPrograms(companyId, next);
+  };
+  const addOdooProgram = (companyId: string) => {
+    const current = getOdooPrograms(companyId);
+    setOdooPrograms(companyId, [...current, { module: '', modelOrEndpoint: '' }]);
+  };
   const deleteDynamicsProgram = (companyId: string, index: number) => {
     const current = getDynamicsPrograms(companyId);
     const next = current.filter((_, i) => i !== index);
@@ -522,6 +603,11 @@ export default function SiteAdminDashboard(props: any) {
     const current = getSageIntacctPrograms(companyId);
     const next = current.filter((_, i) => i !== index);
     setSageIntacctPrograms(companyId, next.length > 0 ? next : [{ module: '', objectName: '' }]);
+  };
+  const deleteOdooProgram = (companyId: string, index: number) => {
+    const current = getOdooPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setOdooPrograms(companyId, next.length > 0 ? next : [{ module: '', modelOrEndpoint: '' }]);
   };
 
   const deleteQbDesktopProgram = (companyId: string, index: number) => {
@@ -600,6 +686,24 @@ export default function SiteAdminDashboard(props: any) {
       }
     } catch (error) {
       console.error('Failed to load Sage Intacct settings:', error);
+    }
+  };
+  const loadOdooSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/odoo/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setOdooSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultOdooSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setOdooPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load Odoo settings:', error);
     }
   };
 
@@ -681,6 +785,26 @@ export default function SiteAdminDashboard(props: any) {
       alert('Sage Intacct settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save Sage Intacct settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveOdooSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/odoo/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getOdooSettings(companyId),
+          programs: getOdooPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save Odoo settings');
+      }
+      alert('Odoo settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save Odoo settings: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -1416,6 +1540,8 @@ export default function SiteAdminDashboard(props: any) {
                                                   loadAcumaticaSettings(company.id);
                                                 } else if (company.accountingSystem === 'SAGE_INTACCT') {
                                                   loadSageIntacctSettings(company.id);
+                                                } else if (company.accountingSystem === 'ODOO') {
+                                                  loadOdooSettings(company.id);
                                                 }
                                                 return [...prev, company.id];
                                               });
@@ -1588,6 +1714,28 @@ export default function SiteAdminDashboard(props: any) {
                                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
                                                     <button
                                                       onClick={() => saveSageIntacctSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Token
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Probe
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'ODOO' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveOdooSettings(company.id)}
                                                       style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                     >
                                                       Save
@@ -2072,6 +2220,99 @@ export default function SiteAdminDashboard(props: any) {
                                                     </label>
                                                   </div>
                                                 </>
+                                              ) : company.accountingSystem === 'ODOO' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      Odoo Accounting ERP configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      Enter Odoo URL/database credentials and sync settings for this company.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'baseUrl', label: 'Base URL *' },
+                                                      { key: 'database', label: 'Database *' },
+                                                      { key: 'username', label: 'Username *' },
+                                                      { key: 'password', label: 'Password *', type: 'password' },
+                                                      { key: 'apiKey', label: 'API Key', type: 'password' },
+                                                      { key: 'companyId', label: 'Company ID' },
+                                                      { key: 'odooVersion', label: 'Odoo Version' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-odoo-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type || 'text'}
+                                                          value={(getOdooSettings(company.id) as any)[field.key] || ''}
+                                                          onChange={(e) => setOdooSetting(company.id, field.key as keyof typeof defaultOdooSettings, e.target.value)}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Auth Method *</span>
+                                                      <select
+                                                        value={getOdooSettings(company.id).authMethod}
+                                                        onChange={(e) => setOdooSetting(company.id, 'authMethod', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="PASSWORD">Username/Password</option>
+                                                        <option value="API_KEY">API Key</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getOdooSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setOdooSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getOdooSettings(company.id).syncTime}
+                                                        onChange={(e) => setOdooSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getOdooSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setOdooSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
                                               ) : (
                                                 <div style={{ fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                                                   {company.accountingSystem
@@ -2095,6 +2336,8 @@ export default function SiteAdminDashboard(props: any) {
                                                             ? addAcumaticaProgram(company.id)
                                                             : company.accountingSystem === 'SAGE_INTACCT'
                                                               ? addSageIntacctProgram(company.id)
+                                                              : company.accountingSystem === 'ODOO'
+                                                                ? addOdooProgram(company.id)
                                                         : addCompanyProgram(company.id)
                                                     }
                                                     style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
@@ -2111,6 +2354,8 @@ export default function SiteAdminDashboard(props: any) {
                                                             ? saveAcumaticaSettings(company.id)
                                                             : company.accountingSystem === 'SAGE_INTACCT'
                                                               ? saveSageIntacctSettings(company.id)
+                                                              : company.accountingSystem === 'ODOO'
+                                                                ? saveOdooSettings(company.id)
                                                         : saveCompanyPrograms(company.id)
                                                     }
                                                     style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
@@ -2282,6 +2527,48 @@ export default function SiteAdminDashboard(props: any) {
                                                           <td style={{ padding: '6px' }}>
                                                             <button
                                                               onClick={() => deleteSageIntacctProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'ODOO' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Model / Endpoint</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getOdooPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-odoo-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateOdooProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.modelOrEndpoint}
+                                                              onChange={(e) => updateOdooProgram(company.id, index, 'modelOrEndpoint', e.target.value)}
+                                                              placeholder="Model or Endpoint"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteOdooProgram(company.id, index)}
                                                               style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                                                             >
                                                               Delete
@@ -2583,6 +2870,8 @@ export default function SiteAdminDashboard(props: any) {
                         const acumaticaPrograms = getAcumaticaPrograms(businessCompany.id);
                         const sageIntacctSettings = getSageIntacctSettings(businessCompany.id);
                         const sageIntacctPrograms = getSageIntacctPrograms(businessCompany.id);
+                        const odooSettings = getOdooSettings(businessCompany.id);
+                        const odooPrograms = getOdooPrograms(businessCompany.id);
                         
                         return (
                           <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
@@ -2709,6 +2998,8 @@ export default function SiteAdminDashboard(props: any) {
                                           loadAcumaticaSettings(businessCompany.id);
                                         } else if (businessCompany.accountingSystem === 'SAGE_INTACCT') {
                                           loadSageIntacctSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'ODOO') {
+                                          loadOdooSettings(businessCompany.id);
                                         }
                                       }
                                       return newSet;
@@ -3807,6 +4098,205 @@ export default function SiteAdminDashboard(props: any) {
                                                 <td style={{ padding: '6px' }}>
                                                   <button
                                                     onClick={() => deleteSageIntacctProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'ODOO' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            Odoo setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveOdooSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button disabled style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}>
+                                            Validate Token
+                                          </button>
+                                          <button disabled style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}>
+                                            Probe
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>Odoo Accounting ERP configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter Odoo URL/database credentials and sync settings for this company.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'baseUrl', label: 'Base URL *' },
+                                          { key: 'database', label: 'Database *' },
+                                          { key: 'username', label: 'Username *' },
+                                          { key: 'password', label: 'Password *', type: 'password' },
+                                          { key: 'apiKey', label: 'API Key', type: 'password' },
+                                          { key: 'companyId', label: 'Company ID' },
+                                          { key: 'odooVersion', label: 'Odoo Version' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-odoo-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            <input
+                                              type={field.type || 'text'}
+                                              value={(odooSettings as any)[field.key] || ''}
+                                              onChange={(e) => setOdooSetting(businessCompany.id, field.key as keyof typeof defaultOdooSettings, e.target.value)}
+                                              placeholder={field.label.replace(' *', '')}
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Auth Method *</span>
+                                          <select
+                                            value={odooSettings.authMethod}
+                                            onChange={(e) => setOdooSetting(businessCompany.id, 'authMethod', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="PASSWORD">Username/Password</option>
+                                            <option value="API_KEY">API Key</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={odooSettings.syncFrequency}
+                                            onChange={(e) => setOdooSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={odooSettings.syncTime}
+                                            onChange={(e) => setOdooSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={odooSettings.incrementalSync}
+                                            onChange={(e) => setOdooSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addOdooProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveOdooSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Model / Endpoint</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {odooPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-odoo-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateOdooProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.modelOrEndpoint}
+                                                    onChange={(e) => updateOdooProgram(businessCompany.id, index, 'modelOrEndpoint', e.target.value)}
+                                                    placeholder="Model or Endpoint"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteOdooProgram(businessCompany.id, index)}
                                                     style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                                                   >
                                                     Delete

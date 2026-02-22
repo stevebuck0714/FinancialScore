@@ -716,6 +716,7 @@ enum BusinessStatus {
 
 enum AccountingPlatform {
   ACUMATICA
+  ODOO
   QUICKBOOKS
   XERO
   SAGE
