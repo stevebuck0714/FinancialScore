@@ -1074,8 +1074,20 @@ export default function SiteAdminDashboard(props: any) {
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   <h3 
-                                    onClick={() => {
-                                      if (!businessUser) {
+                                    onClick={async () => {
+                                      let resolvedBusinessUser = businessUser;
+                                      if (!resolvedBusinessUser) {
+                                        try {
+                                          const userRes = await fetch(`/api/users?companyId=${businessCompany.id}`);
+                                          const userData = await userRes.json();
+                                          if (userRes.ok && Array.isArray(userData?.users) && userData.users.length > 0) {
+                                            resolvedBusinessUser = userData.users.find((u: any) => String(u?.role || '').toUpperCase() === 'USER') || userData.users[0];
+                                          }
+                                        } catch (err) {
+                                          console.error('Error resolving business user from API:', err);
+                                        }
+                                      }
+                                      if (!resolvedBusinessUser) {
                                         console.error('User not found for company:', businessCompany.id, 'Available users:', users);
                                         alert('User not found for this company. Please ensure the business has a registered user.');
                                         return;
@@ -1092,9 +1104,9 @@ export default function SiteAdminDashboard(props: any) {
                                             setLoadedConsultantId(null);
                                             // Switch to viewing this business's dashboard
                                             // Normalize userType to lowercase 'company' to match sidebar checks
-                                            const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                            const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
                                             setCurrentUser({
-                                              ...businessUser,
+                                              ...resolvedBusinessUser,
                                               role: 'user',
                                               userType: normalizedUserType,
                                               companyId: businessCompany.id
@@ -1105,9 +1117,9 @@ export default function SiteAdminDashboard(props: any) {
                                             // Fallback to using the company from the list
                                             setCompanies([businessCompany]);
                                             setLoadedConsultantId(null);
-                                            const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                            const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
                                             setCurrentUser({
-                                              ...businessUser,
+                                              ...resolvedBusinessUser,
                                               role: 'user',
                                               userType: normalizedUserType,
                                               companyId: businessCompany.id
@@ -1121,9 +1133,9 @@ export default function SiteAdminDashboard(props: any) {
                                           // Fallback to using the company from the list
                                           setCompanies([businessCompany]);
                                           setLoadedConsultantId(null);
-                                          const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                          const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
                                           setCurrentUser({
-                                            ...businessUser,
+                                            ...resolvedBusinessUser,
                                             role: 'user',
                                             userType: normalizedUserType,
                                             companyId: businessCompany.id

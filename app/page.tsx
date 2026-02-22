@@ -961,6 +961,10 @@ function FinancialScorePage() {
   });
   const [inforProbePath, setInforProbePath] = useState('/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
+  const [inforCaoPulling, setInforCaoPulling] = useState(false);
+  const [inforCaoMessage, setInforCaoMessage] = useState<string | null>(null);
+  const [inforLastCaoPullAt, setInforLastCaoPullAt] = useState<Date | null>(null);
+  const [inforLastCaoPulledBy, setInforLastCaoPulledBy] = useState<string | null>(null);
   // State - Financial Statements
   const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent'>('income-statement');
   const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
@@ -2167,6 +2171,7 @@ function FinancialScorePage() {
         // Infor M3 setup/status is restricted to site admins.
         if (String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' && company?.accountingSystem === 'INFOR_M3') {
           await checkInforM3Status(selectedCompanyId);
+          await fetchInforLastCaoPull(selectedCompanyId);
         }
       } catch (error) {
         console.error('Error loading company data:', error);
@@ -3953,6 +3958,50 @@ function FinancialScorePage() {
       alert('Failed to disconnect Infor M3: ' + (error?.message || 'Unknown error'));
     } finally {
       setInforBusy(false);
+    }
+  };
+
+  const pullInforMonthlyCao = async () => {
+    if (!selectedCompanyId) return;
+    setInforCaoPulling(true);
+    setInforCaoMessage(null);
+    try {
+      const response = await fetch('/api/infor-m3/sync-coa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Monthly COA pull failed');
+      }
+      await fetchInforLastCaoPull(selectedCompanyId);
+      setInforCaoMessage(
+        `Monthly COA pull complete. Program: ${data.accountsProgram}. Records imported: ${data.recordsImported ?? 0}.`
+      );
+    } catch (error: any) {
+      const message = error?.message || 'Monthly COA pull failed';
+      setInforCaoMessage(`Error: ${message}`);
+    } finally {
+      setInforCaoPulling(false);
+    }
+  };
+
+  const fetchInforLastCaoPull = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/infor-m3/sync-coa?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok || !data?.hasData) {
+        setInforLastCaoPullAt(null);
+        setInforLastCaoPulledBy(null);
+        return;
+      }
+      setInforLastCaoPullAt(data.lastPullAt ? new Date(data.lastPullAt) : null);
+      setInforLastCaoPulledBy(typeof data.pulledByEmail === 'string' ? data.pulledByEmail : null);
+    } catch (error) {
+      console.error('Failed to fetch last Infor COA pull:', error);
+      setInforLastCaoPullAt(null);
+      setInforLastCaoPulledBy(null);
     }
   };
 
@@ -7006,8 +7055,56 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem === 'INFOR_M3' && (
-                <div style={{ marginBottom: '16px', padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', color: '#475569' }}>
-                  Infor M3 credential setup is managed in <strong>Site Administration &gt; Businesses</strong> and is restricted to site administrators.
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '16px', border: '2px solid #e2e8f0' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                    Infor M3 Monthly COA Pull
+                  </h3>
+                  <div style={{ marginBottom: '12px', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    Infor M3 credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
+                    This action triggers a monthly Chart of Accounts pull using the <strong>Accounts</strong> MI Program configured for this company.
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <button
+                      onClick={pullInforMonthlyCao}
+                      disabled={inforCaoPulling}
+                      style={{
+                        padding: '10px 16px',
+                        background: inforCaoPulling ? '#94a3b8' : '#1d4ed8',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: inforCaoPulling ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {inforCaoPulling ? 'Pulling COA...' : 'Pull Monthly COA Data'}
+                    </button>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>
+                      Requires Accounts MI Program in Site Admin &gt; Businesses.
+                    </span>
+                  </div>
+                  <div style={{ marginTop: '10px', fontSize: '12px', color: '#475569' }}>
+                    <strong>Last COA pull:</strong>{' '}
+                    {inforLastCaoPullAt ? inforLastCaoPullAt.toLocaleString() : 'Not yet run'}
+                    {'  '}|{'  '}
+                    <strong>Pulled by:</strong> {inforLastCaoPulledBy || 'N/A'}
+                  </div>
+                  {inforCaoMessage && (
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        background: inforCaoMessage.startsWith('Error:') ? '#fee2e2' : '#d1fae5',
+                        color: inforCaoMessage.startsWith('Error:') ? '#991b1b' : '#065f46',
+                        border: `1px solid ${inforCaoMessage.startsWith('Error:') ? '#fecaca' : '#86efac'}`,
+                      }}
+                    >
+                      {inforCaoMessage}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -7272,13 +7369,6 @@ function FinancialScorePage() {
               </div>
               )}
 
-              <div style={{ marginTop: '24px', padding: '16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
-                <p style={{ fontSize: '13px', color: '#0c4a6e', margin: 0, lineHeight: '1.6' }}>
-                  <strong>Note:</strong> API connections allow automatic synchronization of financial data. Once connected, 
-                  you can schedule automatic imports or manually trigger data pulls. All connections use OAuth 2.0 for 
-                  secure authentication and are encrypted in transit and at rest.
-                </p>
-              </div>
             </div>
           )}
 
