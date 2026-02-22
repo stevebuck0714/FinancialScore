@@ -185,6 +185,77 @@ export default function SiteAdminDashboard(props: any) {
   const [qbDesktopProgramsByCompany, setQbDesktopProgramsByCompany] = React.useState<
     Record<string, Array<{ dataDomain: string; qbEntity: string }>>
   >({});
+  const [dynamicsSettingsByCompany, setDynamicsSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        tenantId: string;
+        environmentUrl: string;
+        legalEntity: string;
+        region: string;
+        clientId: string;
+        clientSecret: string;
+        authorityUrl: string;
+        scope: string;
+        redirectUri: string;
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [dynamicsProgramsByCompany, setDynamicsProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; entityOrEndpoint: string }>>
+  >({});
+  const [acumaticaSettingsByCompany, setAcumaticaSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        tenantId: string;
+        instanceUrl: string;
+        companyCode: string;
+        branch: string;
+        clientId: string;
+        clientSecret: string;
+        username: string;
+        password: string;
+        endpointName: string;
+        endpointVersion: string;
+        contractBasedApiPath: string;
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [acumaticaProgramsByCompany, setAcumaticaProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; endpointOrEntity: string }>>
+  >({});
+  const [sageIntacctSettingsByCompany, setSageIntacctSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        senderId: string;
+        senderPassword: string;
+        companyId: string;
+        userId: string;
+        userPassword: string;
+        entityId: string;
+        endpointUrl: string;
+        dtdVersion: string;
+        locationId: string;
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [sageIntacctProgramsByCompany, setSageIntacctProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; objectName: string }>>
+  >({});
 
   const defaultQbDesktopSettings = {
     integrationType: 'WEB_CONNECTOR' as 'WEB_CONNECTOR' | 'SDK' | '',
@@ -213,11 +284,94 @@ export default function SiteAdminDashboard(props: any) {
     { dataDomain: 'Bills', qbEntity: 'BillQuery' },
     { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
   ];
+  const defaultDynamicsSettings = {
+    tenantId: '',
+    environmentUrl: '',
+    legalEntity: '',
+    region: '',
+    clientId: '',
+    clientSecret: '',
+    authorityUrl: '',
+    scope: '',
+    redirectUri: '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultDynamicsPrograms = [
+    { module: 'Accounts', entityOrEndpoint: 'accounts' },
+    { module: 'Customers', entityOrEndpoint: 'customers' },
+    { module: 'Vendors', entityOrEndpoint: 'vendors' },
+    { module: 'AR', entityOrEndpoint: 'customerledgerentries' },
+    { module: 'AP', entityOrEndpoint: 'vendorledgerentries' },
+    { module: 'Sales', entityOrEndpoint: 'salesinvoices' },
+  ];
+  const defaultAcumaticaSettings = {
+    tenantId: '',
+    instanceUrl: '',
+    companyCode: '',
+    branch: '',
+    clientId: '',
+    clientSecret: '',
+    username: '',
+    password: '',
+    endpointName: '',
+    endpointVersion: '',
+    contractBasedApiPath: '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultAcumaticaPrograms = [
+    { module: 'Chart of Accounts', endpointOrEntity: 'GLAccounts' },
+    { module: 'Customers', endpointOrEntity: 'Customers' },
+    { module: 'Vendors', endpointOrEntity: 'Vendors' },
+    { module: 'AR', endpointOrEntity: 'ARInvoices' },
+    { module: 'AP', endpointOrEntity: 'APBills' },
+    { module: 'Sales', endpointOrEntity: 'SalesOrders' },
+  ];
+  const defaultSageIntacctSettings = {
+    senderId: '',
+    senderPassword: '',
+    companyId: '',
+    userId: '',
+    userPassword: '',
+    entityId: '',
+    endpointUrl: '',
+    dtdVersion: '3.0',
+    locationId: '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultSageIntacctPrograms = [
+    { module: 'Chart of Accounts', objectName: 'GLACCOUNT' },
+    { module: 'Customers', objectName: 'CUSTOMER' },
+    { module: 'Vendors', objectName: 'VENDOR' },
+    { module: 'AR', objectName: 'ARINVOICE' },
+    { module: 'AP', objectName: 'APBILL' },
+    { module: 'Sales', objectName: 'SODOCUMENT' },
+  ];
 
   const getQbDesktopSettings = (companyId: string) =>
     qbDesktopSettingsByCompany[companyId] || defaultQbDesktopSettings;
   const getQbDesktopPrograms = (companyId: string) =>
     qbDesktopProgramsByCompany[companyId] || defaultQbDesktopPrograms;
+  const getDynamicsSettings = (companyId: string) =>
+    dynamicsSettingsByCompany[companyId] || defaultDynamicsSettings;
+  const getDynamicsPrograms = (companyId: string) =>
+    dynamicsProgramsByCompany[companyId] || defaultDynamicsPrograms;
+  const getAcumaticaSettings = (companyId: string) =>
+    acumaticaSettingsByCompany[companyId] || defaultAcumaticaSettings;
+  const getAcumaticaPrograms = (companyId: string) =>
+    acumaticaProgramsByCompany[companyId] || defaultAcumaticaPrograms;
+  const getSageIntacctSettings = (companyId: string) =>
+    sageIntacctSettingsByCompany[companyId] || defaultSageIntacctSettings;
+  const getSageIntacctPrograms = (companyId: string) =>
+    sageIntacctProgramsByCompany[companyId] || defaultSageIntacctPrograms;
 
   const setQbDesktopSetting = (
     companyId: string,
@@ -239,6 +393,63 @@ export default function SiteAdminDashboard(props: any) {
       [companyId]: programs,
     }));
   };
+  const setDynamicsSetting = (
+    companyId: string,
+    field: keyof typeof defaultDynamicsSettings,
+    value: string
+  ) => {
+    setDynamicsSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultDynamicsSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setDynamicsPrograms = (companyId: string, programs: Array<{ module: string; entityOrEndpoint: string }>) => {
+    setDynamicsProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+  const setAcumaticaSetting = (
+    companyId: string,
+    field: keyof typeof defaultAcumaticaSettings,
+    value: string
+  ) => {
+    setAcumaticaSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultAcumaticaSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setAcumaticaPrograms = (companyId: string, programs: Array<{ module: string; endpointOrEntity: string }>) => {
+    setAcumaticaProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+  const setSageIntacctSetting = (
+    companyId: string,
+    field: keyof typeof defaultSageIntacctSettings,
+    value: string
+  ) => {
+    setSageIntacctSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultSageIntacctSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setSageIntacctPrograms = (companyId: string, programs: Array<{ module: string; objectName: string }>) => {
+    setSageIntacctProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
 
   const updateQbDesktopProgram = (
     companyId: string,
@@ -254,6 +465,63 @@ export default function SiteAdminDashboard(props: any) {
   const addQbDesktopProgram = (companyId: string) => {
     const current = getQbDesktopPrograms(companyId);
     setQbDesktopPrograms(companyId, [...current, { dataDomain: '', qbEntity: '' }]);
+  };
+  const updateDynamicsProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'entityOrEndpoint',
+    value: string
+  ) => {
+    const current = getDynamicsPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setDynamicsPrograms(companyId, next);
+  };
+  const addDynamicsProgram = (companyId: string) => {
+    const current = getDynamicsPrograms(companyId);
+    setDynamicsPrograms(companyId, [...current, { module: '', entityOrEndpoint: '' }]);
+  };
+  const updateAcumaticaProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'endpointOrEntity',
+    value: string
+  ) => {
+    const current = getAcumaticaPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setAcumaticaPrograms(companyId, next);
+  };
+  const addAcumaticaProgram = (companyId: string) => {
+    const current = getAcumaticaPrograms(companyId);
+    setAcumaticaPrograms(companyId, [...current, { module: '', endpointOrEntity: '' }]);
+  };
+  const updateSageIntacctProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'objectName',
+    value: string
+  ) => {
+    const current = getSageIntacctPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setSageIntacctPrograms(companyId, next);
+  };
+  const addSageIntacctProgram = (companyId: string) => {
+    const current = getSageIntacctPrograms(companyId);
+    setSageIntacctPrograms(companyId, [...current, { module: '', objectName: '' }]);
+  };
+  const deleteDynamicsProgram = (companyId: string, index: number) => {
+    const current = getDynamicsPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setDynamicsPrograms(companyId, next.length > 0 ? next : [{ module: '', entityOrEndpoint: '' }]);
+  };
+  const deleteAcumaticaProgram = (companyId: string, index: number) => {
+    const current = getAcumaticaPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setAcumaticaPrograms(companyId, next.length > 0 ? next : [{ module: '', endpointOrEntity: '' }]);
+  };
+  const deleteSageIntacctProgram = (companyId: string, index: number) => {
+    const current = getSageIntacctPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setSageIntacctPrograms(companyId, next.length > 0 ? next : [{ module: '', objectName: '' }]);
   };
 
   const deleteQbDesktopProgram = (companyId: string, index: number) => {
@@ -280,6 +548,60 @@ export default function SiteAdminDashboard(props: any) {
       console.error('Failed to load QuickBooks Desktop settings:', error);
     }
   };
+  const loadDynamicsSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/dynamics-365/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setDynamicsSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultDynamicsSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setDynamicsPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load Dynamics settings:', error);
+    }
+  };
+  const loadAcumaticaSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/acumatica/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setAcumaticaSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultAcumaticaSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setAcumaticaPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load Acumatica settings:', error);
+    }
+  };
+  const loadSageIntacctSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/sage-intacct/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setSageIntacctSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultSageIntacctSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setSageIntacctPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load Sage Intacct settings:', error);
+    }
+  };
 
   const saveQbDesktopSettings = async (companyId: string) => {
     try {
@@ -299,6 +621,66 @@ export default function SiteAdminDashboard(props: any) {
       alert('QuickBooks Desktop settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save QuickBooks Desktop settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveDynamicsSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/dynamics-365/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getDynamicsSettings(companyId),
+          programs: getDynamicsPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save Dynamics settings');
+      }
+      alert('Dynamics settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save Dynamics settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveAcumaticaSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/acumatica/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getAcumaticaSettings(companyId),
+          programs: getAcumaticaPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save Acumatica settings');
+      }
+      alert('Acumatica settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save Acumatica settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveSageIntacctSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/sage-intacct/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getSageIntacctSettings(companyId),
+          programs: getSageIntacctPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save Sage Intacct settings');
+      }
+      alert('Sage Intacct settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save Sage Intacct settings: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -1028,6 +1410,12 @@ export default function SiteAdminDashboard(props: any) {
                                                   });
                                                 } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
                                                   loadQbDesktopSettings(company.id);
+                                                } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
+                                                  loadDynamicsSettings(company.id);
+                                                } else if (company.accountingSystem === 'ACUMATICA') {
+                                                  loadAcumaticaSettings(company.id);
+                                                } else if (company.accountingSystem === 'SAGE_INTACCT') {
+                                                  loadSageIntacctSettings(company.id);
                                                 }
                                                 return [...prev, company.id];
                                               });
@@ -1149,6 +1537,72 @@ export default function SiteAdminDashboard(props: any) {
                                                       style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
                                                     >
                                                       Run Initial Sync
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {(company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveDynamicsSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Token
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Probe
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'ACUMATICA' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveAcumaticaSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Token
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Probe
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'SAGE_INTACCT' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveSageIntacctSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Token
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Probe
                                                     </button>
                                                   </div>
                                                 )}
@@ -1367,6 +1821,257 @@ export default function SiteAdminDashboard(props: any) {
                                                     </label>
                                                   </div>
                                                 </>
+                                              ) : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      Dynamics 365 configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      Enter tenant/app values for this company and save. Validation/probe actions are enabled when backend endpoints are wired.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'tenantId', label: 'Tenant ID *' },
+                                                      { key: 'environmentUrl', label: 'Environment URL *' },
+                                                      { key: 'legalEntity', label: 'Legal Entity' },
+                                                      { key: 'region', label: 'Region' },
+                                                      { key: 'clientId', label: 'Client ID *' },
+                                                      { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                                      { key: 'authorityUrl', label: 'Authority URL' },
+                                                      { key: 'scope', label: 'Scope / Resource *' },
+                                                      { key: 'redirectUri', label: 'Redirect URI' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-dynamics-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type || 'text'}
+                                                          value={(getDynamicsSettings(company.id) as any)[field.key] || ''}
+                                                          onChange={(e) => setDynamicsSetting(company.id, field.key as keyof typeof defaultDynamicsSettings, e.target.value)}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getDynamicsSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setDynamicsSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getDynamicsSettings(company.id).syncTime}
+                                                        onChange={(e) => setDynamicsSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getDynamicsSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setDynamicsSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
+                                              ) : company.accountingSystem === 'ACUMATICA' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      Acumatica Cloud ERP configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      Enter tenant/app endpoint values for this company and save.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'tenantId', label: 'Tenant ID *' },
+                                                      { key: 'instanceUrl', label: 'Instance URL *' },
+                                                      { key: 'companyCode', label: 'Company Code *' },
+                                                      { key: 'branch', label: 'Branch' },
+                                                      { key: 'clientId', label: 'Client ID *' },
+                                                      { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                                      { key: 'username', label: 'Username *' },
+                                                      { key: 'password', label: 'Password *', type: 'password' },
+                                                      { key: 'endpointName', label: 'Endpoint Name *' },
+                                                      { key: 'endpointVersion', label: 'Endpoint Version *' },
+                                                      { key: 'contractBasedApiPath', label: 'Contract-based API Path' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-acumatica-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type || 'text'}
+                                                          value={(getAcumaticaSettings(company.id) as any)[field.key] || ''}
+                                                          onChange={(e) => setAcumaticaSetting(company.id, field.key as keyof typeof defaultAcumaticaSettings, e.target.value)}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getAcumaticaSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setAcumaticaSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getAcumaticaSettings(company.id).syncTime}
+                                                        onChange={(e) => setAcumaticaSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getAcumaticaSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setAcumaticaSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
+                                              ) : company.accountingSystem === 'SAGE_INTACCT' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      Sage Intacct configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      Enter sender credentials and company user credentials for this company, then save.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'senderId', label: 'Sender ID *' },
+                                                      { key: 'senderPassword', label: 'Sender Password *', type: 'password' },
+                                                      { key: 'companyId', label: 'Company ID *' },
+                                                      { key: 'userId', label: 'User ID *' },
+                                                      { key: 'userPassword', label: 'User Password *', type: 'password' },
+                                                      { key: 'entityId', label: 'Entity ID' },
+                                                      { key: 'endpointUrl', label: 'Endpoint URL *' },
+                                                      { key: 'dtdVersion', label: 'DTD Version' },
+                                                      { key: 'locationId', label: 'Location ID' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-sage-intacct-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type || 'text'}
+                                                          value={(getSageIntacctSettings(company.id) as any)[field.key] || ''}
+                                                          onChange={(e) => setSageIntacctSetting(company.id, field.key as keyof typeof defaultSageIntacctSettings, e.target.value)}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getSageIntacctSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setSageIntacctSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getSageIntacctSettings(company.id).syncTime}
+                                                        onChange={(e) => setSageIntacctSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getSageIntacctSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setSageIntacctSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
                                               ) : (
                                                 <div style={{ fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                                                   {company.accountingSystem
@@ -1384,6 +2089,12 @@ export default function SiteAdminDashboard(props: any) {
                                                     onClick={() =>
                                                       company.accountingSystem === 'QUICKBOOKS_DESKTOP'
                                                         ? addQbDesktopProgram(company.id)
+                                                        : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365'
+                                                          ? addDynamicsProgram(company.id)
+                                                          : company.accountingSystem === 'ACUMATICA'
+                                                            ? addAcumaticaProgram(company.id)
+                                                            : company.accountingSystem === 'SAGE_INTACCT'
+                                                              ? addSageIntacctProgram(company.id)
                                                         : addCompanyProgram(company.id)
                                                     }
                                                     style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
@@ -1394,6 +2105,12 @@ export default function SiteAdminDashboard(props: any) {
                                                     onClick={() =>
                                                       company.accountingSystem === 'QUICKBOOKS_DESKTOP'
                                                         ? saveQbDesktopSettings(company.id)
+                                                        : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365'
+                                                          ? saveDynamicsSettings(company.id)
+                                                          : company.accountingSystem === 'ACUMATICA'
+                                                            ? saveAcumaticaSettings(company.id)
+                                                            : company.accountingSystem === 'SAGE_INTACCT'
+                                                              ? saveSageIntacctSettings(company.id)
                                                         : saveCompanyPrograms(company.id)
                                                     }
                                                     style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
@@ -1439,6 +2156,132 @@ export default function SiteAdminDashboard(props: any) {
                                                           <td style={{ padding: '6px' }}>
                                                             <button
                                                               onClick={() => deleteQbDesktopProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Entity / Endpoint</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getDynamicsPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-dynamics-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateDynamicsProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.entityOrEndpoint}
+                                                              onChange={(e) => updateDynamicsProgram(company.id, index, 'entityOrEndpoint', e.target.value)}
+                                                              placeholder="Entity or Endpoint"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteDynamicsProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'ACUMATICA' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Endpoint / Entity</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getAcumaticaPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-acumatica-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateAcumaticaProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.endpointOrEntity}
+                                                              onChange={(e) => updateAcumaticaProgram(company.id, index, 'endpointOrEntity', e.target.value)}
+                                                              placeholder="Endpoint or Entity"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteAcumaticaProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'SAGE_INTACCT' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Object</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getSageIntacctPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-sage-intacct-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateSageIntacctProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.objectName}
+                                                              onChange={(e) => updateSageIntacctProgram(company.id, index, 'objectName', e.target.value)}
+                                                              placeholder="Object Name"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteSageIntacctProgram(company.id, index)}
                                                               style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                                                             >
                                                               Delete
@@ -1734,6 +2577,12 @@ export default function SiteAdminDashboard(props: any) {
                         const accountingPrograms = getCompanyPrograms(businessCompany.id);
                         const qbDesktopSettings = getQbDesktopSettings(businessCompany.id);
                         const qbDesktopPrograms = getQbDesktopPrograms(businessCompany.id);
+                        const dynamicsSettings = getDynamicsSettings(businessCompany.id);
+                        const dynamicsPrograms = getDynamicsPrograms(businessCompany.id);
+                        const acumaticaSettings = getAcumaticaSettings(businessCompany.id);
+                        const acumaticaPrograms = getAcumaticaPrograms(businessCompany.id);
+                        const sageIntacctSettings = getSageIntacctSettings(businessCompany.id);
+                        const sageIntacctPrograms = getSageIntacctPrograms(businessCompany.id);
                         
                         return (
                           <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
@@ -1854,6 +2703,12 @@ export default function SiteAdminDashboard(props: any) {
                                           });
                                         } else if (businessCompany.accountingSystem === 'QUICKBOOKS_DESKTOP') {
                                           loadQbDesktopSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'DYNAMICS' || businessCompany.accountingSystem === 'DYNAMICS365') {
+                                          loadDynamicsSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'ACUMATICA') {
+                                          loadAcumaticaSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'SAGE_INTACCT') {
+                                          loadSageIntacctSettings(businessCompany.id);
                                         }
                                       }
                                       return newSet;
@@ -2365,6 +3220,593 @@ export default function SiteAdminDashboard(props: any) {
                                                 <td style={{ padding: '6px' }}>
                                                   <button
                                                     onClick={() => deleteQbDesktopProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'DYNAMICS' || businessCompany?.accountingSystem === 'DYNAMICS365' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            Dynamics 365 setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveDynamicsSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Token
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Probe
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>Dynamics 365 configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter tenant/app values for this company and save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'tenantId', label: 'Tenant ID *' },
+                                          { key: 'environmentUrl', label: 'Environment URL *' },
+                                          { key: 'legalEntity', label: 'Legal Entity' },
+                                          { key: 'region', label: 'Region' },
+                                          { key: 'clientId', label: 'Client ID *' },
+                                          { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                          { key: 'authorityUrl', label: 'Authority URL' },
+                                          { key: 'scope', label: 'Scope / Resource *' },
+                                          { key: 'redirectUri', label: 'Redirect URI' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-dynamics-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            <input
+                                              type={field.type || 'text'}
+                                              value={(dynamicsSettings as any)[field.key] || ''}
+                                              onChange={(e) => setDynamicsSetting(businessCompany.id, field.key as keyof typeof defaultDynamicsSettings, e.target.value)}
+                                              placeholder={field.label.replace(' *', '')}
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={dynamicsSettings.syncFrequency}
+                                            onChange={(e) => setDynamicsSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={dynamicsSettings.syncTime}
+                                            onChange={(e) => setDynamicsSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={dynamicsSettings.incrementalSync}
+                                            onChange={(e) => setDynamicsSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addDynamicsProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveDynamicsSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Entity / Endpoint</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {dynamicsPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-dynamics-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateDynamicsProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.entityOrEndpoint}
+                                                    onChange={(e) => updateDynamicsProgram(businessCompany.id, index, 'entityOrEndpoint', e.target.value)}
+                                                    placeholder="Entity or Endpoint"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteDynamicsProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'ACUMATICA' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            Acumatica setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveAcumaticaSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Token
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Probe
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>Acumatica Cloud ERP configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter tenant/app endpoint values for this company and save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'tenantId', label: 'Tenant ID *' },
+                                          { key: 'instanceUrl', label: 'Instance URL *' },
+                                          { key: 'companyCode', label: 'Company Code *' },
+                                          { key: 'branch', label: 'Branch' },
+                                          { key: 'clientId', label: 'Client ID *' },
+                                          { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                          { key: 'username', label: 'Username *' },
+                                          { key: 'password', label: 'Password *', type: 'password' },
+                                          { key: 'endpointName', label: 'Endpoint Name *' },
+                                          { key: 'endpointVersion', label: 'Endpoint Version *' },
+                                          { key: 'contractBasedApiPath', label: 'Contract-based API Path' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-acumatica-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            <input
+                                              type={field.type || 'text'}
+                                              value={(acumaticaSettings as any)[field.key] || ''}
+                                              onChange={(e) => setAcumaticaSetting(businessCompany.id, field.key as keyof typeof defaultAcumaticaSettings, e.target.value)}
+                                              placeholder={field.label.replace(' *', '')}
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={acumaticaSettings.syncFrequency}
+                                            onChange={(e) => setAcumaticaSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={acumaticaSettings.syncTime}
+                                            onChange={(e) => setAcumaticaSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={acumaticaSettings.incrementalSync}
+                                            onChange={(e) => setAcumaticaSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addAcumaticaProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveAcumaticaSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Endpoint / Entity</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {acumaticaPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-acumatica-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateAcumaticaProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.endpointOrEntity}
+                                                    onChange={(e) => updateAcumaticaProgram(businessCompany.id, index, 'endpointOrEntity', e.target.value)}
+                                                    placeholder="Endpoint or Entity"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteAcumaticaProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'SAGE_INTACCT' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            Sage Intacct setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveSageIntacctSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Token
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Probe
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>Sage Intacct configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter sender and company credentials for this company and save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'senderId', label: 'Sender ID *' },
+                                          { key: 'senderPassword', label: 'Sender Password *', type: 'password' },
+                                          { key: 'companyId', label: 'Company ID *' },
+                                          { key: 'userId', label: 'User ID *' },
+                                          { key: 'userPassword', label: 'User Password *', type: 'password' },
+                                          { key: 'entityId', label: 'Entity ID' },
+                                          { key: 'endpointUrl', label: 'Endpoint URL *' },
+                                          { key: 'dtdVersion', label: 'DTD Version' },
+                                          { key: 'locationId', label: 'Location ID' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-sage-intacct-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            <input
+                                              type={field.type || 'text'}
+                                              value={(sageIntacctSettings as any)[field.key] || ''}
+                                              onChange={(e) => setSageIntacctSetting(businessCompany.id, field.key as keyof typeof defaultSageIntacctSettings, e.target.value)}
+                                              placeholder={field.label.replace(' *', '')}
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={sageIntacctSettings.syncFrequency}
+                                            onChange={(e) => setSageIntacctSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={sageIntacctSettings.syncTime}
+                                            onChange={(e) => setSageIntacctSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={sageIntacctSettings.incrementalSync}
+                                            onChange={(e) => setSageIntacctSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addSageIntacctProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveSageIntacctSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Object</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {sageIntacctPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-sage-intacct-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateSageIntacctProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.objectName}
+                                                    onChange={(e) => updateSageIntacctProgram(businessCompany.id, index, 'objectName', e.target.value)}
+                                                    placeholder="Object Name"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteSageIntacctProgram(businessCompany.id, index)}
                                                     style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                                                   >
                                                     Delete

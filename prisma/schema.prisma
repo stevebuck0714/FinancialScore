@@ -715,9 +715,11 @@ enum BusinessStatus {
 }
 
 enum AccountingPlatform {
+  ACUMATICA
   QUICKBOOKS
   XERO
   SAGE
+  SAGE_INTACCT
   NETSUITE
   DYNAMICS365
   INFOR_M3
