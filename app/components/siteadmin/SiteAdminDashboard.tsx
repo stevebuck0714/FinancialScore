@@ -159,6 +159,149 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const [qbDesktopSettingsByCompany, setQbDesktopSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        integrationType: 'WEB_CONNECTOR' | 'SDK' | '';
+        applicationName: string;
+        soapEndpointUrl: string;
+        supportUrl: string;
+        ownerId: string;
+        fileId: string;
+        webConnectorUsername: string;
+        pollingIntervalMinutes: string;
+        permissionScope: 'READ_ONLY' | 'READ_WRITE' | '';
+        unattendedAccessRequired: 'YES' | 'NO' | '';
+        desktopEditionYear: string;
+        countryVersion: string;
+        companyFilePath: string;
+        hostMachineName: string;
+        hostOnlineForSync: 'YES' | 'NO' | '';
+        syncDirection: 'QB_TO_PLATFORM' | 'TWO_WAY' | '';
+      }
+    >
+  >({});
+  const [qbDesktopProgramsByCompany, setQbDesktopProgramsByCompany] = React.useState<
+    Record<string, Array<{ dataDomain: string; qbEntity: string }>>
+  >({});
+
+  const defaultQbDesktopSettings = {
+    integrationType: 'WEB_CONNECTOR' as 'WEB_CONNECTOR' | 'SDK' | '',
+    applicationName: '',
+    soapEndpointUrl: '',
+    supportUrl: '',
+    ownerId: '',
+    fileId: '',
+    webConnectorUsername: '',
+    pollingIntervalMinutes: '60',
+    permissionScope: 'READ_ONLY' as 'READ_ONLY' | 'READ_WRITE' | '',
+    unattendedAccessRequired: 'YES' as 'YES' | 'NO' | '',
+    desktopEditionYear: '',
+    countryVersion: '',
+    companyFilePath: '',
+    hostMachineName: '',
+    hostOnlineForSync: 'YES' as 'YES' | 'NO' | '',
+    syncDirection: 'QB_TO_PLATFORM' as 'QB_TO_PLATFORM' | 'TWO_WAY' | '',
+  };
+
+  const defaultQbDesktopPrograms = [
+    { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery' },
+    { dataDomain: 'Customers', qbEntity: 'CustomerQuery' },
+    { dataDomain: 'Vendors', qbEntity: 'VendorQuery' },
+    { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
+    { dataDomain: 'Bills', qbEntity: 'BillQuery' },
+    { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
+  ];
+
+  const getQbDesktopSettings = (companyId: string) =>
+    qbDesktopSettingsByCompany[companyId] || defaultQbDesktopSettings;
+  const getQbDesktopPrograms = (companyId: string) =>
+    qbDesktopProgramsByCompany[companyId] || defaultQbDesktopPrograms;
+
+  const setQbDesktopSetting = (
+    companyId: string,
+    field: keyof typeof defaultQbDesktopSettings,
+    value: string
+  ) => {
+    setQbDesktopSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultQbDesktopSettings),
+        [field]: value,
+      },
+    }));
+  };
+
+  const setQbDesktopPrograms = (companyId: string, programs: Array<{ dataDomain: string; qbEntity: string }>) => {
+    setQbDesktopProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+
+  const updateQbDesktopProgram = (
+    companyId: string,
+    index: number,
+    field: 'dataDomain' | 'qbEntity',
+    value: string
+  ) => {
+    const current = getQbDesktopPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setQbDesktopPrograms(companyId, next);
+  };
+
+  const addQbDesktopProgram = (companyId: string) => {
+    const current = getQbDesktopPrograms(companyId);
+    setQbDesktopPrograms(companyId, [...current, { dataDomain: '', qbEntity: '' }]);
+  };
+
+  const deleteQbDesktopProgram = (companyId: string, index: number) => {
+    const current = getQbDesktopPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setQbDesktopPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qbEntity: '' }]);
+  };
+
+  const loadQbDesktopSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/quickbooks-desktop/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setQbDesktopSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultQbDesktopSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setQbDesktopPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load QuickBooks Desktop settings:', error);
+    }
+  };
+
+  const saveQbDesktopSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/quickbooks-desktop/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getQbDesktopSettings(companyId),
+          programs: getQbDesktopPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Desktop settings');
+      }
+      alert('QuickBooks Desktop settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save QuickBooks Desktop settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   const parseInforCredentialsFromJson = (raw: string) => {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -883,6 +1026,8 @@ export default function SiteAdminDashboard(props: any) {
                                                       });
                                                     }
                                                   });
+                                                } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
+                                                  loadQbDesktopSettings(company.id);
                                                 }
                                                 return [...prev, company.id];
                                               });
@@ -982,6 +1127,28 @@ export default function SiteAdminDashboard(props: any) {
                                                       style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                                     >
                                                       Disconnect
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'QUICKBOOKS_DESKTOP' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveQbDesktopSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Connection
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Run Initial Sync
                                                     </button>
                                                   </div>
                                                 )}
@@ -1098,6 +1265,108 @@ export default function SiteAdminDashboard(props: any) {
                                                     </div>
                                                   )}
                                                 </>
+                                              ) : company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      QuickBooks Desktop configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      This company is configured for Web Connector/SDK setup. Save the required technical values below.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'integrationType', label: 'Integration Type *' },
+                                                      { key: 'applicationName', label: 'Application Name *' },
+                                                      { key: 'soapEndpointUrl', label: 'SOAP/App Endpoint URL *' },
+                                                      { key: 'supportUrl', label: 'Support URL' },
+                                                      { key: 'ownerId', label: 'Owner ID (GUID) *' },
+                                                      { key: 'fileId', label: 'File ID (GUID) *' },
+                                                      { key: 'webConnectorUsername', label: 'Web Connector Username *' },
+                                                      { key: 'pollingIntervalMinutes', label: 'Polling Interval (minutes) *' },
+                                                      { key: 'desktopEditionYear', label: 'QB Desktop Edition + Year *' },
+                                                      { key: 'countryVersion', label: 'Country Version *' },
+                                                      { key: 'companyFilePath', label: 'Target Company File Path (.QBW) *' },
+                                                      { key: 'hostMachineName', label: 'Host Machine Name *' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-qbdesktop-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        {field.key === 'integrationType' ? (
+                                                          <select
+                                                            value={getQbDesktopSettings(company.id).integrationType}
+                                                            onChange={(e) => setQbDesktopSetting(company.id, 'integrationType', e.target.value)}
+                                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          >
+                                                            <option value="">Select</option>
+                                                            <option value="WEB_CONNECTOR">QuickBooks Web Connector</option>
+                                                            <option value="SDK">SDK</option>
+                                                          </select>
+                                                        ) : (
+                                                          <input
+                                                            type="text"
+                                                            value={(getQbDesktopSettings(company.id) as any)[field.key] || ''}
+                                                            onChange={(e) => setQbDesktopSetting(company.id, field.key as keyof typeof defaultQbDesktopSettings, e.target.value)}
+                                                            placeholder={field.label.replace(' *', '')}
+                                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          />
+                                                        )}
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Permission Scope *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).permissionScope}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'permissionScope', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="READ_ONLY">Read-only</option>
+                                                        <option value="READ_WRITE">Read-write</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Unattended Access Required *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).unattendedAccessRequired}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'unattendedAccessRequired', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Host Online During Sync *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).hostOnlineForSync}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'hostOnlineForSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Direction *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).syncDirection}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'syncDirection', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="QB_TO_PLATFORM">QB -> Platform</option>
+                                                        <option value="TWO_WAY">Two-way</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
                                               ) : (
                                                 <div style={{ fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                                                   {company.accountingSystem
@@ -1112,13 +1381,21 @@ export default function SiteAdminDashboard(props: any) {
                                                 <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
                                                 <div style={{ display: 'flex', gap: '6px' }}>
                                                   <button
-                                                    onClick={() => addCompanyProgram(company.id)}
+                                                    onClick={() =>
+                                                      company.accountingSystem === 'QUICKBOOKS_DESKTOP'
+                                                        ? addQbDesktopProgram(company.id)
+                                                        : addCompanyProgram(company.id)
+                                                    }
                                                     style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                   >
                                                     + Add
                                                   </button>
                                                   <button
-                                                    onClick={() => saveCompanyPrograms(company.id)}
+                                                    onClick={() =>
+                                                      company.accountingSystem === 'QUICKBOOKS_DESKTOP'
+                                                        ? saveQbDesktopSettings(company.id)
+                                                        : saveCompanyPrograms(company.id)
+                                                    }
                                                     style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                   >
                                                     Save
@@ -1129,47 +1406,91 @@ export default function SiteAdminDashboard(props: any) {
                                                 Programs called by the integration
                                               </div>
                                               <div style={{ overflowX: 'auto' }}>
-                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                                                  <thead>
-                                                    <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                                                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
-                                                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
-                                                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
-                                                    </tr>
-                                                  </thead>
-                                                  <tbody>
-                                                    {getCompanyPrograms(company.id).map((row, index) => (
-                                                      <tr key={`${company.id}-consultant-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                                        <td style={{ padding: '6px' }}>
-                                                          <input
-                                                            type="text"
-                                                            value={row.module}
-                                                            onChange={(e) => updateCompanyProgram(company.id, index, 'module', e.target.value)}
-                                                            placeholder="Module"
-                                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
-                                                          />
-                                                        </td>
-                                                        <td style={{ padding: '6px' }}>
-                                                          <input
-                                                            type="text"
-                                                            value={row.miProgram}
-                                                            onChange={(e) => updateCompanyProgram(company.id, index, 'miProgram', e.target.value)}
-                                                            placeholder="MI Program"
-                                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
-                                                          />
-                                                        </td>
-                                                        <td style={{ padding: '6px' }}>
-                                                          <button
-                                                            onClick={() => deleteCompanyProgram(company.id, index)}
-                                                            style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
-                                                          >
-                                                            Delete
-                                                          </button>
-                                                        </td>
+                                                {company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QB Entity</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                                       </tr>
-                                                    ))}
-                                                  </tbody>
-                                                </table>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getQbDesktopPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-qbdesktop-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.dataDomain}
+                                                              onChange={(e) => updateQbDesktopProgram(company.id, index, 'dataDomain', e.target.value)}
+                                                              placeholder="Data Domain"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.qbEntity}
+                                                              onChange={(e) => updateQbDesktopProgram(company.id, index, 'qbEntity', e.target.value)}
+                                                              placeholder="QB Entity"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteQbDesktopProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getCompanyPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-consultant-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.miProgram}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'miProgram', e.target.value)}
+                                                              placeholder="MI Program"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteCompanyProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                )}
                                               </div>
                                             </div>
                                           </div>
@@ -1411,6 +1732,8 @@ export default function SiteAdminDashboard(props: any) {
                         const editing = editingPricing?.[businessCompany.id];
                         const operationalSettings = getCompanyOperationalSettings(businessCompany.id);
                         const accountingPrograms = getCompanyPrograms(businessCompany.id);
+                        const qbDesktopSettings = getQbDesktopSettings(businessCompany.id);
+                        const qbDesktopPrograms = getQbDesktopPrograms(businessCompany.id);
                         
                         return (
                           <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
@@ -1529,6 +1852,8 @@ export default function SiteAdminDashboard(props: any) {
                                               });
                                             }
                                           });
+                                        } else if (businessCompany.accountingSystem === 'QUICKBOOKS_DESKTOP') {
+                                          loadQbDesktopSettings(businessCompany.id);
                                         }
                                       }
                                       return newSet;
@@ -1826,6 +2151,220 @@ export default function SiteAdminDashboard(props: any) {
                                                 <td style={{ padding: '6px' }}>
                                                   <button
                                                     onClick={() => deleteCompanyProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            QuickBooks Desktop setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveQbDesktopSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Connection
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Run Initial Sync
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>QuickBooks Desktop configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter required Web Connector/SDK setup values, then click Save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'integrationType', label: 'Integration Type *' },
+                                          { key: 'applicationName', label: 'Application Name *' },
+                                          { key: 'soapEndpointUrl', label: 'SOAP/App Endpoint URL *' },
+                                          { key: 'supportUrl', label: 'Support URL' },
+                                          { key: 'ownerId', label: 'Owner ID (GUID) *' },
+                                          { key: 'fileId', label: 'File ID (GUID) *' },
+                                          { key: 'webConnectorUsername', label: 'Web Connector Username *' },
+                                          { key: 'pollingIntervalMinutes', label: 'Polling Interval (minutes) *' },
+                                          { key: 'desktopEditionYear', label: 'QB Desktop Edition + Year *' },
+                                          { key: 'countryVersion', label: 'Country Version *' },
+                                          { key: 'companyFilePath', label: 'Target Company File Path (.QBW) *' },
+                                          { key: 'hostMachineName', label: 'Host Machine Name *' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-qbdesktop-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            {field.key === 'integrationType' ? (
+                                              <select
+                                                value={qbDesktopSettings.integrationType}
+                                                onChange={(e) => setQbDesktopSetting(businessCompany.id, 'integrationType', e.target.value)}
+                                                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                              >
+                                                <option value="">Select</option>
+                                                <option value="WEB_CONNECTOR">QuickBooks Web Connector</option>
+                                                <option value="SDK">SDK</option>
+                                              </select>
+                                            ) : (
+                                              <input
+                                                type="text"
+                                                value={(qbDesktopSettings as any)[field.key] || ''}
+                                                onChange={(e) => setQbDesktopSetting(businessCompany.id, field.key as keyof typeof defaultQbDesktopSettings, e.target.value)}
+                                                placeholder={field.label.replace(' *', '')}
+                                                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                              />
+                                            )}
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Permission Scope *</span>
+                                          <select
+                                            value={qbDesktopSettings.permissionScope}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'permissionScope', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="READ_ONLY">Read-only</option>
+                                            <option value="READ_WRITE">Read-write</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Unattended Access Required *</span>
+                                          <select
+                                            value={qbDesktopSettings.unattendedAccessRequired}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'unattendedAccessRequired', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Host Online During Sync *</span>
+                                          <select
+                                            value={qbDesktopSettings.hostOnlineForSync}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'hostOnlineForSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Direction *</span>
+                                          <select
+                                            value={qbDesktopSettings.syncDirection}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'syncDirection', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="QB_TO_PLATFORM">QB -> Platform</option>
+                                            <option value="TWO_WAY">Two-way</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addQbDesktopProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveQbDesktopSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QB Entity</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {qbDesktopPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-qbdesktop-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.dataDomain}
+                                                    onChange={(e) => updateQbDesktopProgram(businessCompany.id, index, 'dataDomain', e.target.value)}
+                                                    placeholder="Data Domain"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.qbEntity}
+                                                    onChange={(e) => updateQbDesktopProgram(businessCompany.id, index, 'qbEntity', e.target.value)}
+                                                    placeholder="QB Entity"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteQbDesktopProgram(businessCompany.id, index)}
                                                     style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                                                   >
                                                     Delete
