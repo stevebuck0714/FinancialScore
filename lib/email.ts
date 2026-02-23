@@ -810,6 +810,10 @@ interface SupportTicketProps {
   contactEmail: string;
   companyName: string;
   pageModule?: string;
+  tier1Owner?: 'CORELYTICS' | 'CONSULTANT';
+  routedToEmail?: string;
+  routedToLabel?: string;
+  tier1ConsultantName?: string;
 }
 
 /**
@@ -822,6 +826,7 @@ export async function sendSupportTicket(ticket: SupportTicketProps) {
     throw new Error('Email service is not configured. Please email support@corelytics.com directly.');
   }
 
+  const routeRecipient = (ticket.routedToEmail || NOTIFICATION_EMAIL).trim().toLowerCase();
   const subject = `[Support Ticket] ${ticket.subject}`;
   const html = `
 <!DOCTYPE html>
@@ -836,6 +841,9 @@ export async function sendSupportTicket(ticket: SupportTicketProps) {
     <tr><td style="padding: 8px 0; font-weight: 600;">Contact Name:</td><td>${escapeHtml(ticket.contactName)}</td></tr>
     <tr><td style="padding: 8px 0; font-weight: 600;">Contact Email:</td><td>${escapeHtml(ticket.contactEmail)}</td></tr>
     <tr><td style="padding: 8px 0; font-weight: 600;">Company Name:</td><td>${escapeHtml(ticket.companyName)}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Tier 1 Owner:</td><td>${escapeHtml(ticket.tier1Owner || 'CORELYTICS')}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Routed To:</td><td>${escapeHtml(ticket.routedToLabel || routeRecipient)}</td></tr>
+    ${ticket.tier1ConsultantName ? `<tr><td style="padding: 8px 0; font-weight: 600;">Tier 1 Consultant:</td><td>${escapeHtml(ticket.tier1ConsultantName)}</td></tr>` : ''}
     ${ticket.pageModule ? `<tr><td style="padding: 8px 0; font-weight: 600;">Page/Module:</td><td>${escapeHtml(ticket.pageModule)}</td></tr>` : ''}
   </table>
   <h3 style="margin-top: 24px; color: #475569;">Description</h3>
@@ -847,7 +855,7 @@ export async function sendSupportTicket(ticket: SupportTicketProps) {
 
   const { data, error } = await client.emails.send({
     from: DEFAULT_FROM,
-    to: [NOTIFICATION_EMAIL],
+    to: [routeRecipient],
     replyTo: [ticket.contactEmail],
     subject,
     html,
@@ -858,7 +866,7 @@ export async function sendSupportTicket(ticket: SupportTicketProps) {
     throw new Error(`Failed to send support ticket: ${error.message}`);
   }
 
-  console.log('Support ticket sent to', NOTIFICATION_EMAIL, data);
+  console.log('Support ticket sent to', routeRecipient, data);
   return { success: true, data };
 }
 

@@ -60,6 +60,78 @@ export default function SiteAdminDashboard(props: any) {
   const updateCompanyPricing = props.updateCompanyPricing as
     | undefined
     | ((companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number }) => void);
+  const [editingTier1RoutingByCompany, setEditingTier1RoutingByCompany] = React.useState<
+    Record<string, { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string }>
+  >({});
+  const [savingTier1RoutingCompanyId, setSavingTier1RoutingCompanyId] = React.useState<string | null>(null);
+
+  const getEffectiveTier1Routing = (company: any): { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string } => {
+    const ownerRaw =
+      typeof company?.tier1SupportOwner === 'string'
+        ? company.tier1SupportOwner.trim().toUpperCase()
+        : '';
+    const owner =
+      ownerRaw === 'CONSULTANT'
+        ? 'CONSULTANT'
+        : company?.consultantId
+          ? 'CONSULTANT'
+          : 'CORELYTICS';
+    const consultantIdRaw =
+      typeof company?.tier1SupportConsultantId === 'string'
+        ? company.tier1SupportConsultantId.trim()
+        : '';
+    const consultantId = consultantIdRaw || (typeof company?.consultantId === 'string' ? company.consultantId : '') || '';
+    return { owner, consultantId };
+  };
+
+  const saveTier1Routing = async (companyId: string, owner: 'CORELYTICS' | 'CONSULTANT', consultantId: string) => {
+    if (owner === 'CONSULTANT' && !consultantId) {
+      alert('Please select a consultant for consultant-owned Tier 1 support.');
+      return;
+    }
+
+    setSavingTier1RoutingCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          tier1SupportOwner: owner,
+          tier1SupportConsultantId: owner === 'CONSULTANT' ? consultantId : null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save Tier 1 support routing');
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((company: any) =>
+              company.id === companyId
+                ? {
+                    ...company,
+                    tier1SupportOwner: data?.company?.tier1SupportOwner ?? owner,
+                    tier1SupportConsultantId: data?.company?.tier1SupportConsultantId ?? (owner === 'CONSULTANT' ? consultantId : null),
+                  }
+                : company
+            )
+          : prev
+      );
+
+      setEditingTier1RoutingByCompany((prev) => {
+        const next = { ...prev };
+        delete next[companyId];
+        return next;
+      });
+      alert('Tier 1 support routing saved.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to save Tier 1 support routing');
+    } finally {
+      setSavingTier1RoutingCompanyId(null);
+    }
+  };
   const [operationalSyncSettingsByCompany, setOperationalSyncSettingsByCompany] = React.useState<
     Record<string, { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }>
   >({});
@@ -1963,7 +2035,7 @@ export default function SiteAdminDashboard(props: any) {
                                                         style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       >
                                                         <option value="">Select</option>
-                                                        <option value="QB_TO_PLATFORM">QB -> Platform</option>
+                                                        <option value="QB_TO_PLATFORM">QB to Platform</option>
                                                         <option value="TWO_WAY">Two-way</option>
                                                       </select>
                                                     </label>
@@ -2872,6 +2944,12 @@ export default function SiteAdminDashboard(props: any) {
                         const sageIntacctPrograms = getSageIntacctPrograms(businessCompany.id);
                         const odooSettings = getOdooSettings(businessCompany.id);
                         const odooPrograms = getOdooPrograms(businessCompany.id);
+                        const effectiveTier1Routing = getEffectiveTier1Routing(businessCompany);
+                        const tier1RoutingDraft = editingTier1RoutingByCompany[businessCompany.id] || effectiveTier1Routing;
+                        const supportConsultants = consultants.filter((consultant: any) => consultant?.type !== 'business');
+                        const currentSupportConsultant = supportConsultants.find(
+                          (consultant: any) => consultant.id === effectiveTier1Routing.consultantId
+                        );
                         
                         return (
                           <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
@@ -3049,6 +3127,95 @@ export default function SiteAdminDashboard(props: any) {
                             {/* Expanded Details */}
                             {isExpanded && (
                               <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '10px', paddingTop: '10px' }}>
+                                <div style={{ marginBottom: '10px', padding: '10px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                  <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Tier 1 Support Routing</h4>
+                                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                    Current: <strong>{effectiveTier1Routing.owner === 'CONSULTANT' ? 'Consultant' : 'Corelytics'}</strong>
+                                    {effectiveTier1Routing.owner === 'CONSULTANT' && (
+                                      <span>
+                                        {' '}
+                                        ({currentSupportConsultant?.fullName || currentSupportConsultant?.companyName || 'Consultant'})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: '8px', alignItems: 'end' }}>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Tier 1 Owner
+                                      </label>
+                                      <select
+                                        value={tier1RoutingDraft.owner}
+                                        onChange={(e) =>
+                                          setEditingTier1RoutingByCompany((prev) => ({
+                                            ...prev,
+                                            [businessCompany.id]: {
+                                              owner: e.target.value === 'CONSULTANT' ? 'CONSULTANT' : 'CORELYTICS',
+                                              consultantId:
+                                                e.target.value === 'CONSULTANT'
+                                                  ? (tier1RoutingDraft.consultantId || businessCompany.consultantId || '')
+                                                  : '',
+                                            },
+                                          }))
+                                        }
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                                      >
+                                        <option value="CORELYTICS">Corelytics</option>
+                                        <option value="CONSULTANT">Consultant</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Consultant
+                                      </label>
+                                      <select
+                                        value={tier1RoutingDraft.consultantId}
+                                        disabled={tier1RoutingDraft.owner !== 'CONSULTANT'}
+                                        onChange={(e) =>
+                                          setEditingTier1RoutingByCompany((prev) => ({
+                                            ...prev,
+                                            [businessCompany.id]: {
+                                              owner: tier1RoutingDraft.owner,
+                                              consultantId: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', background: tier1RoutingDraft.owner !== 'CONSULTANT' ? '#f1f5f9' : 'white' }}
+                                      >
+                                        <option value="">Select consultant</option>
+                                        {supportConsultants.map((consultant: any) => (
+                                          <option key={consultant.id} value={consultant.id}>
+                                            {consultant.companyName || consultant.fullName}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <button
+                                      onClick={() =>
+                                        saveTier1Routing(
+                                          businessCompany.id,
+                                          tier1RoutingDraft.owner,
+                                          tier1RoutingDraft.consultantId
+                                        )
+                                      }
+                                      disabled={savingTier1RoutingCompanyId === businessCompany.id}
+                                      style={{ padding: '6px 12px', background: savingTier1RoutingCompanyId === businessCompany.id ? '#94a3b8' : '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: savingTier1RoutingCompanyId === businessCompany.id ? 'not-allowed' : 'pointer' }}
+                                    >
+                                      {savingTier1RoutingCompanyId === businessCompany.id ? 'Saving...' : 'Save'}
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        setEditingTier1RoutingByCompany((prev) => {
+                                          const next = { ...prev };
+                                          delete next[businessCompany.id];
+                                          return next;
+                                        })
+                                      }
+                                      style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                    >
+                                      Reset
+                                    </button>
+                                  </div>
+                                </div>
 
                                 {businessCompany?.accountingSystem === 'INFOR_M3' ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
@@ -3450,7 +3617,7 @@ export default function SiteAdminDashboard(props: any) {
                                             style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                           >
                                             <option value="">Select</option>
-                                            <option value="QB_TO_PLATFORM">QB -> Platform</option>
+                                            <option value="QB_TO_PLATFORM">QB to Platform</option>
                                             <option value="TWO_WAY">Two-way</option>
                                           </select>
                                         </label>

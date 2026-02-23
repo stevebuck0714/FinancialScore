@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function SupportPage() {
   const [activeTab, setActiveTab] = useState<'getting-started' | 'privacy' | 'license' | 'request-support'>('getting-started');
@@ -604,9 +604,34 @@ function RequestSupportContent() {
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [pageModule, setPageModule] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    const loadSupportContext = async () => {
+      try {
+        const meRes = await fetch('/api/auth/me');
+        if (!meRes.ok) return;
+        const meData = await meRes.json();
+        const resolvedCompanyId = meData?.user?.companyId;
+        if (!resolvedCompanyId || typeof resolvedCompanyId !== 'string') return;
+        setCompanyId(resolvedCompanyId);
+
+        const companyRes = await fetch(`/api/companies?companyId=${encodeURIComponent(resolvedCompanyId)}`);
+        if (!companyRes.ok) return;
+        const companyData = await companyRes.json();
+        const resolvedCompanyName = companyData?.companies?.[0]?.name;
+        if (typeof resolvedCompanyName === 'string' && resolvedCompanyName.trim()) {
+          setCompanyName(resolvedCompanyName.trim());
+        }
+      } catch (error) {
+        console.warn('Unable to preload support company context', error);
+      }
+    };
+    loadSupportContext();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -628,6 +653,7 @@ function RequestSupportContent() {
           contactName: contactName.trim(),
           contactEmail: contactEmail.trim(),
           companyName: companyName.trim(),
+          companyId: companyId || undefined,
           pageModule: pageModule || undefined,
         }),
       });
@@ -661,7 +687,7 @@ function RequestSupportContent() {
         Request Support
       </h2>
       <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
-        Submit a support ticket and we will respond at your contact email. Tickets are routed to support@corelytics.com.
+        Submit a support ticket and we will respond at your contact email. Tier 1 routing is based on your company support owner settings.
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

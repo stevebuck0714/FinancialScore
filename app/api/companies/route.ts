@@ -74,6 +74,8 @@ export async function GET(request: NextRequest) {
     }
 
     const includeSetupFee = await hasCompanyColumn("subscriptionSetupFee");
+    const includeTier1SupportOwner = await hasCompanyColumn("tier1SupportOwner");
+    const includeTier1SupportConsultantId = await hasCompanyColumn("tier1SupportConsultantId");
     let companies;
     try {
       companies = await prisma.company.findMany({
@@ -99,6 +101,8 @@ export async function GET(request: NextRequest) {
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
           ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
+          ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
+          ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
           // Skip affiliateCode in production (not needed)
           ...(process.env.NODE_ENV === "production"
             ? {}
@@ -133,6 +137,8 @@ export async function GET(request: NextRequest) {
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
           ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
+          ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
+          ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
           ...(process.env.NODE_ENV === "production"
             ? {}
             : {
@@ -210,6 +216,8 @@ export async function POST(request: NextRequest) {
       companySizeCategory,
       affiliateCode,
       linesOfBusiness,
+      tier1SupportOwner,
+      tier1SupportConsultantId,
     } = requestBody;
 
     console.log("🔍 Received data:", {
@@ -576,6 +584,51 @@ export async function POST(request: NextRequest) {
     });
 
     const includeSetupFee = await hasCompanyColumn("subscriptionSetupFee");
+    const includeTier1SupportOwner = await hasCompanyColumn("tier1SupportOwner");
+    const includeTier1SupportConsultantId = await hasCompanyColumn("tier1SupportConsultantId");
+
+    const normalizedTier1SupportOwner =
+      typeof tier1SupportOwner === "string"
+        ? tier1SupportOwner.trim().toUpperCase()
+        : null;
+    if (
+      normalizedTier1SupportOwner &&
+      normalizedTier1SupportOwner !== "CORELYTICS" &&
+      normalizedTier1SupportOwner !== "CONSULTANT"
+    ) {
+      return NextResponse.json(
+        { error: "tier1SupportOwner must be CORELYTICS or CONSULTANT" },
+        { status: 400 },
+      );
+    }
+
+    // Consultant-originated company defaults to consultant-owned Tier 1.
+    const finalTier1SupportOwner =
+      normalizedTier1SupportOwner || (consultantId ? "CONSULTANT" : "CORELYTICS");
+    const finalTier1SupportConsultantId =
+      finalTier1SupportOwner === "CONSULTANT"
+        ? (typeof tier1SupportConsultantId === "string" && tier1SupportConsultantId.trim()) || consultantId
+        : null;
+
+    if (finalTier1SupportOwner === "CONSULTANT" && !finalTier1SupportConsultantId) {
+      return NextResponse.json(
+        { error: "tier1SupportConsultantId is required when tier1SupportOwner is CONSULTANT" },
+        { status: 400 },
+      );
+    }
+
+    if (finalTier1SupportOwner === "CONSULTANT" && finalTier1SupportConsultantId) {
+      const supportConsultant = await prisma.consultant.findUnique({
+        where: { id: finalTier1SupportConsultantId },
+        select: { id: true },
+      });
+      if (!supportConsultant) {
+        return NextResponse.json(
+          { error: "Tier 1 support consultant not found" },
+          { status: 400 },
+        );
+      }
+    }
 
     try {
       const company = await prisma.company.create({
@@ -606,6 +659,12 @@ export async function POST(request: NextRequest) {
             annualPrice === 0
               ? "free"
               : "active",
+          ...(includeTier1SupportOwner
+            ? { tier1SupportOwner: finalTier1SupportOwner }
+            : {}),
+          ...(includeTier1SupportConsultantId
+            ? { tier1SupportConsultantId: finalTier1SupportConsultantId }
+            : {}),
           // Store pricing in userDefinedAllocations (only for affiliate codes, not for default pricing)
           // Only store userDefinedAllocations if affiliate code was used
           userDefinedAllocations: useAffiliatePricing ? {
@@ -645,6 +704,8 @@ export async function POST(request: NextRequest) {
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
           ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
+          ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
+          ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
           createdAt: true,
         },
       });
@@ -862,6 +923,91 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Tier 1 support routing
+    const tier1SupportOwnerColumnExists = await hasCompanyColumn('tier1SupportOwner');
+    const tier1SupportConsultantIdColumnExists = await hasCompanyColumn('tier1SupportConsultantId');
+    const hasTier1SupportUpdate =
+      updateFields.tier1SupportOwner !== undefined ||
+      updateFields.tier1SupportConsultantId !== undefined;
+
+    if (hasTier1SupportUpdate) {
+      if (!tier1SupportOwnerColumnExists || !tier1SupportConsultantIdColumnExists) {
+        return NextResponse.json(
+          { error: "Tier 1 support routing columns are not available in this environment" },
+          { status: 400 },
+        );
+      }
+
+      const nextOwnerRaw =
+        updateFields.tier1SupportOwner !== undefined
+          ? String(updateFields.tier1SupportOwner || '').trim().toUpperCase()
+          : undefined;
+      const nextOwner = nextOwnerRaw ?? undefined;
+      if (nextOwner !== undefined && nextOwner !== 'CORELYTICS' && nextOwner !== 'CONSULTANT') {
+        return NextResponse.json(
+          { error: "tier1SupportOwner must be CORELYTICS or CONSULTANT" },
+          { status: 400 },
+        );
+      }
+
+      const requestedConsultantId =
+        updateFields.tier1SupportConsultantId === undefined
+          ? undefined
+          : (updateFields.tier1SupportConsultantId || null);
+
+      const currentSupportRows = await prisma.$queryRaw<
+        Array<{
+          tier1SupportOwner: string | null;
+          tier1SupportConsultantId: string | null;
+          consultantId: string | null;
+        }>
+      >`
+        SELECT "tier1SupportOwner", "tier1SupportConsultantId", "consultantId"
+        FROM "Company"
+        WHERE "id" = ${targetCompanyId}
+        LIMIT 1
+      `;
+      const currentSupportRouting = currentSupportRows[0] || null;
+
+      const effectiveOwner =
+        nextOwner ??
+        (currentSupportRouting?.tier1SupportOwner
+          ? String(currentSupportRouting.tier1SupportOwner).toUpperCase()
+          : (currentSupportRouting?.consultantId ? 'CONSULTANT' : 'CORELYTICS'));
+
+      let effectiveConsultantId: string | null =
+        requestedConsultantId === undefined
+          ? (currentSupportRouting?.tier1SupportConsultantId || null)
+          : requestedConsultantId;
+
+      if (effectiveOwner === 'CONSULTANT') {
+        if (!effectiveConsultantId) {
+          effectiveConsultantId = currentSupportRouting?.consultantId || null;
+        }
+        if (!effectiveConsultantId) {
+          return NextResponse.json(
+            { error: "tier1SupportConsultantId is required when tier1SupportOwner is CONSULTANT" },
+            { status: 400 },
+          );
+        }
+        const supportConsultant = await prisma.consultant.findUnique({
+          where: { id: effectiveConsultantId },
+          select: { id: true },
+        });
+        if (!supportConsultant) {
+          return NextResponse.json(
+            { error: "Tier 1 support consultant not found" },
+            { status: 400 },
+          );
+        }
+      } else {
+        effectiveConsultantId = null;
+      }
+
+      updateData.tier1SupportOwner = effectiveOwner;
+      updateData.tier1SupportConsultantId = effectiveConsultantId;
+    }
+
     // Name
     if (updateFields.name !== undefined) updateData.name = updateFields.name;
 
@@ -915,6 +1061,12 @@ export async function PATCH(request: NextRequest) {
     }
     if (await columnExists('companySizeCategory')) {
       selectFields.companySizeCategory = true;
+    }
+    if (await columnExists('tier1SupportOwner')) {
+      selectFields.tier1SupportOwner = true;
+    }
+    if (await columnExists('tier1SupportConsultantId')) {
+      selectFields.tier1SupportConsultantId = true;
     }
 
     // Select headcountAllocations if it exists (now that database column is added)

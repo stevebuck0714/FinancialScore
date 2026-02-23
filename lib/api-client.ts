@@ -80,6 +80,8 @@ export const companiesApi = {
     location?: string;
     industrySector?: number;
     affiliateCode?: string;
+    tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
+    tier1SupportConsultantId?: string | null;
   }) {
     return fetchApi('/api/companies', {
       method: 'POST',
@@ -98,6 +100,8 @@ export const companiesApi = {
     industrySectorCategory?: string | null;
     accountingSystem?: string | null;
     companySizeCategory?: string | null;
+    tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
+    tier1SupportConsultantId?: string | null;
   }) {
     return fetchApi('/api/companies', {
       method: 'PATCH',

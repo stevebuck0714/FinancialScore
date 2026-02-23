@@ -168,6 +168,8 @@ export interface Company {
   subscriptionAnnualPrice?: number;
   subscriptionSetupFee?: number;
   selectedSubscriptionPlan?: string | null;
+  tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
+  tier1SupportConsultantId?: string | null;
 }
 
 export interface CompanyProfile {

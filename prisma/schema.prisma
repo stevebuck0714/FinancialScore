@@ -39,6 +39,10 @@ model Company {
   id                         String                 @id @default(cuid())
   name                       String
   consultantId               String?                // Optional - NULL for standalone businesses
+  // Tier 1 support routing: CONSULTANT or CORELYTICS
+  tier1SupportOwner          String?                @default("CORELYTICS")
+  // Consultant that owns Tier 1 support when owner is CONSULTANT
+  tier1SupportConsultantId   String?
   addressStreet              String?
   addressCity                String?
   addressState               String?
