@@ -61,11 +61,11 @@ export default function SiteAdminDashboard(props: any) {
     | undefined
     | ((companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number }) => void);
   const [editingTier1RoutingByCompany, setEditingTier1RoutingByCompany] = React.useState<
-    Record<string, { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string }>
+    Record<string, { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string; supportEmail: string }>
   >({});
   const [savingTier1RoutingCompanyId, setSavingTier1RoutingCompanyId] = React.useState<string | null>(null);
 
-  const getEffectiveTier1Routing = (company: any): { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string } => {
+  const getEffectiveTier1Routing = (company: any): { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string; supportEmail: string } => {
     const ownerRaw =
       typeof company?.tier1SupportOwner === 'string'
         ? company.tier1SupportOwner.trim().toUpperCase()
@@ -81,10 +81,14 @@ export default function SiteAdminDashboard(props: any) {
         ? company.tier1SupportConsultantId.trim()
         : '';
     const consultantId = consultantIdRaw || (typeof company?.consultantId === 'string' ? company.consultantId : '') || '';
-    return { owner, consultantId };
+    const supportEmail =
+      typeof company?.tier1SupportContactEmail === 'string'
+        ? company.tier1SupportContactEmail.trim()
+        : '';
+    return { owner, consultantId, supportEmail };
   };
 
-  const saveTier1Routing = async (companyId: string, owner: 'CORELYTICS' | 'CONSULTANT', consultantId: string) => {
+  const saveTier1Routing = async (companyId: string, owner: 'CORELYTICS' | 'CONSULTANT', consultantId: string, supportEmail: string) => {
     if (owner === 'CONSULTANT' && !consultantId) {
       alert('Please select a consultant for consultant-owned Tier 1 support.');
       return;
@@ -99,6 +103,7 @@ export default function SiteAdminDashboard(props: any) {
           id: companyId,
           tier1SupportOwner: owner,
           tier1SupportConsultantId: owner === 'CONSULTANT' ? consultantId : null,
+          tier1SupportContactEmail: owner === 'CONSULTANT' ? (supportEmail || null) : null,
         }),
       });
       const data = await response.json();
@@ -114,6 +119,7 @@ export default function SiteAdminDashboard(props: any) {
                     ...company,
                     tier1SupportOwner: data?.company?.tier1SupportOwner ?? owner,
                     tier1SupportConsultantId: data?.company?.tier1SupportConsultantId ?? (owner === 'CONSULTANT' ? consultantId : null),
+                    tier1SupportContactEmail: data?.company?.tier1SupportContactEmail ?? (owner === 'CONSULTANT' ? supportEmail : null),
                   }
                 : company
             )
@@ -3137,8 +3143,11 @@ export default function SiteAdminDashboard(props: any) {
                                         ({currentSupportConsultant?.fullName || currentSupportConsultant?.companyName || 'Consultant'})
                                       </span>
                                     )}
+                                    {effectiveTier1Routing.owner === 'CONSULTANT' && effectiveTier1Routing.supportEmail && (
+                                      <span> - {effectiveTier1Routing.supportEmail}</span>
+                                    )}
                                   </div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: '8px', alignItems: 'end' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: '8px', alignItems: 'end' }}>
                                     <div>
                                       <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                                         Tier 1 Owner
@@ -3154,6 +3163,8 @@ export default function SiteAdminDashboard(props: any) {
                                                 e.target.value === 'CONSULTANT'
                                                   ? (tier1RoutingDraft.consultantId || businessCompany.consultantId || '')
                                                   : '',
+                                              supportEmail:
+                                                e.target.value === 'CONSULTANT' ? tier1RoutingDraft.supportEmail : '',
                                             },
                                           }))
                                         }
@@ -3176,6 +3187,9 @@ export default function SiteAdminDashboard(props: any) {
                                             [businessCompany.id]: {
                                               owner: tier1RoutingDraft.owner,
                                               consultantId: e.target.value,
+                                              supportEmail:
+                                                tier1RoutingDraft.supportEmail ||
+                                                (supportConsultants.find((c: any) => c.id === e.target.value)?.email || ''),
                                             },
                                           }))
                                         }
@@ -3189,12 +3203,35 @@ export default function SiteAdminDashboard(props: any) {
                                         ))}
                                       </select>
                                     </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Tier 1 Contact Email
+                                      </label>
+                                      <input
+                                        type="email"
+                                        value={tier1RoutingDraft.supportEmail}
+                                        disabled={tier1RoutingDraft.owner !== 'CONSULTANT'}
+                                        onChange={(e) =>
+                                          setEditingTier1RoutingByCompany((prev) => ({
+                                            ...prev,
+                                            [businessCompany.id]: {
+                                              owner: tier1RoutingDraft.owner,
+                                              consultantId: tier1RoutingDraft.consultantId,
+                                              supportEmail: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        placeholder="tier1@consultant.com"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', background: tier1RoutingDraft.owner !== 'CONSULTANT' ? '#f1f5f9' : 'white' }}
+                                      />
+                                    </div>
                                     <button
                                       onClick={() =>
                                         saveTier1Routing(
                                           businessCompany.id,
                                           tier1RoutingDraft.owner,
-                                          tier1RoutingDraft.consultantId
+                                          tier1RoutingDraft.consultantId,
+                                          tier1RoutingDraft.supportEmail
                                         )
                                       }
                                       disabled={savingTier1RoutingCompanyId === businessCompany.id}

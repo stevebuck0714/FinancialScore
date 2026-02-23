@@ -82,6 +82,7 @@ export const companiesApi = {
     affiliateCode?: string;
     tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
     tier1SupportConsultantId?: string | null;
+    tier1SupportContactEmail?: string | null;
   }) {
     return fetchApi('/api/companies', {
       method: 'POST',
@@ -102,6 +103,7 @@ export const companiesApi = {
     companySizeCategory?: string | null;
     tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
     tier1SupportConsultantId?: string | null;
+    tier1SupportContactEmail?: string | null;
   }) {
     return fetchApi('/api/companies', {
       method: 'PATCH',

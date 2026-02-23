@@ -43,6 +43,8 @@ model Company {
   tier1SupportOwner          String?                @default("CORELYTICS")
   // Consultant that owns Tier 1 support when owner is CONSULTANT
   tier1SupportConsultantId   String?
+  // Optional per-company Tier 1 contact email override
+  tier1SupportContactEmail   String?
   addressStreet              String?
   addressCity                String?
   addressState               String?

@@ -63,6 +63,7 @@ export async function POST(request: Request) {
 
       const includeTier1SupportOwner = await hasCompanyColumn('tier1SupportOwner');
       const includeTier1SupportConsultantId = await hasCompanyColumn('tier1SupportConsultantId');
+      const includeTier1SupportContactEmail = await hasCompanyColumn('tier1SupportContactEmail');
       const company = await prisma.company.findUnique({
         where: { id: targetCompanyId },
         select: {
@@ -74,11 +75,12 @@ export async function POST(request: Request) {
       if (company) {
         let storedTier1Owner: string | null = null;
         let storedTier1SupportConsultantId: string | null = null;
-        if (includeTier1SupportOwner || includeTier1SupportConsultantId) {
+        let storedTier1SupportContactEmail: string | null = null;
+        if (includeTier1SupportOwner || includeTier1SupportConsultantId || includeTier1SupportContactEmail) {
           const supportRows = await prisma.$queryRaw<
-            Array<{ tier1SupportOwner: string | null; tier1SupportConsultantId: string | null }>
+            Array<{ tier1SupportOwner: string | null; tier1SupportConsultantId: string | null; tier1SupportContactEmail: string | null }>
           >`
-            SELECT "tier1SupportOwner", "tier1SupportConsultantId"
+            SELECT "tier1SupportOwner", "tier1SupportConsultantId", "tier1SupportContactEmail"
             FROM "Company"
             WHERE "id" = ${targetCompanyId}
             LIMIT 1
@@ -86,6 +88,7 @@ export async function POST(request: Request) {
           if (supportRows[0]) {
             storedTier1Owner = supportRows[0].tier1SupportOwner;
             storedTier1SupportConsultantId = supportRows[0].tier1SupportConsultantId;
+            storedTier1SupportContactEmail = supportRows[0].tier1SupportContactEmail;
           }
         }
 
@@ -102,6 +105,12 @@ export async function POST(request: Request) {
           null;
 
         if (tier1Owner === 'CONSULTANT' && configuredConsultantId) {
+          const configuredTier1Email = storedTier1SupportContactEmail?.trim() || '';
+          if (configuredTier1Email) {
+            routedToEmail = configuredTier1Email.toLowerCase();
+            routedToLabel = `${configuredTier1Email} (Company Tier 1 Contact)`;
+            tier1ConsultantName = undefined;
+          } else {
           const consultant = await prisma.consultant.findUnique({
             where: { id: configuredConsultantId },
             select: {
@@ -121,6 +130,7 @@ export async function POST(request: Request) {
               : 'Consultant Tier 1';
           } else {
             tier1Owner = 'CORELYTICS';
+          }
           }
         }
       }

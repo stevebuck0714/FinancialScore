@@ -170,6 +170,7 @@ export interface Company {
   selectedSubscriptionPlan?: string | null;
   tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
   tier1SupportConsultantId?: string | null;
+  tier1SupportContactEmail?: string | null;
 }
 
 export interface CompanyProfile {
