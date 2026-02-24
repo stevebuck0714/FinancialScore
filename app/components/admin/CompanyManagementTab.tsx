@@ -32,7 +32,7 @@ interface CompanyManagementTabProps {
   setCompanySizeCategory: (size: string) => void;
   setIndustrySectorCategory: (sector: string) => void;
   setShowCompanyDetailsModal: (show: boolean) => void;
-  deleteUser: (id: string) => void;
+  deleteUser: (id: string, companyId?: string) => void;
   newCompanyUserName: string;
   setNewCompanyUserName: (name: string) => void;
   newCompanyUserTitle: string;
@@ -43,7 +43,11 @@ interface CompanyManagementTabProps {
   setNewCompanyUserPhone: (phone: string) => void;
   newCompanyUserPassword: string;
   setNewCompanyUserPassword: (password: string) => void;
-  addUser: (companyId: string, userType: string) => void;
+  addUser: (companyId: string, userType: "company" | "assessment") => void;
+  existingCompanyUserName: string;
+  setExistingCompanyUserName: (name: string) => void;
+  existingCompanyUserEmail: string;
+  setExistingCompanyUserEmail: (email: string) => void;
   newAssessmentUserName: string;
   setNewAssessmentUserName: (name: string) => void;
   newAssessmentUserTitle: string;
@@ -52,6 +56,14 @@ interface CompanyManagementTabProps {
   setNewAssessmentUserEmail: (email: string) => void;
   newAssessmentUserPassword: string;
   setNewAssessmentUserPassword: (password: string) => void;
+  existingAssessmentUserName: string;
+  setExistingAssessmentUserName: (name: string) => void;
+  existingAssessmentUserEmail: string;
+  setExistingAssessmentUserEmail: (email: string) => void;
+  grantExistingUserAccess: (
+    companyId: string,
+    userType: "company" | "assessment",
+  ) => void;
   setSelectedCompanyId: (id: string) => void;
   // Profile tab props
   company: any;
@@ -263,6 +275,10 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           newCompanyUserPassword={props.newCompanyUserPassword}
           setNewCompanyUserPassword={props.setNewCompanyUserPassword}
           addUser={props.addUser}
+          existingCompanyUserName={props.existingCompanyUserName}
+          setExistingCompanyUserName={props.setExistingCompanyUserName}
+          existingCompanyUserEmail={props.existingCompanyUserEmail}
+          setExistingCompanyUserEmail={props.setExistingCompanyUserEmail}
           newAssessmentUserName={props.newAssessmentUserName}
           setNewAssessmentUserName={props.setNewAssessmentUserName}
           newAssessmentUserTitle={props.newAssessmentUserTitle}
@@ -271,6 +287,11 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           setNewAssessmentUserEmail={props.setNewAssessmentUserEmail}
           newAssessmentUserPassword={props.newAssessmentUserPassword}
           setNewAssessmentUserPassword={props.setNewAssessmentUserPassword}
+          existingAssessmentUserName={props.existingAssessmentUserName}
+          setExistingAssessmentUserName={props.setExistingAssessmentUserName}
+          existingAssessmentUserEmail={props.existingAssessmentUserEmail}
+          setExistingAssessmentUserEmail={props.setExistingAssessmentUserEmail}
+          grantExistingUserAccess={props.grantExistingUserAccess}
           setSelectedCompanyId={props.setSelectedCompanyId}
         />
       )}

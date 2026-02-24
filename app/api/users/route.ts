@@ -209,6 +209,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
+      // Preserve existing identity; if it has no display name yet, fill it from input.
+      if ((!existingUser.name || !existingUser.name.trim()) && name.trim()) {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { name: name.trim() },
+        });
+      }
+
       // Existing identity: grant access to this company (no new password needed).
       const grant = await grantUserCompanyAccess({
         userId: existingUser.id,
@@ -348,6 +356,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const requestedCompanyId = searchParams.get('companyId');
 
     if (!id) {
       return NextResponse.json(
@@ -383,12 +392,13 @@ export async function DELETE(request: NextRequest) {
     const context = userContext;
     const activeCompanyId = context.companyId || null;
     const targetCompanyForAction =
+      requestedCompanyId ||
       activeCompanyId ||
       targetUser.companyId ||
       memberships[0]?.companyId ||
       null;
-    const membershipForActiveCompany = activeCompanyId
-      ? memberships.find((m) => m.companyId === activeCompanyId)
+    const membershipForActionCompany = targetCompanyForAction
+      ? memberships.find((m) => m.companyId === targetCompanyForAction)
       : null;
 
     if (!targetCompanyForAction && context.role !== 'SITEADMIN') {
@@ -458,56 +468,57 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const shouldRevokeAccessOnly =
-      Boolean(membershipForActiveCompany) &&
-      (
-        memberships.length > 1 ||
-        targetUser.role !== 'USER' ||
-        Boolean(targetUser.consultantId)
-      );
-
-    if (shouldRevokeAccessOnly && membershipForActiveCompany) {
-      await prisma.userCompanyAccess.delete({
-        where: {
-          userId_companyId: {
-            userId: id,
-            companyId: membershipForActiveCompany.companyId,
-          },
-        },
-      });
-
-      if (targetUser.companyId === membershipForActiveCompany.companyId) {
-        const remaining = memberships.filter((m) => m.companyId !== membershipForActiveCompany.companyId);
-        const firstRemaining = remaining[0];
-        await prisma.user.update({
-          where: { id },
-          data: {
-            companyId: firstRemaining?.companyId || null,
-            companyRole: firstRemaining?.companyRole || null,
-            sidebarAccess: (firstRemaining?.sidebarAccess as any) ?? null,
+    // In Manage Users, "delete user" means disconnect this user from this company only.
+    // Keep the underlying identity (email/password) so the user can be re-granted later.
+    if (targetCompanyForAction) {
+      if (membershipForActionCompany) {
+        await prisma.userCompanyAccess.delete({
+          where: {
+            userId_companyId: {
+              userId: id,
+              companyId: membershipForActionCompany.companyId,
+            },
           },
         });
+      } else if (targetUser.companyId !== targetCompanyForAction) {
+        return NextResponse.json(
+          { error: 'User is not linked to this company' },
+          { status: 404 }
+        );
       }
+
+      // Recompute remaining memberships after disconnect for canonical user fields.
+      const remainingMemberships = await prisma.userCompanyAccess.findMany({
+        where: { userId: id },
+        select: { companyId: true, companyRole: true, sidebarAccess: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      const firstRemaining = remainingMemberships[0];
+
+      const shouldClearLegacyCompany = targetUser.companyId === targetCompanyForAction;
+      await prisma.user.update({
+        where: { id },
+        data: shouldClearLegacyCompany
+          ? {
+              companyId: firstRemaining?.companyId || null,
+              companyRole: firstRemaining?.companyRole || null,
+              sidebarAccess: (firstRemaining?.sidebarAccess as any) ?? null,
+            }
+          : {},
+      });
 
       await auditUserOperation('USER_COMPANY_ACCESS_REVOKED', id, {
         email: targetUser.email,
-        companyId: membershipForActiveCompany.companyId,
+        companyId: targetCompanyForAction,
       });
 
       return NextResponse.json({ success: true, revokedAccessOnly: true });
     }
 
-    // Delete the user account.
-    await prisma.user.delete({
-      where: { id },
-    });
-
-    await auditUserOperation('USER_DELETED', id, {
-      email: targetUser.email,
-      role: targetUser.role,
-    });
-
-    return NextResponse.json({ success: true, deletedAccount: true });
+    return NextResponse.json(
+      { error: 'Company context is required for this action' },
+      { status: 400 }
+    );
   } catch (error) {
     console.error('Error deleting user:', error);
     return NextResponse.json(

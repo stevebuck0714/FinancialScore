@@ -162,8 +162,10 @@ export const usersApi = {
     });
   },
 
-  async delete(id: string) {
-    return fetchApi(`/api/users?id=${id}`, {
+  async delete(id: string, companyId?: string) {
+    const params = new URLSearchParams({ id });
+    if (companyId) params.set('companyId', companyId);
+    return fetchApi(`/api/users?${params.toString()}`, {
       method: 'DELETE',
     });
   },

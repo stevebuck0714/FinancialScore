@@ -264,11 +264,15 @@ function FinancialScorePage() {
   const [newCompanyUserEmail, setNewCompanyUserEmail] = useState('');
   const [newCompanyUserPhone, setNewCompanyUserPhone] = useState('');
   const [newCompanyUserPassword, setNewCompanyUserPassword] = useState('');
+  const [existingCompanyUserName, setExistingCompanyUserName] = useState('');
+  const [existingCompanyUserEmail, setExistingCompanyUserEmail] = useState('');
   // Separate state for Assessment Users (no phone field)
   const [newAssessmentUserName, setNewAssessmentUserName] = useState('');
   const [newAssessmentUserTitle, setNewAssessmentUserTitle] = useState('');
   const [newAssessmentUserEmail, setNewAssessmentUserEmail] = useState('');
   const [newAssessmentUserPassword, setNewAssessmentUserPassword] = useState('');
+  const [existingAssessmentUserName, setExistingAssessmentUserName] = useState('');
+  const [existingAssessmentUserEmail, setExistingAssessmentUserEmail] = useState('');
   
   // State - Company Details
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false);
@@ -3249,6 +3253,10 @@ function FinancialScorePage() {
     setSelectingCompanyId(null);
     setCompanyPickerError('');
     setCompanyPickerPromptedThisSession(false);
+    setExistingCompanyUserName('');
+    setExistingCompanyUserEmail('');
+    setExistingAssessmentUserName('');
+    setExistingAssessmentUserEmail('');
     setRawRows([]);
     setMapping({ date: '' });
     setFile(null);
@@ -4315,12 +4323,96 @@ function FinancialScorePage() {
     }
   };
 
-  const deleteUser = async (userId: string) => {
+  const grantExistingUserAccess = async (
+    companyId: string,
+    userType: 'company' | 'assessment' = 'company',
+  ) => {
+    const name =
+      userType === 'company' ? existingCompanyUserName.trim() : existingAssessmentUserName.trim();
+    const email =
+      userType === 'company' ? existingCompanyUserEmail.trim() : existingAssessmentUserEmail.trim();
+    if (!name) {
+      alert('Please enter the user name.');
+      return;
+    }
+    if (!email) {
+      alert('Please enter an email to grant access.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { user, linkedExistingUser } = await usersApi.create({
+        name,
+        email,
+        password: undefined,
+        companyId,
+        userType: userType.toUpperCase() as 'COMPANY' | 'ASSESSMENT',
+      });
+
+      const normalizedUser = {
+        ...user,
+        companyId,
+        role: user.role.toLowerCase(),
+        // Show in the selected section immediately after grant.
+        userType: userType.toLowerCase(),
+      };
+      setUsers((prev) => {
+        const existingIndex = prev.findIndex(
+          (u) => u.id === normalizedUser.id && u.companyId === companyId
+        );
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = { ...next[existingIndex], ...normalizedUser };
+          return next;
+        }
+        return [...prev, normalizedUser];
+      });
+
+      if (linkedExistingUser) {
+        alert(
+          `Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`,
+        );
+      } else {
+        alert(`User created and added:\n\n${email}`);
+      }
+
+      if (userType === 'company') {
+        setExistingCompanyUserName('');
+        setExistingCompanyUserEmail('');
+      } else {
+        setExistingAssessmentUserName('');
+        setExistingAssessmentUserEmail('');
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.message.includes('already has access to this company')) {
+          alert(`User already has access\n\n"${email}" already has access to this company.`);
+        } else if (error.message.toLowerCase().includes('password is required')) {
+          alert(
+            `No existing account found for:\n\n${email}\n\nUse "Create New User" and set a password to create this user.`,
+          );
+        } else {
+          alert(error.message);
+        }
+      } else {
+        alert('Failed to grant access');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteUser = async (userId: string, companyId?: string) => {
     if (!confirm('Delete this user?')) return;
     setIsLoading(true);
     try {
-      await usersApi.delete(userId);
-      setUsers(users.filter(u => u.id !== userId));
+      await usersApi.delete(userId, companyId);
+      setUsers((prev) =>
+        prev.filter((u) =>
+          companyId ? !(u.id === userId && u.companyId === companyId) : u.id !== userId
+        )
+      );
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to delete user');
     } finally {
@@ -6624,6 +6716,10 @@ function FinancialScorePage() {
               newCompanyUserPassword={newCompanyUserPassword}
               setNewCompanyUserPassword={setNewCompanyUserPassword}
               addUser={addUser}
+              existingCompanyUserName={existingCompanyUserName}
+              setExistingCompanyUserName={setExistingCompanyUserName}
+              existingCompanyUserEmail={existingCompanyUserEmail}
+              setExistingCompanyUserEmail={setExistingCompanyUserEmail}
               newAssessmentUserName={newAssessmentUserName}
               setNewAssessmentUserName={setNewAssessmentUserName}
               newAssessmentUserTitle={newAssessmentUserTitle}
@@ -6632,6 +6728,11 @@ function FinancialScorePage() {
               setNewAssessmentUserEmail={setNewAssessmentUserEmail}
               newAssessmentUserPassword={newAssessmentUserPassword}
               setNewAssessmentUserPassword={setNewAssessmentUserPassword}
+              existingAssessmentUserName={existingAssessmentUserName}
+              setExistingAssessmentUserName={setExistingAssessmentUserName}
+              existingAssessmentUserEmail={existingAssessmentUserEmail}
+              setExistingAssessmentUserEmail={setExistingAssessmentUserEmail}
+              grantExistingUserAccess={grantExistingUserAccess}
               setSelectedCompanyId={setSelectedCompanyId}
               company={company}
               companyProfiles={companyProfiles}

@@ -57,7 +57,7 @@ interface CompanyDetailsTabProps {
   setCompanyAddressCountry: (country: string) => void;
   setCompanyIndustrySector: (sector: string) => void;
   setShowCompanyDetailsModal: (show: boolean) => void;
-  deleteUser: (id: string) => void;
+  deleteUser: (id: string, companyId?: string) => void;
   newCompanyUserName: string;
   setNewCompanyUserName: (name: string) => void;
   newCompanyUserTitle: string;
@@ -68,7 +68,11 @@ interface CompanyDetailsTabProps {
   setNewCompanyUserPhone: (phone: string) => void;
   newCompanyUserPassword: string;
   setNewCompanyUserPassword: (password: string) => void;
-  addUser: (companyId: string, userType: string) => void;
+  addUser: (companyId: string, userType: "company" | "assessment") => void;
+  existingCompanyUserName: string;
+  setExistingCompanyUserName: (name: string) => void;
+  existingCompanyUserEmail: string;
+  setExistingCompanyUserEmail: (email: string) => void;
   newAssessmentUserName: string;
   setNewAssessmentUserName: (name: string) => void;
   newAssessmentUserTitle: string;
@@ -77,6 +81,14 @@ interface CompanyDetailsTabProps {
   setNewAssessmentUserEmail: (email: string) => void;
   newAssessmentUserPassword: string;
   setNewAssessmentUserPassword: (password: string) => void;
+  existingAssessmentUserName: string;
+  setExistingAssessmentUserName: (name: string) => void;
+  existingAssessmentUserEmail: string;
+  setExistingAssessmentUserEmail: (email: string) => void;
+  grantExistingUserAccess: (
+    companyId: string,
+    userType: "company" | "assessment",
+  ) => void;
   setSelectedCompanyId: (id: string) => void;
 }
 
@@ -112,6 +124,10 @@ export default function CompanyDetailsTab({
   newCompanyUserPassword,
   setNewCompanyUserPassword,
   addUser,
+  existingCompanyUserName,
+  setExistingCompanyUserName,
+  existingCompanyUserEmail,
+  setExistingCompanyUserEmail,
   newAssessmentUserName,
   setNewAssessmentUserName,
   newAssessmentUserTitle,
@@ -120,6 +136,11 @@ export default function CompanyDetailsTab({
   setNewAssessmentUserEmail,
   newAssessmentUserPassword,
   setNewAssessmentUserPassword,
+  existingAssessmentUserName,
+  setExistingAssessmentUserName,
+  existingAssessmentUserEmail,
+  setExistingAssessmentUserEmail,
+  grantExistingUserAccess,
   setSelectedCompanyId,
 }: CompanyDetailsTabProps) {
   const RESTRICTABLE_SECTIONS: { id: string; label: string }[] = [
@@ -512,7 +533,7 @@ export default function CompanyDetailsTab({
                               </div>
                             </div>
                             <button
-                              onClick={() => deleteUser(u.id)}
+                              onClick={() => deleteUser(u.id, comp.id)}
                               style={{
                                 padding: "4px 8px",
                                 background: "#ef4444",
@@ -702,7 +723,7 @@ export default function CompanyDetailsTab({
                         marginBottom: "8px",
                       }}
                     >
-                      Add Company User
+                      Create New Company User
                     </h5>
                     <div
                       style={{
@@ -815,8 +836,8 @@ export default function CompanyDetailsTab({
                             lineHeight: "1.3",
                           }}
                         >
-                          8+ chars with uppercase, lowercase, number, and
-                          special character
+                          Password is required for new users. 8+ chars with
+                          uppercase, lowercase, number, and special character.
                         </div>
                       </div>
                       <button
@@ -834,6 +855,88 @@ export default function CompanyDetailsTab({
                       >
                         Add Company User
                       </button>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      borderTop: "1px solid #d1fae5",
+                      paddingTop: "12px",
+                      marginTop: "12px",
+                    }}
+                  >
+                    <h5
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        color: "#475569",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Grant Access to Existing User
+                    </h5>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#64748b",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Use this when the user already has a Corelytics account.
+                      No password needed.
+                    </div>
+                    <div style={{ display: "grid", gap: "6px" }}>
+                      <input
+                        type="text"
+                        name="existing_company_user_name"
+                        placeholder="Existing user name"
+                        value={existingCompanyUserName}
+                        onChange={(e) =>
+                          setExistingCompanyUserName(e.target.value)
+                        }
+                        autoComplete="off"
+                        style={{
+                          padding: "8px",
+                          borderRadius: "6px",
+                          border: "1px solid #cbd5e1",
+                          fontSize: "12px",
+                        }}
+                      />
+                      <div style={{ display: "flex", gap: "6px" }}>
+                      <input
+                        type="text"
+                        name="existing_company_user_email"
+                        placeholder="Existing user email"
+                        value={existingCompanyUserEmail}
+                        onChange={(e) =>
+                          setExistingCompanyUserEmail(e.target.value)
+                        }
+                        autoComplete="off"
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          borderRadius: "6px",
+                          border: "1px solid #cbd5e1",
+                          fontSize: "12px",
+                        }}
+                      />
+                      <button
+                        onClick={() => grantExistingUserAccess(comp.id, "company")}
+                        style={{
+                          padding: "8px 12px",
+                          background: "#0f766e",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Grant Access
+                      </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -967,7 +1070,7 @@ export default function CompanyDetailsTab({
                               {hasCompleted ? "✓ Done" : "⚠ Not Started"}
                             </div>
                             <button
-                              onClick={() => deleteUser(u.id)}
+                              onClick={() => deleteUser(u.id, comp.id)}
                               style={{
                                 padding: "4px 8px",
                                 background: "#ef4444",
@@ -1004,7 +1107,7 @@ export default function CompanyDetailsTab({
                           marginBottom: "8px",
                         }}
                       >
-                        Add Assessment User
+                        Create New Assessment User
                       </h5>
                       <div
                         style={{
@@ -1091,8 +1194,8 @@ export default function CompanyDetailsTab({
                               lineHeight: "1.3",
                             }}
                           >
-                            8+ chars with uppercase, lowercase, number, and
-                            special character
+                            Password is required for new users. 8+ chars with
+                            uppercase, lowercase, number, and special character.
                           </div>
                         </div>
                         <button
@@ -1110,6 +1213,90 @@ export default function CompanyDetailsTab({
                         >
                           Add Assessment User
                         </button>
+                      </div>
+
+                      <div
+                        style={{
+                          borderTop: "1px solid #ede9fe",
+                          paddingTop: "12px",
+                          marginTop: "12px",
+                        }}
+                      >
+                        <h5
+                          style={{
+                            fontSize: "13px",
+                            fontWeight: "600",
+                            color: "#475569",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          Grant Access to Existing User
+                        </h5>
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "#64748b",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          Use this when the assessment user already has a
+                          Corelytics account. No password needed.
+                        </div>
+                        <div style={{ display: "grid", gap: "6px" }}>
+                          <input
+                            type="text"
+                            name="existing_assessment_user_name"
+                            placeholder="Existing user name"
+                            value={existingAssessmentUserName}
+                            onChange={(e) =>
+                              setExistingAssessmentUserName(e.target.value)
+                            }
+                            autoComplete="off"
+                            style={{
+                              padding: "8px",
+                              borderRadius: "6px",
+                              border: "1px solid #cbd5e1",
+                              fontSize: "12px",
+                            }}
+                          />
+                          <div style={{ display: "flex", gap: "6px" }}>
+                          <input
+                            type="text"
+                            name="existing_assessment_user_email"
+                            placeholder="Existing user email"
+                            value={existingAssessmentUserEmail}
+                            onChange={(e) =>
+                              setExistingAssessmentUserEmail(e.target.value)
+                            }
+                            autoComplete="off"
+                            style={{
+                              flex: 1,
+                              padding: "8px",
+                              borderRadius: "6px",
+                              border: "1px solid #cbd5e1",
+                              fontSize: "12px",
+                            }}
+                          />
+                          <button
+                            onClick={() =>
+                              grantExistingUserAccess(comp.id, "assessment")
+                            }
+                            style={{
+                              padding: "8px 12px",
+                              background: "#6d28d9",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Grant Access
+                          </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ) : (
