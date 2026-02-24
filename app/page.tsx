@@ -5695,39 +5695,8 @@ function FinancialScorePage() {
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {currentUser?.userType !== 'assessment' && null}
 
-            {/* Analysis Section - 6 items always visible */}
+            {/* Analysis Section */}
             <div style={{ marginBottom: '16px' }}>
-              {/* Make "Ask Corelytics" prominent and above the section label */}
-              <div style={{ padding: '0 24px 8px 24px' }}>
-                <div
-                  onClick={() => handleNavigation('ai-analysis')}
-                  style={{
-                    fontSize: '16px',
-                    color: currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '8px',
-                    background: currentView === 'ai-analysis' ? '#e0f2fe' : '#f8fafc',
-                    fontWeight: '700',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ai-analysis') {
-                      e.currentTarget.style.background = '#e2e8f0';
-                      e.currentTarget.style.color = '#1F70C1';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ai-analysis') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#1e293b';
-                    }
-                  }}
-                >
-                  {currentView === 'ai-analysis' && '› '}Ask Corelytics
-                </div>
-              </div>
-
               <h3
                 onClick={() => handleNavigation('operations')}
                 style={{
@@ -5752,13 +5721,31 @@ function FinancialScorePage() {
                 {currentView === 'operations' && '› '}OPERATIONS DASHBOARD
               </h3>
 
-              <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '1px 24px', marginBottom: '8px' }}>
-                Operations Analysis
+              <h3
+                onClick={() => handleNavigation('pa-overview')}
+                style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: currentView.startsWith('pa-') ? '#1F70C1' : '#1e293b',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '1px 24px',
+                  marginBottom: '8px',
+                  cursor: 'pointer',
+                  transition: 'color 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#1F70C1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = currentView.startsWith('pa-') ? '#1F70C1' : '#1e293b';
+                }}
+              >
+                {currentView === 'pa-overview' && '› '}Operations Analysis
               </h3>
               {(!isCompanyUser || isCompanyAdmin || (allowedSectionsForCompanyUser || []).includes('performance-analytics')) && (
                 <div style={{ paddingLeft: '28px' }}>
                   {[
-                    { id: 'pa-overview', label: 'Overview' },
                     { id: 'pa-critical-issues', label: 'Critical Issues' },
                     { id: 'pa-focus-board', label: 'Major Trends' },
                     { id: 'pa-trend-explorer', label: 'Trend Explorer' },

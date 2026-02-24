@@ -160,6 +160,24 @@ export default function Header({
           <nav style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'nowrap' }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
               <button
+                onClick={() => handleNavigation('ai-analysis')}
+                style={{
+                  background: currentView === 'ai-analysis' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#000',
+                  cursor: 'pointer',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  borderBottom: currentView === 'ai-analysis' ? '3px solid #000' : '3px solid transparent',
+                  lineHeight: '1.1',
+                  textAlign: 'center'
+                }}
+              >
+                Ask Corelytics
+              </button>
+              <button
                 onClick={() => canAccess('company-dashboard') && handleNavigation('dashboard')}
                 title={!canAccess('company-dashboard') ? 'Access restricted' : undefined}
                 style={{

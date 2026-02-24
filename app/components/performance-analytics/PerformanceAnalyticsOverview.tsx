@@ -149,7 +149,7 @@ type ContextResponse = {
 
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-       <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Performance Analytics</h1>
+      <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Operations Analysis</h1>
       <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
         Benchmarks and analysis use Industry Group data. Operational profile is shown separately.
       </p>
