@@ -375,7 +375,7 @@ const getBucketId = (finding: Finding) => {
  
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-       <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Focus Board</h1>
+      <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Major Trends</h1>
        {findings.some((f) => f.payload?.sectorLabel) && (
          <p style={{ marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
            Sector: {findings.find((f) => f.payload?.sectorLabel)?.payload?.sectorLabel ?? '—'}

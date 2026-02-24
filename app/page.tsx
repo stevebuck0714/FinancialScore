@@ -312,7 +312,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -5728,16 +5728,41 @@ function FinancialScorePage() {
                 </div>
               </div>
 
+              <h3
+                onClick={() => handleNavigation('operations')}
+                style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: currentView === 'operations' ? '#1F70C1' : '#1e293b',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  padding: '1px 24px',
+                  margin: '6px 0 8px 0',
+                  cursor: 'pointer',
+                  transition: 'color 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#1F70C1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = currentView === 'operations' ? '#1F70C1' : '#1e293b';
+                }}
+              >
+                {currentView === 'operations' && '› '}OPERATIONS DASHBOARD
+              </h3>
+
               <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '1px 24px', marginBottom: '8px' }}>
-                Expert Analysis
+                Operations Analysis
               </h3>
               {(!isCompanyUser || isCompanyAdmin || (allowedSectionsForCompanyUser || []).includes('performance-analytics')) && (
                 <div style={{ paddingLeft: '28px' }}>
                   {[
                     { id: 'pa-overview', label: 'Overview' },
-                    { id: 'pa-focus-board', label: 'Focus Board' },
+                    { id: 'pa-critical-issues', label: 'Critical Issues' },
+                    { id: 'pa-focus-board', label: 'Major Trends' },
                     { id: 'pa-trend-explorer', label: 'Trend Explorer' },
-                    { id: 'pa-anomaly-inbox', label: 'Anomalies' },
+                    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
                     { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
                   ].map((item) => (
                     <div
@@ -9041,6 +9066,15 @@ function FinancialScorePage() {
 
       {currentView === 'pa-overview' && selectedCompanyId && (
         <PerformanceAnalyticsOverview companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-critical-issues' && selectedCompanyId && (
+        <OperationsTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          industrySectorCategory={company?.industrySectorCategory || null}
+          viewMode="overview-only"
+        />
       )}
 
       {currentView === 'pa-focus-board' && selectedCompanyId && (

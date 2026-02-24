@@ -18,13 +18,14 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
-import { getSectorArApFallbacks, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
+import { getSectorArApFallbacks, getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 
 interface OperationsTabProps {
   selectedCompanyId: string;
   companyName: string;
   industrySectorCategory?: string | null;
+  viewMode?: 'full' | 'overview-only';
 }
 
 type OpTab = 'dashboard' | 'overview' | string;
@@ -174,8 +175,146 @@ const LEGACY_MOCKS_FOR_REFERENCE = [
 ];
 void LEGACY_MOCKS_FOR_REFERENCE;
 
-export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory }: OperationsTabProps) {
-  const [activeTab, setActiveTab] = useState<OpTab>('dashboard');
+type MonitorCard = {
+  title: string;
+  question: string;
+  trigger: string;
+  drill: string;
+  dataType?: OpsDataType;
+};
+type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
+
+type InvestigatePlaybook = {
+  title: string;
+  path: string;
+  outcome: string;
+  dataType?: OpsDataType;
+};
+
+type InvestigateInsight = {
+  whyNow: string;
+  impact: string;
+  drivers: string[];
+  startHere: string;
+  owner: string;
+  eta: string;
+  freshness: string;
+  confidence: 'Low' | 'Medium' | 'High';
+  severity: CardSeverity;
+  focusCustomer?: string | null;
+  focusVendor?: string | null;
+};
+
+const UNIVERSAL_MONITOR_CARDS: MonitorCard[] = [
+  { title: 'DSO Drift', question: 'Are collections slowing?', trigger: 'DSO +5 days vs trailing 60', drill: 'Customer -> invoices -> aging buckets', dataType: 'ar-aging' },
+  { title: 'Past-Due AR Spike', question: 'Is receivables quality deteriorating?', trigger: '% AR >30 days up 15%+ vs prior 30', drill: 'Top customers -> invoice aging', dataType: 'ar-aging' },
+  { title: 'AP Past Due Risk', question: 'Are vendor obligations building?', trigger: '$ past due AP up 20%+ vs prior 30', drill: 'Vendor -> invoices -> approval lag', dataType: 'ap-aging' },
+  { title: 'Spend Acceleration', question: 'What is driving cost jumps?', trigger: 'Any major spend category +15% MoM', drill: 'Category -> vendor -> transactions', dataType: 'ap-aging' },
+  { title: 'Working Capital Spike', question: 'Is cash being trapped?', trigger: 'AR + Inventory - AP up 10%+ MoM', drill: 'AR vs Inventory vs AP contribution', dataType: 'cash' },
+  { title: 'Cash Runway', question: 'How long can operations self-fund?', trigger: 'Runway below 8 weeks', drill: 'Cash bridge -> AR/AP/Inventory drivers', dataType: 'cash' },
+];
+
+const UNIVERSAL_INVESTIGATIONS: InvestigatePlaybook[] = [
+  { title: 'Why did cash change?', path: 'Cash bridge -> receipts/disbursements -> top contributors', outcome: 'Ranked cash drivers with owner actions', dataType: 'cash' },
+  { title: 'Why did AR worsen?', path: 'AR delta -> customer concentration -> invoice aging', outcome: 'Top delinquent accounts and next-step actions', dataType: 'ar-aging' },
+  { title: 'Why did margin shrink?', path: 'Price/mix/discount -> credits/returns -> cost drift', outcome: 'Leakage diagnosis by root cause', dataType: 'products' },
+  { title: 'Why did spend spike?', path: 'Category -> vendor -> transaction detail', outcome: 'Unplanned spend sources and controls', dataType: 'ap-aging' },
+  { title: 'What moved working capital?', path: 'AR vs Inventory vs AP bridge', outcome: 'Dollar-impact decomposition and playbook', dataType: 'cash' },
+  { title: 'What should we do next?', path: 'Synthesize top drivers into role-based actions', outcome: 'Prioritized action list by owner', dataType: 'customers' },
+];
+
+const SECTOR_NAMES: Record<string, string> = {
+  '42': 'Wholesale Trade',
+  '32': 'Manufacturing',
+  '23': 'Construction',
+  '45': 'Retail Trade',
+  '48': 'Transportation & Warehousing',
+  '51': 'Information',
+  '54': 'Professional, Scientific & Technical Services',
+  '62': 'Health Care & Social Assistance',
+};
+
+const SECTOR_MONITOR_OVERRIDES: Record<string, MonitorCard[]> = {
+  '42': [
+    { title: 'Deductions / Chargebacks Trend', question: 'Are deductions eroding cash and margin?', trigger: 'Deduction $ +25% vs trailing 8 weeks', drill: 'Reason code -> customer -> invoice', dataType: 'ar-aging' },
+    { title: 'Inventory Turns Deterioration', question: 'Is inventory velocity falling?', trigger: 'Turns down 10%+ vs trailing quarter', drill: 'Category/SKU contributors', dataType: 'inventory' },
+    { title: 'Discount Rate Creep', question: 'Are discounts rising without volume lift?', trigger: 'Average discount +1 point while volume flat/down', drill: 'Rep/customer/SKU', dataType: 'products' },
+  ],
+  '32': [
+    { title: 'WIP Build', question: 'Is production bottlenecking?', trigger: 'WIP $ +10% MoM', drill: 'WIP aging -> bottleneck area/SKU family', dataType: 'products' },
+    { title: 'FG Aging / Overproduction', question: 'Are finished goods accumulating?', trigger: 'FG >90-day $ +15%', drill: 'SKU -> last shipped -> demand trend', dataType: 'inventory' },
+    { title: 'Material Cost Drift', question: 'Are material costs moving against us?', trigger: 'Purchase unit cost +5% on top materials', drill: 'Item -> vendor -> PO/invoice history', dataType: 'ap-aging' },
+  ],
+  '23': [
+    { title: 'Unbilled / WIP Growth', question: 'Are we funding work before billing?', trigger: 'Unbilled/WIP +15% MoM', drill: 'Project -> billing lag -> change orders', dataType: 'ar-aging' },
+    { title: 'Retainage Exposure', question: 'Is cash locked in retainage?', trigger: 'Retainage receivable +10% MoM', drill: 'Owner/GC -> project -> aging', dataType: 'ar-aging' },
+    { title: 'Subcontractor AP Risk', question: 'Are critical subcontractors overdue?', trigger: 'Top subcontractor past due +15%', drill: 'Vendor -> invoice -> approval stage', dataType: 'ap-aging' },
+  ],
+  '45': [
+    { title: 'Stockout Proxy', question: 'Are we losing sales from out-of-stocks?', trigger: 'Stockout incidents +25% vs trailing 8 weeks', drill: 'Store/channel -> SKU -> lost demand', dataType: 'inventory' },
+    { title: 'Sell-Through Slowdown', question: 'Is assortment getting stale?', trigger: 'Sell-through down 10%+ QoQ', drill: 'Category/SKU -> markdown path', dataType: 'products' },
+    { title: 'Returns Rate Increase', question: 'Are quality or fit issues rising?', trigger: 'Credits/returns +30% vs trailing 8 weeks', drill: 'Reason -> SKU -> location/channel', dataType: 'products' },
+  ],
+  '48': [
+    { title: 'Billing Leakage Proxy', question: 'Are loads shipped but under-billed?', trigger: 'Receipts lag shipments by 10%+', drill: 'Customer -> lane -> shipment/accessorial', dataType: 'customers' },
+    { title: 'Fuel & Vendor Cost Spike', question: 'Are transport costs compressing margin?', trigger: 'Fuel/vendor spend +15% MoM', drill: 'Vendor -> lane/site -> period variance', dataType: 'ap-aging' },
+    { title: 'Claims / Credits Increase', question: 'Are service failures rising?', trigger: 'Claims/credits +25% vs trailing 8 weeks', drill: 'Reason -> lane/site -> customer', dataType: 'customers' },
+  ],
+  '51': [
+    { title: 'Credits / SLA Penalties', question: 'Are service credits increasing?', trigger: 'Credits +25% vs trailing 8 weeks', drill: 'Account -> issue type -> invoice', dataType: 'customers' },
+    { title: 'Cloud/Tooling Spend Drift', question: 'Is platform spend rising faster than revenue?', trigger: 'Spend +15% MoM with flat revenue', drill: 'Vendor -> service -> period variance', dataType: 'ap-aging' },
+    { title: 'Renewal Risk Proxy', question: 'Are key accounts weakening?', trigger: 'Large account revenue down 10%+ with slower pay', drill: 'Account -> invoice/payment trend', dataType: 'customers' },
+  ],
+  '54': [
+    { title: 'Unbilled Services Growth', question: 'Are delivered services not being invoiced?', trigger: 'Unbilled/WIP proxy +12% MoM', drill: 'Client -> engagement -> invoice cadence', dataType: 'ar-aging' },
+    { title: 'Write-off / Credit Trend', question: 'Are scope disputes increasing?', trigger: 'Credits/write-offs +20% vs trailing 8 weeks', drill: 'Client -> project -> reason', dataType: 'customers' },
+    { title: 'Contractor Spend Spike', question: 'Is delivery mix eroding margin?', trigger: 'Contractor AP +15% MoM', drill: 'Vendor -> engagement -> rate/volume', dataType: 'ap-aging' },
+  ],
+  '62': [
+    { title: 'Payer AR Deterioration', question: 'Are collections slowing by payer?', trigger: 'Payer AR >30 days +15% vs prior 30', drill: 'Payer -> claim/invoice aging', dataType: 'ar-aging' },
+    { title: 'Write-offs / Denial Proxy', question: 'Are denials or adjustments increasing?', trigger: 'Credits/write-offs +20% vs trailing 8 weeks', drill: 'Reason -> service line -> location', dataType: 'customers' },
+    { title: 'Staffing Cost Acceleration', question: 'Are labor costs spiking?', trigger: 'Staffing-related AP +15% MoM', drill: 'Vendor category -> location -> time window', dataType: 'ap-aging' },
+  ],
+};
+
+const SECTOR_INVESTIGATE_OVERRIDES: Record<string, InvestigatePlaybook[]> = {
+  '42': [
+    { title: 'Why are deductions rising?', path: 'Reason codes -> customer patterns -> SKU correlation', outcome: 'Deduction root-cause tree with recovery actions', dataType: 'ar-aging' },
+    { title: 'Why are we stocking out?', path: 'SKU demand spike vs supply delay -> reorder cadence', outcome: 'Stockout driver map and replenishment actions', dataType: 'inventory' },
+  ],
+  '32': [
+    { title: 'Why did WIP build?', path: 'WIP delta -> aging buckets -> SKU family', outcome: 'Bottleneck diagnosis and throughput actions', dataType: 'products' },
+    { title: 'Why did material costs rise?', path: 'Unit cost vs volume -> vendor changes -> PO history', outcome: 'Cost inflation decomposition and sourcing actions', dataType: 'ap-aging' },
+  ],
+  '23': [
+    { title: 'Why is WIP/unbilled growing?', path: 'Project billing lag -> change-order backlog', outcome: 'Billing acceleration playbook by project', dataType: 'ar-aging' },
+    { title: 'Why are job costs spiking?', path: 'Materials/subcontractor spend -> project variance', outcome: 'Cost overrun causes and controls', dataType: 'ap-aging' },
+  ],
+  '45': [
+    { title: 'Why did margin drop?', path: 'Discounts/markdowns -> returns -> vendor cost drift', outcome: 'Retail margin bridge by category/SKU', dataType: 'products' },
+    { title: 'Why is inventory bloating?', path: 'Buying vs demand -> aged stock -> markdown path', outcome: 'Inventory action list by category', dataType: 'inventory' },
+  ],
+  '48': [
+    { title: 'Why did cash drop this week?', path: 'Collections vs fuel/payroll/claims', outcome: 'Transport cash bridge with owner actions', dataType: 'cash' },
+    { title: 'Which lanes/customers are unprofitable?', path: 'Revenue vs credits/claims vs pay speed', outcome: 'Lane-account profitability risk list', dataType: 'customers' },
+  ],
+  '51': [
+    { title: 'Why did credits increase?', path: 'Issue/SLA -> account -> contract period', outcome: 'Service-quality and revenue leakage actions', dataType: 'customers' },
+    { title: 'Why did cloud spend jump?', path: 'Vendor -> service -> team/project driver', outcome: 'Cloud/tooling cost containment actions', dataType: 'ap-aging' },
+  ],
+  '54': [
+    { title: 'Why did AR worsen?', path: 'Client aging -> invoice cadence -> disputes', outcome: 'Collection and billing cadence action plan', dataType: 'ar-aging' },
+    { title: 'Which clients are unprofitable?', path: 'Slow pay + credits + contractor-heavy delivery', outcome: 'Client portfolio risk ranking', dataType: 'customers' },
+  ],
+  '62': [
+    { title: 'Why did collections fall?', path: 'Payer mix -> aging -> adjustment/credit patterns', outcome: 'Payer-focused collections recovery plan', dataType: 'ar-aging' },
+    { title: 'Where is margin leaking?', path: 'Payer mix + write-offs + staffing cost drift', outcome: 'Healthcare margin leakage map', dataType: 'ap-aging' },
+  ],
+};
+
+export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory, viewMode = 'full' }: OperationsTabProps) {
+  const isOverviewOnly = viewMode === 'overview-only';
+  const [activeTab, setActiveTab] = useState<OpTab>(isOverviewOnly ? 'overview' : 'dashboard');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -196,13 +335,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   const [demandSortKey, setDemandSortKey] = useState<'customer' | 'bookingsMtd' | 'bookingsQtd' | 'bookingsYtd' | 'backlogTotal' | 'backlog60' | 'shareBacklog' | 'trend'>('backlogTotal');
   const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
   const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
+  const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   
   // Date range and frequency filters
-  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
-    // Default to 12 months ago for monthly view
-    date.setMonth(date.getMonth() - 12);
+    // Default to last 90 days for daily view
+    date.setDate(date.getDate() - 90);
     return date.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState<string>(() => {
@@ -221,7 +361,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   const availableModuleTabs = Array.from(
     new Set(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash'])
   );
-  const availableTabs: OpTab[] = ['dashboard', 'overview', ...availableModuleTabs];
+  const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', ...availableModuleTabs];
   const moduleTitlesByType = Object.fromEntries(
     orderedDashboardDataTypes
       .map((type) => {
@@ -232,6 +372,17 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       })
       .filter(([, label]) => Boolean(label))
   ) as Partial<Record<OpsDataType, string>>;
+  const sectorProfile = getSectorMockProfile(industrySectorCategory);
+  const sectorCode = sectorProfile.sectorCategory;
+  const sectorLabel = SECTOR_NAMES[sectorCode] || 'This Sector';
+  const monitorCards = [...(SECTOR_MONITOR_OVERRIDES[sectorCode] || []), ...UNIVERSAL_MONITOR_CARDS];
+  const investigatePlaybooks = [...(SECTOR_INVESTIGATE_OVERRIDES[sectorCode] || []), ...UNIVERSAL_INVESTIGATIONS];
+
+  const jumpToDataType = (type?: OpsDataType) => {
+    if (!type) return;
+    const targetModule = availableModuleTabs.find((module) => mapModuleToDataType(module) === type);
+    if (targetModule) setActiveTab(targetModule as OpTab);
+  };
 
   useEffect(() => {
     if (!availableTabs.includes(activeTab)) {
@@ -270,6 +421,44 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     }
   }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
 
+  useEffect(() => {
+    if (activeTab !== 'overview') return;
+    const needsAnyCoreData = !arData || !apData || !cashData || !inventoryData || !customerData || !productData;
+    if (!needsAnyCoreData) return;
+
+    let cancelled = false;
+    setSmartCardsLoading(true);
+    Promise.all([
+      arData ? Promise.resolve(arData) : fetchOperationalType('ar-aging'),
+      apData ? Promise.resolve(apData) : fetchOperationalType('ap-aging'),
+      cashData ? Promise.resolve(cashData) : fetchOperationalType('cash'),
+      inventoryData ? Promise.resolve(inventoryData) : fetchOperationalType('inventory'),
+      customerData ? Promise.resolve(customerData) : fetchOperationalType('customers'),
+      productData ? Promise.resolve(productData) : fetchOperationalType('products'),
+    ])
+      .then(([nextAr, nextAp, nextCash, nextInventory, nextCustomers, nextProducts]) => {
+        if (cancelled) return;
+        if (!arData && nextAr) setArData(nextAr);
+        if (!apData && nextAp) setApData(nextAp);
+        if (!cashData && nextCash) setCashData(nextCash);
+        if (!inventoryData && nextInventory) setInventoryData(nextInventory);
+        if (!customerData && nextCustomers) setCustomerData(nextCustomers);
+        if (!productData && nextProducts) setProductData(nextProducts);
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          console.error('Failed to preload smart card data:', err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSmartCardsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, arData, apData, cashData, inventoryData, customerData, productData, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
+
   // Auto-adjust date range when frequency changes
   useEffect(() => {
     const end = new Date();
@@ -306,6 +495,20 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     }
   };
 
+  const fetchOperationalType = async (type: OpsDataType) => {
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      type,
+      frequency,
+      startDate,
+      endDate,
+      ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+    });
+    const response = await fetch(`/api/operational-data?${params}`);
+    if (!response.ok) throw new Error(`Failed to load ${type} data`);
+    return response.json();
+  };
+
   const loadTabData = async (tab: string) => {
     setLoading(true);
     setError(null);
@@ -315,18 +518,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
         setLoading(false);
         return;
       }
-      const params = new URLSearchParams({
-        companyId: selectedCompanyId,
-        type,
-        frequency,
-        startDate,
-        endDate,
-        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
-      });
-      
-      const response = await fetch(`/api/operational-data?${params}`);
-      if (!response.ok) throw new Error(`Failed to load ${type} data`);
-      const data = await response.json();
+      const data = await fetchOperationalType(type);
       
       switch (type) {
         case 'customers':
@@ -353,6 +545,349 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     } finally {
       setLoading(false);
     }
+  };
+
+  const severityStyles: Record<CardSeverity, { border: string; bg: string; badgeBg: string; badgeColor: string; label: string }> = {
+    normal: { border: '#bfdbfe', bg: '#f8fafc', badgeBg: '#dcfce7', badgeColor: '#166534', label: 'Normal' },
+    warning: { border: '#fde68a', bg: '#fffbeb', badgeBg: '#fef3c7', badgeColor: '#92400e', label: 'Watch' },
+    critical: { border: '#fecaca', bg: '#fef2f2', badgeBg: '#fee2e2', badgeColor: '#991b1b', label: 'Alert' },
+    loading: { border: '#e2e8f0', bg: '#f8fafc', badgeBg: '#f1f5f9', badgeColor: '#475569', label: 'Loading' },
+  };
+
+  const getMonitorInsight = (card: MonitorCard): { headline: string; detail: string; severity: CardSeverity } => {
+    if (!arData?.summary || !apData?.summary || !cashData?.summary) {
+      return { headline: 'Calculating from operational data...', detail: card.trigger, severity: smartCardsLoading ? 'loading' : 'normal' };
+    }
+
+    const arSummary = arData.summary || {};
+    const apSummary = apData.summary || {};
+    const cashSummary = cashData.summary || {};
+    const arRecords = Array.isArray(arData.records) ? arData.records : [];
+    const apRecords = Array.isArray(apData.records) ? apData.records : [];
+    const inventorySummary = inventoryData?.summary || {};
+
+    if (card.title === 'DSO Drift') {
+      const currentDso = Number(arSummary.dso || 0);
+      const latestAr = Number(arRecords[0]?.totalAR || arSummary.totalAR || 0);
+      const trailingAvgAr = arRecords.length
+        ? arRecords.reduce((sum: number, row: any) => sum + Number(row.totalAR || 0), 0) / arRecords.length
+        : latestAr;
+      const baselineDso = trailingAvgAr > 0 ? currentDso * (trailingAvgAr / Math.max(latestAr, 1)) : currentDso;
+      const delta = currentDso - baselineDso;
+      const severity: CardSeverity = delta >= 5 ? 'critical' : delta >= 2 ? 'warning' : 'normal';
+      return {
+        headline: `DSO ${currentDso.toFixed(1)} days (${delta >= 0 ? '+' : ''}${delta.toFixed(1)} vs baseline)`,
+        detail: `Baseline ${baselineDso.toFixed(1)} days (trailing-window proxy)`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Past-Due AR Spike') {
+      const currentOver30 = Number(arSummary.over30Pct || 0);
+      const latest = arRecords[0];
+      const previous = arRecords[1];
+      const prevOver30 = previous
+        ? ((Number(previous.days1to30 || 0) + Number(previous.days31to60 || 0) + Number(previous.days61to90 || 0) + Number(previous.days90plus || 0)) / Math.max(Number(previous.totalAR || 1), 1)) * 100
+        : currentOver30;
+      const delta = currentOver30 - prevOver30;
+      const severity: CardSeverity = delta >= 15 ? 'critical' : delta >= 8 ? 'warning' : 'normal';
+      return {
+        headline: `AR >30d ${currentOver30.toFixed(1)}% (${delta >= 0 ? '+' : ''}${delta.toFixed(1)} pts)`,
+        detail: `Latest AR ${formatCurrency(Number(latest?.totalAR || arSummary.totalAR || 0))}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'AP Past Due Risk') {
+      const currentOver30 = Number(apSummary.over30Pct || 0);
+      const totalAp = Number(apSummary.totalAP || 0);
+      const severity: CardSeverity = currentOver30 >= 40 ? 'critical' : currentOver30 >= 28 ? 'warning' : 'normal';
+      return {
+        headline: `AP >30d ${currentOver30.toFixed(1)}%`,
+        detail: `Total AP ${formatCurrency(totalAp)}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Spend Acceleration') {
+      const latestAp = Number(apRecords[0]?.totalAP || apSummary.totalAP || 0);
+      const previousAp = Number(apRecords[1]?.totalAP || latestAp || 0);
+      const pct = previousAp > 0 ? ((latestAp - previousAp) / previousAp) * 100 : 0;
+      const severity: CardSeverity = pct >= 15 ? 'critical' : pct >= 8 ? 'warning' : 'normal';
+      return {
+        headline: `AP trend ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% period-over-period`,
+        detail: `${formatCurrency(previousAp)} -> ${formatCurrency(latestAp)}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Working Capital Spike') {
+      const ar = Number(arSummary.totalAR || 0);
+      const inv = Number(inventorySummary.totalValue || 0);
+      const ap = Number(apSummary.totalAP || 0);
+      const net = ar + inv - ap;
+      const prevAr = Number(arRecords[1]?.totalAR || ar);
+      const prevAp = Number(apRecords[1]?.totalAP || ap);
+      const prevInv = Number(inventorySummary.totalValue || inv);
+      const prevNet = prevAr + prevInv - prevAp;
+      const pct = prevNet > 0 ? ((net - prevNet) / prevNet) * 100 : 0;
+      const severity: CardSeverity = pct >= 10 ? 'critical' : pct >= 5 ? 'warning' : 'normal';
+      return {
+        headline: `Net working capital ${formatCurrency(net)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`,
+        detail: `AR ${formatCurrency(ar)} + Inv ${formatCurrency(inv)} - AP ${formatCurrency(ap)}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Cash Runway') {
+      const totalCash = Number(cashSummary.totalCash || 0);
+      const monthlyBurn = Math.max(1, Math.abs(Number(cashSummary.changeAmount || 0)));
+      const runwayMonths = totalCash / monthlyBurn;
+      const runwayWeeks = runwayMonths * 4.33;
+      const severity: CardSeverity = runwayWeeks < 8 ? 'critical' : runwayWeeks < 16 ? 'warning' : 'normal';
+      return {
+        headline: `Runway ~${runwayWeeks.toFixed(1)} weeks`,
+        detail: `Cash ${formatCurrency(totalCash)} / burn proxy ${formatCurrency(monthlyBurn)} per period`,
+        severity,
+      };
+    }
+
+    if (card.dataType === 'ar-aging') {
+      const over30 = Number(arSummary.over30Pct || 0);
+      return {
+        headline: `AR signal: ${over30.toFixed(1)}% over 30 days`,
+        detail: `DSO ${Number(arSummary.dso || 0).toFixed(1)} days`,
+        severity: over30 >= 35 ? 'warning' : 'normal',
+      };
+    }
+    if (card.dataType === 'ap-aging') {
+      const over30 = Number(apSummary.over30Pct || 0);
+      return {
+        headline: `AP signal: ${over30.toFixed(1)}% over 30 days`,
+        detail: `DPO ${Number(apSummary.dpo || 0).toFixed(1)} days`,
+        severity: over30 >= 35 ? 'warning' : 'normal',
+      };
+    }
+    if (card.dataType === 'cash') {
+      const change = Number(cashSummary.changePercent || 0);
+      return {
+        headline: `Cash ${change >= 0 ? '+' : ''}${change.toFixed(1)}% period change`,
+        detail: `Total ${formatCurrency(Number(cashSummary.totalCash || 0))}`,
+        severity: change <= -10 ? 'warning' : 'normal',
+      };
+    }
+
+    return { headline: 'Signal configured for this sector', detail: card.trigger, severity: 'normal' };
+  };
+
+  const getInvestigateInsight = (playbook: InvestigatePlaybook): InvestigateInsight => {
+    if (!arData?.summary || !apData?.summary || !cashData?.summary) {
+      return {
+        whyNow: 'Preparing signals from live operational data...',
+        impact: 'Impact pending data refresh',
+        drivers: [],
+        startHere: playbook.path,
+        owner: 'Ops Team',
+        eta: '1-2 days',
+        freshness: 'Refreshing',
+        confidence: 'Low',
+        severity: smartCardsLoading ? 'loading' : 'normal',
+      };
+    }
+
+    const arSummary = arData.summary || {};
+    const apSummary = apData.summary || {};
+    const cashSummary = cashData.summary || {};
+    const inventorySummary = inventoryData?.summary || {};
+    const productsSummary = productData?.summary || {};
+    const customersSummary = customerData?.summary || {};
+
+    const arDrivers = (Array.isArray(arSummary.unpaidByCustomer) ? arSummary.unpaidByCustomer : [])
+      .map((row: any) => ({
+        name: row.customerName,
+        overdue: Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0),
+      }))
+      .sort((a: any, b: any) => b.overdue - a.overdue);
+    const apDrivers = (Array.isArray(apSummary.unpaidByVendor) ? apSummary.unpaidByVendor : [])
+      .map((row: any) => ({
+        name: row.vendorName,
+        overdue: Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0),
+      }))
+      .sort((a: any, b: any) => b.overdue - a.overdue);
+
+    const ownerByType: Record<string, { owner: string; eta: string }> = {
+      'ar-aging': { owner: 'Collections Lead', eta: '24-72 hours' },
+      'ap-aging': { owner: 'AP Manager', eta: '1-3 days' },
+      cash: { owner: 'Controller', eta: 'Same day' },
+      products: { owner: 'Ops + Finance', eta: '2-4 days' },
+      customers: { owner: 'Revenue Ops', eta: '1-2 days' },
+      inventory: { owner: 'Supply Chain', eta: '2-4 days' },
+    };
+    const ownerMeta = ownerByType[playbook.dataType || ''] || { owner: 'Ops Team', eta: '1-3 days' };
+
+    if (playbook.title === 'Why did AR worsen?') {
+      const over30 = Number(arSummary.over30Pct || 0);
+      const dso = Number(arSummary.dso || 0);
+      const top = arDrivers[0];
+      const impact = arDrivers.slice(0, 3).reduce((sum: number, row: any) => sum + row.overdue, 0);
+      const severity: CardSeverity = over30 >= 35 || dso >= 50 ? 'critical' : over30 >= 25 ? 'warning' : 'normal';
+      return {
+        whyNow: `AR >30d is ${over30.toFixed(1)}% with DSO at ${dso.toFixed(1)} days`,
+        impact: `~${formatCurrency(impact)} concentrated in top overdue accounts`,
+        drivers: arDrivers.slice(0, 3).map((row: any) => `${row.name} (${formatCurrency(row.overdue)})`),
+        startHere: top ? `Open AR for ${top.name}` : playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: arDrivers.length >= 3 ? 'High' : 'Medium',
+        severity,
+        focusCustomer: top?.name || null,
+      };
+    }
+
+    if (playbook.title === 'Why did spend spike?') {
+      const totalAp = Number(apSummary.totalAP || 0);
+      const over30 = Number(apSummary.over30Pct || 0);
+      const top = apDrivers[0];
+      const impact = apDrivers.slice(0, 3).reduce((sum: number, row: any) => sum + row.overdue, 0);
+      const severity: CardSeverity = over30 >= 35 ? 'critical' : over30 >= 25 ? 'warning' : 'normal';
+      return {
+        whyNow: `AP aging pressure: ${over30.toFixed(1)}% over 30 days`,
+        impact: `~${formatCurrency(impact)} in top overdue vendors; total AP ${formatCurrency(totalAp)}`,
+        drivers: apDrivers.slice(0, 3).map((row: any) => `${row.name} (${formatCurrency(row.overdue)})`),
+        startHere: top ? `Open AP for ${top.name}` : playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: apDrivers.length >= 3 ? 'High' : 'Medium',
+        severity,
+        focusVendor: top?.name || null,
+      };
+    }
+
+    if (playbook.title === 'Why did cash change?') {
+      const totalCash = Number(cashSummary.totalCash || 0);
+      const changeAmt = Number(cashSummary.changeAmount || 0);
+      const changePct = Number(cashSummary.changePercent || 0);
+      const accounts = Array.isArray(cashSummary.accounts) ? cashSummary.accounts : [];
+      const drivers = accounts
+        .sort((a: any, b: any) => Math.abs(Number(b.currentBalance || 0) - Number(b.avgBalance || 0)) - Math.abs(Number(a.currentBalance || 0) - Number(a.avgBalance || 0)))
+        .slice(0, 3)
+        .map((acct: any) => `${acct.accountName} (${formatCurrency(Number(acct.currentBalance || 0))})`);
+      const severity: CardSeverity = changePct <= -10 ? 'critical' : changePct <= -4 ? 'warning' : 'normal';
+      return {
+        whyNow: `Cash moved ${changeAmt >= 0 ? '+' : ''}${formatCurrency(changeAmt)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}%)`,
+        impact: `Current liquidity ${formatCurrency(totalCash)}`,
+        drivers,
+        startHere: 'Open cash trend + account variance',
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: drivers.length ? 'High' : 'Medium',
+        severity,
+      };
+    }
+
+    if (playbook.title === 'Why did margin shrink?') {
+      const products = Array.isArray(productsSummary.topProducts) ? productsSummary.topProducts : [];
+      const lowestMargin = [...products]
+        .sort((a: any, b: any) => Number(a.grossMarginPct || 0) - Number(b.grossMarginPct || 0))
+        .slice(0, 3);
+      const atRiskRevenue = lowestMargin.reduce((sum: number, row: any) => sum + Number(row.totalRevenue || 0), 0);
+      const avgMargin = products.length
+        ? products.reduce((sum: number, row: any) => sum + Number(row.grossMarginPct || 0), 0) / products.length
+        : 0;
+      const severity: CardSeverity = avgMargin < 25 ? 'critical' : avgMargin < 35 ? 'warning' : 'normal';
+      return {
+        whyNow: `Average gross margin is ${avgMargin.toFixed(1)}% across top products`,
+        impact: `${formatCurrency(atRiskRevenue)} revenue tied to lowest-margin items`,
+        drivers: lowestMargin.map((row: any) => `${row.name} (${Number(row.grossMarginPct || 0).toFixed(1)}%)`),
+        startHere: 'Open products sorted by gross margin %',
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: lowestMargin.length ? 'Medium' : 'Low',
+        severity,
+      };
+    }
+
+    if (playbook.title === 'What moved working capital?') {
+      const ar = Number(arSummary.totalAR || 0);
+      const ap = Number(apSummary.totalAP || 0);
+      const inv = Number(inventorySummary.totalValue || 0);
+      const net = ar + inv - ap;
+      const components = [
+        { name: 'AR', value: ar },
+        { name: 'Inventory', value: inv },
+        { name: 'AP (offset)', value: -ap },
+      ].sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+      const severity: CardSeverity = net > 250000 ? 'warning' : 'normal';
+      return {
+        whyNow: `Net working capital sits at ${formatCurrency(net)}`,
+        impact: `Cash tied up by AR + Inventory less AP offset`,
+        drivers: components.slice(0, 3).map((row) => `${row.name}: ${row.value >= 0 ? '' : '-'}${formatCurrency(Math.abs(row.value))}`),
+        startHere: 'Open cash and reconcile AR / Inventory / AP contributions',
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: 'Medium',
+        severity,
+      };
+    }
+
+    if (playbook.title === 'What should we do next?') {
+      const topCustomers = (Array.isArray(customersSummary.topCustomers) ? customersSummary.topCustomers : []).slice(0, 3);
+      const over30 = Number(arSummary.over30Pct || 0);
+      const changePct = Number(cashSummary.changePercent || 0);
+      const severity: CardSeverity = over30 > 30 || changePct < -8 ? 'warning' : 'normal';
+      return {
+        whyNow: `Cash ${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}% and AR >30d at ${over30.toFixed(1)}%`,
+        impact: 'Focus response on collection acceleration and spend controls',
+        drivers: topCustomers.map((row: any) => `${row.name} (${formatCurrency(Number(row.totalRevenue || 0))})`),
+        startHere: topCustomers[0] ? `Open customer trends for ${topCustomers[0].name}` : playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: topCustomers.length ? 'Medium' : 'Low',
+        severity,
+      };
+    }
+
+    const fallbackSeverity: CardSeverity =
+      playbook.dataType === 'ar-aging'
+        ? Number(arSummary.over30Pct || 0) >= 30 ? 'warning' : 'normal'
+        : playbook.dataType === 'ap-aging'
+          ? Number(apSummary.over30Pct || 0) >= 30 ? 'warning' : 'normal'
+          : playbook.dataType === 'cash'
+            ? Number(cashSummary.changePercent || 0) <= -8 ? 'warning' : 'normal'
+            : 'normal';
+    return {
+      whyNow: 'Playbook ready with current period context',
+      impact: playbook.outcome,
+      drivers: [],
+      startHere: playbook.path,
+      owner: ownerMeta.owner,
+      eta: ownerMeta.eta,
+      freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+      confidence: 'Medium',
+      severity: fallbackSeverity,
+    };
+  };
+
+  const openInvestigate = (playbook: InvestigatePlaybook, insight: InvestigateInsight) => {
+    if (playbook.dataType === 'ar-aging' && insight.focusCustomer) {
+      setSelectedInvoiceCustomer(insight.focusCustomer);
+      setCustomerInvoicePage(1);
+    }
+    if (playbook.dataType === 'ap-aging' && insight.focusVendor) {
+      setSelectedVendorBill(insight.focusVendor);
+      setVendorBillsPage(1);
+    }
+    if (playbook.dataType === 'customers') {
+      setDemandSortKey('backlogTotal');
+      setDemandSortDir('desc');
+    }
+    jumpToDataType(playbook.dataType);
   };
 
   const formatCurrency = (value: number) => {
@@ -393,7 +928,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   };
 
   const renderFilters = () => {
-    if (activeTab === 'overview' || activeTab === 'dashboard') return null;
+    if (isOverviewOnly || activeTab === 'overview' || activeTab === 'dashboard') return null;
 
     return (
       <div style={{ 
@@ -613,9 +1148,27 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
 
   // Overview Tab
   const renderOverview = () => (
-    <div style={{ padding: '16px 24px' }}>
-      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-        Operational Data Overview
+    <div style={{ padding: '12px 24px' }}>
+      {(() => {
+        const severityRank: Record<CardSeverity, number> = {
+          critical: 3,
+          warning: 2,
+          normal: 1,
+          loading: 0,
+        };
+        const rankedMonitorCards = monitorCards
+          .map((card, index) => ({ card, insight: getMonitorInsight(card), index }))
+          .sort((a, b) => (severityRank[b.insight.severity] - severityRank[a.insight.severity]) || (a.index - b.index))
+          .slice(0, 6);
+        const rankedInvestigateCards = investigatePlaybooks
+          .map((playbook, index) => ({ playbook, insight: getInvestigateInsight(playbook), index }))
+          .sort((a, b) => (severityRank[b.insight.severity] - severityRank[a.insight.severity]) || (a.index - b.index))
+          .slice(0, 6);
+
+        return (
+          <>
+      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '10px' }}>
+        Operations Overview
       </h2>
 
       {loading && (
@@ -625,13 +1178,13 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       )}
 
       {error && (
-        <div style={{ 
-          background: '#fef2f2', 
-          border: '1px solid #fecaca', 
-          borderRadius: '8px', 
-          padding: '16px', 
-          display: 'flex', 
-          alignItems: 'center', 
+        <div style={{
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          padding: '16px',
+          display: 'flex',
+          alignItems: 'center',
           gap: '12px',
           marginBottom: '24px'
         }}>
@@ -640,235 +1193,84 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
         </div>
       )}
 
-      {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('customers')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#dbeafe', padding: '8px', borderRadius: '6px' }}>
-                <Users style={{ width: '20px', height: '20px', color: '#2563eb' }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px 12px' }}>
+          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', margin: '0 0 3px 0', lineHeight: 1.2 }}>Monitor</h3>
+          <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 8px 0' }}>Trigger cards for near-term risk and change detection.</p>
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {rankedMonitorCards.map(({ card, insight }) => {
+              const severity = severityStyles[insight.severity];
+              return (
+              <div key={card.title} style={{ border: `1px solid ${severity.border}`, borderRadius: '8px', padding: '8px 10px', background: severity.bg }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
+                  <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{card.title}</h4>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', padding: '3px 9px', borderRadius: '999px', background: severity.badgeBg, color: severity.badgeColor, fontWeight: 700 }}>
+                      {severity.label}
+                    </span>
+                    {card.dataType && (
+                      <button
+                        onClick={() => jumpToDataType(card.dataType)}
+                        style={{ fontSize: '13px', color: '#2563eb', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        Open
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ marginTop: '2px', fontSize: '15px', color: '#0f172a', fontWeight: 700, lineHeight: 1.35 }}>{insight.headline}</div>
+                <div style={{ marginTop: '3px', fontSize: '14px', color: '#334155', lineHeight: 1.35 }}>{insight.detail}</div>
+                <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}><strong>Question:</strong> {card.question}</div>
+                <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}><strong>Trigger:</strong> {card.trigger}</div>
+                <div style={{ fontSize: '14px', color: '#475569', marginTop: '3px', lineHeight: 1.35 }}><strong>Drill:</strong> {card.drill}</div>
               </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Customer Sales</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.customerSalesRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Sales records tracked</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('ar')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#dcfce7', padding: '8px', borderRadius: '6px' }}>
-                <TrendingUp style={{ width: '20px', height: '20px', color: '#16a34a' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>AR Aging</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.arAgingRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Monthly snapshots</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('ap')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#fef3c7', padding: '8px', borderRadius: '6px' }}>
-                <DollarSign style={{ width: '20px', height: '20px', color: '#f59e0b' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>AP Aging</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.apAgingRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Monthly snapshots</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('products')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#fce7f3', padding: '8px', borderRadius: '6px' }}>
-                <Package style={{ width: '20px', height: '20px', color: '#ec4899' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Product Sales</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.productSalesRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Product records</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('inventory')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#e0e7ff', padding: '8px', borderRadius: '6px' }}>
-                <Warehouse style={{ width: '20px', height: '20px', color: '#6366f1' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Inventory</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.inventoryRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Inventory records</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('cash')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#d1fae5', padding: '8px', borderRadius: '6px' }}>
-                <DollarSign style={{ width: '20px', height: '20px', color: '#10b981' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Cash</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.cashRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Cash snapshots</p>
+            )})}
           </div>
         </div>
-      )}
 
-      <div style={{ 
-        marginTop: '20px', 
-        background: '#f8fafc', 
-        border: '1px solid #e2e8f0', 
-        borderRadius: '8px', 
-        padding: '16px' 
-      }}>
-        <h3 style={{ fontSize: '17px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-          About Operational Data
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' }}>
-          <div>
-            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-              📊 Customer Analytics
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
-              Track customer revenue trends, invoice patterns, and identify your top customers and revenue concentration.
-            </p>
-          </div>
-          <div>
-            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-              💰 AR & AP Aging
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
-              Monitor accounts receivable and payable aging to optimize cash flow and working capital management.
-            </p>
-          </div>
-          <div>
-            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-              📦 Product Performance
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
-              Analyze product sales, margins, and trends to identify your best performers and optimization opportunities.
-            </p>
-          </div>
-          <div>
-            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-              🏭 Inventory Management
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
-              Track inventory levels, values, and turnover to optimize stock levels and reduce carrying costs.
-            </p>
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px 12px' }}>
+          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', margin: '0 0 3px 0', lineHeight: 1.2 }}>Investigate</h3>
+          <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 8px 0' }}>Playbooks to explain deltas and produce actions.</p>
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {rankedInvestigateCards.map(({ playbook, insight }) => {
+              const severity = severityStyles[insight.severity];
+              return (
+                <div key={playbook.title} style={{ border: `1px solid ${severity.border}`, borderRadius: '8px', padding: '8px 10px', background: severity.bg }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
+                    <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{playbook.title}</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', padding: '3px 9px', borderRadius: '999px', background: severity.badgeBg, color: severity.badgeColor, fontWeight: 700 }}>
+                        {severity.label}
+                      </span>
+                      <button
+                        onClick={() => openInvestigate(playbook, insight)}
+                        style={{ fontSize: '13px', color: '#2563eb', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        Investigate
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '15px', color: '#0f172a', marginTop: '3px', fontWeight: 700, lineHeight: 1.35 }}><strong>Why now:</strong> {insight.whyNow}</div>
+                  <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}><strong>Impact:</strong> {insight.impact}</div>
+                  {insight.drivers.length > 0 && (
+                    <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}>
+                      <strong>Top drivers:</strong> {insight.drivers.join(' | ')}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}><strong>Start:</strong> {insight.startHere}</div>
+                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px', lineHeight: 1.35 }}>
+                    <strong>Owner/ETA:</strong> {insight.owner} / {insight.eta} | <strong>Confidence:</strong> {insight.confidence} | <strong>Data:</strong> {insight.freshness}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
+
+          </>
+        );
+      })()}
     </div>
   );
 
@@ -2841,6 +3243,20 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     );
   };
 
+  if (isOverviewOnly) {
+    return (
+      <div style={{
+        maxWidth: '1600px',
+        margin: '0 auto',
+        minHeight: '100vh',
+        background: '#f8fafc'
+      }}>
+        <div style={{ height: '20px' }}></div>
+        {renderOverview()}
+      </div>
+    );
+  }
+
   return (
     <div style={{ 
       maxWidth: '1600px', 
@@ -2877,9 +3293,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
           >
             {tab === 'dashboard'
               ? 'Ops Dashboard'
-              : tab === 'overview'
-                ? 'Overview'
-                : getModuleLabel(tab)}
+              : getModuleLabel(tab)}
           </button>
         ))}
       </div>
@@ -2897,8 +3311,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
           moduleTitlesByType={moduleTitlesByType}
         />
       )}
-      {activeTab === 'overview' && renderOverview()}
-      {activeTab !== 'dashboard' && activeTab !== 'overview' && renderModuleTabContent(activeTab)}
+      {activeTab !== 'dashboard' && renderModuleTabContent(activeTab)}
     </div>
   );
 }

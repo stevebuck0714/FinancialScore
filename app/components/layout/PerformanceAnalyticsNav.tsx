@@ -9,7 +9,8 @@
  
  const PERFORMANCE_ANALYTICS_VIEWS = [
    { id: 'pa-overview', label: 'Overview' },
-   { id: 'pa-focus-board', label: 'Focus Board' },
+  { id: 'pa-critical-issues', label: 'Critical Issues' },
+  { id: 'pa-focus-board', label: 'Major Trends' },
    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
    { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
@@ -18,11 +19,11 @@
  export default function PerformanceAnalyticsNav({
    currentView,
    setCurrentView
- }: PerformanceAnalyticsNavProps) {
-   const [isExpanded, setIsExpanded] = useState(currentView.startsWith('pa-'));
+}: PerformanceAnalyticsNavProps) {
+  const [isExpanded, setIsExpanded] = useState(currentView.startsWith('pa-'));
  
    useEffect(() => {
-     if (currentView.startsWith('pa-')) {
+    if (currentView.startsWith('pa-')) {
        setIsExpanded(true);
      }
    }, [currentView]);
