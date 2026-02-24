@@ -175,7 +175,7 @@ export default function Header({
                   textAlign: 'center'
                 }}
               >
-                DAILY ALERTS
+                COMPANY PULSE
               </button>
               <button
                 onClick={() => handleNavigation('ai-analysis')}
