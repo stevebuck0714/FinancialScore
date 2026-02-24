@@ -244,9 +244,8 @@ export function validateInput<T>(schema: z.ZodSchema<T>, data: unknown): { succe
   if (result.success) {
     return { success: true, data: result.data };
   } else {
-    const errors = result.error.errors.map(err => 
-      `${err.path.join('.')}: ${err.message}`
-    );
+    const issues = (result.error as any).issues || (result.error as any).errors || [];
+    const errors = issues.map((err: any) => `${(err.path || []).join('.')}: ${err.message}`);
     return { success: false, errors };
   }
 }
@@ -259,9 +258,10 @@ export function validate<T>(schema: z.ZodSchema<T>) {
     const result = schema.safeParse(data);
     
     if (!result.success) {
-      const errors = result.error.errors.map(err => 
-        `${err.path.join('.')}: ${err.message}`
-      ).join(', ');
+      const issues = (result.error as any).issues || (result.error as any).errors || [];
+      const errors = issues
+        .map((err: any) => `${(err.path || []).join('.')}: ${err.message}`)
+        .join(', ');
       
       throw new Error(`Validation failed: ${errors}`);
     }

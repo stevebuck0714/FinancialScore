@@ -145,6 +145,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    // Treat blank password as "not provided" for existing-user linking flow.
+    if (typeof body?.password === 'string' && body.password.trim() === '') {
+      body.password = undefined;
+    }
     
     // SECURITY: Validate input
     const validation = validateInput(createUserSchema, body);
