@@ -44,6 +44,13 @@ export const authApi = {
     });
   },
 
+  async selectCompany(companyId: string) {
+    return fetchApi('/api/auth/select-company', {
+      method: 'POST',
+      body: JSON.stringify({ companyId }),
+    });
+  },
+
   async register(data: {
     name: string;
     email: string;
@@ -145,7 +152,7 @@ export const usersApi = {
     title?: string;
     phone?: string;
     email: string;
-    password: string;
+    password?: string;
     companyId: string;
     userType: 'COMPANY' | 'ASSESSMENT';
   }) {

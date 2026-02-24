@@ -156,6 +156,10 @@ function FinancialScorePage() {
   };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
+  const [selectingCompanyId, setSelectingCompanyId] = useState<string | null>(null);
+  const [companyPickerError, setCompanyPickerError] = useState('');
+  const [companyPickerPromptedThisSession, setCompanyPickerPromptedThisSession] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -338,6 +342,33 @@ function FinancialScorePage() {
     if (!Array.isArray(raw)) return COMPANY_USER_SECTIONS as unknown as string[];
     return raw as string[];
   }, [currentUser, isCompanyUser, isCompanyAdmin]);
+
+  const companyPickerOptions = useMemo(() => {
+    const fromMembership = Array.isArray((currentUser as any)?.accessibleCompanies)
+      ? ((currentUser as any).accessibleCompanies as Array<{ companyId: string; name: string }>)
+          .filter((c) => c?.companyId && c?.name)
+          .map((c) => ({ companyId: c.companyId, name: c.name }))
+      : [];
+    if (fromMembership.length > 0) return fromMembership;
+
+    if (currentUser?.role === 'consultant' && Array.isArray(companies)) {
+      return companies
+        .filter((c) => c?.id && c?.name)
+        .map((c) => ({ companyId: c.id, name: c.name }));
+    }
+    return [];
+  }, [currentUser, companies]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser) return;
+    if (currentUser.role === 'siteadmin' || currentUser.userType === 'assessment') return;
+    if (companyPickerPromptedThisSession) return;
+    if (companyPickerOptions.length <= 1) return;
+
+    setCompanyPickerError('');
+    setShowCompanyPicker(true);
+    setCompanyPickerPromptedThisSession(true);
+  }, [isLoggedIn, currentUser, companyPickerPromptedThisSession, companyPickerOptions]);
 
   const viewToCompanySection = (view: string): string | null => {
     if (view === 'dashboard') return 'company-dashboard';
@@ -3214,6 +3245,10 @@ function FinancialScorePage() {
     setIsLoggedIn(false);
     setCurrentView('login');
     setSelectedCompanyId('');
+    setShowCompanyPicker(false);
+    setSelectingCompanyId(null);
+    setCompanyPickerError('');
+    setCompanyPickerPromptedThisSession(false);
     setRawRows([]);
     setMapping({ date: '' });
     setFile(null);
@@ -4061,18 +4096,58 @@ function FinancialScorePage() {
     });
   };
 
-  const handleSelectCompany = (companyId: string) => {
+  const applyActiveCompany = async (companyId: string) => {
+    await authApi.selectCompany(companyId);
+    setSelectedCompanyId(companyId);
+    setExpandedCompanyInfoId(companyId);
+    setCurrentUser((prev) => {
+      if (!prev) return prev;
+      const membership = Array.isArray(prev.accessibleCompanies)
+        ? prev.accessibleCompanies.find((c) => c.companyId === companyId)
+        : undefined;
+      return {
+        ...prev,
+        companyId,
+        activeCompanyId: companyId,
+        companyRole: (membership?.companyRole as any) ?? prev.companyRole,
+        sidebarAccess: (membership?.sidebarAccess as any) ?? prev.sidebarAccess,
+      };
+    });
+  };
+
+  const handleSelectCompany = async (companyId: string) => {
     const company = Array.isArray(companies) ? companies.find(c => c.id === companyId) : undefined;
     if (!company) return;
-    
-    // Select the company
-    setSelectedCompanyId(companyId);
-    
-    // Navigate to Consultant Dashboard to show company details
-    setCurrentView('admin');
-    
-    // Automatically expand this company's section
-    setExpandedCompanyInfoId(companyId);
+    try {
+      await applyActiveCompany(companyId);
+      // Navigate to Company Management for the selected company.
+      setCurrentView('admin');
+      setShowCompanyPicker(false);
+      setCompanyPickerError('');
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Failed to switch company';
+      setCompanyPickerError(message);
+      alert(message);
+    }
+  };
+
+  const handleConfirmCompanyPicker = async (companyId: string) => {
+    setSelectingCompanyId(companyId);
+    setCompanyPickerError('');
+    try {
+      await applyActiveCompany(companyId);
+      setShowCompanyPicker(false);
+      if (currentUser?.role === 'consultant') {
+        setCurrentView('consultant-dashboard');
+      } else if (currentUser?.userType === 'company') {
+        setCurrentView('daily-alerts');
+      }
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Failed to set active company';
+      setCompanyPickerError(message);
+    } finally {
+      setSelectingCompanyId(null);
+    }
   };
 
   const saveCompanyDetails = async () => {
@@ -4167,8 +4242,8 @@ function FinancialScorePage() {
     const phone = userType === 'company' ? newCompanyUserPhone : undefined; // Phone only for company users
     const password = userType === 'company' ? newCompanyUserPassword : newAssessmentUserPassword;
     
-    if (!name || !email || !password) { 
-      alert('Please fill all required fields (Name, Email, Password)'); 
+    if (!name || !email) { 
+      alert('Please fill required fields (Name, Email)'); 
       return; 
     }
     
@@ -4179,7 +4254,7 @@ function FinancialScorePage() {
       console.log('Filtered company users:', users.filter(u => u.companyId === companyId && u.userType === 'company'));
       console.log('Filtered assessment users:', users.filter(u => u.companyId === companyId && u.userType === 'assessment'));
       
-      const { user } = await usersApi.create({
+      const { user, linkedExistingUser } = await usersApi.create({
         name,
         title,
         email,
@@ -4215,12 +4290,18 @@ function FinancialScorePage() {
         setNewAssessmentUserPassword('');
       }
       
-      alert(`${userType === 'company' ? 'Company' : 'Assessment'} user created successfully!`);
+      if (linkedExistingUser) {
+        alert(`Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`);
+      } else {
+        alert(`${userType === 'company' ? 'Company' : 'Assessment'} user created successfully!`);
+      }
     } catch (error) {
       console.error('Error creating user:', error);
       if (error instanceof ApiError) {
-        if (error.message.includes('already registered')) {
-          alert(`Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+        if (error.message.includes('already has access to this company')) {
+          alert(`User already has access\n\n"${email}" already has access to this company.`);
+        } else if (error.message.includes('already registered')) {
+          alert(`Email already in use\n\n"${email}" is already registered in the system.\n\nTip: leave password blank and add this email to grant company access.`);
         } else if (error.message.includes('Password does not meet requirements')) {
           alert('Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
@@ -5636,6 +5717,69 @@ function FinancialScorePage() {
           handleNavigation={handleNavigation}
         />
       </div>
+
+      {showCompanyPicker && companyPickerOptions.length > 1 && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            zIndex: 2200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              width: 'min(540px, 96vw)',
+              background: 'white',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              boxShadow: '0 16px 40px rgba(15, 23, 42, 0.25)',
+              padding: '18px',
+            }}
+          >
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>Select Company</div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px' }}>
+              Choose which company to access for this session.
+            </div>
+
+            <div style={{ marginTop: '14px', display: 'grid', gap: '8px' }}>
+              {companyPickerOptions.map((option) => {
+                const isActive = selectedCompanyId === option.companyId;
+                const isSelecting = selectingCompanyId === option.companyId;
+                return (
+                  <button
+                    key={option.companyId}
+                    onClick={() => handleConfirmCompanyPicker(option.companyId)}
+                    disabled={Boolean(selectingCompanyId)}
+                    style={{
+                      textAlign: 'left',
+                      border: isActive ? '2px solid #1f70c1' : '1px solid #dbe2ea',
+                      background: isActive ? '#eff6ff' : '#ffffff',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      cursor: selectingCompanyId ? 'not-allowed' : 'pointer',
+                      opacity: selectingCompanyId && !isSelecting ? 0.6 : 1,
+                      fontWeight: 700,
+                      color: '#0f172a',
+                    }}
+                  >
+                    {option.name}
+                    {isSelecting ? ' (Switching...)' : isActive ? ' (Current)' : ''}
+                  </button>
+                );
+              })}
+            </div>
+
+            {companyPickerError && (
+              <div style={{ marginTop: '12px', fontSize: '13px', color: '#b91c1c' }}>{companyPickerError}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area with Sidebar */}
       <div className="app-shell-content" style={{ display: 'flex', overflow: 'hidden', marginTop: '70px', height: 'calc(100vh - 70px)' }}>

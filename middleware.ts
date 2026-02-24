@@ -168,6 +168,8 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set('x-user-role', token.role as string || '')
     requestHeaders.set('x-company-id', token.companyId as string || '')
     requestHeaders.set('x-consultant-id', token.consultantId as string || '')
+    const activeCompanyCookie = request.cookies.get('fs_active_company')?.value || ''
+    requestHeaders.set('x-active-company-id', activeCompanyCookie)
     
     // Session fingerprinting for security
     const userAgent = request.headers.get('user-agent') || ''

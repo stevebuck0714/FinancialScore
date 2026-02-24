@@ -253,6 +253,13 @@ export interface User {
   email: string;
   password: string;
   companyId: string;
+  activeCompanyId?: string;
+  accessibleCompanies?: Array<{
+    companyId: string;
+    name: string;
+    companyRole?: string | null;
+    sidebarAccess?: any;
+  }>;
   consultantId?: string;
   consultantType?: string;
   consultantCompanyName?: string;

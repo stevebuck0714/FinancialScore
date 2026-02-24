@@ -124,7 +124,7 @@ export const updateCompanySchema = z.object({
 export const createUserSchema = z.object({
   name: nameSchema,
   email: emailSchema,
-  password: passwordSchema,
+  password: passwordSchema.optional(),
   title: z.string().trim().max(100).optional(),
   phone: phoneSchema,
   companyId: uuidSchema,

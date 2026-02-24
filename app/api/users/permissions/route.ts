@@ -7,7 +7,7 @@ export async function PATCH(req: NextRequest) {
     const context = await requireAuth(); // Get authenticated user context
     
     const body = await req.json();
-    const { userId, companyRole, sidebarAccess } = body;
+    const { userId, companyId, companyRole, sidebarAccess } = body;
 
     if (!userId) {
       return NextResponse.json(
@@ -29,6 +29,14 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
+    const targetCompanyId = String(companyId || context.companyId || targetUser.companyId || '').trim();
+    if (!targetCompanyId) {
+      return NextResponse.json(
+        { error: 'Company ID is required for permission updates' },
+        { status: 400 }
+      );
+    }
+
     // Authorization check:
     // 1. Site Admins can modify anyone.
     // 2. Consultants can modify users in companies they manage.
@@ -37,10 +45,10 @@ export async function PATCH(req: NextRequest) {
     if (context.role === 'SITEADMIN') {
       hasPermission = true;
     } else if (context.role === 'CONSULTANT') {
-      hasPermission = await validateCompanyAccess(targetUser.companyId || '');
+      hasPermission = await validateCompanyAccess(targetCompanyId);
     } else if (context.role === 'USER' && context.companyRole === 'admin') {
       // Company Admins can only modify users within their own company
-      hasPermission = context.companyId === targetUser.companyId;
+      hasPermission = context.companyId === targetCompanyId;
     }
 
     if (!hasPermission) {
@@ -51,6 +59,26 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Update the user's permissions
+    await prisma.userCompanyAccess.upsert({
+      where: {
+        userId_companyId: {
+          userId,
+          companyId: targetCompanyId,
+        },
+      },
+      update: {
+        companyRole: companyRole || 'user',
+        sidebarAccess: sidebarAccess || [],
+      },
+      create: {
+        userId,
+        companyId: targetCompanyId,
+        companyRole: companyRole || 'user',
+        sidebarAccess: sidebarAccess || [],
+      },
+    });
+
+    // Keep legacy fields aligned for currently active company.
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
@@ -63,7 +91,7 @@ export async function PATCH(req: NextRequest) {
         name: true,
         companyRole: true,
         sidebarAccess: true,
-      }
+      },
     });
 
     return NextResponse.json({

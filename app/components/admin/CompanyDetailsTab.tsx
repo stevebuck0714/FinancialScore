@@ -164,6 +164,7 @@ export default function CompanyDetailsTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
+          companyId: selectedCompanyId,
           companyRole: userPermissions[userId].role,
           sidebarAccess: userPermissions[userId].sidebarAccess,
         }),

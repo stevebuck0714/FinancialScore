@@ -83,6 +83,7 @@ model Company {
   financialRecords           FinancialRecord[]
   subscription               Subscription?
   users                      User[]
+  userAccess                 UserCompanyAccess[]
   documents                  CompanyDocument[]
   documentChunks             CompanyDocumentChunk[]
   loans                      Loan[]
@@ -120,6 +121,7 @@ model User {
   consultantFirm       Consultant?        @relation("ConsultantTeamMembers", fields: [consultantId], references: [id], onDelete: Cascade)
   financialRecords     FinancialRecord[]
   company              Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyAccess        UserCompanyAccess[]
   trustedDevices       TrustedDevice[]
   uploadedDocuments    CompanyDocument[]  @relation("CompanyDocumentUploadedBy")
 
@@ -127,6 +129,23 @@ model User {
   @@index([companyId])
   @@index([consultantId])
   @@index([passwordResetToken])
+}
+
+model UserCompanyAccess {
+  id          String   @id @default(cuid())
+  userId      String
+  companyId   String
+  companyRole String?  @default("user")
+  sidebarAccess Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
 }
 
 enum CompanyDocumentCategory {

@@ -5,6 +5,7 @@ import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/au
 import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
 import { resolveStoredMFASecret } from '@/lib/mfa';
+import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 
 export async function POST(request: NextRequest) {
   try {
@@ -136,6 +137,15 @@ export async function POST(request: NextRequest) {
       console.log('🔓 MFA check skipped (non-production or disabled).');
     }
 
+    await ensureLegacyCompanyAccess(user.id);
+    const accessibleCompanies = await listAccessibleCompaniesForUser(user.id);
+    const cookieActiveCompanyId = request.cookies.get('fs_active_company')?.value;
+    const activeCompanyId =
+      accessibleCompanies.find((c) => c.companyId === cookieActiveCompanyId)?.companyId ||
+      accessibleCompanies[0]?.companyId ||
+      user.companyId ||
+      null;
+
     console.log('✅ Login successful');
     
     // AUDIT: Log successful login
@@ -188,22 +198,39 @@ export async function POST(request: NextRequest) {
     const consultantId = consultant?.id || user.consultantId;
     
     // Return user data (password hash excluded)
-    return NextResponse.json({
+    const response = NextResponse.json({
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
         userType: user.userType,
-        companyRole: user.companyRole,
-        sidebarAccess: user.sidebarAccess,
-        companyId: user.companyId,
+        companyRole:
+          accessibleCompanies.find((c) => c.companyId === activeCompanyId)?.companyRole ||
+          user.companyRole,
+        sidebarAccess:
+          (accessibleCompanies.find((c) => c.companyId === activeCompanyId)?.sidebarAccess as any) ??
+          user.sidebarAccess,
+        companyId: activeCompanyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,
         consultantType: consultant?.type,
-        consultantCompanyName: consultant?.companyName
-      }
+        consultantCompanyName: consultant?.companyName,
+        accessibleCompanies,
+      },
+      activeCompanyId,
     });
+
+    if (activeCompanyId) {
+      response.cookies.set('fs_active_company', activeCompanyId, {
+        httpOnly: false,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30,
+      });
+    }
+    return response;
   } catch (error) {
     console.error('❌ Login error:', error);
     console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
