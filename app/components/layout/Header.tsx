@@ -160,6 +160,24 @@ export default function Header({
           <nav style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'nowrap' }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
               <button
+                onClick={() => handleNavigation('daily-alerts')}
+                style={{
+                  background: currentView === 'daily-alerts' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#000',
+                  cursor: 'pointer',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  borderBottom: currentView === 'daily-alerts' ? '3px solid #000' : '3px solid transparent',
+                  lineHeight: '1.1',
+                  textAlign: 'center'
+                }}
+              >
+                DAILY ALERTS
+              </button>
+              <button
                 onClick={() => handleNavigation('ai-analysis')}
                 style={{
                   background: currentView === 'ai-analysis' ? '#eef2ff' : 'none',
@@ -195,8 +213,8 @@ export default function Header({
                   opacity: canAccess('company-dashboard') ? 1 : 0.4
                 }}
               >
-                <span style={{ display: 'block' }}>FINANCIAL</span>
-                <span style={{ display: 'block' }}>DASHBOARD</span>
+                <span style={{ display: 'block' }}>Financial</span>
+                <span style={{ display: 'block' }}>Dashboard</span>
               </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>

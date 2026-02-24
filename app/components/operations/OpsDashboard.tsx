@@ -31,12 +31,12 @@ const CASH_CHART_COLOR = COLORS[4];
 
 export default function OpsDashboard({ selectedCompanyId, companyName, industrySectorCategory, activeModules, moduleTitlesByType }: OpsDashboardProps) {
   // Individual frequency state for each widget
-  const [customerFreq, setCustomerFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [arFreq, setArFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [apFreq, setApFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [productFreq, setProductFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [inventoryFreq, setInventoryFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [cashFreq, setCashFreq] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const [customerFreq, setCustomerFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [arFreq, setArFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [apFreq, setApFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [productFreq, setProductFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [inventoryFreq, setInventoryFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [cashFreq, setCashFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   // Data state for each widget
   const [customerData, setCustomerData] = useState<any>(null);
@@ -267,12 +267,13 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
       if (response.ok) {
         const data = await response.json();
         if (data.preferences) {
-          setCustomerFreq(data.preferences.customerFreq || 'monthly');
-          setArFreq(data.preferences.arFreq || 'monthly');
-          setApFreq(data.preferences.apFreq || 'monthly');
-          setProductFreq(data.preferences.productFreq || 'monthly');
-          setInventoryFreq(data.preferences.inventoryFreq || 'monthly');
-          setCashFreq(data.preferences.cashFreq || 'monthly');
+          // Dashboard widgets should always open in daily mode.
+          setCustomerFreq('daily');
+          setArFreq('daily');
+          setApFreq('daily');
+          setProductFreq('daily');
+          setInventoryFreq('daily');
+          setCashFreq('daily');
           if (Array.isArray(data.preferences.widgetOrder)) {
             setWidgetOrder(data.preferences.widgetOrder.filter((id: unknown) => typeof id === 'string'));
           }

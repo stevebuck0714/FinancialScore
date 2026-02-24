@@ -40,6 +40,7 @@ const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' |
 
 const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab'), { ssr: false });
 const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
+const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlertsView'), { ssr: false });
 
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
 const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
@@ -312,7 +313,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -342,6 +343,7 @@ function FinancialScorePage() {
     if (view === 'dashboard') return 'company-dashboard';
     if (view === 'valuation') return 'valuation';
     if (view === 'financial-statements') return 'financial-statements';
+    if (view === 'daily-alerts') return 'performance-analytics';
     if (view.startsWith('pa-')) return 'performance-analytics';
     if (view.startsWith('ma-')) return 'management-assessment';
     return null;
@@ -463,8 +465,8 @@ function FinancialScorePage() {
           } else if (normalizedUser.userType === 'assessment') {
             setCurrentView('ma-welcome');
           } else if (normalizedUser.userType === 'company') {
-            // Company users see the same dashboard as consultants
-            setCurrentView('admin');
+            // Company users land on Daily Alerts.
+            setCurrentView('daily-alerts');
             // Load the company data for this user
             if (user.companyId) {
               setSelectedCompanyId(user.companyId);
@@ -1328,6 +1330,8 @@ function FinancialScorePage() {
         setCurrentView('siteadmin');
       } else if (user.role === 'consultant') {
         setCurrentView('consultant-dashboard');
+      } else if ((user.userType || '').toLowerCase() === 'company') {
+        setCurrentView('daily-alerts');
       } else {
         setCurrentView('upload');
       }
@@ -2760,8 +2764,8 @@ function FinancialScorePage() {
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
       } else if (normalizedUser.userType === 'company') {
-        // Company users see the same dashboard as consultants
-        setCurrentView('admin');
+        // Company users land on Daily Alerts.
+        setCurrentView('daily-alerts');
       } else {
         setCurrentView('upload');
       }
@@ -2917,16 +2921,16 @@ function FinancialScorePage() {
               console.log('✅ Loaded company after MFA enrollment:', companyData.companies[0].name);
               // Delay setting view to allow React to complete state updates
               setTimeout(() => {
-                setCurrentView('admin');
+                setCurrentView('daily-alerts');
                 setAdminDashboardTab('company-management');
               }, 100);
             }
           } catch (error) {
             console.error('Error loading company after MFA enrollment:', error);
-            setTimeout(() => setCurrentView('admin'), 100);
+            setTimeout(() => setCurrentView('daily-alerts'), 100);
           }
         } else {
-          setTimeout(() => setCurrentView('admin'), 100);
+          setTimeout(() => setCurrentView('daily-alerts'), 100);
         }
       } else {
         setCurrentView('upload');
@@ -3012,16 +3016,16 @@ function FinancialScorePage() {
               console.log('✅ Loaded company after MFA verification:', companyData.companies[0].name);
               // Delay setting view to allow React to complete state updates
               setTimeout(() => {
-                setCurrentView('admin');
+                setCurrentView('daily-alerts');
                 setAdminDashboardTab('company-management');
               }, 100);
             }
           } catch (error) {
             console.error('Error loading company after MFA verification:', error);
-            setTimeout(() => setCurrentView('admin'), 100);
+            setTimeout(() => setCurrentView('daily-alerts'), 100);
           }
         } else {
-          setTimeout(() => setCurrentView('admin'), 100);
+          setTimeout(() => setCurrentView('daily-alerts'), 100);
         }
       } else {
         setCurrentView('upload');
@@ -7485,6 +7489,21 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view operational data.</p>
+        </div>
+      )}
+
+      {/* Daily Alerts View */}
+      {currentView === 'daily-alerts' && selectedCompanyId && (
+        <DailyAlertsView
+          companyId={selectedCompanyId}
+          companyName={companyName || ''}
+          onNavigate={handleNavigation}
+        />
+      )}
+      {currentView === 'daily-alerts' && !selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view daily alerts.</p>
         </div>
       )}
 
