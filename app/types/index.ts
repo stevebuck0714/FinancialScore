@@ -171,6 +171,9 @@ export interface Company {
   tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
   tier1SupportConsultantId?: string | null;
   tier1SupportContactEmail?: string | null;
+  hasRealOperationalData?: boolean;
+  realDataActivatedAt?: string | null;
+  forceOperationalMockData?: boolean;
 }
 
 export interface CompanyProfile {

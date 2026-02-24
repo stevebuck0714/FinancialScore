@@ -111,6 +111,8 @@ export const companiesApi = {
     tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
     tier1SupportConsultantId?: string | null;
     tier1SupportContactEmail?: string | null;
+    hasRealOperationalData?: boolean;
+    forceOperationalMockData?: boolean;
   }) {
     return fetchApi('/api/companies', {
       method: 'PATCH',

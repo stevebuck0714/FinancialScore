@@ -6,6 +6,31 @@ import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from 
 
 export const dynamic = 'force-dynamic';
 
+async function companyHasAnyRealOperationalData(companyId: string): Promise<boolean> {
+  const [customers, arAging, apAging, products, inventory, cash] = await Promise.all([
+    prisma.customerSalesSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.aRAgingSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.aPAgingSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.productSalesSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.inventorySnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.cashSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+  ]);
+  return Boolean(customers || arAging || apAging || products || inventory || cash);
+}
+
+async function activateRealOperationalData(companyId: string): Promise<void> {
+  await prisma.company.updateMany({
+    where: {
+      id: companyId,
+      hasRealOperationalData: false,
+    },
+    data: {
+      hasRealOperationalData: true,
+      realDataActivatedAt: new Date(),
+    },
+  });
+}
+
 /**
  * GET /api/operational-data
  * 
@@ -58,8 +83,27 @@ export async function GET(request: NextRequest) {
     const endDate = endDateParam ? new Date(endDateParam) : defaultEndDate;
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { industrySectorCategory: true },
+      select: {
+        industrySectorCategory: true,
+        hasRealOperationalData: true,
+        forceOperationalMockData: true,
+      },
     });
+    if (!company) {
+      return NextResponse.json(
+        { error: 'Company not found' },
+        { status: 404 }
+      );
+    }
+
+    const hasAnyRealData = await companyHasAnyRealOperationalData(companyId);
+    let hasRealOperationalData = company.hasRealOperationalData;
+    if (hasAnyRealData && !hasRealOperationalData) {
+      await activateRealOperationalData(companyId);
+      hasRealOperationalData = true;
+    }
+    const shouldUseMockData = company.forceOperationalMockData || !hasRealOperationalData;
+
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
 
     // Build date filter
@@ -97,7 +141,7 @@ export async function GET(request: NextRequest) {
           return acc;
         }, {} as Record<string, any>);
 
-        if (!data.length) {
+        if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'customers',
@@ -147,7 +191,7 @@ export async function GET(request: NextRequest) {
             }
           : null;
 
-        if (!data.length) {
+        if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'ar-aging',
@@ -193,7 +237,7 @@ export async function GET(request: NextRequest) {
             }
           : null;
 
-        if (!data.length) {
+        if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'ap-aging',
@@ -241,7 +285,7 @@ export async function GET(request: NextRequest) {
           return acc;
         }, {} as Record<string, any>);
 
-        if (!data.length) {
+        if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'products',
@@ -295,7 +339,7 @@ export async function GET(request: NextRequest) {
             .slice(0, 10),
         };
 
-        if (!data.length) {
+        if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'inventory',
@@ -373,7 +417,7 @@ export async function GET(request: NextRequest) {
             : 0,
         };
 
-        if (!data.length) {
+        if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'cash',
@@ -411,7 +455,7 @@ export async function GET(request: NextRequest) {
           inventoryRecords: inventory,
           cashRecords: cash,
         };
-        if (!customers && !arAging && !apAging && !products && !inventory && !cash) {
+        if (!customers && !arAging && !apAging && !products && !inventory && !cash && shouldUseMockData) {
           return NextResponse.json({
             summary: buildOperationalMockSummaryCounts(sectorCategory),
           });

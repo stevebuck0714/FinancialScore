@@ -77,6 +77,9 @@ export async function GET(request: NextRequest) {
     const includeTier1SupportOwner = await hasCompanyColumn("tier1SupportOwner");
     const includeTier1SupportConsultantId = await hasCompanyColumn("tier1SupportConsultantId");
     const includeTier1SupportContactEmail = await hasCompanyColumn("tier1SupportContactEmail");
+    const includeHasRealOperationalData = await hasCompanyColumn("hasRealOperationalData");
+    const includeRealDataActivatedAt = await hasCompanyColumn("realDataActivatedAt");
+    const includeForceOperationalMockData = await hasCompanyColumn("forceOperationalMockData");
     let companies;
     try {
       companies = await prisma.company.findMany({
@@ -105,6 +108,9 @@ export async function GET(request: NextRequest) {
           ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
           ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
           ...(includeTier1SupportContactEmail ? { tier1SupportContactEmail: true } : {}),
+          ...(includeHasRealOperationalData ? { hasRealOperationalData: true } : {}),
+          ...(includeRealDataActivatedAt ? { realDataActivatedAt: true } : {}),
+          ...(includeForceOperationalMockData ? { forceOperationalMockData: true } : {}),
           // Skip affiliateCode in production (not needed)
           ...(process.env.NODE_ENV === "production"
             ? {}
@@ -142,6 +148,9 @@ export async function GET(request: NextRequest) {
           ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
           ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
           ...(includeTier1SupportContactEmail ? { tier1SupportContactEmail: true } : {}),
+          ...(includeHasRealOperationalData ? { hasRealOperationalData: true } : {}),
+          ...(includeRealDataActivatedAt ? { realDataActivatedAt: true } : {}),
+          ...(includeForceOperationalMockData ? { forceOperationalMockData: true } : {}),
           ...(process.env.NODE_ENV === "production"
             ? {}
             : {
@@ -1036,6 +1045,46 @@ export async function PATCH(request: NextRequest) {
       updateData.tier1SupportContactEmail = effectiveSupportContactEmail;
     }
 
+    const hasOperationalDataModeUpdate =
+      updateFields.forceOperationalMockData !== undefined ||
+      updateFields.hasRealOperationalData !== undefined;
+    if (hasOperationalDataModeUpdate) {
+      if (context.role !== 'SITEADMIN') {
+        return NextResponse.json(
+          { error: "Only site admins can update operational data mode settings" },
+          { status: 403 },
+        );
+      }
+
+      const forceOperationalMockDataColumnExists = await hasCompanyColumn('forceOperationalMockData');
+      const hasRealOperationalDataColumnExists = await hasCompanyColumn('hasRealOperationalData');
+      const realDataActivatedAtColumnExists = await hasCompanyColumn('realDataActivatedAt');
+
+      if (updateFields.forceOperationalMockData !== undefined) {
+        if (!forceOperationalMockDataColumnExists) {
+          return NextResponse.json(
+            { error: "forceOperationalMockData column is not available in this environment" },
+            { status: 400 },
+          );
+        }
+        updateData.forceOperationalMockData = Boolean(updateFields.forceOperationalMockData);
+      }
+
+      if (updateFields.hasRealOperationalData !== undefined) {
+        if (!hasRealOperationalDataColumnExists) {
+          return NextResponse.json(
+            { error: "hasRealOperationalData column is not available in this environment" },
+            { status: 400 },
+          );
+        }
+        const hasReal = Boolean(updateFields.hasRealOperationalData);
+        updateData.hasRealOperationalData = hasReal;
+        if (realDataActivatedAtColumnExists) {
+          updateData.realDataActivatedAt = hasReal ? new Date() : null;
+        }
+      }
+    }
+
     // Name
     if (updateFields.name !== undefined) updateData.name = updateFields.name;
 
@@ -1098,6 +1147,15 @@ export async function PATCH(request: NextRequest) {
     }
     if (await columnExists('tier1SupportContactEmail')) {
       selectFields.tier1SupportContactEmail = true;
+    }
+    if (await columnExists('hasRealOperationalData')) {
+      selectFields.hasRealOperationalData = true;
+    }
+    if (await columnExists('realDataActivatedAt')) {
+      selectFields.realDataActivatedAt = true;
+    }
+    if (await columnExists('forceOperationalMockData')) {
+      selectFields.forceOperationalMockData = true;
     }
 
     // Select headcountAllocations if it exists (now that database column is added)

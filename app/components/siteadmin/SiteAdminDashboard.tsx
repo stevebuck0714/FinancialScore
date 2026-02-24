@@ -64,6 +64,7 @@ export default function SiteAdminDashboard(props: any) {
     Record<string, { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string; supportEmail: string }>
   >({});
   const [savingTier1RoutingCompanyId, setSavingTier1RoutingCompanyId] = React.useState<string | null>(null);
+  const [savingOperationalDataModeCompanyId, setSavingOperationalDataModeCompanyId] = React.useState<string | null>(null);
 
   const getEffectiveTier1Routing = (company: any): { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string; supportEmail: string } => {
     const ownerRaw =
@@ -136,6 +137,52 @@ export default function SiteAdminDashboard(props: any) {
       alert(error?.message || 'Failed to save Tier 1 support routing');
     } finally {
       setSavingTier1RoutingCompanyId(null);
+    }
+  };
+
+  const saveOperationalDataMode = async (companyId: string, forceOperationalMockData: boolean) => {
+    setSavingOperationalDataModeCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          forceOperationalMockData,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to update operational data mode');
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((company: any) =>
+              company.id === companyId
+                ? {
+                    ...company,
+                    forceOperationalMockData:
+                      data?.company?.forceOperationalMockData ?? forceOperationalMockData,
+                    hasRealOperationalData:
+                      data?.company?.hasRealOperationalData ?? company.hasRealOperationalData,
+                    realDataActivatedAt:
+                      data?.company?.realDataActivatedAt ?? company.realDataActivatedAt,
+                  }
+                : company
+            )
+          : prev
+      );
+
+      alert(
+        forceOperationalMockData
+          ? 'Demo mode enabled for this company. Company Pulse and Operations will use mock data.'
+          : 'Demo mode disabled. Company Pulse and Operations will use real data when available.',
+      );
+    } catch (error: any) {
+      alert(error?.message || 'Failed to update operational data mode');
+    } finally {
+      setSavingOperationalDataModeCompanyId(null);
     }
   };
   const [operationalSyncSettingsByCompany, setOperationalSyncSettingsByCompany] = React.useState<
@@ -1664,6 +1711,52 @@ export default function SiteAdminDashboard(props: any) {
                                                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
                                                   <div style={{ fontSize: '12px', color: '#64748b' }}>
                                                     Configuration for <strong>{company.name}</strong>
+                                                  </div>
+                                                  <div style={{ marginTop: '10px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
+                                                      Operational Data Mode
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                                      {company.forceOperationalMockData
+                                                        ? 'Demo mode is ON. Mock data is being served.'
+                                                        : company.hasRealOperationalData
+                                                          ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                          : 'Demo mode is active until real operational data is detected.'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                      <button
+                                                        onClick={() => saveOperationalDataMode(company.id, true)}
+                                                        disabled={savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData}
+                                                        style={{
+                                                          padding: '6px 10px',
+                                                          background: company.forceOperationalMockData ? '#0f766e' : 'white',
+                                                          color: company.forceOperationalMockData ? 'white' : '#0f766e',
+                                                          border: '1px solid #0f766e',
+                                                          borderRadius: '6px',
+                                                          fontSize: '12px',
+                                                          fontWeight: '600',
+                                                          cursor: savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                        }}
+                                                      >
+                                                        Force Demo Mode
+                                                      </button>
+                                                      <button
+                                                        onClick={() => saveOperationalDataMode(company.id, false)}
+                                                        disabled={savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData}
+                                                        style={{
+                                                          padding: '6px 10px',
+                                                          background: !company.forceOperationalMockData ? '#1d4ed8' : 'white',
+                                                          color: !company.forceOperationalMockData ? 'white' : '#1d4ed8',
+                                                          border: '1px solid #1d4ed8',
+                                                          borderRadius: '6px',
+                                                          fontSize: '12px',
+                                                          fontWeight: '600',
+                                                          cursor: savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                        }}
+                                                      >
+                                                        Use Real Data
+                                                      </button>
+                                                    </div>
                                                   </div>
                                                 </div>
                                                 {company.accountingSystem === 'INFOR_M3' && (
@@ -3279,6 +3372,52 @@ export default function SiteAdminDashboard(props: any) {
                                         <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
                                         <div style={{ fontSize: '12px', color: '#64748b' }}>
                                           Infor M3 credentials for <strong>{businessCompany.name}</strong>
+                                        </div>
+                                        <div style={{ marginTop: '10px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc' }}>
+                                          <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
+                                            Operational Data Mode
+                                          </div>
+                                          <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                            {businessCompany.forceOperationalMockData
+                                              ? 'Demo mode is ON. Mock data is being served.'
+                                              : businessCompany.hasRealOperationalData
+                                                ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${new Date(businessCompany.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                : 'Demo mode is active until real operational data is detected.'}
+                                          </div>
+                                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            <button
+                                              onClick={() => saveOperationalDataMode(businessCompany.id, true)}
+                                              disabled={savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData}
+                                              style={{
+                                                padding: '6px 10px',
+                                                background: businessCompany.forceOperationalMockData ? '#0f766e' : 'white',
+                                                color: businessCompany.forceOperationalMockData ? 'white' : '#0f766e',
+                                                border: '1px solid #0f766e',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontWeight: '600',
+                                                cursor: savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                              }}
+                                            >
+                                              Force Demo Mode
+                                            </button>
+                                            <button
+                                              onClick={() => saveOperationalDataMode(businessCompany.id, false)}
+                                              disabled={savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData}
+                                              style={{
+                                                padding: '6px 10px',
+                                                background: !businessCompany.forceOperationalMockData ? '#1d4ed8' : 'white',
+                                                color: !businessCompany.forceOperationalMockData ? 'white' : '#1d4ed8',
+                                                border: '1px solid #1d4ed8',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontWeight: '600',
+                                                cursor: savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                              }}
+                                            >
+                                              Use Real Data
+                                            </button>
+                                          </div>
                                         </div>
                                       </div>
                                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>

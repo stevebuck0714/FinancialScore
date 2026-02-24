@@ -45,6 +45,12 @@ model Company {
   tier1SupportConsultantId   String?
   // Optional per-company Tier 1 contact email override
   tier1SupportContactEmail   String?
+  // Once true, operational APIs never serve mock data for this company.
+  hasRealOperationalData     Boolean                @default(false)
+  // When any real operational snapshot is first detected.
+  realDataActivatedAt        DateTime?
+  // Site-admin override to force demo/mock operational responses.
+  forceOperationalMockData   Boolean                @default(false)
   addressStreet              String?
   addressCity                String?
   addressState               String?
