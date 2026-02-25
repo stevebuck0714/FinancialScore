@@ -630,7 +630,7 @@ function FinancialScorePage() {
   const [editingAffiliate, setEditingAffiliate] = useState<any>(null);
   const [showAddAffiliateForm, setShowAddAffiliateForm] = useState(false);
   const [expandedAffiliateId, setExpandedAffiliateId] = useState<string | null>(null);
-  const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
+  const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: '', setupFee: ''});
   const [editingAffiliateCode, setEditingAffiliateCode] = useState<any>(null);
   
   // Team management state
@@ -2736,7 +2736,22 @@ function FinancialScorePage() {
       });
       
       if (!loginResponse.ok) {
-        setLoginError('Invalid email or password');
+        let loginErrorMessage = 'Invalid email or password';
+        try {
+          const errorData = await loginResponse.json();
+          if (loginResponse.status >= 500) {
+            loginErrorMessage =
+              'Login service is temporarily unavailable. Please try again in a moment.';
+          } else if (typeof errorData?.error === 'string' && errorData.error.trim()) {
+            loginErrorMessage = errorData.error;
+          }
+        } catch {
+          if (loginResponse.status >= 500) {
+            loginErrorMessage =
+              'Login service is temporarily unavailable. Please try again in a moment.';
+          }
+        }
+        setLoginError(loginErrorMessage);
         setIsLoading(false);
         return;
       }
