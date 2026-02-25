@@ -11,6 +11,7 @@ interface MFAVerificationModalProps {
 }
 
 export default function MFAVerificationModal({ userId, userEmail, onSuccess, onCancel, trustDurationDays }: MFAVerificationModalProps) {
+  const BACKUP_CODE_LENGTH = 8;
   const [verificationCode, setVerificationCode] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,7 +36,12 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
   }
 
   const verifyMFACode = async () => {
-    if (!verificationCode || verificationCode.length !== 6) {
+    if (showBackupCodeInput) {
+      if (!verificationCode || verificationCode.length !== BACKUP_CODE_LENGTH) {
+        setError(`Please enter your ${BACKUP_CODE_LENGTH}-character backup code`);
+        return;
+      }
+    } else if (!verificationCode || verificationCode.length !== 6) {
       setError('Please enter a 6-digit code');
       return;
     }
@@ -83,7 +89,10 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && verificationCode.length === 6 && !isSubmitting) {
+    const isReadyToSubmit = showBackupCodeInput
+      ? verificationCode.length === BACKUP_CODE_LENGTH
+      : verificationCode.length === 6;
+    if (e.key === 'Enter' && isReadyToSubmit && !isSubmitting) {
       verifyMFACode();
     }
   };
@@ -149,14 +158,14 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
             value={verificationCode}
             onChange={(e) => {
               const value = showBackupCodeInput 
-                ? e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()
+                ? e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, BACKUP_CODE_LENGTH).toUpperCase()
                 : e.target.value.replace(/\D/g, '').slice(0, 6);
               setVerificationCode(value);
               setError('');
             }}
             onKeyPress={handleKeyPress}
-            placeholder={showBackupCodeInput ? 'XXXXXXXXXX' : '000000'}
-            maxLength={showBackupCodeInput ? 10 : 6}
+            placeholder={showBackupCodeInput ? 'XXXXXXXX' : '000000'}
+            maxLength={showBackupCodeInput ? BACKUP_CODE_LENGTH : 6}
             style={{
               width: '100%',
               padding: '14px',
@@ -262,14 +271,14 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
         <button
           onClick={verifyMFACode}
           disabled={
-            (showBackupCodeInput ? verificationCode.length < 6 : verificationCode.length !== 6) 
+            (showBackupCodeInput ? verificationCode.length !== BACKUP_CODE_LENGTH : verificationCode.length !== 6) 
             || isSubmitting
           }
           style={{
             width: '100%',
             padding: '12px',
             background: (
-              (showBackupCodeInput ? verificationCode.length >= 6 : verificationCode.length === 6) 
+              (showBackupCodeInput ? verificationCode.length === BACKUP_CODE_LENGTH : verificationCode.length === 6) 
               && !isSubmitting
             ) ? '#667eea' : '#cbd5e1',
             color: 'white',
@@ -278,19 +287,19 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
             fontSize: '15px',
             fontWeight: '600',
             cursor: (
-              (showBackupCodeInput ? verificationCode.length >= 6 : verificationCode.length === 6) 
+              (showBackupCodeInput ? verificationCode.length === BACKUP_CODE_LENGTH : verificationCode.length === 6) 
               && !isSubmitting
             ) ? 'pointer' : 'not-allowed',
             transition: 'all 0.2s',
             marginBottom: '12px'
           }}
           onMouseEnter={(e) => {
-            if ((showBackupCodeInput ? verificationCode.length >= 6 : verificationCode.length === 6) && !isSubmitting) {
+            if ((showBackupCodeInput ? verificationCode.length === BACKUP_CODE_LENGTH : verificationCode.length === 6) && !isSubmitting) {
               e.currentTarget.style.background = '#5568d3';
             }
           }}
           onMouseLeave={(e) => {
-            if ((showBackupCodeInput ? verificationCode.length >= 6 : verificationCode.length === 6) && !isSubmitting) {
+            if ((showBackupCodeInput ? verificationCode.length === BACKUP_CODE_LENGTH : verificationCode.length === 6) && !isSubmitting) {
               e.currentTarget.style.background = '#667eea';
             }
           }}
