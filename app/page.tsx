@@ -363,16 +363,38 @@ function FinancialScorePage() {
     return [];
   }, [currentUser, companies]);
 
+  const hasValidActiveCompanyForSession = useMemo(() => {
+    const candidateCompanyId =
+      selectedCompanyId ||
+      ((currentUser as any)?.activeCompanyId as string | undefined) ||
+      (currentUser?.companyId as string | undefined) ||
+      '';
+
+    if (!candidateCompanyId || companyPickerOptions.length === 0) return false;
+    return companyPickerOptions.some((option) => option.companyId === candidateCompanyId);
+  }, [selectedCompanyId, currentUser, companyPickerOptions]);
+
   useEffect(() => {
     if (!isLoggedIn || !currentUser) return;
     if (currentUser.role === 'siteadmin' || currentUser.userType === 'assessment') return;
     if (companyPickerPromptedThisSession) return;
     if (companyPickerOptions.length <= 1) return;
+    if (hasValidActiveCompanyForSession) {
+      setShowCompanyPicker(false);
+      setCompanyPickerError('');
+      return;
+    }
 
     setCompanyPickerError('');
     setShowCompanyPicker(true);
     setCompanyPickerPromptedThisSession(true);
-  }, [isLoggedIn, currentUser, companyPickerPromptedThisSession, companyPickerOptions]);
+  }, [
+    isLoggedIn,
+    currentUser,
+    companyPickerPromptedThisSession,
+    companyPickerOptions,
+    hasValidActiveCompanyForSession,
+  ]);
 
   const viewToCompanySection = (view: string): string | null => {
     if (view === 'dashboard') return 'company-dashboard';
