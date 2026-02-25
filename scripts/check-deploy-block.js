@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+const { spawnSync } = require('node:child_process');
+
 /**
  * Check if deployment should be blocked
  * Used to prevent auto-deploys to production when BLOCK_AUTO_DEPLOY=true
@@ -73,6 +75,42 @@ if (isProduction) {
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('');
     process.exit(1);
+  }
+
+  if (!process.env.DATABASE_URL) {
+    console.error('');
+    console.error('🛑 PRISMA MIGRATION CHECK FAILED');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    console.error('DATABASE_URL is not set in production build environment.');
+    console.error('Set DATABASE_URL so migration status can be validated before deploy.');
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    process.exit(1);
+  }
+
+  console.log('🔎 Validating Prisma migration status...');
+  const migrationStatus = spawnSync(
+    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    ['prisma', 'migrate', 'status', '--schema', 'prisma/schema.prisma'],
+    {
+      stdio: 'inherit',
+      env: process.env,
+    }
+  );
+
+  if (migrationStatus.status !== 0) {
+    console.error('');
+    console.error('🛑 PRISMA MIGRATION STATUS CHECK FAILED');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    console.error('Production database is not aligned with Prisma migrations.');
+    console.error('Run this before deploying: npm run db:migrate:deploy');
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    process.exit(migrationStatus.status || 1);
   }
 }
 
