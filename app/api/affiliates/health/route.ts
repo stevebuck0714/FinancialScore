@@ -34,7 +34,8 @@ export async function GET(request: NextRequest) {
           isActive: true,
           monthlyPrice: 0,
           quarterlyPrice: 0,
-          annualPrice: 0
+          annualPrice: 0,
+          setupFee: 0
         }
       });
 
@@ -54,12 +55,13 @@ export async function GET(request: NextRequest) {
           code: true,
           monthlyPrice: true,
           quarterlyPrice: true,
-          annualPrice: true
+          annualPrice: true,
+          setupFee: true
         }
       });
 
       results.knownFreeCodes = knownCodes
-        .filter(code => code.monthlyPrice === 0 && code.quarterlyPrice === 0 && code.annualPrice === 0)
+        .filter(code => code.monthlyPrice === 0 && code.quarterlyPrice === 0 && code.annualPrice === 0 && code.setupFee === 0)
         .map(code => code.code);
 
     } catch (countError) {

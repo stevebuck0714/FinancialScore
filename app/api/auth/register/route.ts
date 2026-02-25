@@ -77,7 +77,8 @@ export async function POST(request: NextRequest) {
         pricingToUse = {
           businessMonthlyPrice: affiliateCodeRecord.monthlyPrice,
           businessQuarterlyPrice: affiliateCodeRecord.quarterlyPrice,
-          businessAnnualPrice: affiliateCodeRecord.annualPrice
+          businessAnnualPrice: affiliateCodeRecord.annualPrice,
+          businessSetupFee: affiliateCodeRecord.setupFee
         };
         // Store the affiliate ID from the code record
         resolvedAffiliateId = affiliateCodeRecord.affiliateId;
@@ -96,9 +97,11 @@ export async function POST(request: NextRequest) {
           businessMonthlyPrice: 195,
           businessQuarterlyPrice: 500,
           businessAnnualPrice: 1750,
+          businessSetupFee: 0,
           consultantMonthlyPrice: 195,
           consultantQuarterlyPrice: 500,
-          consultantAnnualPrice: 1750
+          consultantAnnualPrice: 1750,
+          consultantSetupFee: 0
         };
       } else {
         pricingToUse = defaultPricing;
@@ -125,9 +128,11 @@ export async function POST(request: NextRequest) {
           monthly: pricingToUse?.businessMonthlyPrice ?? 195,
           quarterly: pricingToUse?.businessQuarterlyPrice ?? 500,
           annual: pricingToUse?.businessAnnualPrice ?? 1750,
+          setupFee: pricingToUse?.businessSetupFee ?? 0,
           requiresPayment: !affiliateCode || (pricingToUse?.businessMonthlyPrice ?? 195) > 0 ||
                           (pricingToUse?.businessQuarterlyPrice ?? 500) > 0 ||
-                          (pricingToUse?.businessAnnualPrice ?? 1750) > 0
+                          (pricingToUse?.businessAnnualPrice ?? 1750) > 0 ||
+                          (pricingToUse?.businessSetupFee ?? 0) > 0
         };
 
         // STORE FINAL PRICING PERMANENTLY - This is the pricing the company was registered with
@@ -140,6 +145,7 @@ export async function POST(request: NextRequest) {
           subscriptionMonthlyPrice: finalPricing.monthly,
           subscriptionQuarterlyPrice: finalPricing.quarterly,
           subscriptionAnnualPrice: finalPricing.annual,
+          subscriptionSetupFee: finalPricing.setupFee,
           subscriptionStatus: finalPricing.requiresPayment ? "active" : "free",
           // DO NOT set selectedSubscriptionPlan - they must pay first
         };

@@ -442,6 +442,7 @@ export async function POST(request: NextRequest) {
         monthlyPrice = affiliateCodeBasic.monthlyPrice ?? 0;
         quarterlyPrice = affiliateCodeBasic.quarterlyPrice ?? 0;
         annualPrice = affiliateCodeBasic.annualPrice ?? 0;
+        setupFee = affiliateCodeBasic.setupFee ?? 0;
         affiliateId = affiliateCodeBasic.affiliateId;
         validatedAffiliateCode = affiliateCodeBasic.code;
         useAffiliatePricing = true;
@@ -450,20 +451,11 @@ export async function POST(request: NextRequest) {
           monthlyPrice,
           quarterlyPrice,
           annualPrice,
+          setupFee,
           affiliateId,
           affiliateCode: validatedAffiliateCode,
-          isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0
+          isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0 && setupFee === 0
         });
-
-        // Setup fee is not part of affiliate code pricing (currently).
-        // Use the current default setup fee based on user type.
-        try {
-          const defaults = await prisma.systemSettings.findUnique({ where: { key: "default_pricing" } });
-          const isBusinessUser = consultant?.type === "business";
-          setupFee = isBusinessUser ? (defaults?.businessSetupFee ?? 0) : (defaults?.consultantSetupFee ?? 0);
-        } catch (e) {
-          setupFee = 0;
-        }
       } catch (affiliateError) {
         console.error(
           "❌ Database error during affiliate code validation:",
@@ -674,7 +666,8 @@ export async function POST(request: NextRequest) {
           subscriptionStatus:
             monthlyPrice === 0 &&
             quarterlyPrice === 0 &&
-            annualPrice === 0
+            annualPrice === 0 &&
+            (setupFee ?? 0) === 0
               ? "free"
               : "active",
           ...(includeTier1SupportOwner
@@ -696,7 +689,9 @@ export async function POST(request: NextRequest) {
               isFree:
                 (monthlyPrice ?? 0) === 0 &&
                 (quarterlyPrice ?? 0) === 0 &&
-                (annualPrice ?? 0) === 0,
+                (annualPrice ?? 0) === 0 &&
+                (setupFee ?? 0) === 0,
+              setupFee: setupFee ?? 0,
               source: "affiliate_code",
               createdAt: new Date().toISOString(),
             },

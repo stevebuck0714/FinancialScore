@@ -1276,13 +1276,22 @@ export default function SiteAdminDashboard(props: any) {
                       <p style={{ fontSize: '13px', color: '#94a3b8' }}>Add your first consultant to get started</p>
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      {consultants.filter(c => c.type !== 'business').map((consultant) => {
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {consultants
+                        .filter(c => c.type !== 'business')
+                        .sort((a: any, b: any) =>
+                          (a.companyName || a.fullName || '').localeCompare(
+                            b.companyName || b.fullName || '',
+                            undefined,
+                            { numeric: true, sensitivity: 'base' }
+                          )
+                        )
+                        .map((consultant) => {
                     const consultantCompanies = getConsultantCompanies(consultant.id);
                     const expanded = selectedConsultantId === consultant.id;
 
                     return (
-                      <div key={consultant.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                      <div key={consultant.id} style={{ background: 'white', borderRadius: '8px', padding: '10px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
                         {/* Consultant Header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ flex: 1 }}>
@@ -1314,6 +1323,7 @@ export default function SiteAdminDashboard(props: any) {
                                   fontSize: '15px', 
                                   fontWeight: '600', 
                                   color: '#667eea', 
+                                  margin: 0,
                                   marginBottom: '2px',
                                   cursor: 'pointer',
                                   textDecoration: 'underline'
@@ -1353,7 +1363,7 @@ export default function SiteAdminDashboard(props: any) {
 
                         {/* Expanded Details */}
                         {expanded && (
-                          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', marginTop: '10px' }}>
+                          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '8px' }}>
                             {/* Consultant Information */}
                             <div style={{ marginBottom: '10px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -3025,8 +3035,17 @@ export default function SiteAdminDashboard(props: any) {
                       <p style={{ fontSize: '13px', color: '#94a3b8' }}>Businesses will appear here once they register</p>
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      {Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).map((businessCompany) => {
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {Array.isArray(companies) && companies
+                        .filter(comp => comp.consultantId === null)
+                        .sort((a: any, b: any) =>
+                          (a.name || '').localeCompare(
+                            b.name || '',
+                            undefined,
+                            { numeric: true, sensitivity: 'base' }
+                          )
+                        )
+                        .map((businessCompany) => {
                         // Find the user associated with this company
                         const businessUser = users.find(u => u.companyId === businessCompany.id);
                         const isExpanded = expandedBusinessIds.has(businessCompany.id);
@@ -3051,7 +3070,7 @@ export default function SiteAdminDashboard(props: any) {
                         );
                         
                         return (
-                          <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                          <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '10px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
                             {/* Business Header */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ flex: 1 }}>
@@ -3128,7 +3147,7 @@ export default function SiteAdminDashboard(props: any) {
                                         });
                                     }}
                                     style={{ 
-                                      fontSize: '18px', 
+                                      fontSize: '16px', 
                                       fontWeight: '600', 
                                       color: '#667eea', 
                                       margin: 0,
@@ -3182,7 +3201,7 @@ export default function SiteAdminDashboard(props: any) {
                                       return newSet;
                                     });
                                   }}
-                                  style={{ padding: '8px 14px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                                  style={{ padding: '6px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                 >
                                   {isExpanded ? 'Collapse' : 'Expand'}
                                 </button>
@@ -3205,12 +3224,12 @@ export default function SiteAdminDashboard(props: any) {
                                     }
                                   }}
                                   style={{ 
-                                    padding: '8px 14px', 
+                                    padding: '6px 10px', 
                                     background: '#ef4444', 
                                     color: 'white', 
                                     border: 'none', 
                                     borderRadius: '6px', 
-                                    fontSize: '14px', 
+                                    fontSize: '12px', 
                                     fontWeight: '600', 
                                     cursor: 'pointer',
                                     transition: 'background 0.2s'
@@ -3225,7 +3244,7 @@ export default function SiteAdminDashboard(props: any) {
 
                             {/* Expanded Details */}
                             {isExpanded && (
-                              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '10px', paddingTop: '10px' }}>
+                              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '8px' }}>
                                 <div style={{ marginBottom: '10px', padding: '10px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                   <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Tier 1 Support Routing</h4>
                                   <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
@@ -5053,6 +5072,8 @@ export default function SiteAdminDashboard(props: any) {
                                   <span>${code.quarterlyPrice}/qtr</span>
                                   <span>|</span>
                                   <span>${code.annualPrice}/yr</span>
+                                  <span>|</span>
+                                  <span>${code.setupFee ?? 0}/setup</span>
                                   {code.maxUses && (
                                     <>
                                       <span>|</span>
@@ -5283,7 +5304,7 @@ export default function SiteAdminDashboard(props: any) {
                                   </div>
                                   
                                   {/* Row 2: Pricing & Button */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
                                     <div>
                                       <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                                         Monthly ($) *
@@ -5324,6 +5345,20 @@ export default function SiteAdminDashboard(props: any) {
                                         style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                       />
                                     </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Setup Fee ($)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        value={newAffiliateCode.setupFee || ''}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, setupFee: e.target.value})}
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        min="0"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
                                     <button
                                       onClick={async () => {
                                         if (!newAffiliateCode.code) {
@@ -5354,6 +5389,7 @@ export default function SiteAdminDashboard(props: any) {
                                               monthlyPrice: parseFloat(newAffiliateCode.monthlyPrice),
                                               quarterlyPrice: parseFloat(newAffiliateCode.quarterlyPrice),
                                               annualPrice: parseFloat(newAffiliateCode.annualPrice),
+                                              setupFee: newAffiliateCode.setupFee === '' ? 0 : parseFloat(newAffiliateCode.setupFee),
                                               maxUses: newAffiliateCode.maxUses ? parseInt(newAffiliateCode.maxUses) : null,
                                               expiresAt: newAffiliateCode.expiresAt || null
                                             })
@@ -5372,7 +5408,7 @@ export default function SiteAdminDashboard(props: any) {
                                             setAffiliates(affiliatesData.affiliates);
                                           }
 
-                                          setNewAffiliateCode({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
+                                          setNewAffiliateCode({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: '', setupFee: ''});
                                           alert('Code created successfully!');
                                         } catch (error) {
                                           console.error('Error creating code:', error);
@@ -5444,7 +5480,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 </label>
                                               </div>
                                             </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                                               <div>
                                                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                                                   Monthly ($)
@@ -5493,6 +5529,22 @@ export default function SiteAdminDashboard(props: any) {
                                                     const value = e.target.value;
                                                     const numValue = value === '' ? '' : parseFloat(value);
                                                     setEditingAffiliateCode({...editingAffiliateCode, annualPrice: numValue});
+                                                  }}
+                                                  min="0"
+                                                  style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                                />
+                                              </div>
+                                              <div>
+                                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                                  Setup Fee ($)
+                                                </label>
+                                                <input
+                                                  type="number"
+                                                  value={editingAffiliateCode.setupFee === 0 ? '0' : (editingAffiliateCode.setupFee || '')}
+                                                  onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    const numValue = value === '' ? '' : parseFloat(value);
+                                                    setEditingAffiliateCode({...editingAffiliateCode, setupFee: numValue});
                                                   }}
                                                   min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
@@ -5568,7 +5620,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 {code.expiresAt && <span> - Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>}
                                               </div>
                                               <div style={{ fontSize: '11px', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>
-                                                Pricing: ${code.monthlyPrice}/mo | ${code.quarterlyPrice}/qtr | ${code.annualPrice}/yr
+                                                Pricing: ${code.monthlyPrice}/mo | ${code.quarterlyPrice}/qtr | ${code.annualPrice}/yr | ${code.setupFee ?? 0} setup
                                               </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '6px' }}>
