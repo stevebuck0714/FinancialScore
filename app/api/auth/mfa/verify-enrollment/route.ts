@@ -4,7 +4,7 @@ import { verifyTOTP } from '@/lib/mfa';
 import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
 import { sendTrustedDeviceNotification } from '@/lib/email';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
-import { getMfaCookieDomain } from '@/lib/mfa-cookie-domain';
+import { getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
 
 export async function POST(request: NextRequest) {
   try {
@@ -109,17 +109,11 @@ export async function POST(request: NextRequest) {
           await createTrustedDevice(userId, request, trustDurationDays);
 
         const trustDuration = effectiveTrustDurationDays || getTrustDurationDays();
-        const isProduction = process.env.NODE_ENV === 'production';
-        const cookieDomain = getMfaCookieDomain(request);
-
-        response.cookies.set('mfa_device_token', deviceToken, {
-          httpOnly: true,
-          secure: isProduction,
-          sameSite: 'lax',
-          maxAge: trustDuration * 24 * 60 * 60,
-          path: '/',
-          ...(cookieDomain ? { domain: cookieDomain } : {})
-        });
+        response.cookies.set(
+          getMfaDeviceCookieName(),
+          deviceToken,
+          getMfaDeviceCookieOptions(request, trustDuration * 24 * 60 * 60)
+        );
 
         const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         sendTrustedDeviceNotification({

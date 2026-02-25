@@ -23,9 +23,13 @@ export function getMfaCookieDomain(request: NextRequest): string | undefined {
   const explicitDomain = normalizeHost(process.env.MFA_COOKIE_DOMAIN);
   if (explicitDomain) return explicitDomain;
 
-  const configuredHost = parseUrlHost(process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL);
   const requestHost = normalizeHost(request.nextUrl.hostname);
-  const host = configuredHost || requestHost;
+  const configuredHost = parseUrlHost(process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL);
+
+  // Prefer the request host when available so cookie scope always matches
+  // the host the user is actively logging in through (important for prod
+  // host variants like root domain vs subdomain).
+  const host = requestHost || configuredHost;
 
   if (!host || host === 'localhost' || isIpAddress(host) || host.endsWith('.vercel.app')) {
     return undefined;

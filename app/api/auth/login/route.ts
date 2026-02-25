@@ -4,6 +4,7 @@ import { verifyPassword } from '@/lib/auth';
 import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/audit-logger';
 import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
+import { clearMfaDeviceCookie, getMfaDeviceCookieName } from '@/lib/mfa-device-cookie';
 import { resolveStoredMFASecret } from '@/lib/mfa';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
       // Check if MFA is enabled (they have enrolled)
       if (user.mfaEnabled && hasScopedMfaForCurrentApp) {
         // Check for trusted device BEFORE requiring MFA
-        const deviceToken = request.cookies.get('mfa_device_token')?.value;
+        const deviceToken = request.cookies.get(getMfaDeviceCookieName())?.value;
         if (deviceToken) {
           console.log('🔍 Checking trusted device token...');
           const validation = await validateTrustedDevice(user.id, deviceToken, request);
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
               trustDurationDays: getTrustDurationDays(),
               message: 'MFA verification required',
             });
-            response.cookies.delete('mfa_device_token');
+            clearMfaDeviceCookie(response, request);
             return response;
           }
         } else {

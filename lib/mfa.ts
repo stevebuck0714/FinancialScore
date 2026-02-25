@@ -14,6 +14,17 @@ type ParsedMFASecret = {
   isLegacy: boolean;
 };
 
+export type TOTPVerificationResult = {
+  isValid: boolean;
+  reason?:
+    | 'INVALID_FORMAT'
+    | 'SCOPE_MISSING'
+    | 'SCOPE_MISMATCH'
+    | 'INVALID_CODE'
+    | 'CLOCK_SKEW'
+    | 'INTERNAL_ERROR';
+};
+
 function deriveKeyBuffer(rawKey: string): Buffer {
   const key = (rawKey || '').trim();
   if (/^[0-9a-fA-F]{64}$/.test(key)) {
@@ -136,11 +147,19 @@ export function verifyTOTP(
   encryptedSecret: string,
   options?: { expectedAppScope?: string; allowLegacyScope?: boolean }
 ): boolean {
+  return verifyTOTPWithDetails(token, encryptedSecret, options).isValid;
+}
+
+export function verifyTOTPWithDetails(
+  token: string,
+  encryptedSecret: string,
+  options?: { expectedAppScope?: string; allowLegacyScope?: boolean }
+): TOTPVerificationResult {
   try {
     const normalizedToken = String(token || '').replace(/\s+/g, '');
     if (!/^\d{6}$/.test(normalizedToken)) {
       console.log('❌ Invalid token format for TOTP');
-      return false;
+      return { isValid: false, reason: 'INVALID_FORMAT' };
     }
 
     console.log('🔓 Resolving MFA secret...');
@@ -152,40 +171,50 @@ export function verifyTOTP(
     if (expectedAppScope) {
       if (!parsed.appScope && !allowLegacyScope) {
         console.log('❌ MFA scope missing for strict app-scoped verification');
-        return false;
+        return { isValid: false, reason: 'SCOPE_MISSING' };
       }
       if (parsed.appScope && parsed.appScope !== expectedAppScope) {
         console.log('❌ MFA scope mismatch', {
           expectedAppScope,
           storedAppScope: parsed.appScope,
         });
-        return false;
+        return { isValid: false, reason: 'SCOPE_MISMATCH' };
       }
     }
     const secret = parsed.secret;
     console.log('✅ Secret resolved, length:', secret.length, 'legacy:', parsed.isLegacy);
     
     console.log('🔐 Verifying TOTP with token:', normalizedToken);
-    const result = speakeasy.totp.verify({
+    const result = speakeasy.totp.verifyDelta({
       secret: secret,
       encoding: 'base32',
       token: normalizedToken,
       window: 2, // Allow 2 time steps before and after (about 1 minute tolerance)
     });
-    
-    console.log('✅ TOTP verify result:', result);
-    
-    // Also log what the current valid token should be for debugging
-    const currentToken = speakeasy.totp({
+
+    if (result) {
+      console.log('✅ TOTP verify result: valid', { delta: result.delta });
+      return { isValid: true };
+    }
+
+    // If a larger time window passes, this is likely a device clock skew issue.
+    const skewCheck = speakeasy.totp.verifyDelta({
       secret: secret,
-      encoding: 'base32'
+      encoding: 'base32',
+      token: normalizedToken,
+      window: 6,
     });
-    console.log('ℹ️ Current valid token from server:', currentToken);
-    
-    return result;
+
+    if (skewCheck) {
+      console.log('⚠️ TOTP rejected due to clock skew', { delta: skewCheck.delta });
+      return { isValid: false, reason: 'CLOCK_SKEW' };
+    }
+
+    console.log('❌ TOTP verify result: invalid code');
+    return { isValid: false, reason: 'INVALID_CODE' };
   } catch (error) {
     console.error('❌ Error verifying TOTP:', error);
-    return false;
+    return { isValid: false, reason: 'INTERNAL_ERROR' };
   }
 }
 

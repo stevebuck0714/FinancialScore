@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { verifyTOTP, verifyBackupCode, encryptBackupCodes } from '@/lib/mfa';
+import { verifyTOTPWithDetails, verifyBackupCode, encryptBackupCodes } from '@/lib/mfa';
 import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
 import { sendTrustedDeviceNotification } from '@/lib/email';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
-import { getMfaCookieDomain } from '@/lib/mfa-cookie-domain';
+import { getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     let isValid = false;
+    let totpFailureReason: string | undefined;
 
     // Check if it's a backup code or TOTP token
     if (isBackupCode && user.backupCodes) {
@@ -63,15 +64,24 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Verify TOTP token
-      isValid = verifyTOTP(token, user.mfaSecret, {
+      const verification = verifyTOTPWithDetails(token, user.mfaSecret, {
         expectedAppScope: appScope,
         allowLegacyScope: false,
       });
+      isValid = verification.isValid;
+      totpFailureReason = verification.reason;
     }
 
     if (!isValid) {
+      const errorMessage =
+        totpFailureReason === 'CLOCK_SKEW'
+          ? 'Invalid verification code. Your device clock appears out of sync. Sync your phone time and try a fresh code.'
+          : totpFailureReason === 'INVALID_FORMAT'
+            ? 'Invalid verification code format. Enter a 6-digit code.'
+            : 'Invalid verification code. Please use the latest code from your authenticator app and try again.';
+
       return NextResponse.json(
-        { error: 'Invalid verification code' },
+        { error: errorMessage },
         { status: 401 }
       );
     }
@@ -102,17 +112,11 @@ export async function POST(request: NextRequest) {
         
         // Set cookie with device token
         const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();
-        const isProduction = process.env.NODE_ENV === 'production';
-        const cookieDomain = getMfaCookieDomain(request);
-
-        response.cookies.set('mfa_device_token', deviceToken, {
-          httpOnly: true,
-          secure: isProduction,
-          sameSite: 'lax',
-          maxAge: trustDurationDaysValue * 24 * 60 * 60, // Convert days to seconds
-          path: '/',
-          ...(cookieDomain ? { domain: cookieDomain } : {})
-        });
+        response.cookies.set(
+          getMfaDeviceCookieName(),
+          deviceToken,
+          getMfaDeviceCookieOptions(request, trustDurationDaysValue * 24 * 60 * 60)
+        );
 
         console.log('✅ Trusted device created:', device.deviceName);
 
