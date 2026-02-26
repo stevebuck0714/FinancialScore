@@ -4,6 +4,11 @@ import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-gua
 
 export const dynamic = 'force-dynamic';
 
+function isSageIntacctCompany(system: unknown): boolean {
+  const normalized = String(system || '').toUpperCase();
+  return normalized === 'SAGE_INTACCT' || normalized === 'SAGE';
+}
+
 type SageIntacctSettings = {
   senderId: string;
   senderPassword: string;
@@ -100,9 +105,9 @@ export async function GET(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (String(company.accountingSystem || '').toUpperCase() !== 'SAGE_INTACCT') {
+    if (!isSageIntacctCompany(company.accountingSystem)) {
       return NextResponse.json(
-        { ok: false, error: 'Sage Intacct settings are only available for SAGE_INTACCT companies.' },
+        { ok: false, error: 'Sage Intacct settings are only available for SAGE_INTACCT/SAGE companies.' },
         { status: 400 }
       );
     }
@@ -157,9 +162,9 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (String(company.accountingSystem || '').toUpperCase() !== 'SAGE_INTACCT') {
+    if (!isSageIntacctCompany(company.accountingSystem)) {
       return NextResponse.json(
-        { ok: false, error: 'Sage Intacct settings are only available for SAGE_INTACCT companies.' },
+        { ok: false, error: 'Sage Intacct settings are only available for SAGE_INTACCT/SAGE companies.' },
         { status: 400 }
       );
     }

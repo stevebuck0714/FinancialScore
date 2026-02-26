@@ -1821,7 +1821,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   loadDynamicsSettings(company.id);
                                                 } else if (company.accountingSystem === 'ACUMATICA') {
                                                   loadAcumaticaSettings(company.id);
-                                                } else if (company.accountingSystem === 'SAGE_INTACCT') {
+                                                } else if (company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE') {
                                                   loadSageIntacctSettings(company.id);
                                                 } else if (company.accountingSystem === 'ODOO') {
                                                   loadOdooSettings(company.id);
@@ -2079,7 +2079,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     </button>
                                                   </div>
                                                 )}
-                                                {company.accountingSystem === 'SAGE_INTACCT' && (
+                                                {(company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE') && (
                                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
                                                     <button
                                                       onClick={() => saveSageIntacctSettings(company.id)}
@@ -2608,7 +2608,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     </label>
                                                   </div>
                                                 </>
-                                              ) : company.accountingSystem === 'SAGE_INTACCT' ? (
+                                              ) : company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE' ? (
                                                 <>
                                                   <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
                                                     <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
@@ -2807,7 +2807,7 @@ export default function SiteAdminDashboard(props: any) {
                                                           ? addDynamicsProgram(company.id)
                                                           : company.accountingSystem === 'ACUMATICA'
                                                             ? addAcumaticaProgram(company.id)
-                                                            : company.accountingSystem === 'SAGE_INTACCT'
+                                                            : company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE'
                                                               ? addSageIntacctProgram(company.id)
                                                               : company.accountingSystem === 'ODOO'
                                                                 ? addOdooProgram(company.id)
@@ -2827,7 +2827,7 @@ export default function SiteAdminDashboard(props: any) {
                                                           ? saveDynamicsSettings(company.id)
                                                           : company.accountingSystem === 'ACUMATICA'
                                                             ? saveAcumaticaSettings(company.id)
-                                                            : company.accountingSystem === 'SAGE_INTACCT'
+                                                            : company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE'
                                                               ? saveSageIntacctSettings(company.id)
                                                               : company.accountingSystem === 'ODOO'
                                                                 ? saveOdooSettings(company.id)
@@ -3019,7 +3019,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       ))}
                                                     </tbody>
                                                   </table>
-                                                ) : company.accountingSystem === 'SAGE_INTACCT' ? (
+                                                ) : company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE' ? (
                                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                                                     <thead>
                                                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
@@ -3599,7 +3599,7 @@ export default function SiteAdminDashboard(props: any) {
                                           loadDynamicsSettings(businessCompany.id);
                                         } else if (businessCompany.accountingSystem === 'ACUMATICA') {
                                           loadAcumaticaSettings(businessCompany.id);
-                                        } else if (businessCompany.accountingSystem === 'SAGE_INTACCT') {
+                                        } else if (businessCompany.accountingSystem === 'SAGE_INTACCT' || businessCompany.accountingSystem === 'SAGE') {
                                           loadSageIntacctSettings(businessCompany.id);
                                         } else if (businessCompany.accountingSystem === 'ODOO') {
                                           loadOdooSettings(businessCompany.id);
@@ -4975,7 +4975,7 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     </div>
                                   </div>
-                                ) : businessCompany?.accountingSystem === 'SAGE_INTACCT' ? (
+                                ) : businessCompany?.accountingSystem === 'SAGE_INTACCT' || businessCompany?.accountingSystem === 'SAGE' ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
                                       <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>

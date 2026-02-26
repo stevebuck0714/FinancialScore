@@ -20,6 +20,11 @@ function getBearerToken(request: NextRequest): string {
 
 export const dynamic = 'force-dynamic';
 
+function isSageIntacctCompany(system: unknown): boolean {
+  const normalized = String(system || '').toUpperCase();
+  return normalized === 'SAGE_INTACCT' || normalized === 'SAGE';
+}
+
 export async function POST(request: NextRequest) {
   try {
     const expectedSecret = process.env.SAGE_INTACCT_PUSH_SECRET || '';
@@ -45,9 +50,9 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (String(company.accountingSystem || '').toUpperCase() !== 'SAGE_INTACCT') {
+    if (!isSageIntacctCompany(company.accountingSystem)) {
       return NextResponse.json(
-        { ok: false, error: 'Operational push is only supported for SAGE_INTACCT companies.' },
+        { ok: false, error: 'Operational push is only supported for SAGE_INTACCT/SAGE companies.' },
         { status: 400 }
       );
     }

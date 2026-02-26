@@ -21,7 +21,7 @@ function mapAccountingSystemToPlatform(system: unknown): AccountingPlatform | nu
   if (normalized === 'DYNAMICS' || normalized === 'DYNAMICS365') return 'DYNAMICS365';
   if (normalized === 'ACUMATICA') return 'ACUMATICA';
   if (normalized === 'ODOO') return 'ODOO';
-  if (normalized === 'SAGE_INTACCT') return 'SAGE_INTACCT';
+  if (normalized === 'SAGE_INTACCT' || normalized === 'SAGE') return 'SAGE_INTACCT';
   return null;
 }
 
