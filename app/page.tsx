@@ -4080,6 +4080,38 @@ function FinancialScorePage() {
     }
   };
 
+  const runInforM3OperationalSync = async (
+    targetCompanyId?: string,
+    frequency: 'daily' | 'weekly' | 'monthly' = 'daily'
+  ) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+    setInforBusy(true);
+    setInforError(null);
+    try {
+      const response = await fetch('/api/infor-m3/operational-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, frequency }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        const details = Array.isArray(data?.errors) && data.errors.length > 0
+          ? data.errors.join('\n')
+          : data?.details || data?.error || 'Operational sync failed';
+        throw new Error(details);
+      }
+      await checkInforM3Status(companyId);
+      alert(`Infor M3 operational sync complete. Records created: ${data.recordsCreated ?? 0}.`);
+    } catch (error: any) {
+      const message = error?.message || 'Failed to run Infor M3 operational sync';
+      setInforError(message);
+      alert(`Infor M3 operational sync failed:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+    }
+  };
+
   const pullInforMonthlyCao = async () => {
     if (!selectedCompanyId) return;
     setInforCaoPulling(true);
@@ -6488,6 +6520,7 @@ function FinancialScorePage() {
               testInforM3Token={testInforM3Token}
               probeInforM3={probeInforM3}
               disconnectInforM3={disconnectInforM3}
+              runInforM3OperationalSync={runInforM3OperationalSync}
               newSiteAdminFirstName={newSiteAdminFirstName}
               setNewSiteAdminFirstName={setNewSiteAdminFirstName}
               newSiteAdminLastName={newSiteAdminLastName}

@@ -48,7 +48,7 @@ export default function SiteAdminDashboard(props: any) {
     setSelectedCompanyId, setCompanyToDelete, setShowDeleteConfirmation,
     inforConnected, inforStatus, inforLastSync, inforError, inforBusy,
     inforCredentials, setInforCredentials, inforProbePath, setInforProbePath, inforProbeSummary,
-    checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3,
+    checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3, runInforM3OperationalSync,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
     newSiteAdminEmail, setNewSiteAdminEmail,
@@ -1848,6 +1848,13 @@ export default function SiteAdminDashboard(props: any) {
                                                       {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')}
                                                     </button>
                                                     <button
+                                                      onClick={() => runInforM3OperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                    <button
                                                       onClick={() => testInforM3Token?.(company.id)}
                                                       disabled={inforBusy || !inforConnected}
                                                       style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
@@ -3576,6 +3583,13 @@ export default function SiteAdminDashboard(props: any) {
                                           style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                         >
                                           {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')}
+                                        </button>
+                                        <button
+                                          onClick={() => runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                          disabled={inforBusy || !inforConnected}
+                                          style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Run Ops Sync Now
                                         </button>
                                         <button
                                           onClick={() => testInforM3Token?.(businessCompany.id)}
