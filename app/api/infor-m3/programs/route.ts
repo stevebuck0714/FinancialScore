@@ -5,22 +5,36 @@ import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-gua
 type AccountingProgram = {
   module: string;
   miProgram: string;
-  transaction: string;
+  transactions: string[];
   cono: string;
   divi: string;
   enabled: boolean;
 };
 
 const DEFAULT_PROGRAMS: AccountingProgram[] = [
-  { module: 'Accounts', miProgram: 'CRS630MI', transaction: '', cono: '', divi: '', enabled: true },
-  { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transaction: '', cono: '', divi: '', enabled: true },
-  { module: 'AR', miProgram: 'ARS200MI', transaction: '', cono: '', divi: '', enabled: true },
-  { module: 'AP', miProgram: 'APS200MI', transaction: '', cono: '', divi: '', enabled: true },
-  { module: 'Customer', miProgram: 'CRS610MI', transaction: '', cono: '', divi: '', enabled: true },
-  { module: 'Supplier', miProgram: 'CRS620MI', transaction: '', cono: '', divi: '', enabled: true },
-  { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transaction: '', cono: '', divi: '', enabled: true },
-  { module: 'Sales', miProgram: 'OIS100MI', transaction: '', cono: '', divi: '', enabled: true },
+  { module: 'Accounts', miProgram: 'CRS630MI', transactions: [], cono: '', divi: '', enabled: true },
+  { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transactions: [], cono: '', divi: '', enabled: true },
+  { module: 'AR', miProgram: 'ARS200MI', transactions: [], cono: '', divi: '', enabled: true },
+  { module: 'AP', miProgram: 'APS200MI', transactions: [], cono: '', divi: '', enabled: true },
+  { module: 'Customer', miProgram: 'CRS610MI', transactions: [], cono: '', divi: '', enabled: true },
+  { module: 'Supplier', miProgram: 'CRS620MI', transactions: [], cono: '', divi: '', enabled: true },
+  { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transactions: [], cono: '', divi: '', enabled: true },
+  { module: 'Sales', miProgram: 'OIS100MI', transactions: [], cono: '', divi: '', enabled: true },
 ];
+
+function normalizeTransactions(row: any): string[] {
+  const fromArray = Array.isArray(row?.transactions)
+    ? row.transactions
+        .map((value: unknown) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+    : [];
+  if (fromArray.length > 0) {
+    return Array.from(new Set(fromArray));
+  }
+
+  const legacyTransaction = typeof row?.transaction === 'string' ? row.transaction.trim() : '';
+  return legacyTransaction ? [legacyTransaction] : [];
+}
 
 function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean }): AccountingProgram[] {
   const requireComplete = Boolean(options?.requireComplete);
@@ -30,30 +44,30 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
   for (const row of value) {
     const module = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgram = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
-    const transaction = typeof row?.transaction === 'string' ? row.transaction.trim() : '';
+    const transactions = normalizeTransactions(row);
     const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
     const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
     const enabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
-    if (!module && !miProgram && !transaction && !cono && !divi) continue;
+    if (!module && !miProgram && transactions.length === 0 && !cono && !divi) continue;
     if (!module || !miProgram) {
       throw new Error('Each accounting program row must include module and MI program.');
     }
-    if (requireComplete && (!transaction || !cono || !divi)) {
+    if (requireComplete && (transactions.length === 0 || !cono || !divi)) {
       throw new Error(
-        'Each accounting program row must include module, MI program, transaction, CONO, and DIVI.'
+        'Each accounting program row must include module, MI program, at least one transaction, CONO, and DIVI.'
       );
     }
-    const dedupeKey = `${module}::${miProgram}::${transaction || ''}::${cono || ''}::${divi || ''}`;
+    const dedupeKey = `${module}::${miProgram}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
     if (seen.has(dedupeKey)) {
       throw new Error(
-        `Duplicate accounting program row detected for ${module} / ${miProgram} / ${transaction} / ${cono} / ${divi}.`
+        `Duplicate accounting program row detected for ${module} / ${miProgram} / ${transactions.join(', ')} / ${cono} / ${divi}.`
       );
     }
     seen.add(dedupeKey);
     cleaned.push({
       module,
       miProgram,
-      transaction,
+      transactions,
       cono,
       divi,
       enabled,

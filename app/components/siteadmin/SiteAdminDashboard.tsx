@@ -208,7 +208,7 @@ export default function SiteAdminDashboard(props: any) {
   type InforAccountingProgramRow = {
     module: string;
     miProgram: string;
-    transaction: string;
+    transactions: string[];
     cono: string;
     divi: string;
     enabled: boolean;
@@ -217,25 +217,38 @@ export default function SiteAdminDashboard(props: any) {
   const createEmptyInforAccountingProgramRow = (): InforAccountingProgramRow => ({
     module: '',
     miProgram: '',
-    transaction: '',
+    transactions: [],
     cono: '',
     divi: '',
     enabled: true,
   });
+
+  const parseTransactionsFromInput = (value: string): string[] =>
+    Array.from(
+      new Set(
+        value
+          .split('\n')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      )
+    );
+
+  const formatTransactionsForInput = (transactions: string[] | undefined): string =>
+    Array.isArray(transactions) ? transactions.join('\n') : '';
 
   const [accountingProgramsByCompany, setAccountingProgramsByCompany] = React.useState<
     Record<string, InforAccountingProgramRow[]>
   >({});
 
   const defaultAccountingPrograms: InforAccountingProgramRow[] = [
-    { module: 'Accounts', miProgram: 'CRS630MI', transaction: '', cono: '', divi: '', enabled: true },
-    { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transaction: '', cono: '', divi: '', enabled: true },
-    { module: 'AR', miProgram: 'ARS200MI', transaction: '', cono: '', divi: '', enabled: true },
-    { module: 'AP', miProgram: 'APS200MI', transaction: '', cono: '', divi: '', enabled: true },
-    { module: 'Customer', miProgram: 'CRS610MI', transaction: '', cono: '', divi: '', enabled: true },
-    { module: 'Supplier', miProgram: 'CRS620MI', transaction: '', cono: '', divi: '', enabled: true },
-    { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transaction: '', cono: '', divi: '', enabled: true },
-    { module: 'Sales', miProgram: 'OIS100MI', transaction: '', cono: '', divi: '', enabled: true },
+    { module: 'Accounts', miProgram: 'CRS630MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'AR', miProgram: 'ARS200MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'AP', miProgram: 'APS200MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Customer', miProgram: 'CRS610MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Supplier', miProgram: 'CRS620MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Sales', miProgram: 'OIS100MI', transactions: [], cono: '', divi: '', enabled: true },
   ];
 
   const getCompanyPrograms = (companyId: string) =>
@@ -252,7 +265,7 @@ export default function SiteAdminDashboard(props: any) {
     companyId: string,
     index: number,
     field: keyof InforAccountingProgramRow,
-    value: string | boolean
+    value: string | boolean | string[]
   ) => {
     const current = getCompanyPrograms(companyId);
     const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
@@ -1718,10 +1731,19 @@ export default function SiteAdminDashboard(props: any) {
                                       {/* Expanded Details */}
                                       {isCompanyExpanded && (
                                         <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
-                                          <div style={{ display: 'grid', gridTemplateColumns: '17% 53% 30%', gap: '8px', marginBottom: '8px' }}>
+                                          <div style={{ marginBottom: '8px' }}>
                                             <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Company Information</h4>
-                                              <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                              <div
+                                                style={{
+                                                  display: 'grid',
+                                                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                                  gap: '6px 14px',
+                                                  fontSize: '13px',
+                                                  color: '#64748b',
+                                                  lineHeight: '1.5',
+                                                }}
+                                              >
                                                 <div><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
                                                 <div><strong>Industry:</strong> {company?.industrySector || 'Not set'}</div>
                                                 <div><strong>Type:</strong> Consultant Business</div>
@@ -1732,7 +1754,9 @@ export default function SiteAdminDashboard(props: any) {
                                                 <div><strong>Address Country:</strong> {company?.addressCountry || 'Not provided'}</div>
                                               </div>
                                             </div>
+                                          </div>
 
+                                          <div style={{ display: 'grid', gridTemplateColumns: '55% 45%', gap: '8px', marginBottom: '8px' }}>
                                             <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                                 <div>
@@ -2783,7 +2807,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transaction</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (one per line)</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
                                                         <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
@@ -2812,12 +2836,19 @@ export default function SiteAdminDashboard(props: any) {
                                                             />
                                                           </td>
                                                           <td style={{ padding: '6px' }}>
-                                                            <input
-                                                              type="text"
-                                                              value={row.transaction}
-                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'transaction', e.target.value)}
-                                                              placeholder="Transaction"
-                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            <textarea
+                                                              value={formatTransactionsForInput(row.transactions)}
+                                                              onChange={(e) =>
+                                                                updateCompanyProgram(
+                                                                  company.id,
+                                                                  index,
+                                                                  'transactions',
+                                                                  parseTransactionsFromInput(e.target.value)
+                                                                )
+                                                              }
+                                                              placeholder={"Transaction 1\nTransaction 2"}
+                                                              rows={3}
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
                                                             />
                                                           </td>
                                                           <td style={{ padding: '6px' }}>
@@ -3688,7 +3719,7 @@ export default function SiteAdminDashboard(props: any) {
                                             <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transaction</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (one per line)</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
                                               <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
@@ -3717,12 +3748,19 @@ export default function SiteAdminDashboard(props: any) {
                                                   />
                                                 </td>
                                                 <td style={{ padding: '6px' }}>
-                                                  <input
-                                                    type="text"
-                                                    value={row.transaction}
-                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'transaction', e.target.value)}
-                                                    placeholder="Transaction"
-                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  <textarea
+                                                    value={formatTransactionsForInput(row.transactions)}
+                                                    onChange={(e) =>
+                                                      updateCompanyProgram(
+                                                        businessCompany.id,
+                                                        index,
+                                                        'transactions',
+                                                        parseTransactionsFromInput(e.target.value)
+                                                      )
+                                                    }
+                                                    placeholder={"Transaction 1\nTransaction 2"}
+                                                    rows={3}
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
                                                   />
                                                 </td>
                                                 <td style={{ padding: '6px' }}>
