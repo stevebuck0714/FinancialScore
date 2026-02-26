@@ -5,30 +5,59 @@ import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-gua
 type AccountingProgram = {
   module: string;
   miProgram: string;
+  transaction: string;
+  cono: string;
+  divi: string;
+  enabled: boolean;
 };
 
 const DEFAULT_PROGRAMS: AccountingProgram[] = [
-  { module: 'Accounts', miProgram: 'CRS630MI' },
-  { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI' },
-  { module: 'AR', miProgram: 'ARS200MI' },
-  { module: 'AP', miProgram: 'APS200MI' },
-  { module: 'Customer', miProgram: 'CRS610MI' },
-  { module: 'Supplier', miProgram: 'CRS620MI' },
-  { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI' },
-  { module: 'Sales', miProgram: 'OIS100MI' },
+  { module: 'Accounts', miProgram: 'CRS630MI', transaction: '', cono: '', divi: '', enabled: true },
+  { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transaction: '', cono: '', divi: '', enabled: true },
+  { module: 'AR', miProgram: 'ARS200MI', transaction: '', cono: '', divi: '', enabled: true },
+  { module: 'AP', miProgram: 'APS200MI', transaction: '', cono: '', divi: '', enabled: true },
+  { module: 'Customer', miProgram: 'CRS610MI', transaction: '', cono: '', divi: '', enabled: true },
+  { module: 'Supplier', miProgram: 'CRS620MI', transaction: '', cono: '', divi: '', enabled: true },
+  { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transaction: '', cono: '', divi: '', enabled: true },
+  { module: 'Sales', miProgram: 'OIS100MI', transaction: '', cono: '', divi: '', enabled: true },
 ];
 
-function sanitizePrograms(value: unknown): AccountingProgram[] {
+function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean }): AccountingProgram[] {
+  const requireComplete = Boolean(options?.requireComplete);
   if (!Array.isArray(value)) return [];
   const cleaned: AccountingProgram[] = [];
+  const seen = new Set<string>();
   for (const row of value) {
     const module = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgram = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
-    if (!module && !miProgram) continue;
+    const transaction = typeof row?.transaction === 'string' ? row.transaction.trim() : '';
+    const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
+    const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
+    const enabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
+    if (!module && !miProgram && !transaction && !cono && !divi) continue;
     if (!module || !miProgram) {
-      throw new Error('Each accounting program row must include both module and MI program.');
+      throw new Error('Each accounting program row must include module and MI program.');
     }
-    cleaned.push({ module, miProgram });
+    if (requireComplete && (!transaction || !cono || !divi)) {
+      throw new Error(
+        'Each accounting program row must include module, MI program, transaction, CONO, and DIVI.'
+      );
+    }
+    const dedupeKey = `${module}::${miProgram}::${transaction || ''}::${cono || ''}::${divi || ''}`;
+    if (seen.has(dedupeKey)) {
+      throw new Error(
+        `Duplicate accounting program row detected for ${module} / ${miProgram} / ${transaction} / ${cono} / ${divi}.`
+      );
+    }
+    seen.add(dedupeKey);
+    cleaned.push({
+      module,
+      miProgram,
+      transaction,
+      cono,
+      divi,
+      enabled,
+    });
   }
   return cleaned;
 }
@@ -56,7 +85,7 @@ export async function GET(request: NextRequest) {
         ? (connection.connectionMetadata as Record<string, unknown>)
         : {};
 
-    const programs = sanitizePrograms(metadata.accountingPrograms);
+    const programs = sanitizePrograms(metadata.accountingPrograms, { requireComplete: false });
 
     return NextResponse.json({
       ok: true,
@@ -80,7 +109,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
-    const programs = sanitizePrograms(body.programs);
+    const programs = sanitizePrograms(body.programs, { requireComplete: true });
 
     const existing = await prisma.accountingConnection.findUnique({
       where: {

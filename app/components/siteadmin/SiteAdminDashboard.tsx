@@ -205,25 +205,43 @@ export default function SiteAdminDashboard(props: any) {
     }));
   };
 
+  type InforAccountingProgramRow = {
+    module: string;
+    miProgram: string;
+    transaction: string;
+    cono: string;
+    divi: string;
+    enabled: boolean;
+  };
+
+  const createEmptyInforAccountingProgramRow = (): InforAccountingProgramRow => ({
+    module: '',
+    miProgram: '',
+    transaction: '',
+    cono: '',
+    divi: '',
+    enabled: true,
+  });
+
   const [accountingProgramsByCompany, setAccountingProgramsByCompany] = React.useState<
-    Record<string, Array<{ module: string; miProgram: string }>>
+    Record<string, InforAccountingProgramRow[]>
   >({});
 
-  const defaultAccountingPrograms = [
-    { module: 'Accounts', miProgram: 'CRS630MI' },
-    { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI' },
-    { module: 'AR', miProgram: 'ARS200MI' },
-    { module: 'AP', miProgram: 'APS200MI' },
-    { module: 'Customer', miProgram: 'CRS610MI' },
-    { module: 'Supplier', miProgram: 'CRS620MI' },
-    { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI' },
-    { module: 'Sales', miProgram: 'OIS100MI' },
+  const defaultAccountingPrograms: InforAccountingProgramRow[] = [
+    { module: 'Accounts', miProgram: 'CRS630MI', transaction: '', cono: '', divi: '', enabled: true },
+    { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transaction: '', cono: '', divi: '', enabled: true },
+    { module: 'AR', miProgram: 'ARS200MI', transaction: '', cono: '', divi: '', enabled: true },
+    { module: 'AP', miProgram: 'APS200MI', transaction: '', cono: '', divi: '', enabled: true },
+    { module: 'Customer', miProgram: 'CRS610MI', transaction: '', cono: '', divi: '', enabled: true },
+    { module: 'Supplier', miProgram: 'CRS620MI', transaction: '', cono: '', divi: '', enabled: true },
+    { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transaction: '', cono: '', divi: '', enabled: true },
+    { module: 'Sales', miProgram: 'OIS100MI', transaction: '', cono: '', divi: '', enabled: true },
   ];
 
   const getCompanyPrograms = (companyId: string) =>
     accountingProgramsByCompany[companyId] || defaultAccountingPrograms;
 
-  const setCompanyPrograms = (companyId: string, programs: Array<{ module: string; miProgram: string }>) => {
+  const setCompanyPrograms = (companyId: string, programs: InforAccountingProgramRow[]) => {
     setAccountingProgramsByCompany((prev) => ({
       ...prev,
       [companyId]: programs,
@@ -233,8 +251,8 @@ export default function SiteAdminDashboard(props: any) {
   const updateCompanyProgram = (
     companyId: string,
     index: number,
-    field: 'module' | 'miProgram',
-    value: string
+    field: keyof InforAccountingProgramRow,
+    value: string | boolean
   ) => {
     const current = getCompanyPrograms(companyId);
     const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
@@ -243,13 +261,13 @@ export default function SiteAdminDashboard(props: any) {
 
   const addCompanyProgram = (companyId: string) => {
     const current = getCompanyPrograms(companyId);
-    setCompanyPrograms(companyId, [...current, { module: '', miProgram: '' }]);
+    setCompanyPrograms(companyId, [...current, createEmptyInforAccountingProgramRow()]);
   };
 
   const deleteCompanyProgram = (companyId: string, index: number) => {
     const current = getCompanyPrograms(companyId);
     const next = current.filter((_, i) => i !== index);
-    setCompanyPrograms(companyId, next.length > 0 ? next : [{ module: '', miProgram: '' }]);
+    setCompanyPrograms(companyId, next.length > 0 ? next : [createEmptyInforAccountingProgramRow()]);
   };
 
   const loadCompanyPrograms = async (companyId: string) => {
@@ -1700,7 +1718,7 @@ export default function SiteAdminDashboard(props: any) {
                                       {/* Expanded Details */}
                                       {isCompanyExpanded && (
                                         <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
-                                          <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                          <div style={{ display: 'grid', gridTemplateColumns: '17% 53% 30%', gap: '8px', marginBottom: '8px' }}>
                                             <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Company Information</h4>
                                               <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
@@ -2765,6 +2783,10 @@ export default function SiteAdminDashboard(props: any) {
                                                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transaction</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                                                        <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                                       </tr>
                                                     </thead>
@@ -2787,6 +2809,40 @@ export default function SiteAdminDashboard(props: any) {
                                                               onChange={(e) => updateCompanyProgram(company.id, index, 'miProgram', e.target.value)}
                                                               placeholder="MI Program"
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.transaction}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'transaction', e.target.value)}
+                                                              placeholder="Transaction"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.cono}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'cono', e.target.value)}
+                                                              placeholder="CONO"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.divi}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'divi', e.target.value)}
+                                                              placeholder="DIVI"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px', textAlign: 'center' }}>
+                                                            <input
+                                                              type="checkbox"
+                                                              checked={row.enabled}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'enabled', e.target.checked)}
                                                             />
                                                           </td>
                                                           <td style={{ padding: '6px' }}>
@@ -3632,6 +3688,10 @@ export default function SiteAdminDashboard(props: any) {
                                             <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transaction</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                                              <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                             </tr>
                                           </thead>
@@ -3654,6 +3714,40 @@ export default function SiteAdminDashboard(props: any) {
                                                     onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'miProgram', e.target.value)}
                                                     placeholder="MI Program"
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.transaction}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'transaction', e.target.value)}
+                                                    placeholder="Transaction"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.cono}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'cono', e.target.value)}
+                                                    placeholder="CONO"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.divi}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'divi', e.target.value)}
+                                                    placeholder="DIVI"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px', textAlign: 'center' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={row.enabled}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'enabled', e.target.checked)}
                                                   />
                                                 </td>
                                                 <td style={{ padding: '6px' }}>
