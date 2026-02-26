@@ -223,15 +223,11 @@ export default function SiteAdminDashboard(props: any) {
     enabled: true,
   });
 
+  // Preserve line breaks while typing; backend will normalize on save.
   const parseTransactionsFromInput = (value: string): string[] =>
-    Array.from(
-      new Set(
-        value
-          .split('\n')
-          .map((entry) => entry.trim())
-          .filter(Boolean)
-      )
-    );
+    value
+      .replace(/\r/g, '')
+      .split('\n');
 
   const formatTransactionsForInput = (transactions: string[] | undefined): string =>
     Array.isArray(transactions) ? transactions.join('\n') : '';
@@ -2846,6 +2842,22 @@ export default function SiteAdminDashboard(props: any) {
                                                                   parseTransactionsFromInput(e.target.value)
                                                                 )
                                                               }
+                                                              onKeyDown={(e) => {
+                                                                e.stopPropagation();
+                                                                if (e.key !== 'Enter') return;
+                                                                e.preventDefault();
+                                                                const currentValue = formatTransactionsForInput(row.transactions);
+                                                                const start = e.currentTarget.selectionStart ?? currentValue.length;
+                                                                const end = e.currentTarget.selectionEnd ?? currentValue.length;
+                                                                const nextValue =
+                                                                  `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`;
+                                                                updateCompanyProgram(
+                                                                  company.id,
+                                                                  index,
+                                                                  'transactions',
+                                                                  parseTransactionsFromInput(nextValue)
+                                                                );
+                                                              }}
                                                               placeholder={"Transaction 1\nTransaction 2"}
                                                               rows={3}
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
@@ -3758,6 +3770,22 @@ export default function SiteAdminDashboard(props: any) {
                                                         parseTransactionsFromInput(e.target.value)
                                                       )
                                                     }
+                                                    onKeyDown={(e) => {
+                                                      e.stopPropagation();
+                                                      if (e.key !== 'Enter') return;
+                                                      e.preventDefault();
+                                                      const currentValue = formatTransactionsForInput(row.transactions);
+                                                      const start = e.currentTarget.selectionStart ?? currentValue.length;
+                                                      const end = e.currentTarget.selectionEnd ?? currentValue.length;
+                                                      const nextValue =
+                                                        `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`;
+                                                      updateCompanyProgram(
+                                                        businessCompany.id,
+                                                        index,
+                                                        'transactions',
+                                                        parseTransactionsFromInput(nextValue)
+                                                      );
+                                                    }}
                                                     placeholder={"Transaction 1\nTransaction 2"}
                                                     rows={3}
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
