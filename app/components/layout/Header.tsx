@@ -213,8 +213,7 @@ export default function Header({
                   opacity: canAccess('company-dashboard') ? 1 : 0.4
                 }}
               >
-                <span style={{ display: 'block' }}>Financial</span>
-                <span style={{ display: 'block' }}>Dashboard</span>
+                <span style={{ whiteSpace: 'nowrap' }}>Financial KPI&apos;s</span>
               </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>

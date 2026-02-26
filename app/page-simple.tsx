@@ -902,7 +902,7 @@ export default function FinancialScorePage() {
           <div style={{ padding: '32px' }}>
             <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
               <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                Financial Dashboard
+                Financial KPI's
               </h1>
               <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
                 {companyName || 'Your Company'} - Overview of financial performance
