@@ -49,6 +49,7 @@ export default function SiteAdminDashboard(props: any) {
     inforConnected, inforStatus, inforLastSync, inforError, inforBusy,
     inforCredentials, setInforCredentials, inforProbePath, setInforProbePath, inforProbeSummary,
     checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3, runInforM3OperationalSync,
+    runPlatformOperationalSync,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
     newSiteAdminEmail, setNewSiteAdminEmail,
@@ -337,6 +338,23 @@ export default function SiteAdminDashboard(props: any) {
   const [qbDesktopProgramsByCompany, setQbDesktopProgramsByCompany] = React.useState<
     Record<string, Array<{ dataDomain: string; qbEntity: string }>>
   >({});
+  const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+        webhookEnabled: 'YES' | 'NO' | '';
+        cdcEnabled: 'YES' | 'NO' | '';
+        reconciliationEnabled: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [qboProgramsByCompany, setQboProgramsByCompany] = React.useState<
+    Record<string, Array<{ dataDomain: string; qboEntity: string; enabled: boolean }>>
+  >({});
   const [dynamicsSettingsByCompany, setDynamicsSettingsByCompany] = React.useState<
     Record<
       string,
@@ -458,6 +476,24 @@ export default function SiteAdminDashboard(props: any) {
     { dataDomain: 'Bills', qbEntity: 'BillQuery' },
     { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
   ];
+  const defaultQboSettings = {
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+    webhookEnabled: 'YES' as 'YES' | 'NO' | '',
+    cdcEnabled: 'YES' as 'YES' | 'NO' | '',
+    reconciliationEnabled: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultQboPrograms = [
+    { dataDomain: 'Customers', qboEntity: 'Customer', enabled: true },
+    { dataDomain: 'Vendors', qboEntity: 'Vendor', enabled: true },
+    { dataDomain: 'Products', qboEntity: 'Item', enabled: true },
+    { dataDomain: 'AR', qboEntity: 'Invoice', enabled: true },
+    { dataDomain: 'AR Payments', qboEntity: 'Payment', enabled: true },
+    { dataDomain: 'AP', qboEntity: 'Bill', enabled: true },
+    { dataDomain: 'AP Payments', qboEntity: 'BillPayment', enabled: true },
+  ];
   const defaultDynamicsSettings = {
     tenantId: '',
     environmentUrl: '',
@@ -556,6 +592,10 @@ export default function SiteAdminDashboard(props: any) {
     qbDesktopSettingsByCompany[companyId] || defaultQbDesktopSettings;
   const getQbDesktopPrograms = (companyId: string) =>
     qbDesktopProgramsByCompany[companyId] || defaultQbDesktopPrograms;
+  const getQboSettings = (companyId: string) =>
+    qboSettingsByCompany[companyId] || defaultQboSettings;
+  const getQboPrograms = (companyId: string) =>
+    qboProgramsByCompany[companyId] || defaultQboPrograms;
   const getDynamicsSettings = (companyId: string) =>
     dynamicsSettingsByCompany[companyId] || defaultDynamicsSettings;
   const getDynamicsPrograms = (companyId: string) =>
@@ -589,6 +629,28 @@ export default function SiteAdminDashboard(props: any) {
 
   const setQbDesktopPrograms = (companyId: string, programs: Array<{ dataDomain: string; qbEntity: string }>) => {
     setQbDesktopProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+  const setQboSetting = (
+    companyId: string,
+    field: keyof typeof defaultQboSettings,
+    value: string
+  ) => {
+    setQboSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultQboSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setQboPrograms = (
+    companyId: string,
+    programs: Array<{ dataDomain: string; qboEntity: string; enabled: boolean }>
+  ) => {
+    setQboProgramsByCompany((prev) => ({
       ...prev,
       [companyId]: programs,
     }));
@@ -685,6 +747,20 @@ export default function SiteAdminDashboard(props: any) {
     const current = getQbDesktopPrograms(companyId);
     setQbDesktopPrograms(companyId, [...current, { dataDomain: '', qbEntity: '' }]);
   };
+  const updateQboProgram = (
+    companyId: string,
+    index: number,
+    field: 'dataDomain' | 'qboEntity' | 'enabled',
+    value: string | boolean
+  ) => {
+    const current = getQboPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setQboPrograms(companyId, next);
+  };
+  const addQboProgram = (companyId: string) => {
+    const current = getQboPrograms(companyId);
+    setQboPrograms(companyId, [...current, { dataDomain: '', qboEntity: '', enabled: true }]);
+  };
   const updateDynamicsProgram = (
     companyId: string,
     index: number,
@@ -767,6 +843,11 @@ export default function SiteAdminDashboard(props: any) {
     const next = current.filter((_, i) => i !== index);
     setQbDesktopPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qbEntity: '' }]);
   };
+  const deleteQboProgram = (companyId: string, index: number) => {
+    const current = getQboPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setQboPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qboEntity: '', enabled: true }]);
+  };
 
   const loadQbDesktopSettings = async (companyId: string) => {
     try {
@@ -784,6 +865,24 @@ export default function SiteAdminDashboard(props: any) {
       }
     } catch (error) {
       console.error('Failed to load QuickBooks Desktop settings:', error);
+    }
+  };
+  const loadQboSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/quickbooks-online/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setQboSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultQboSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setQboPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load QuickBooks Online settings:', error);
     }
   };
   const loadDynamicsSettings = async (companyId: string) => {
@@ -877,6 +976,26 @@ export default function SiteAdminDashboard(props: any) {
       alert('QuickBooks Desktop settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save QuickBooks Desktop settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveQboSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/quickbooks-online/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getQboSettings(companyId),
+          programs: getQboPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Online settings');
+      }
+      alert('QuickBooks Online settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save QuickBooks Online settings: ${error?.message || 'Unknown error'}`);
     }
   };
   const saveDynamicsSettings = async (companyId: string) => {
@@ -1696,6 +1815,8 @@ export default function SiteAdminDashboard(props: any) {
                                                   });
                                                 } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
                                                   loadQbDesktopSettings(company.id);
+                                                } else if (company.accountingSystem === 'QUICKBOOKS') {
+                                                  loadQboSettings(company.id);
                                                 } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
                                                   loadDynamicsSettings(company.id);
                                                 } else if (company.accountingSystem === 'ACUMATICA') {
@@ -1885,10 +2006,32 @@ export default function SiteAdminDashboard(props: any) {
                                                       Validate Connection
                                                     </button>
                                                     <button
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'QUICKBOOKS' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveQboSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
                                                       disabled
                                                       style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
                                                     >
-                                                      Run Initial Sync
+                                                      Validate Connection
+                                                    </button>
+                                                    <button
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
                                                     </button>
                                                   </div>
                                                 )}
@@ -1907,10 +2050,10 @@ export default function SiteAdminDashboard(props: any) {
                                                       Validate Token
                                                     </button>
                                                     <button
-                                                      disabled
-                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                     >
-                                                      Probe
+                                                      Run Ops Sync Now
                                                     </button>
                                                   </div>
                                                 )}
@@ -1929,10 +2072,10 @@ export default function SiteAdminDashboard(props: any) {
                                                       Validate Token
                                                     </button>
                                                     <button
-                                                      disabled
-                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                     >
-                                                      Probe
+                                                      Run Ops Sync Now
                                                     </button>
                                                   </div>
                                                 )}
@@ -1951,10 +2094,10 @@ export default function SiteAdminDashboard(props: any) {
                                                       Validate Token
                                                     </button>
                                                     <button
-                                                      disabled
-                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                     >
-                                                      Probe
+                                                      Run Ops Sync Now
                                                     </button>
                                                   </div>
                                                 )}
@@ -1973,10 +2116,10 @@ export default function SiteAdminDashboard(props: any) {
                                                       Validate Token
                                                     </button>
                                                     <button
-                                                      disabled
-                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                     >
-                                                      Probe
+                                                      Run Ops Sync Now
                                                     </button>
                                                   </div>
                                                 )}
@@ -2092,6 +2235,108 @@ export default function SiteAdminDashboard(props: any) {
                                                       {inforProbeSummary}
                                                     </div>
                                                   )}
+                                                </>
+                                              ) : company.accountingSystem === 'QUICKBOOKS' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#dcfce7', border: '1px solid #86efac', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#166534' }}>
+                                                      QuickBooks Online operational sync configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#166534' }}>
+                                                      Configure Phase 1 daily operational pulls for Customer, Vendor, Item, Invoice, Payment, Bill, and BillPayment.
+                                                    </div>
+                                                  </div>
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setQboSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).syncTime}
+                                                        onChange={(e) => setQboSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Initial Sync Start Date (YYYY-MM-DD)</span>
+                                                      <input
+                                                        type="text"
+                                                        value={getQboSettings(company.id).initialSyncStartDate}
+                                                        onChange={(e) => setQboSetting(company.id, 'initialSyncStartDate', e.target.value)}
+                                                        placeholder="2024-01-01"
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setQboSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Webhook Enabled *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).webhookEnabled}
+                                                        onChange={(e) => setQboSetting(company.id, 'webhookEnabled', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>CDC Enabled *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).cdcEnabled}
+                                                        onChange={(e) => setQboSetting(company.id, 'cdcEnabled', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Nightly Reconciliation *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).reconciliationEnabled}
+                                                        onChange={(e) => setQboSetting(company.id, 'reconciliationEnabled', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
                                                 </>
                                               ) : company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
                                                 <>
@@ -2556,6 +2801,8 @@ export default function SiteAdminDashboard(props: any) {
                                                     onClick={() =>
                                                       company.accountingSystem === 'QUICKBOOKS_DESKTOP'
                                                         ? addQbDesktopProgram(company.id)
+                                                        : company.accountingSystem === 'QUICKBOOKS'
+                                                          ? addQboProgram(company.id)
                                                         : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365'
                                                           ? addDynamicsProgram(company.id)
                                                           : company.accountingSystem === 'ACUMATICA'
@@ -2574,6 +2821,8 @@ export default function SiteAdminDashboard(props: any) {
                                                     onClick={() =>
                                                       company.accountingSystem === 'QUICKBOOKS_DESKTOP'
                                                         ? saveQbDesktopSettings(company.id)
+                                                        : company.accountingSystem === 'QUICKBOOKS'
+                                                          ? saveQboSettings(company.id)
                                                         : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365'
                                                           ? saveDynamicsSettings(company.id)
                                                           : company.accountingSystem === 'ACUMATICA'
@@ -2594,7 +2843,57 @@ export default function SiteAdminDashboard(props: any) {
                                                 Programs called by the integration
                                               </div>
                                               <div style={{ overflowX: 'auto' }}>
-                                                {company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                                {company.accountingSystem === 'QUICKBOOKS' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QBO Entity</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getQboPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-qbo-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.dataDomain}
+                                                              onChange={(e) => updateQboProgram(company.id, index, 'dataDomain', e.target.value)}
+                                                              placeholder="Data Domain"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.qboEntity}
+                                                              onChange={(e) => updateQboProgram(company.id, index, 'qboEntity', e.target.value)}
+                                                              placeholder="QBO Entity"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="checkbox"
+                                                              checked={Boolean(row.enabled)}
+                                                              onChange={(e) => updateQboProgram(company.id, index, 'enabled', e.target.checked)}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteQboProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
                                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                                                     <thead>
                                                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
@@ -3294,6 +3593,8 @@ export default function SiteAdminDashboard(props: any) {
                                           });
                                         } else if (businessCompany.accountingSystem === 'QUICKBOOKS_DESKTOP') {
                                           loadQbDesktopSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'QUICKBOOKS') {
+                                          loadQboSettings(businessCompany.id);
                                         } else if (businessCompany.accountingSystem === 'DYNAMICS' || businessCompany.accountingSystem === 'DYNAMICS365') {
                                           loadDynamicsSettings(businessCompany.id);
                                         } else if (businessCompany.accountingSystem === 'ACUMATICA') {
@@ -3845,6 +4146,229 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     </div>
                                   </div>
+                                ) : businessCompany?.accountingSystem === 'QUICKBOOKS' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            QuickBooks Online setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveQboSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Connection
+                                          </button>
+                                          <button
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Run Ops Sync Now
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#dcfce7', border: '1px solid #86efac', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#166534' }}>QuickBooks Online operational sync configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#166534' }}>
+                                          Configure Phase 1 daily operational pulls and save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).syncFrequency}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).syncTime}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Initial Sync Start Date (YYYY-MM-DD)</span>
+                                          <input
+                                            type="text"
+                                            value={getQboSettings(businessCompany.id).initialSyncStartDate}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'initialSyncStartDate', e.target.value)}
+                                            placeholder="2024-01-01"
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          />
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).incrementalSync}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Webhook Enabled *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).webhookEnabled}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'webhookEnabled', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>CDC Enabled *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).cdcEnabled}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'cdcEnabled', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Nightly Reconciliation *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).reconciliationEnabled}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'reconciliationEnabled', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addQboProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveQboSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QBO Entity</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {getQboPrograms(businessCompany.id).map((row, index) => (
+                                              <tr key={`${businessCompany.id}-qbo-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.dataDomain}
+                                                    onChange={(e) => updateQboProgram(businessCompany.id, index, 'dataDomain', e.target.value)}
+                                                    placeholder="Data Domain"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.qboEntity}
+                                                    onChange={(e) => updateQboProgram(businessCompany.id, index, 'qboEntity', e.target.value)}
+                                                    placeholder="QBO Entity"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px', textAlign: 'center' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={Boolean(row.enabled)}
+                                                    onChange={(e) => updateQboProgram(businessCompany.id, index, 'enabled', e.target.checked)}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteQboProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
                                 ) : businessCompany?.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
@@ -3886,10 +4410,10 @@ export default function SiteAdminDashboard(props: any) {
                                             Validate Connection
                                           </button>
                                           <button
-                                            disabled
-                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                           >
-                                            Run Initial Sync
+                                            Run Ops Sync Now
                                           </button>
                                         </div>
                                       </div>
@@ -4100,10 +4624,10 @@ export default function SiteAdminDashboard(props: any) {
                                             Validate Token
                                           </button>
                                           <button
-                                            disabled
-                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                           >
-                                            Probe
+                                            Run Ops Sync Now
                                           </button>
                                         </div>
                                       </div>
@@ -4295,10 +4819,10 @@ export default function SiteAdminDashboard(props: any) {
                                             Validate Token
                                           </button>
                                           <button
-                                            disabled
-                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                           >
-                                            Probe
+                                            Run Ops Sync Now
                                           </button>
                                         </div>
                                       </div>
@@ -4492,10 +5016,10 @@ export default function SiteAdminDashboard(props: any) {
                                             Validate Token
                                           </button>
                                           <button
-                                            disabled
-                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                           >
-                                            Probe
+                                            Run Ops Sync Now
                                           </button>
                                         </div>
                                       </div>
@@ -4683,8 +5207,11 @@ export default function SiteAdminDashboard(props: any) {
                                           <button disabled style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}>
                                             Validate Token
                                           </button>
-                                          <button disabled style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}>
-                                            Probe
+                                          <button
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Run Ops Sync Now
                                           </button>
                                         </div>
                                       </div>

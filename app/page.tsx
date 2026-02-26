@@ -4112,6 +4112,33 @@ function FinancialScorePage() {
     }
   };
 
+  const runPlatformOperationalSync = async (
+    targetCompanyId?: string,
+    frequency: 'daily' | 'weekly' | 'monthly' = 'daily'
+  ) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+
+    try {
+      const response = await fetch('/api/operational-sync/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, frequency }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        const details =
+          Array.isArray(data?.errors) && data.errors.length > 0
+            ? data.errors.join('\n')
+            : data?.details || data?.error || 'Operational sync failed';
+        throw new Error(details);
+      }
+      alert(`Operational sync complete. Records created: ${data.recordsCreated ?? 0}.`);
+    } catch (error: any) {
+      alert(`Operational sync failed:\n\n${error?.message || 'Unknown error'}`);
+    }
+  };
+
   const pullInforMonthlyCao = async () => {
     if (!selectedCompanyId) return;
     setInforCaoPulling(true);
@@ -6521,6 +6548,7 @@ function FinancialScorePage() {
               probeInforM3={probeInforM3}
               disconnectInforM3={disconnectInforM3}
               runInforM3OperationalSync={runInforM3OperationalSync}
+              runPlatformOperationalSync={runPlatformOperationalSync}
               newSiteAdminFirstName={newSiteAdminFirstName}
               setNewSiteAdminFirstName={setNewSiteAdminFirstName}
               newSiteAdminLastName={newSiteAdminLastName}

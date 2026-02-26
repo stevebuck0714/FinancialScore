@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AdapterFactory } from '@/lib/accounting-adapters';
-import { syncInforM3OperationalData } from '@/lib/infor-m3/operational-sync';
 import prisma from '@/lib/prisma';
+import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 
 function shouldRunForFrequency(frequency: string): boolean {
   const normalized = String(frequency || 'daily').toLowerCase();
@@ -47,6 +46,8 @@ export async function GET(request: NextRequest) {
         id: true,
         companyId: true,
         platform: true,
+        accessToken: true,
+        connectionMetadata: true,
         syncFrequency: true,
         company: {
           select: {
@@ -85,17 +86,7 @@ export async function GET(request: NextRequest) {
       try {
         console.log(`\n💼 Syncing company: ${connection.companyId} (${connection.platform})`);
 
-        let syncResult: { success: boolean; recordsCreated: number; errors?: string[] };
-        if (connection.platform === 'INFOR_M3') {
-          syncResult = await syncInforM3OperationalData(connection.companyId, 'daily');
-        } else {
-          const adapter = await AdapterFactory.createFromConnection(connection.id);
-          const isConnected = await adapter.testConnection();
-          if (!isConnected) {
-            throw new Error('Connection test failed');
-          }
-          syncResult = await adapter.syncAll('daily');
-        }
+        const syncResult = await runOperationalSyncForConnection(connection, connection.syncFrequency || 'daily');
 
         totalRecords += syncResult.recordsCreated;
         if (syncResult.success) {
