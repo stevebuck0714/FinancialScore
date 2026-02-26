@@ -1,8 +1,42 @@
 Corelytics User Manual
-Updated: January 2026
+Updated: February 2026
 
 
 This manual explains how to use Corelytics as a consultant or business user. It focuses on core workflows: onboarding, connecting data, mapping accounts, processing data, and analyzing results.
+
+Latest User-Facing Updates (Since Last Manual Revision)
+This release includes major updates across accounting integrations, operational data automation, AI workflows, and authentication.
+
+1) Accounting Integrations and Operational Sync
+* Site Admin accounting containers are now system-specific (Infor M3, QuickBooks Online, QuickBooks Desktop, Dynamics, Acumatica, Odoo, Sage Intacct).
+* Operational sync can be run manually from Site Admin using Run Ops Sync Now.
+* Nightly operational sync automation is supported for configured connections.
+* Infor M3 operational program rows now support multiple transaction names, plus per-row CONO, DIVI, and Enabled controls.
+* Legacy Sage values are handled as Sage Intacct in Site Admin and operational sync flows.
+* Company-level Operational Data Mode controls are available (demo mode vs real data behavior).
+
+2) Operational Data Coverage and Retention
+* Operational snapshot data supports long-horizon reporting and trend analysis.
+* Snapshot retention supports up to 3 years of operational history for reporting use cases.
+* Operations navigation and dashboards were refined for improved issue triage and executive monitoring.
+
+3) AI and Analysis Workflows
+* Analysis now uses a structured workflow: Overview, Focus Board, Trend Explorer, Anomaly Inbox, Opportunity Workspace.
+* Run Performance Agents is the primary action to refresh AI findings across analysis views.
+* Opportunity cards include stronger evidence context and driver details.
+* Ask Corelytics reliability was improved for better response quality and citation consistency.
+* Company document upload/search is integrated into Ask workflows for evidence-backed answers.
+
+4) Security and Access Experience
+* MFA remains required for all users.
+* Trusted device flow is improved and supports remembering devices for 100 days (up to configured limit).
+* Multi-company user access and active company selection flows were added.
+* Login and verification reliability improvements reduce failed-auth edge cases.
+
+5) Navigation and User Experience
+* Company picker behavior improved when a valid active company is already selected.
+* Operations and analytics navigation labels/structure were updated for clearer flow.
+* Site Admin layouts and integration configuration UX were refined for readability and accuracy.
 
 A.  Who This Is For
 * Consultants who manage multiple client companies
@@ -13,6 +47,7 @@ B.  Roles at a Glance
 * Consultant (Team Member): Can work on assigned companies; limited billing and administrative access.
 * Business User: Can manage their own company; cannot manage other companies.
 * Company Users: Client users added by a consultant for a specific company.
+* Site Admin: Can configure accounting integrations and operational sync behavior per company.
 
 C. Sign In Page 
 This document explains the fields and actions on the Corelytics sign-in page, including password requirements, forgot-password flow, and affiliate codes.
@@ -88,14 +123,68 @@ Once a company is selected, you can manage:
 * Assessment users (if enabled in your workflow).
 
 F.  Connect Accounting Data
-Corelytics can connect to any API-based accounting system you authorize or accept file uploads.
+Corelytics supports API-based accounting integrations and file uploads, with system-specific configuration in Site Admin.
 
  A) Accounting API Connection
 1. Open the company.
-2. Go to Accounting API Connections (or the import area).
-3. Select your accounting system and connect.
-4. Authorize access.
-5. Confirm connection status.
+2. Go to Accounting Integration in Site Admin.
+3. Select or confirm the accounting system.
+4. Enter required credentials/settings for that system.
+5. Save settings and confirm status.
+6. Run a manual operational sync to validate pull behavior.
+
+B) Site Admin Accounting Integration (System-Specific)
+The Accounting Integration container and Accounting Programs container are customized by accounting system. They are not shared across all systems.
+
+Current system-specific configurations include:
+* Infor M3
+* QuickBooks Online
+* QuickBooks Desktop
+* Dynamics
+* Acumatica
+* Odoo
+* Sage Intacct
+
+C) Manual Operational Pull (Run Ops Sync Now)
+Most integrations include a Run Ops Sync Now action in Site Admin.
+
+Use it to:
+1. Validate that credentials and program rows are configured correctly.
+2. Confirm records are being written to operational data tables.
+3. Verify the result before waiting for nightly automation.
+
+D) Infor M3 Manual Pull (Operational Data)
+For Infor M3 companies:
+1. Open the company in Site Admin.
+2. In Accounting Integration, confirm credentials and connection are valid.
+3. In Accounting Programs, configure rows with:
+   * Module
+   * MI Program
+   * Transactions (one per line)
+   * CONO
+   * DIVI
+   * Enabled toggle
+4. Save Programs.
+5. Click Run Ops Sync Now.
+
+Important behavior:
+* Infor operational sync runs all enabled operational rows.
+* Accounts/COA rows can be managed separately from operational rows.
+* If a row is disabled, it is skipped.
+
+E) QuickBooks Online Operational Pull (Phase 1)
+For QuickBooks Online companies, Phase 1 daily operational pull focuses on:
+* Customer
+* Vendor
+* Item
+* Invoice (+ lines)
+* Payment
+* Bill (+ lines)
+* BillPayment
+
+In Site Admin:
+* Accounting Integration includes QBO sync settings (frequency/time, incremental, webhook/CDC/reconciliation toggles).
+* Accounting Programs includes QBO-specific rows (Data Domain, QBO Entity, Enabled).
 
  B) Excel Trial Balance Import
 1. Go to Excel Import.
@@ -174,6 +263,7 @@ Use Overview to confirm inputs, scope, and data readiness before running AI agen
 * Data range coverage for financial and operational datasets.
 * Window selector to choose the analysis horizon (12/24/36 months).
 * Run Performance Agents button to generate findings used across the AI views.
+* Daily operational findings are incorporated where operational datasets are available.
 
 Focus Board (AI-Enabled)
 Focus Board is the executive triage view. It groups AI findings into action buckets:
@@ -207,6 +297,7 @@ Opportunity Workspace turns AI findings into an execution pipeline.
 * Filter by time to impact and owner.
 * Track opportunity status from Discover ? Validate ? Plan ? Execute ? Realized.
 * Evidence strength and impact ranges help prioritize the queue.
+* Opportunity cards include supporting driver evidence to improve actionability.
 
 L. Ask Corelytics
 This section explains how Ask Corelytics works, how to use the default questions, and how to create and save your own questions.
@@ -216,6 +307,7 @@ Ask Corelytics provides AI-assisted Q&A against your company data. It supports:
 
 * AI Search with citations.
 * Period Review for a selected period (daily operations + monthly COA).
+* Company document search context when company documents are uploaded.
 
  Default Questions
 When you open Ask Corelytics, the system loads a set of default questions. These questions are grouped by category and tailored to the selected company name.
@@ -256,6 +348,7 @@ If you want to remove customizations, use Reset to restore the default question 
  Notes
 * If saved questions cannot be loaded, the system falls back to the default list.
 * Ask Corelytics only runs a question when it has non-empty text.
+* Response quality depends on available financial data, operational data, and indexed company documents.
 
 M. Ratios and Trends
 This section explains the Ratios and Trend Analysis pages, including their sub-tabs and what each one does.
@@ -441,6 +534,9 @@ Data Refresh Cadence
 
 * COA financial data is loaded monthly.
 * Operational data can be configured to auto-load daily.
+* Nightly operational sync can be run automatically by schedule and manually with Run Ops Sync Now.
+* Operational snapshot retention is managed for long-term reporting (up to 3 years).
+* In Site Admin, Operational Data Mode controls whether dashboards prioritize demo or real operational data behavior.
 
 Q.  Payments & Subscription (Consultants)
 If your plan requires payment:

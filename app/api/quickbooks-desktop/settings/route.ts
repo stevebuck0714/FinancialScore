@@ -21,6 +21,8 @@ type QuickBooksDesktopSettings = {
   hostMachineName: string;
   hostOnlineForSync: 'YES' | 'NO' | '';
   syncDirection: 'QB_TO_PLATFORM' | 'TWO_WAY' | '';
+  syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+  syncTime: string;
 };
 
 type QuickBooksDesktopProgram = {
@@ -45,6 +47,8 @@ const defaultSettings: QuickBooksDesktopSettings = {
   hostMachineName: '',
   hostOnlineForSync: 'YES',
   syncDirection: 'QB_TO_PLATFORM',
+  syncFrequency: 'daily',
+  syncTime: '08:00',
 };
 
 const defaultPrograms: QuickBooksDesktopProgram[] = [
@@ -104,6 +108,15 @@ function sanitizeSettings(value: unknown): QuickBooksDesktopSettings {
         : asString(src.syncDirection) === 'QB_TO_PLATFORM'
           ? 'QB_TO_PLATFORM'
           : '',
+    syncFrequency:
+      asString(src.syncFrequency) === 'weekly'
+        ? 'weekly'
+        : asString(src.syncFrequency) === 'monthly'
+          ? 'monthly'
+          : asString(src.syncFrequency) === 'daily'
+            ? 'daily'
+            : '',
+    syncTime: asString(src.syncTime) || '08:00',
   };
 }
 
@@ -222,8 +235,11 @@ export async function POST(request: NextRequest) {
       ...existingMetadata,
       quickbooksDesktopSettings: settings,
       quickbooksDesktopPrograms: programs,
+      operationalPullTime: settings.syncTime || '08:00',
+      operationalScheduleUpdatedAt: new Date().toISOString(),
       quickbooksDesktopLastUpdatedAt: new Date().toISOString(),
     };
+    const scheduleFrequency = settings.syncFrequency || 'daily';
 
     await prisma.accountingConnection.upsert({
       where: {
@@ -236,6 +252,8 @@ export async function POST(request: NextRequest) {
         connectionMetadata: mergedMetadata,
         platformVersion: existing?.platformVersion || 'qb-desktop-1.0',
         status: existing?.status || 'INACTIVE',
+        autoSync: true,
+        syncFrequency: scheduleFrequency,
         errorMessage: null,
       },
       create: {
@@ -243,8 +261,8 @@ export async function POST(request: NextRequest) {
         platform: 'QUICKBOOKS',
         status: 'INACTIVE',
         platformVersion: 'qb-desktop-1.0',
-        autoSync: false,
-        syncFrequency: 'manual',
+        autoSync: true,
+        syncFrequency: scheduleFrequency,
         connectionMetadata: mergedMetadata,
       },
     });

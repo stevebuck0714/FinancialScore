@@ -2,12 +2,50 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 
-function shouldRunForFrequency(frequency: string): boolean {
+function normalizePullTime(value: unknown): string {
+  if (typeof value !== 'string') return '08:00';
+  const trimmed = value.trim();
+  return /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : '08:00';
+}
+
+function readOperationalPullTime(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return '08:00';
+  const source = metadata as Record<string, unknown>;
+  const direct = normalizePullTime(source.operationalPullTime);
+  if (direct !== '08:00' || source.operationalPullTime === '08:00') return direct;
+
+  const settingsKeys = [
+    'quickbooksOnlineSettings',
+    'quickbooksDesktopSettings',
+    'dynamicsSettings',
+    'acumaticaSettings',
+    'odooSettings',
+    'sageIntacctSettings',
+  ] as const;
+
+  for (const key of settingsKeys) {
+    const settings = source[key];
+    if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
+      const time = normalizePullTime((settings as Record<string, unknown>).syncTime);
+      if (time !== '08:00' || (settings as Record<string, unknown>).syncTime === '08:00') {
+        return time;
+      }
+    }
+  }
+
+  return '08:00';
+}
+
+function shouldRunForFrequency(frequency: string, pullTime: string): boolean {
   const normalized = String(frequency || 'daily').toLowerCase();
   const now = new Date();
+  const [scheduledHour, scheduledMinute] = normalizePullTime(pullTime).split(':').map((value) => Number(value));
+  if (now.getHours() !== scheduledHour || now.getMinutes() !== scheduledMinute) {
+    return false;
+  }
   if (normalized === 'daily') return true;
-  if (normalized === 'weekly') return now.getUTCDay() === 0; // Sunday UTC
-  if (normalized === 'monthly') return now.getUTCDate() === 1; // first day UTC
+  if (normalized === 'weekly') return now.getDay() === 0; // Sunday local server time
+  if (normalized === 'monthly') return now.getDate() === 1; // first day local server time
   return false;
 }
 
@@ -61,7 +99,10 @@ export async function GET(request: NextRequest) {
     });
 
     const runnableConnections = connections.filter((connection) =>
-      shouldRunForFrequency(connection.syncFrequency || 'daily')
+      shouldRunForFrequency(
+        connection.syncFrequency || 'daily',
+        readOperationalPullTime(connection.connectionMetadata)
+      )
     );
     
     console.log(`📊 Found ${connections.length} auto-sync connections (${runnableConnections.length} runnable now)`);

@@ -332,6 +332,8 @@ export default function SiteAdminDashboard(props: any) {
         hostMachineName: string;
         hostOnlineForSync: 'YES' | 'NO' | '';
         syncDirection: 'QB_TO_PLATFORM' | 'TWO_WAY' | '';
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
       }
     >
   >({});
@@ -466,6 +468,8 @@ export default function SiteAdminDashboard(props: any) {
     hostMachineName: '',
     hostOnlineForSync: 'YES' as 'YES' | 'NO' | '',
     syncDirection: 'QB_TO_PLATFORM' as 'QB_TO_PLATFORM' | 'TWO_WAY' | '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
   };
 
   const defaultQbDesktopPrograms = [
@@ -2436,6 +2440,37 @@ export default function SiteAdminDashboard(props: any) {
                                                         <option value="">Select</option>
                                                         <option value="QB_TO_PLATFORM">QB to Platform</option>
                                                         <option value="TWO_WAY">Two-way</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).syncTime}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
                                                       </select>
                                                     </label>
                                                   </div>
@@ -4512,6 +4547,37 @@ export default function SiteAdminDashboard(props: any) {
                                             <option value="">Select</option>
                                             <option value="QB_TO_PLATFORM">QB to Platform</option>
                                             <option value="TWO_WAY">Two-way</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={qbDesktopSettings.syncFrequency}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={qbDesktopSettings.syncTime}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
                                           </select>
                                         </label>
                                       </div>

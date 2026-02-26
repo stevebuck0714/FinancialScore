@@ -195,8 +195,11 @@ export async function POST(request: NextRequest) {
       ...existingMetadata,
       dynamicsSettings: settings,
       dynamicsPrograms: programs,
+      operationalPullTime: settings.syncTime || '08:00',
+      operationalScheduleUpdatedAt: new Date().toISOString(),
       dynamicsLastUpdatedAt: new Date().toISOString(),
     };
+    const scheduleFrequency = settings.syncFrequency || 'daily';
 
     await prisma.accountingConnection.upsert({
       where: {
@@ -209,6 +212,8 @@ export async function POST(request: NextRequest) {
         connectionMetadata: mergedMetadata,
         platformVersion: existing?.platformVersion || 'dynamics-1.0',
         status: existing?.status || 'INACTIVE',
+        autoSync: true,
+        syncFrequency: scheduleFrequency,
         errorMessage: null,
       },
       create: {
@@ -216,8 +221,8 @@ export async function POST(request: NextRequest) {
         platform: 'DYNAMICS365',
         status: 'INACTIVE',
         platformVersion: 'dynamics-1.0',
-        autoSync: false,
-        syncFrequency: 'manual',
+        autoSync: true,
+        syncFrequency: scheduleFrequency,
         connectionMetadata: mergedMetadata,
       },
     });
