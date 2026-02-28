@@ -38,7 +38,7 @@ function parsePrograms(value: unknown): InforProgramRow[] {
     const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
     const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
     const enabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
-    if (!module || !miProgram || !cono || !divi || transactions.length === 0 || !enabled) continue;
+    if (!module || !miProgram || !divi || transactions.length === 0 || !enabled) continue;
     rows.push({ module, miProgram, transactions, cono, divi, enabled });
   }
   return rows;
@@ -93,6 +93,21 @@ function pickString(record: Record<string, unknown>, keys: string[]): string | n
   return null;
 }
 
+function parseMaybeDate(value: string | null): Date | null {
+  if (!value) return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  if (/^\d{8}$/.test(raw)) {
+    const year = Number(raw.slice(0, 4));
+    const month = Number(raw.slice(4, 6));
+    const day = Number(raw.slice(6, 8));
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 async function pruneCompanyOperationalData(companyId: string): Promise<void> {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 3);
@@ -104,6 +119,10 @@ async function pruneCompanyOperationalData(companyId: string): Promise<void> {
     prisma.customerSalesSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     prisma.productSalesSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     prisma.inventorySnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
+    prisma.aROpenInvoiceSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
+    prisma.aRPaymentFact.deleteMany({ where: { companyId, paymentDate: { lt: cutoff } } }),
+    (prisma as any).aPOpenBillSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
+    (prisma as any).aPPaymentFact.deleteMany({ where: { companyId, paymentDate: { lt: cutoff } } }),
   ]);
 }
 
@@ -175,6 +194,89 @@ async function saveARAging(
   return 1;
 }
 
+async function saveAROpenInvoices(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  records: Record<string, unknown>[],
+  context: { miProgram: string; transaction: string; cono?: string; divi?: string }
+): Promise<number> {
+  await prisma.aROpenInvoiceSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
+
+  const rows = records
+    .map((record, idx) => {
+      const customerName =
+        pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || `Unknown Customer ${idx + 1}`;
+      const invoiceNo =
+        pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO', 'voucher']) || `UNKNOWN-${idx + 1}`;
+      const amountDueHome = pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
+      return {
+        companyId,
+        snapshotDate,
+        frequency,
+        customerId: pickString(record, ['customerId', 'customerNumber', 'CUNO', 'customerNo']),
+        customerName,
+        invoiceNo,
+        invoiceDate: parseMaybeDate(pickString(record, ['invoiceDate', 'date', 'IVDT'])),
+        dueDate: parseMaybeDate(pickString(record, ['dueDate', 'DUDT'])),
+        status: pickString(record, ['status', 'STAT']),
+        currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
+        amountCurrency: pickNumber(record, ['amountCurrency', 'invoiceAmount', 'CUAM']) || null,
+        amountHome: pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']) || null,
+        amountDueHome,
+        current: pickNumber(record, ['current', 'bucket0']) || null,
+        days1to30: pickNumber(record, ['days1to30', 'bucket1']) || null,
+        days31to60: pickNumber(record, ['days31to60', 'bucket2']) || null,
+        days61to90: pickNumber(record, ['days61to90', 'bucket3']) || null,
+        days90plus: pickNumber(record, ['days90plus', 'bucket4']) || null,
+        sourcePlatform: 'INFOR_M3',
+        sourceProgram: context.miProgram,
+        sourceTransaction: context.transaction,
+        cono: context.cono || null,
+        divi: context.divi || null,
+      };
+    })
+    .filter((row) => row.customerName && row.invoiceNo && Number.isFinite(row.amountDueHome));
+
+  if (!rows.length) return 0;
+  await prisma.aROpenInvoiceSnapshot.createMany({ data: rows });
+  return rows.length;
+}
+
+async function saveARPayments(
+  companyId: string,
+  records: Record<string, unknown>[],
+  context: { miProgram: string; transaction: string; cono?: string; divi?: string }
+): Promise<number> {
+  const rows = records
+    .map((record, idx) => {
+      const paymentDate = parseMaybeDate(pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT']));
+      if (!paymentDate) return null;
+      const customerName =
+        pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || `Unknown Customer ${idx + 1}`;
+      return {
+        companyId,
+        paymentDate,
+        customerId: pickString(record, ['customerId', 'customerNumber', 'CUNO', 'customerNo']),
+        customerName,
+        invoiceNo: pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO']),
+        currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
+        paidAmountCurrency: pickNumber(record, ['paidAmountCurrency', 'CUAM']) || null,
+        paidAmountHome: pickNumber(record, ['paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM']),
+        sourcePlatform: 'INFOR_M3',
+        sourceProgram: context.miProgram,
+        sourceTransaction: context.transaction,
+        cono: context.cono || null,
+        divi: context.divi || null,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => !!row && Number.isFinite(row.paidAmountHome));
+
+  if (!rows.length) return 0;
+  await prisma.aRPaymentFact.createMany({ data: rows });
+  return rows.length;
+}
+
 async function saveAPAging(
   companyId: string,
   snapshotDate: Date,
@@ -208,6 +310,89 @@ async function saveAPAging(
   });
 
   return 1;
+}
+
+async function saveAPOpenBills(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  records: Record<string, unknown>[],
+  context: { miProgram: string; transaction: string; cono?: string; divi?: string }
+): Promise<number> {
+  await (prisma as any).aPOpenBillSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
+
+  const rows = records
+    .map((record, idx) => {
+      const vendorName =
+        pickString(record, ['vendorName', 'name', 'SUNM', 'vendor', 'supplier']) || `Unknown Vendor ${idx + 1}`;
+      const billNo =
+        pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'voucher', 'SINO']) || `UNKNOWN-${idx + 1}`;
+      const amountDueHome = pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
+      return {
+        companyId,
+        snapshotDate,
+        frequency,
+        vendorId: pickString(record, ['vendorId', 'supplierId', 'SUNO', 'vendorNo']),
+        vendorName,
+        billNo,
+        billDate: parseMaybeDate(pickString(record, ['billDate', 'invoiceDate', 'date', 'IVDT'])),
+        dueDate: parseMaybeDate(pickString(record, ['dueDate', 'DUDT'])),
+        status: pickString(record, ['status', 'STAT']),
+        currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
+        amountCurrency: pickNumber(record, ['amountCurrency', 'billAmount', 'CUAM']) || null,
+        amountHome: pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']) || null,
+        amountDueHome,
+        current: pickNumber(record, ['current', 'bucket0']) || null,
+        days1to30: pickNumber(record, ['days1to30', 'bucket1']) || null,
+        days31to60: pickNumber(record, ['days31to60', 'bucket2']) || null,
+        days61to90: pickNumber(record, ['days61to90', 'bucket3']) || null,
+        days90plus: pickNumber(record, ['days90plus', 'bucket4']) || null,
+        sourcePlatform: 'INFOR_M3',
+        sourceProgram: context.miProgram,
+        sourceTransaction: context.transaction,
+        cono: context.cono || null,
+        divi: context.divi || null,
+      };
+    })
+    .filter((row) => row.vendorName && row.billNo && Number.isFinite(row.amountDueHome));
+
+  if (!rows.length) return 0;
+  await (prisma as any).aPOpenBillSnapshot.createMany({ data: rows });
+  return rows.length;
+}
+
+async function saveAPPayments(
+  companyId: string,
+  records: Record<string, unknown>[],
+  context: { miProgram: string; transaction: string; cono?: string; divi?: string }
+): Promise<number> {
+  const rows = records
+    .map((record, idx) => {
+      const paymentDate = parseMaybeDate(pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT']));
+      if (!paymentDate) return null;
+      const vendorName =
+        pickString(record, ['vendorName', 'name', 'SUNM', 'vendor', 'supplier']) || `Unknown Vendor ${idx + 1}`;
+      return {
+        companyId,
+        paymentDate,
+        vendorId: pickString(record, ['vendorId', 'supplierId', 'SUNO', 'vendorNo']),
+        vendorName,
+        billNo: pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'SINO']),
+        currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
+        paidAmountCurrency: pickNumber(record, ['paidAmountCurrency', 'CUAM']) || null,
+        paidAmountHome: pickNumber(record, ['paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM']),
+        sourcePlatform: 'INFOR_M3',
+        sourceProgram: context.miProgram,
+        sourceTransaction: context.transaction,
+        cono: context.cono || null,
+        divi: context.divi || null,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => !!row && Number.isFinite(row.paidAmountHome));
+
+  if (!rows.length) return 0;
+  await (prisma as any).aPPaymentFact.createMany({ data: rows });
+  return rows.length;
 }
 
 async function saveCustomerSales(
@@ -356,9 +541,11 @@ export async function syncInforM3OperationalData(
   for (const row of programRows) {
     for (const transaction of row.transactions) {
       const params = new URLSearchParams({
-        CONO: row.cono,
         DIVI: row.divi,
       });
+      if (row.cono) {
+        params.set('CONO', row.cono);
+      }
       const endpointPath = `/M3/m3api-rest/execute/${row.miProgram}/${transaction}?${params.toString()}`;
       const startedAt = Date.now();
       const response = await callInforIonApi(credentials, endpointPath, { timeoutMs: 30000 });
@@ -373,10 +560,57 @@ export async function syncInforM3OperationalData(
               moduleRecordsCreated = await saveCash(companyId, snapshotDate, frequency, records);
               break;
             case 'ar':
-              moduleRecordsCreated = await saveARAging(companyId, snapshotDate, frequency, records);
+              {
+                const tx = transaction.trim().toLowerCase();
+                const context = { miProgram: row.miProgram, transaction, cono: row.cono, divi: row.divi };
+                if (
+                  tx.includes('pay') ||
+                  tx.includes('receipt') ||
+                  tx.includes('settlement') ||
+                  tx.includes('cash')
+                ) {
+                  moduleRecordsCreated = await saveARPayments(companyId, records, context);
+                } else if (
+                  tx.includes('open') ||
+                  tx.includes('invoice') ||
+                  tx.includes('outstanding') ||
+                  tx.includes('cust')
+                ) {
+                  moduleRecordsCreated = await saveAROpenInvoices(
+                    companyId,
+                    snapshotDate,
+                    frequency,
+                    records,
+                    context
+                  );
+                } else {
+                  moduleRecordsCreated = await saveARAging(companyId, snapshotDate, frequency, records);
+                }
+              }
               break;
             case 'ap':
-              moduleRecordsCreated = await saveAPAging(companyId, snapshotDate, frequency, records);
+              {
+                const tx = transaction.trim().toLowerCase();
+                const context = { miProgram: row.miProgram, transaction, cono: row.cono, divi: row.divi };
+                if (
+                  tx.includes('pay') ||
+                  tx.includes('settlement') ||
+                  tx.includes('disburs') ||
+                  tx.includes('cash')
+                ) {
+                  moduleRecordsCreated = await saveAPPayments(companyId, records, context);
+                } else if (
+                  tx.includes('open') ||
+                  tx.includes('invoice') ||
+                  tx.includes('bill') ||
+                  tx.includes('supplier') ||
+                  tx.includes('vendor')
+                ) {
+                  moduleRecordsCreated = await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
+                } else {
+                  moduleRecordsCreated = await saveAPAging(companyId, snapshotDate, frequency, records);
+                }
+              }
               break;
             case 'customer':
               moduleRecordsCreated = await saveCustomerSales(companyId, snapshotDate, frequency, records);

@@ -52,9 +52,10 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
     if (!module || !miProgram) {
       throw new Error('Each accounting program row must include module and MI program.');
     }
-    if (requireComplete && (transactions.length === 0 || !cono || !divi)) {
+    // Only enforce full required fields for rows the user has enabled.
+    if (requireComplete && enabled && (transactions.length === 0 || !divi)) {
       throw new Error(
-        'Each accounting program row must include module, MI program, at least one transaction, CONO, and DIVI.'
+        'Each enabled accounting program row must include module, MI program, at least one transaction, and DIVI.'
       );
     }
     const dedupeKey = `${module}::${miProgram}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
