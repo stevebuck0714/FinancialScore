@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateMFASecret, generateQRCode, encryptMFASecret, generateBackupCodes, encryptBackupCodes } from '@/lib/mfa';
+import { getMfaAppScope } from '@/lib/mfa-app-scope';
 
 export async function POST(request: NextRequest) {
   try {
+    const appScope = getMfaAppScope(request);
     console.log('🔐 MFA Enroll API called');
     const { userId } = await request.json();
     console.log('👤 User ID:', userId);
@@ -58,7 +60,13 @@ export async function POST(request: NextRequest) {
     await prisma.user.update({
       where: { id: userId },
       data: {
-        mfaSecret: encryptMFASecret(secret),
+        mfaSecret: encryptMFASecret(
+          JSON.stringify({
+            version: 1,
+            appScope,
+            secret,
+          })
+        ),
         backupCodes: encryptBackupCodes(backupCodes),
         mfaEnabled: false, // Not enabled until verified
       },

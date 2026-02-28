@@ -27,6 +27,7 @@ function decryptSecret(encryptedText: string): string {
 
 export interface VerifyTOTPOptions {
   expectedAppScope?: string;
+  acceptedAppScopes?: string[];
   allowLegacyScope?: boolean;
 }
 
@@ -102,10 +103,16 @@ export function verifyTOTPWithDetails(
 
     const parsed = resolveStoredMFASecret(encryptedSecret);
     const expectedAppScope = options?.expectedAppScope;
+    const acceptedAppScopes = (options?.acceptedAppScopes || [])
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+    const acceptedScopeSet = new Set(
+      expectedAppScope ? [expectedAppScope.toLowerCase(), ...acceptedAppScopes] : acceptedAppScopes
+    );
     const allowLegacyScope = options?.allowLegacyScope === true;
 
     if (expectedAppScope) {
-      if (parsed.appScope && parsed.appScope !== expectedAppScope) {
+      if (parsed.appScope && !acceptedScopeSet.has(parsed.appScope.toLowerCase())) {
         return { isValid: false, reason: 'APP_SCOPE_MISMATCH' };
       }
       if (!parsed.appScope && !allowLegacyScope) {
