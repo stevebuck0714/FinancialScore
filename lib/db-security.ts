@@ -2,7 +2,7 @@
  * Database Security Utilities
  * 
  * CRITICAL: These functions prevent cross-database contamination between:
- * - Production: configured via PRODUCTION_DB_PROJECTS (default: orange-poetry)
+ * - Production: configured via PRODUCTION_DB_PROJECTS (default: aged-snow,orange-poetry)
  * - Staging: configured via STAGING_DB_PROJECTS (default: cold-frost)
  * 
  * These safeguards ensure:
@@ -115,13 +115,14 @@ export function enforceDatabaseSecurity(): void {
     // During build, only block production database connections
     // Staging database is allowed during build
     const databaseUrl = process.env.DATABASE_URL || '';
-    if (databaseUrl.includes('orange-poetry') && !isVercelProductionRuntime()) {
+    const productionProjects = getProjectList(process.env.PRODUCTION_DB_PROJECTS, ['orange-poetry', 'aged-snow']);
+    if (findProject(databaseUrl, productionProjects) && !isVercelProductionRuntime()) {
       const error = new Error(
-      `🚨 SECURITY VIOLATION: Production database detected during build in non-production environment!\n` +
+        `🚨 SECURITY VIOLATION: Production database detected during build in non-production environment!\n` +
         `   NODE_ENV: ${process.env.NODE_ENV}\n` +
         `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
         `   VERCEL: ${process.env.VERCEL}\n` +
-      `   Production databases must ONLY be used on Vercel production runtime.`
+        `   Production databases must ONLY be used on Vercel production runtime.`
       );
       console.error(error.message);
       throw error;
@@ -165,7 +166,7 @@ export function enforceDatabaseSecurity(): void {
   
   // NOTE: We intentionally do NOT forbid staging databases when VERCEL_ENV=production here,
   // because Vercel "production" is per-project and some non-prod projects may deploy
-  // with --prod while still correctly pointing at cold-frost.
+  // with --prod while still correctly pointing at staging databases.
 }
 
 /**
