@@ -25,6 +25,45 @@ function decryptSecret(encryptedText: string): string {
   return decrypted;
 }
 
+export interface VerifyTOTPOptions {
+  expectedAppScope?: string;
+  allowLegacyScope?: boolean;
+}
+
+export interface VerifyTOTPResult {
+  isValid: boolean;
+  reason?: 'INVALID_FORMAT' | 'CLOCK_SKEW' | 'APP_SCOPE_MISMATCH' | 'DECRYPT_FAILED' | 'INVALID_CODE';
+}
+
+interface StoredMFASecret {
+  secret: string;
+  appScope?: string;
+  version?: number;
+}
+
+export function resolveStoredMFASecret(encryptedSecret: string): StoredMFASecret {
+  const decrypted = decryptSecret(encryptedSecret);
+  const trimmed = decrypted.trim();
+
+  // Support both legacy plain base32 and newer JSON payloads.
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as { secret?: string; appScope?: string; version?: number };
+      if (parsed?.secret && typeof parsed.secret === 'string') {
+        return {
+          secret: parsed.secret,
+          appScope: typeof parsed.appScope === 'string' ? parsed.appScope : undefined,
+          version: typeof parsed.version === 'number' ? parsed.version : undefined,
+        };
+      }
+    } catch {
+      // Fall through to legacy handling.
+    }
+  }
+
+  return { secret: trimmed };
+}
+
 // Generate MFA secret for user
 export function generateMFASecret(userEmail: string, issuer: string = 'Corelytics') {
   const secret = speakeasy.generateSecret({
@@ -51,34 +90,61 @@ export async function generateQRCode(otpauthUrl: string): Promise<string> {
 }
 
 // Verify TOTP token
-export function verifyTOTP(token: string, encryptedSecret: string): boolean {
+export function verifyTOTPWithDetails(
+  token: string,
+  encryptedSecret: string,
+  options?: VerifyTOTPOptions
+): VerifyTOTPResult {
   try {
-    console.log('🔓 Decrypting MFA secret...');
-    const secret = decryptSecret(encryptedSecret);
-    console.log('✅ Secret decrypted, length:', secret.length);
-    
-    console.log('🔐 Verifying TOTP with token:', token);
+    if (!/^\d{6}$/.test((token || '').trim())) {
+      return { isValid: false, reason: 'INVALID_FORMAT' };
+    }
+
+    const parsed = resolveStoredMFASecret(encryptedSecret);
+    const expectedAppScope = options?.expectedAppScope;
+    const allowLegacyScope = options?.allowLegacyScope === true;
+
+    if (expectedAppScope) {
+      if (parsed.appScope && parsed.appScope !== expectedAppScope) {
+        return { isValid: false, reason: 'APP_SCOPE_MISMATCH' };
+      }
+      if (!parsed.appScope && !allowLegacyScope) {
+        return { isValid: false, reason: 'APP_SCOPE_MISMATCH' };
+      }
+    }
+
     const result = speakeasy.totp.verify({
-      secret: secret,
+      secret: parsed.secret,
       encoding: 'base32',
-      token: token,
-      window: 2, // Allow 2 time steps before and after (about 1 minute tolerance)
+      token: token.trim(),
+      window: 2,
     });
-    
-    console.log('✅ TOTP verify result:', result);
-    
-    // Also log what the current valid token should be for debugging
-    const currentToken = speakeasy.totp({
-      secret: secret,
-      encoding: 'base32'
+
+    if (result) {
+      return { isValid: true };
+    }
+
+    // Distinguish likely clock skew from wrong code.
+    const wideWindow = speakeasy.totp.verify({
+      secret: parsed.secret,
+      encoding: 'base32',
+      token: token.trim(),
+      window: 10,
     });
-    console.log('ℹ️ Current valid token from server:', currentToken);
-    
-    return result;
+    if (wideWindow) {
+      return { isValid: false, reason: 'CLOCK_SKEW' };
+    }
+
+    return { isValid: false, reason: 'INVALID_CODE' };
   } catch (error) {
     console.error('❌ Error verifying TOTP:', error);
-    return false;
+    return { isValid: false, reason: 'DECRYPT_FAILED' };
   }
+}
+
+// Verify TOTP token
+export function verifyTOTP(token: string, encryptedSecret: string, options?: VerifyTOTPOptions): boolean {
+  return verifyTOTPWithDetails(token, encryptedSecret, options).isValid;
 }
 
 // Generate backup codes
