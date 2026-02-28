@@ -3,7 +3,7 @@ import prisma from './prisma';
 import { NextRequest } from 'next/server';
 
 // Configuration
-const TRUST_DURATION_DAYS = parseInt(process.env.MFA_TRUST_DURATION_DAYS || '60', 10);
+const TRUST_DURATION_DAYS = parseInt(process.env.MFA_TRUST_DURATION_DAYS || '180', 10);
 const MAX_TRUSTED_DEVICES = parseInt(process.env.MFA_MAX_TRUSTED_DEVICES_PER_USER || '5', 10);
 
 /**
@@ -59,11 +59,26 @@ export function extractDeviceInfo(request: NextRequest) {
 /**
  * Create a trusted device for a user
  */
+function resolveTrustDurationDays(requestedDays?: number): number {
+  if (typeof requestedDays !== 'number' || !Number.isFinite(requestedDays)) {
+    return TRUST_DURATION_DAYS;
+  }
+
+  const roundedDays = Math.floor(requestedDays);
+  if (roundedDays <= 0) {
+    return TRUST_DURATION_DAYS;
+  }
+
+  return Math.min(roundedDays, TRUST_DURATION_DAYS);
+}
+
 export async function createTrustedDevice(
   userId: string,
-  request: NextRequest
-): Promise<{ token: string; device: any }> {
+  request: NextRequest,
+  requestedDurationDays?: number
+): Promise<{ token: string; device: any; trustDurationDays: number }> {
   const deviceInfo = extractDeviceInfo(request);
+  const trustDurationDays = resolveTrustDurationDays(requestedDurationDays);
   
   // Check if user has reached max trusted devices
   const existingDevices = await prisma.trustedDevice.findMany({
@@ -87,7 +102,7 @@ export async function createTrustedDevice(
   const token = generateDeviceToken();
   const hashedToken = hashDeviceToken(token);
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + TRUST_DURATION_DAYS);
+  expiresAt.setDate(expiresAt.getDate() + trustDurationDays);
 
   // Create device record
   const device = await prisma.trustedDevice.create({
@@ -103,7 +118,7 @@ export async function createTrustedDevice(
     }
   });
 
-  return { token, device };
+  return { token, device, trustDurationDays };
 }
 
 /**

@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { verifyTOTP, verifyBackupCode, encryptBackupCodes } from '@/lib/mfa';
+import {
+  verifyTOTPWithDetails,
+  verifyBackupCode,
+  encryptBackupCodes,
+  resolveStoredMFASecret,
+  encryptMFASecret,
+} from '@/lib/mfa';
 import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
 import { sendTrustedDeviceNotification } from '@/lib/email';
+import { getMfaAppScope } from '@/lib/mfa-app-scope';
+import { getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, token, isBackupCode, rememberDevice } = await request.json();
+    const appScope = getMfaAppScope(request);
+    const { userId, token, isBackupCode, rememberDevice, trustDurationDays: requestedTrustDurationDays } =
+      await request.json();
 
     if (!userId || !token) {
       return NextResponse.json(
@@ -39,6 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     let isValid = false;
+    let totpFailureReason: string | undefined;
 
     // Check if it's a backup code or TOTP token
     if (isBackupCode && user.backupCodes) {
@@ -59,12 +70,46 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Verify TOTP token
-      isValid = verifyTOTP(token, user.mfaSecret);
+      const verification = verifyTOTPWithDetails(token, user.mfaSecret, {
+        expectedAppScope: appScope,
+        allowLegacyScope: true,
+      });
+      isValid = verification.isValid;
+      totpFailureReason = verification.reason;
+
+      // Promote legacy/unscoped secrets to app-scoped secrets after successful verification.
+      if (verification.isValid) {
+        try {
+          const parsed = resolveStoredMFASecret(user.mfaSecret);
+          if (!parsed.appScope) {
+            const scopedSecretPayload = JSON.stringify({
+              version: 1,
+              appScope,
+              secret: parsed.secret,
+            });
+            await prisma.user.update({
+              where: { id: userId },
+              data: { mfaSecret: encryptMFASecret(scopedSecretPayload) },
+            });
+            console.log('✅ Upgraded legacy MFA secret to app-scoped payload', { userId, appScope });
+          }
+        } catch (scopeUpgradeError) {
+          // Do not block login after successful verification.
+          console.error('⚠️ Failed to upgrade MFA secret scope after successful verification:', scopeUpgradeError);
+        }
+      }
     }
 
     if (!isValid) {
+      const errorMessage =
+        totpFailureReason === 'CLOCK_SKEW'
+          ? 'Invalid verification code. Your device clock appears out of sync. Sync your phone time and try a fresh code.'
+          : totpFailureReason === 'INVALID_FORMAT'
+            ? 'Invalid verification code format. Enter a 6-digit code.'
+            : 'Invalid verification code. Please use the latest code from your authenticator app and try again.';
+
       return NextResponse.json(
-        { error: 'Invalid verification code' },
+        { error: errorMessage },
         { status: 401 }
       );
     }
@@ -90,17 +135,16 @@ export async function POST(request: NextRequest) {
     if (rememberDevice) {
       try {
         console.log('🔐 Creating trusted device for user:', userId);
-        const { token: deviceToken, device } = await createTrustedDevice(userId, request);
+        const { token: deviceToken, device, trustDurationDays: effectiveTrustDurationDays } =
+          await createTrustedDevice(userId, request, requestedTrustDurationDays);
         
         // Set cookie with device token
-        const trustDurationDays = getTrustDurationDays();
-        response.cookies.set('mfa_device_token', deviceToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: trustDurationDays * 24 * 60 * 60, // Convert days to seconds
-          path: '/'
-        });
+        const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();
+        response.cookies.set(
+          getMfaDeviceCookieName(),
+          deviceToken,
+          getMfaDeviceCookieOptions(request, trustDurationDaysValue * 24 * 60 * 60)
+        );
 
         console.log('✅ Trusted device created:', device.deviceName);
 
@@ -112,6 +156,7 @@ export async function POST(request: NextRequest) {
           deviceName: device.deviceName,
           ipAddress: device.ipAddress || 'Unknown',
           timestamp: device.createdAt,
+          trustDurationDays: trustDurationDaysValue,
           manageDevicesLink: `${baseUrl}/settings/security`
         }).catch(err => {
           console.error('⚠️ Failed to send trusted device email notification:', err);
