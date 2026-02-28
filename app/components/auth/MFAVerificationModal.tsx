@@ -5,9 +5,9 @@ import React, { useEffect, useState } from 'react';
 interface MFAVerificationModalProps {
   userId: string;
   userEmail: string;
+  trustDurationDays?: number;
   onSuccess: () => void;
   onCancel: () => void;
-  trustDurationDays?: number;
 }
 
 export default function MFAVerificationModal({ userId, userEmail, onSuccess, onCancel, trustDurationDays }: MFAVerificationModalProps) {
@@ -17,7 +17,7 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBackupCodeInput, setShowBackupCodeInput] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(false);
-  const trustDurationMax = Number.isFinite(trustDurationDays) ? Math.floor(trustDurationDays as number) : 60;
+  const trustDurationMax = Number.isFinite(trustDurationDays) ? Math.floor(trustDurationDays as number) : 180;
   const [selectedTrustDurationDays, setSelectedTrustDurationDays] = useState(trustDurationMax);
 
   useEffect(() => {

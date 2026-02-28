@@ -15,8 +15,7 @@ import { getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-dev
 export async function POST(request: NextRequest) {
   try {
     const appScope = getMfaAppScope(request);
-    const { userId, token, isBackupCode, rememberDevice, trustDurationDays: requestedTrustDurationDays } =
-      await request.json();
+    const { userId, token, isBackupCode, rememberDevice } = await request.json();
 
     if (!userId || !token) {
       return NextResponse.json(
@@ -136,7 +135,7 @@ export async function POST(request: NextRequest) {
       try {
         console.log('🔐 Creating trusted device for user:', userId);
         const { token: deviceToken, device, trustDurationDays: effectiveTrustDurationDays } =
-          await createTrustedDevice(userId, request, requestedTrustDurationDays);
+          await createTrustedDevice(userId, request);
         
         // Set cookie with device token
         const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();
