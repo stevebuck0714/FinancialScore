@@ -27,8 +27,10 @@ if (process.env.BLOCK_AUTO_DEPLOY === 'true') {
   process.exit(1);
 }
 
-const isProduction =
-  process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+const isVercel = process.env.VERCEL === '1';
+const isProduction = isVercel
+  ? process.env.VERCEL_ENV === 'production'
+  : process.env.NODE_ENV === 'production';
 
 if (isProduction) {
   const sharedInforKeys = [
