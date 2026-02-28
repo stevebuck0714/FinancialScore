@@ -5,8 +5,8 @@ import { getMfaAppScope } from '@/lib/mfa-app-scope';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔐 MFA Enroll API called');
     const appScope = getMfaAppScope(request);
+    console.log('🔐 MFA Enroll API called');
     const { userId } = await request.json();
     console.log('👤 User ID:', userId);
 
