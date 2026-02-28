@@ -3269,8 +3269,15 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
         net: Number(row.revenue || 0) - Number(row.expense || 0),
         cash: Number(row.cash || 0),
       }));
+    const recent30Days = sortedRecords.slice(0, 30);
+    const recent30Count = recent30Days.length || 1;
+    const avgRevenue30 = recent30Days.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0) / recent30Count;
+    const avgExpense30 = recent30Days.reduce((sum: number, row: any) => sum + Number(row.expense || 0), 0) / recent30Count;
+    const avgNet30 =
+      recent30Days.reduce((sum: number, row: any) => sum + (Number(row.revenue || 0) - Number(row.expense || 0)), 0) / recent30Count;
+    const avgCash30 = recent30Days.reduce((sum: number, row: any) => sum + Number(row.cash || 0), 0) / recent30Count;
 
-    const statementDays = [...statementWindow].reverse().map((row: any) => {
+    const statementDays = statementWindow.map((row: any) => {
       const revenue = Number(row.revenue || 0);
       const cogsTotal = Number(row.cogsTotal || 0);
       const grossProfit = revenue - cogsTotal;
@@ -3428,7 +3435,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
         endingCash: currentCash,
       };
     });
-    const cashFlowDays = [...cashFlowRows].reverse().map((row) => ({
+    const cashFlowDays = cashFlowRows.map((row) => ({
       ...row,
       dateLabel: row.date,
     }));
@@ -3490,22 +3497,38 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
 
         {dailyFinancialView === 'summary' && (
           <div style={{ padding: '12px 24px 24px' }}>
-            <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(8, minmax(0, 1fr))', marginBottom: '24px' }}>
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ color: '#64748b', fontSize: '12px' }}>Latest Daily Revenue</div>
+                <div style={{ color: '#3b82f6', fontSize: '12px' }}>Latest Daily Revenue</div>
                 <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestRevenue || 0))}</div>
               </div>
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ color: '#64748b', fontSize: '12px' }}>Latest Daily Expense</div>
+                <div style={{ color: '#3b82f6', fontSize: '12px' }}>Avg. Revenue (30 Days)</div>
+                <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(avgRevenue30)}</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ color: '#ef4444', fontSize: '12px' }}>Latest Daily Expense</div>
                 <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestExpense || 0))}</div>
               </div>
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ color: '#64748b', fontSize: '12px' }}>Latest Net (R-E)</div>
+                <div style={{ color: '#ef4444', fontSize: '12px' }}>Avg Expense (30 Days)</div>
+                <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(avgExpense30)}</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ color: '#10b981', fontSize: '12px' }}>Latest Net (R-E)</div>
                 <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestNet || 0))}</div>
               </div>
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ color: '#64748b', fontSize: '12px' }}>Latest Cash Balance</div>
+                <div style={{ color: '#10b981', fontSize: '12px' }}>Average Net (30 Days)</div>
+                <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(avgNet30)}</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ color: '#8b5cf6', fontSize: '12px' }}>Latest Cash Balance</div>
                 <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestCash || 0))}</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ color: '#8b5cf6', fontSize: '12px' }}>Avg Cash (30 Days)</div>
+                <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(avgCash30)}</div>
               </div>
             </div>
 
@@ -3522,7 +3545,6 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                     <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="net" stroke="#10b981" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="cash" stroke="#8b5cf6" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -3545,7 +3567,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                 <tbody>
                   {incomeRowDefs.map((rowDef) => (
                     <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
-                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor }}>
+                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
                         {rowDef.label}
                       </td>
                       {statementDays.map((day) => (
@@ -3555,6 +3577,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                             padding: '10px',
                             borderBottom: '1px solid #f1f5f9',
                             textAlign: 'right',
+                            fontSize: '12px',
                             fontWeight: statementRowStyle(rowDef.styleType).weight,
                             color: statementRowStyle(rowDef.styleType).textColor,
                             whiteSpace: 'nowrap',
@@ -3590,7 +3613,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                 <tbody>
                   {balanceRowDefs.map((rowDef) => (
                     <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
-                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor }}>
+                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
                         {rowDef.label}
                       </td>
                       {statementDays.map((day) => (
@@ -3600,6 +3623,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                             padding: '10px',
                             borderBottom: '1px solid #f1f5f9',
                             textAlign: 'right',
+                            fontSize: '12px',
                             fontWeight: statementRowStyle(rowDef.styleType).weight,
                             color: statementRowStyle(rowDef.styleType).textColor,
                             whiteSpace: 'nowrap',
@@ -3635,7 +3659,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                 <tbody>
                   {cashFlowRowDefs.map((rowDef) => (
                     <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
-                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor }}>
+                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
                         {rowDef.label}
                       </td>
                       {cashFlowDays.map((day) => (
@@ -3645,6 +3669,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                             padding: '10px',
                             borderBottom: '1px solid #f1f5f9',
                             textAlign: 'right',
+                            fontSize: '12px',
                             fontWeight: statementRowStyle(rowDef.styleType).weight,
                             color: statementRowStyle(rowDef.styleType).textColor,
                             whiteSpace: 'nowrap',

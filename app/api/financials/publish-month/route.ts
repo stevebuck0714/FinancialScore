@@ -41,7 +41,12 @@ export async function POST(request: NextRequest) {
       const error = String(result.error || 'Failed to publish month');
       if (error.includes('Forbidden')) return NextResponse.json({ error }, { status: 403 });
       if (error.includes('Invalid month format') || error.includes('required')) return NextResponse.json({ error }, { status: 400 });
-      if (error.includes('No daily financial snapshots')) return NextResponse.json({ error }, { status: 404 });
+      if (
+        error.includes('No daily financial snapshots') ||
+        error.includes('Requested publish month has no daily snapshots')
+      ) {
+        return NextResponse.json({ error }, { status: 404 });
+      }
       if (error.includes('Month is locked')) return NextResponse.json({ error }, { status: 409 });
       if (error.includes('Run prisma migrate')) return NextResponse.json({ error }, { status: 501 });
       return NextResponse.json({ error }, { status: 500 });
