@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
@@ -103,6 +103,7 @@ function FinancialScorePage() {
   const [showMFAVerification, setShowMFAVerification] = useState(false);
   const [mfaUserId, setMfaUserId] = useState('');
   const [mfaUserEmail, setMfaUserEmail] = useState('');
+  const [mfaTrustDurationDays, setMfaTrustDurationDays] = useState(180);
   
   // State - Consultants
   const [consultants, setConsultants] = useState<Consultant[]>([]);
@@ -2468,6 +2469,7 @@ function FinancialScorePage() {
         console.log('?? MFA enrollment required');
         setMfaUserId(loginData.userId);
         setMfaUserEmail(loginData.email || loginEmail);
+        setMfaTrustDurationDays(Number(loginData.trustDurationDays) || 180);
         setShowMFAEnrollment(true);
         setIsLoading(false);
         return;
@@ -2478,6 +2480,7 @@ function FinancialScorePage() {
         console.log('?? MFA verification required');
         setMfaUserId(loginData.userId);
         setMfaUserEmail(loginEmail);
+        setMfaTrustDurationDays(Number(loginData.trustDurationDays) || 180);
         setShowMFAVerification(true);
         setIsLoading(false);
         return;
@@ -2799,6 +2802,7 @@ function FinancialScorePage() {
     setShowMFAEnrollment(false);
     setMfaUserId('');
     setMfaUserEmail('');
+    setMfaTrustDurationDays(180);
     setLoginError('Login cancelled');
   };
 
@@ -4876,6 +4880,7 @@ function FinancialScorePage() {
           <MFAVerificationModal
             userId={mfaUserId}
             userEmail={mfaUserEmail}
+            trustDurationDays={mfaTrustDurationDays}
             onSuccess={handleMFAVerificationComplete}
             onCancel={handleMFACancel}
           />

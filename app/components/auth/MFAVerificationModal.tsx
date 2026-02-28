@@ -5,11 +5,18 @@ import React, { useState } from 'react';
 interface MFAVerificationModalProps {
   userId: string;
   userEmail: string;
+  trustDurationDays?: number;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export default function MFAVerificationModal({ userId, userEmail, onSuccess, onCancel }: MFAVerificationModalProps) {
+export default function MFAVerificationModal({
+  userId,
+  userEmail,
+  trustDurationDays = 180,
+  onSuccess,
+  onCancel,
+}: MFAVerificationModalProps) {
   const [verificationCode, setVerificationCode] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,7 +40,7 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
           userId, 
           token: verificationCode,
           isBackupCode: showBackupCodeInput,
-          rememberDevice: rememberDevice
+          rememberDevice: rememberDevice,
         })
       });
 
@@ -185,7 +192,7 @@ export default function MFAVerificationModal({ userId, userEmail, onSuccess, onC
               }}
             />
             <span>
-              <strong>Remember this device for 100 days</strong>
+              <strong>Remember this device for {trustDurationDays} days</strong>
               <br />
               <span style={{ fontSize: '12px', color: '#64748b' }}>
                 Don't check this on shared or public computers
