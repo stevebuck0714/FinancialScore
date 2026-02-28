@@ -5820,6 +5820,7 @@ function FinancialScorePage() {
       <div className="app-global-header">
         <Header
           currentUser={currentUser}
+          companyName={companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || '' : '')}
           currentView={currentView}
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
@@ -5842,50 +5843,6 @@ function FinancialScorePage() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          {/* Active Company Info at Top - Show for consultants with selected company or company users */}
-          {(companyName || (currentUser?.userType === 'company' && currentUser?.companyId)) && (
-            <div style={{ padding: '0 24px 24px', borderBottom: '2px solid #e2e8f0' }}>
-              <div 
-                onClick={() => {
-                  setCurrentView('admin');
-                  setAdminDashboardTab('company-management');
-                }}
-                style={{ 
-                  padding: '12px', 
-                  background: '#f0f9ff', 
-                  borderRadius: '8px', 
-                  border: '1px solid #bae6fd',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#e0f2fe';
-                  e.currentTarget.style.border = '1px solid #7dd3fc';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#f0f9ff';
-                  e.currentTarget.style.border = '1px solid #bae6fd';
-                }}
-              >
-                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1F70C1' }}>
-                  {companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || 'Loading...' : '')}
-                </div>
-                {/* Show Advisor Name for Company Users */}
-                {currentUser?.userType === 'company' && currentUser?.consultantId && (() => {
-                  const consultant = consultants.find(c => c.id === currentUser.consultantId);
-                  if (consultant?.companyName) {
-                    return (
-                      <div style={{ fontSize: '12px', color: '#1F70C1', marginTop: '6px', fontWeight: '500' }}>
-                        {consultant.companyName}
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
-            </div>
-          )}
-          
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {currentUser?.userType !== 'assessment' && null}
 
