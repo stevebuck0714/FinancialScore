@@ -5839,7 +5839,6 @@ function FinancialScorePage() {
           <MFAVerificationModal
             userId={mfaUserId}
             userEmail={mfaUserEmail}
-            trustDurationDays={mfaTrustDurationDays}
             onSuccess={handleMFAVerificationComplete}
             onCancel={handleMFACancel}
             trustDurationDays={trustDurationDays || undefined}

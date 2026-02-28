@@ -38,28 +38,6 @@ function getDatabaseHost(databaseUrl: string): string {
   }
 }
 
-function parseMatchers(raw: string | undefined, defaults: string[]): string[] {
-  const parsed = (raw || '')
-    .split(',')
-    .map((v) => v.trim().toLowerCase())
-    .filter(Boolean);
-  if (parsed.length > 0) return Array.from(new Set(parsed));
-  return defaults;
-}
-
-function getProductionMatchers(): string[] {
-  return parseMatchers(process.env.DB_SECURITY_PRODUCTION_MATCHERS, ['aged-snow', 'orange-poetry']);
-}
-
-function getStagingMatchers(): string[] {
-  return parseMatchers(process.env.DB_SECURITY_STAGING_MATCHERS, ['cold-frost']);
-}
-
-function matchesAny(value: string, matchers: string[]): boolean {
-  const haystack = value.toLowerCase();
-  return matchers.some((matcher) => haystack.includes(matcher));
-}
-
 function isVercelProductionRuntime(): boolean {
   // Vercel sets VERCEL=1 and VERCEL_ENV=production|preview|development
   // CRITICAL: We ONLY allow the production database (orange-poetry) when running on

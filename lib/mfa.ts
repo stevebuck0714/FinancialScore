@@ -83,46 +83,6 @@ function decryptSecret(encryptedText: string): string {
   throw lastError instanceof Error ? lastError : new Error('Failed to decrypt secret');
 }
 
-export interface VerifyTOTPOptions {
-  expectedAppScope?: string;
-  acceptedAppScopes?: string[];
-  allowLegacyScope?: boolean;
-}
-
-export interface VerifyTOTPResult {
-  isValid: boolean;
-  reason?: 'INVALID_FORMAT' | 'CLOCK_SKEW' | 'APP_SCOPE_MISMATCH' | 'DECRYPT_FAILED' | 'INVALID_CODE';
-}
-
-interface StoredMFASecret {
-  secret: string;
-  appScope?: string;
-  version?: number;
-}
-
-export function resolveStoredMFASecret(encryptedSecret: string): StoredMFASecret {
-  const decrypted = decryptSecret(encryptedSecret);
-  const trimmed = decrypted.trim();
-
-  // Support both legacy plain base32 and newer JSON payloads.
-  if (trimmed.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(trimmed) as { secret?: string; appScope?: string; version?: number };
-      if (parsed?.secret && typeof parsed.secret === 'string') {
-        return {
-          secret: parsed.secret,
-          appScope: typeof parsed.appScope === 'string' ? parsed.appScope : undefined,
-          version: typeof parsed.version === 'number' ? parsed.version : undefined,
-        };
-      }
-    } catch {
-      // Fall through to legacy handling.
-    }
-  }
-
-  return { secret: trimmed };
-}
-
 // Generate MFA secret for user
 export function generateMFASecret(userEmail: string, issuer: string = 'Corelytics') {
   const secret = speakeasy.generateSecret({
@@ -256,11 +216,6 @@ export function verifyTOTPWithDetails(
     console.error('❌ Error verifying TOTP:', error);
     return { isValid: false, reason: 'INTERNAL_ERROR' };
   }
-}
-
-// Verify TOTP token
-export function verifyTOTP(token: string, encryptedSecret: string, options?: VerifyTOTPOptions): boolean {
-  return verifyTOTPWithDetails(token, encryptedSecret, options).isValid;
 }
 
 // Generate backup codes
