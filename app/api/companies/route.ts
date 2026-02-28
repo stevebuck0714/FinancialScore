@@ -60,7 +60,10 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    // SECURITY: Validate consultant access if consultantId filter is requested
+    // SECURITY: Validate consultant access if consultantId filter is requested.
+    // IMPORTANT: For consultant users, listing should include all companies they can access
+    // (owned + explicitly granted via UserCompanyAccess), not just owned companies.
+    // So consultantId is treated as an ownership filter only for site admins.
     if (consultantId) {
       const hasAccess = await validateConsultantAccess(consultantId);
       if (!hasAccess) {
@@ -70,7 +73,9 @@ export async function GET(request: NextRequest) {
           { status: 403 }
         );
       }
-      where.consultantId = consultantId;
+      if (context.role === 'SITEADMIN') {
+        where.consultantId = consultantId;
+      }
     }
 
     // SECURITY: Validate company access if specific companyId is requested
@@ -110,9 +115,9 @@ export async function GET(request: NextRequest) {
           addressZip: true,
           addressCountry: true,
           industrySector: true,
-          industrySectorCategory: true,
-          accountingSystem: true,
-          companySizeCategory: true,
+          ...(includeIndustrySectorCategory ? { industrySectorCategory: true } : {}),
+          ...(includeAccountingSystem ? { accountingSystem: true } : {}),
+          ...(includeCompanySizeCategory ? { companySizeCategory: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           createdAt: true,
@@ -151,9 +156,9 @@ export async function GET(request: NextRequest) {
           addressZip: true,
           addressCountry: true,
           industrySector: true,
-          industrySectorCategory: true,
-          accountingSystem: true,
-          companySizeCategory: true,
+          ...(includeIndustrySectorCategory ? { industrySectorCategory: true } : {}),
+          ...(includeAccountingSystem ? { accountingSystem: true } : {}),
+          ...(includeCompanySizeCategory ? { companySizeCategory: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           createdAt: true,
