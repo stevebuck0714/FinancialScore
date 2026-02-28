@@ -112,6 +112,32 @@ if (isProduction) {
     console.error('');
     process.exit(migrationStatus.status || 1);
   }
+
+  const configuredTrustDays = Number.parseInt(process.env.MFA_TRUST_DURATION_DAYS || '', 10);
+  if (!Number.isFinite(configuredTrustDays) || configuredTrustDays < 180) {
+    console.error('');
+    console.error('🛑 MFA TRUST DURATION CHECK FAILED');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    console.error('MFA_TRUST_DURATION_DAYS must be configured to at least 180 in production.');
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    process.exit(1);
+  }
+
+  const configuredMfaCookieDomain = (process.env.MFA_COOKIE_DOMAIN || '').trim();
+  if (!configuredMfaCookieDomain) {
+    console.error('');
+    console.error('🛑 MFA COOKIE DOMAIN CHECK FAILED');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    console.error('MFA_COOKIE_DOMAIN must be set in production to ensure trusted-device cookies are stable.');
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    process.exit(1);
+  }
 }
 
 // Continue with build

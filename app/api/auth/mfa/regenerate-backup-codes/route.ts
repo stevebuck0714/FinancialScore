@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     // Verify the token before regenerating
     const isValid = verifyTOTP(token, user.mfaSecret, {
       expectedAppScope: appScope,
-      allowLegacyScope: false,
+      allowLegacyScope: true,
     });
 
     if (!isValid) {

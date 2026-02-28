@@ -5,7 +5,6 @@ import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/au
 import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
 import { clearMfaDeviceCookie, getMfaDeviceCookieName } from '@/lib/mfa-device-cookie';
-import { resolveStoredMFASecret } from '@/lib/mfa';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 
 export async function POST(request: NextRequest) {
@@ -75,19 +74,10 @@ export async function POST(request: NextRequest) {
     const requireMfa = isVercelProd && process.env.DISABLE_MFA !== 'true' && process.env.DISABLE_MFA_DEV !== 'true';
     const appScope = getMfaAppScope(request);
 
-    const hasScopedMfaForCurrentApp = (() => {
-      if (!user.mfaEnabled || !user.mfaSecret) return false;
-      try {
-        const parsed = resolveStoredMFASecret(user.mfaSecret);
-        return Boolean(parsed.appScope && parsed.appScope === appScope);
-      } catch {
-        return false;
-      }
-    })();
-
     if (requireMfa) {
-      // SECURITY: MFA is mandatory in production runtime
-      if (!user.mfaEnabled || !hasScopedMfaForCurrentApp) {
+      // SECURITY: MFA is mandatory in production runtime.
+      // Trusted-device bypass should still work for previously enrolled users.
+      if (!user.mfaEnabled || !user.mfaSecret) {
         console.log('🔒 MFA not enabled - enrollment required');
         await auditMFAOperation('MFA_FAILED', user.id, true);
         return NextResponse.json({
@@ -99,40 +89,36 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Check if MFA is enabled (they have enrolled)
-      if (user.mfaEnabled && hasScopedMfaForCurrentApp) {
-        // Check for trusted device BEFORE requiring MFA
-        const deviceToken = request.cookies.get(getMfaDeviceCookieName())?.value;
-        if (deviceToken) {
-          console.log('🔍 Checking trusted device token...');
-          const validation = await validateTrustedDevice(user.id, deviceToken, request);
-          
-          if (validation.valid) {
-            console.log('✅ Trusted device validated - skipping MFA');
-            // Device is trusted, skip MFA and proceed with login
-            // Continue to login success below
-          } else {
-            console.log('⚠️ Trusted device validation failed:', validation.reason);
-            // Clear invalid cookie
-            const response = NextResponse.json({
-              mfaRequired: true,
-              userId: user.id,
-              trustDurationDays: getTrustDurationDays(),
-              message: 'MFA verification required',
-            });
-            clearMfaDeviceCookie(response, request);
-            return response;
-          }
+      // Check for trusted device BEFORE requiring MFA challenge.
+      const deviceToken = request.cookies.get(getMfaDeviceCookieName())?.value;
+      if (deviceToken) {
+        console.log('🔍 Checking trusted device token...');
+        const validation = await validateTrustedDevice(user.id, deviceToken, request);
+        
+        if (validation.valid) {
+          console.log('✅ Trusted device validated - skipping MFA');
+          // Device is trusted, skip MFA and proceed with login
         } else {
-          // No trusted device token, require MFA
-          console.log('🔐 No trusted device found, requiring MFA verification');
-          return NextResponse.json({
+          console.log('⚠️ Trusted device validation failed:', validation.reason);
+          // Clear invalid cookie and challenge for MFA.
+          const response = NextResponse.json({
             mfaRequired: true,
             userId: user.id,
             trustDurationDays: getTrustDurationDays(),
             message: 'MFA verification required',
           });
+          clearMfaDeviceCookie(response, request);
+          return response;
         }
+      } else {
+        // No trusted device token, require MFA.
+        console.log('🔐 No trusted device found, requiring MFA verification');
+        return NextResponse.json({
+          mfaRequired: true,
+          userId: user.id,
+          trustDurationDays: getTrustDurationDays(),
+          message: 'MFA verification required',
+        });
       }
     } else {
       console.log('🔓 MFA check skipped (non-production or disabled).');

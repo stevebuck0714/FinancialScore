@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       // Verify TOTP token
       isValid = verifyTOTP(token, user.mfaSecret, {
         expectedAppScope: appScope,
-        allowLegacyScope: false,
+        allowLegacyScope: true,
       });
     }
 

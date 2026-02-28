@@ -3,7 +3,7 @@ import prisma from './prisma';
 import { NextRequest } from 'next/server';
 
 // Configuration
-const TRUST_DURATION_DAYS = parseInt(process.env.MFA_TRUST_DURATION_DAYS || '60', 10);
+const TRUST_DURATION_DAYS = parseInt(process.env.MFA_TRUST_DURATION_DAYS || '180', 10);
 const MAX_TRUSTED_DEVICES = parseInt(process.env.MFA_MAX_TRUSTED_DEVICES_PER_USER || '5', 10);
 
 /**

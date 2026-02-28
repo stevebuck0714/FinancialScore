@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { verifyTOTPWithDetails, verifyBackupCode, encryptBackupCodes } from '@/lib/mfa';
+import {
+  verifyTOTPWithDetails,
+  verifyBackupCode,
+  encryptBackupCodes,
+  resolveStoredMFASecret,
+  encryptMFASecret,
+} from '@/lib/mfa';
 import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device';
 import { sendTrustedDeviceNotification } from '@/lib/email';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
@@ -66,10 +72,32 @@ export async function POST(request: NextRequest) {
       // Verify TOTP token
       const verification = verifyTOTPWithDetails(token, user.mfaSecret, {
         expectedAppScope: appScope,
-        allowLegacyScope: false,
+        allowLegacyScope: true,
       });
       isValid = verification.isValid;
       totpFailureReason = verification.reason;
+
+      // Promote legacy/unscoped secrets to app-scoped secrets after successful verification.
+      if (verification.isValid) {
+        try {
+          const parsed = resolveStoredMFASecret(user.mfaSecret);
+          if (!parsed.appScope) {
+            const scopedSecretPayload = JSON.stringify({
+              version: 1,
+              appScope,
+              secret: parsed.secret,
+            });
+            await prisma.user.update({
+              where: { id: userId },
+              data: { mfaSecret: encryptMFASecret(scopedSecretPayload) },
+            });
+            console.log('✅ Upgraded legacy MFA secret to app-scoped payload', { userId, appScope });
+          }
+        } catch (scopeUpgradeError) {
+          // Do not block login after successful verification.
+          console.error('⚠️ Failed to upgrade MFA secret scope after successful verification:', scopeUpgradeError);
+        }
+      }
     }
 
     if (!isValid) {
