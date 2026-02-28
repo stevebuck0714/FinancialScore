@@ -20,6 +20,7 @@ import {
 import OpsDashboard from './OpsDashboard';
 import { getSectorArApFallbacks, getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
+import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 
 interface OperationsTabProps {
   selectedCompanyId: string;
@@ -324,6 +325,9 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   const [productData, setProductData] = useState<any>(null);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
+  const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
+  const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
+  const [dailyFinancialWindowStart, setDailyFinancialWindowStart] = useState(0);
   const [arSummaryPage, setArSummaryPage] = useState(1);
   const [unpaidInvoicesPage, setUnpaidInvoicesPage] = useState(1);
   const [customerInvoicePage, setCustomerInvoicePage] = useState(1);
@@ -349,7 +353,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     return new Date().toISOString().split('T')[0];
   });
 
-  const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash'];
+  const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'daily-financials'];
   const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules)
     ? opsSectorLayoutConfig.modules
         .map((module: unknown) => String(module || '').trim())
@@ -359,7 +363,10 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
   const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
   const availableModuleTabs = Array.from(
-    new Set(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash'])
+    new Set([
+      ...(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash']),
+      'daily_financials',
+    ])
   );
   const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', ...availableModuleTabs];
   const moduleTitlesByType = Object.fromEntries(
@@ -420,6 +427,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       loadTabData(activeTab);
     }
   }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
+
+  useEffect(() => {
+    const records = Array.isArray(dailyFinancialData?.records) ? dailyFinancialData.records : [];
+    const maxStart = Math.max(0, records.length - 30);
+    if (dailyFinancialWindowStart > maxStart) {
+      setDailyFinancialWindowStart(maxStart);
+    }
+  }, [dailyFinancialData, dailyFinancialWindowStart]);
 
   useEffect(() => {
     if (activeTab !== 'overview') return;
@@ -538,6 +553,9 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
           break;
         case 'cash':
           setCashData(data);
+          break;
+        case 'daily-financials':
+          setDailyFinancialData(data);
           break;
       }
     } catch (err: any) {
@@ -3228,6 +3246,427 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     );
   };
 
+  const renderDailyFinancials = () => {
+    if (loading && !dailyFinancialData) {
+      return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading daily financials...</div>;
+    }
+    if (!dailyFinancialData) return null;
+
+    const records = Array.isArray(dailyFinancialData.records) ? dailyFinancialData.records : [];
+    const summary = dailyFinancialData.summary || {};
+    const sortedRecords = [...records].sort(
+      (a: any, b: any) => new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime()
+    );
+    const maxStart = Math.max(0, sortedRecords.length - 30);
+    const windowStart = Math.min(dailyFinancialWindowStart, maxStart);
+    const statementWindow = sortedRecords.slice(windowStart, windowStart + 30);
+    const trendRows = [...sortedRecords]
+      .reverse()
+      .map((row: any) => ({
+        date: new Date(row.snapshotDate).toLocaleDateString(),
+        revenue: Number(row.revenue || 0),
+        expense: Number(row.expense || 0),
+        net: Number(row.revenue || 0) - Number(row.expense || 0),
+        cash: Number(row.cash || 0),
+      }));
+
+    const statementDays = [...statementWindow].reverse().map((row: any) => {
+      const revenue = Number(row.revenue || 0);
+      const cogsTotal = Number(row.cogsTotal || 0);
+      const grossProfit = revenue - cogsTotal;
+      const opex = Number(row.expense || 0);
+      const operatingIncome = grossProfit - opex;
+      const nonOperatingIncome = Number(row.nonOperatingIncome || 0);
+      const extraordinaryItems = Number(row.extraordinaryItems || 0);
+      const stateIncomeTaxes = Number(row.stateIncomeTaxes || 0);
+      const federalIncomeTaxes = Number(row.federalIncomeTaxes || 0);
+      const netIncome = operatingIncome + nonOperatingIncome + extraordinaryItems - stateIncomeTaxes - federalIncomeTaxes;
+      return {
+        dateLabel: new Date(row.snapshotDate).toLocaleDateString(),
+        revenue,
+        cogsTotal,
+        grossProfit,
+        expense: opex,
+        operatingIncome,
+        nonOperatingIncome,
+        extraordinaryItems,
+        stateIncomeTaxes,
+        federalIncomeTaxes,
+        netIncome,
+        cash: Number(row.cash || 0),
+        ar: Number(row.ar || 0),
+        inventory: Number(row.inventory || 0),
+        otherCA: Number(row.otherCA || 0),
+        tca: Number(row.tca || 0),
+        fixedAssets: Number(row.fixedAssets || 0),
+        otherAssets: Number(row.otherAssets || 0),
+        totalAssets: Number(row.totalAssets || 0),
+        ap: Number(row.ap || 0),
+        otherCL: Number(row.otherCL || 0),
+        tcl: Number(row.tcl || 0),
+        ltd: Number(row.ltd || 0),
+        totalLiab: Number(row.totalLiab || 0),
+        ownersCapital: Number(row.ownersCapital || 0),
+        retainedEarnings: Number(row.retainedEarnings || 0),
+        totalEquity: Number(row.totalEquity || 0),
+        totalLAndE: Number(row.totalLAndE || 0),
+      };
+    });
+
+    type StatementRowDef = {
+      key?: keyof (typeof statementDays)[number];
+      label: string;
+      styleType?: 'normal' | 'section' | 'subtotal' | 'total';
+      valuesByDate?: Record<string, number>;
+    };
+
+    const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
+    const lineIndex: Record<string, Record<string, Record<string, number>>> = {};
+    mappedLines.forEach((line: any) => {
+      const targetField = String(line.targetField || '').trim();
+      const sourceAccountName = String(line.sourceAccountName || '').trim();
+      if (!targetField || !sourceAccountName) return;
+      const dateLabel = new Date(line.snapshotDate).toLocaleDateString();
+      lineIndex[targetField] ||= {};
+      lineIndex[targetField][sourceAccountName] ||= {};
+      lineIndex[targetField][sourceAccountName][dateLabel] =
+        Number(lineIndex[targetField][sourceAccountName][dateLabel] || 0) + Number(line.amount || 0);
+    });
+
+    const buildDetailRows = (targetFields: string[]): StatementRowDef[] => {
+      const mergedByAccount: Record<string, Record<string, number>> = {};
+      targetFields.forEach((targetField) => {
+        const accountMap = lineIndex[targetField] || {};
+        Object.entries(accountMap).forEach(([accountName, valuesByDate]) => {
+          mergedByAccount[accountName] ||= {};
+          Object.entries(valuesByDate).forEach(([dateLabel, amount]) => {
+            mergedByAccount[accountName][dateLabel] = Number(mergedByAccount[accountName][dateLabel] || 0) + Number(amount || 0);
+          });
+        });
+      });
+      const sortedAccountNames = Object.keys(mergedByAccount).sort((a, b) => {
+        const totalA = Object.values(mergedByAccount[a]).reduce((sum, v) => sum + Number(v || 0), 0);
+        const totalB = Object.values(mergedByAccount[b]).reduce((sum, v) => sum + Number(v || 0), 0);
+        return Math.abs(totalB) - Math.abs(totalA);
+      });
+      return sortedAccountNames.map((accountName) => ({
+        label: `  ${accountName}`,
+        styleType: 'normal',
+        valuesByDate: mergedByAccount[accountName],
+      }));
+    };
+
+    const revenueDetailRows = buildDetailRows(['revenue']);
+    const cogsDetailRows = buildDetailRows(['cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther']);
+    const opexDetailRows = buildDetailRows(['expense', 'payroll', 'ownerBasePay', 'benefits', 'insurance', 'professionalFees', 'subcontractors', 'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 'trainingCert', 'mealsEntertainment', 'otherExpense']);
+    const assetDetailRows = buildDetailRows(['cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets']);
+    const liabilityDetailRows = buildDetailRows(['ap', 'otherCL', 'ltd']);
+    const equityDetailRows = buildDetailRows(['ownersCapital', 'ownersDraw', 'commonStock', 'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock', 'totalEquity']);
+
+    const incomeRowDefs: StatementRowDef[] = [
+      { key: 'revenue', label: getFieldDisplayName('revenue'), styleType: 'section' },
+      ...revenueDetailRows,
+      { key: 'cogsTotal', label: getFieldDisplayName('cogsTotal'), styleType: 'section' },
+      ...cogsDetailRows,
+      { key: 'grossProfit', label: getFieldDisplayName('grossProfit'), styleType: 'subtotal' },
+      { key: 'expense', label: getFieldDisplayName('totalOperatingExpenses'), styleType: 'section' },
+      ...opexDetailRows,
+      { key: 'operatingIncome', label: 'Operating Income', styleType: 'subtotal' },
+      { key: 'nonOperatingIncome', label: getFieldDisplayName('nonOperatingIncome'), styleType: 'section' },
+      { key: 'extraordinaryItems', label: getFieldDisplayName('extraordinaryItems'), styleType: 'normal' },
+      { key: 'stateIncomeTaxes', label: getFieldDisplayName('stateIncomeTaxes'), styleType: 'section' },
+      { key: 'federalIncomeTaxes', label: getFieldDisplayName('federalIncomeTaxes'), styleType: 'normal' },
+      { key: 'netIncome', label: getFieldDisplayName('netIncome'), styleType: 'total' },
+    ];
+
+    const balanceRowDefs: StatementRowDef[] = [
+      { key: 'cash', label: getFieldDisplayName('cash'), styleType: 'section' },
+      ...assetDetailRows,
+      { key: 'tca', label: getFieldDisplayName('totalCurrentAssets'), styleType: 'subtotal' },
+      { key: 'fixedAssets', label: getFieldDisplayName('fixedAssets'), styleType: 'section' },
+      { key: 'otherAssets', label: getFieldDisplayName('otherAssets'), styleType: 'normal' },
+      { key: 'totalAssets', label: getFieldDisplayName('totalAssets'), styleType: 'total' },
+      { key: 'ap', label: getFieldDisplayName('accountsPayable'), styleType: 'section' },
+      ...liabilityDetailRows,
+      { key: 'tcl', label: getFieldDisplayName('totalCurrentLiabilities'), styleType: 'subtotal' },
+      { key: 'ltd', label: getFieldDisplayName('longTermDebt'), styleType: 'normal' },
+      { key: 'totalLiab', label: getFieldDisplayName('totalLiabilities'), styleType: 'subtotal' },
+      { key: 'ownersCapital', label: getFieldDisplayName('ownersCapital'), styleType: 'section' },
+      ...equityDetailRows,
+      { key: 'totalEquity', label: getFieldDisplayName('totalEquity'), styleType: 'subtotal' },
+      { key: 'totalLAndE', label: getFieldDisplayName('totalLiabilitiesAndEquity'), styleType: 'total' },
+    ];
+
+    const statementRowStyle = (
+      styleType: 'normal' | 'section' | 'subtotal' | 'total' | undefined
+    ): { rowBg: string; textColor: string; weight: 400 | 500 | 600 | 700 } => {
+      if (styleType === 'section') return { rowBg: '#f8fafc', textColor: '#1e293b', weight: 600 };
+      if (styleType === 'subtotal') return { rowBg: '#dbeafe', textColor: '#1e40af', weight: 700 };
+      if (styleType === 'total') return { rowBg: '#16a34a', textColor: '#ffffff', weight: 700 };
+      return { rowBg: '#ffffff', textColor: '#334155', weight: 400 };
+    };
+
+    const cashFlowRows = statementWindow.map((row: any, index: number) => {
+      const currentCash = Number(row.cash || 0);
+      const previousCash = index + 1 < sortedRecords.length ? Number(sortedRecords[windowStart + index + 1]?.cash || currentCash) : currentCash;
+      const changeCash = currentCash - previousCash;
+      const netIncome = Number(row.revenue || 0) - Number(row.expense || 0);
+      const depreciation = Number(row.depreciationAmortization || 0);
+      const changeAR = index + 1 < sortedRecords.length ? Number(row.ar || 0) - Number(sortedRecords[windowStart + index + 1]?.ar || 0) : 0;
+      const changeAP = index + 1 < sortedRecords.length ? Number(row.ap || 0) - Number(sortedRecords[windowStart + index + 1]?.ap || 0) : 0;
+      const changeInventory = index + 1 < sortedRecords.length ? Number(row.inventory || 0) - Number(sortedRecords[windowStart + index + 1]?.inventory || 0) : 0;
+      const operatingProxy = netIncome + depreciation - changeAR + changeAP - changeInventory;
+      return {
+        date: new Date(row.snapshotDate).toLocaleDateString(),
+        netIncome,
+        depreciation,
+        changeAR,
+        changeAP,
+        changeInventory,
+        operatingProxy,
+        changeCash,
+        endingCash: currentCash,
+      };
+    });
+    const cashFlowDays = [...cashFlowRows].reverse().map((row) => ({
+      ...row,
+      dateLabel: row.date,
+    }));
+    const cashFlowRowDefs: Array<{
+      key: keyof (typeof cashFlowDays)[number];
+      label: string;
+      styleType?: 'normal' | 'section' | 'subtotal' | 'total';
+    }> = [
+      { key: 'netIncome', label: getFieldDisplayName('netIncome'), styleType: 'section' },
+      { key: 'depreciation', label: getFieldDisplayName('depreciationAmortization'), styleType: 'normal' },
+      { key: 'changeAR', label: 'Change in Accounts Receivable', styleType: 'normal' },
+      { key: 'changeAP', label: 'Change in Accounts Payable', styleType: 'normal' },
+      { key: 'changeInventory', label: 'Change in Inventory', styleType: 'normal' },
+      { key: 'operatingProxy', label: 'Operating Cash Flow (Proxy)', styleType: 'subtotal' },
+      { key: 'changeCash', label: 'Net Change in Cash', styleType: 'section' },
+      { key: 'endingCash', label: 'Ending Cash', styleType: 'total' },
+    ];
+
+    const tabButtonStyle = (active: boolean): React.CSSProperties => ({
+      background: active ? '#eef2ff' : 'white',
+      border: active ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
+      color: active ? '#3730a3' : '#475569',
+      borderRadius: '8px',
+      padding: '8px 12px',
+      fontSize: '13px',
+      fontWeight: 600,
+      cursor: 'pointer',
+    });
+
+    const renderStatementWindowControls = () => (
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
+          <span style={{ color: '#334155', fontSize: '13px', fontWeight: 600 }}>
+            Showing {statementWindow.length} days ({windowStart + 1}-{Math.min(windowStart + 30, sortedRecords.length)} of {sortedRecords.length}, newest first)
+          </span>
+          <span style={{ color: '#64748b', fontSize: '12px' }}>Use slider to move 30-day window</span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={maxStart}
+          step={1}
+          value={windowStart}
+          onChange={(event) => setDailyFinancialWindowStart(Number(event.target.value))}
+          style={{ width: '100%' }}
+          disabled={maxStart === 0}
+        />
+      </div>
+    );
+
+    return (
+      <div>
+        <div style={{ padding: '8px 24px 0', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button style={tabButtonStyle(dailyFinancialView === 'summary')} onClick={() => setDailyFinancialView('summary')}>Summary</button>
+          <button style={tabButtonStyle(dailyFinancialView === 'income')} onClick={() => setDailyFinancialView('income')}>Income Statements</button>
+          <button style={tabButtonStyle(dailyFinancialView === 'balance')} onClick={() => setDailyFinancialView('balance')}>Balance Sheets</button>
+          <button style={tabButtonStyle(dailyFinancialView === 'cashflow')} onClick={() => setDailyFinancialView('cashflow')}>Cash Flow Statement</button>
+        </div>
+
+        {dailyFinancialView === 'summary' && (
+          <div style={{ padding: '12px 24px 24px' }}>
+            <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: '24px' }}>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ color: '#64748b', fontSize: '12px' }}>Latest Daily Revenue</div>
+                <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestRevenue || 0))}</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ color: '#64748b', fontSize: '12px' }}>Latest Daily Expense</div>
+                <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestExpense || 0))}</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ color: '#64748b', fontSize: '12px' }}>Latest Net (R-E)</div>
+                <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestNet || 0))}</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                <div style={{ color: '#64748b', fontSize: '12px' }}>Latest Cash Balance</div>
+                <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestCash || 0))}</div>
+              </div>
+            </div>
+
+            <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '16px' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#0f172a' }}>Daily Trend</h3>
+              <div style={{ width: '100%', height: 320 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendRows}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="date" stroke="#64748b" />
+                    <YAxis stroke="#64748b" />
+                    <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                    <Legend />
+                    <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="net" stroke="#10b981" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="cash" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {dailyFinancialView === 'income' && (
+          <div style={{ padding: '12px 24px 24px' }}>
+            {renderStatementWindowControls()}
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse' }}>
+                <thead style={{ background: '#f8fafc' }}>
+                  <tr>
+                    {['Account', ...statementDays.map((day) => day.dateLabel)].map((header) => (
+                      <th key={header} style={{ textAlign: 'left', padding: '10px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #e2e8f0' }}>{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {incomeRowDefs.map((rowDef) => (
+                    <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor }}>
+                        {rowDef.label}
+                      </td>
+                      {statementDays.map((day) => (
+                        <td
+                          key={`${String(rowDef.key)}-${day.dateLabel}`}
+                          style={{
+                            padding: '10px',
+                            borderBottom: '1px solid #f1f5f9',
+                            textAlign: 'right',
+                            fontWeight: statementRowStyle(rowDef.styleType).weight,
+                            color: statementRowStyle(rowDef.styleType).textColor,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {formatCurrency(Number(
+                            rowDef.valuesByDate
+                              ? rowDef.valuesByDate[day.dateLabel] || 0
+                              : day[rowDef.key as keyof typeof day] || 0
+                          ))}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {dailyFinancialView === 'balance' && (
+          <div style={{ padding: '12px 24px 24px' }}>
+            {renderStatementWindowControls()}
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse' }}>
+                <thead style={{ background: '#f8fafc' }}>
+                  <tr>
+                    {['Account', ...statementDays.map((day) => day.dateLabel)].map((header) => (
+                      <th key={header} style={{ textAlign: 'left', padding: '10px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #e2e8f0' }}>{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {balanceRowDefs.map((rowDef) => (
+                    <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor }}>
+                        {rowDef.label}
+                      </td>
+                      {statementDays.map((day) => (
+                        <td
+                          key={`${String(rowDef.key)}-${day.dateLabel}`}
+                          style={{
+                            padding: '10px',
+                            borderBottom: '1px solid #f1f5f9',
+                            textAlign: 'right',
+                            fontWeight: statementRowStyle(rowDef.styleType).weight,
+                            color: statementRowStyle(rowDef.styleType).textColor,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {formatCurrency(Number(
+                            rowDef.valuesByDate
+                              ? rowDef.valuesByDate[day.dateLabel] || 0
+                              : day[rowDef.key as keyof typeof day] || 0
+                          ))}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {dailyFinancialView === 'cashflow' && (
+          <div style={{ padding: '12px 24px 24px' }}>
+            {renderStatementWindowControls()}
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '1100px', borderCollapse: 'collapse' }}>
+                <thead style={{ background: '#f8fafc' }}>
+                  <tr>
+                    {['Account', ...cashFlowDays.map((day) => day.dateLabel)].map((header) => (
+                      <th key={header} style={{ textAlign: 'left', padding: '10px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #e2e8f0' }}>{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cashFlowRowDefs.map((rowDef) => (
+                    <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor }}>
+                        {rowDef.label}
+                      </td>
+                      {cashFlowDays.map((day) => (
+                        <td
+                          key={`${String(rowDef.key)}-${day.dateLabel}`}
+                          style={{
+                            padding: '10px',
+                            borderBottom: '1px solid #f1f5f9',
+                            textAlign: 'right',
+                            fontWeight: statementRowStyle(rowDef.styleType).weight,
+                            color: statementRowStyle(rowDef.styleType).textColor,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {formatCurrency(Number(day[rowDef.key] || 0))}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+              Cash Flow Statement currently uses an operating cash flow proxy from available daily mapped fields.
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderModuleTabContent = (moduleKey: string) => {
     const dataType = mapModuleToDataType(moduleKey);
     if (dataType === 'customers') return renderCustomers();
@@ -3236,6 +3675,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     if (dataType === 'products') return renderProducts();
     if (dataType === 'inventory') return renderInventory();
     if (dataType === 'cash') return renderCash();
+    if (dataType === 'daily-financials') return renderDailyFinancials();
     return (
       <div style={{ padding: '32px', color: '#64748b' }}>
         No renderer is configured for module <strong>{moduleKey}</strong>.

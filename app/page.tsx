@@ -51,7 +51,7 @@ const MAScoringGuideView = dynamic(() => import('./components/assessment/MAScori
 const MAScoresSummaryView = dynamic(() => import('./components/assessment/MAScoresSummaryView'), { ssr: false });
 const MAYourResultsView = dynamic(() => import('./components/assessment/MAYourResultsView'), { ssr: false });
 const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), { ssr: false });
-import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
+import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, processTrialBalanceToDailySnapshotsAndLines, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
@@ -999,6 +999,13 @@ function FinancialScorePage() {
   const [userDefinedAllocations, setUserDefinedAllocations] = useState<{ lobName: string; percentage: number }[]>([]);
   const [showMappingSection, setShowMappingSection] = useState(false);
   const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
+  const [isPublishingMonthlyData, setIsPublishingMonthlyData] = useState(false);
+  const [publishMonthInput, setPublishMonthInput] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    return `${year}-${String(month).padStart(2, '0')}`;
+  });
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
   const [qbStatus, setQbStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
   const [qbLastSync, setQbLastSync] = useState<Date | null>(null);
@@ -8600,8 +8607,66 @@ function FinancialScorePage() {
                           <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
                             {csvTrialBalanceData ? 'Save your mappings, then process the CSV data to create monthly records.' : 'Save your mappings to apply them to your Xero/QuickBooks data.'}
                           </p>
+                          <p style={{ fontSize: '12px', color: '#92400e', margin: '6px 0 0 0', fontWeight: '600' }}>
+                            Only Publish prior month data when books are closed.
+                          </p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          {selectedCompanyId && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff' }}>
+                              <input
+                                type="month"
+                                value={publishMonthInput}
+                                onChange={(e) => setPublishMonthInput(e.target.value)}
+                                style={{ padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px' }}
+                              />
+                              <button
+                                onClick={async () => {
+                                  if (!selectedCompanyId) return;
+                                  if (!publishMonthInput || !/^\d{4}-\d{2}$/.test(publishMonthInput)) {
+                                    alert('Select a valid publish month first (YYYY-MM).');
+                                    return;
+                                  }
+                                  setIsPublishingMonthlyData(true);
+                                  try {
+                                    const response = await fetch('/api/financials/publish-month', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        companyId: selectedCompanyId,
+                                        month: publishMonthInput,
+                                      }),
+                                    });
+                                    const result = await response.json();
+                                    if (!response.ok || !result?.success) {
+                                      throw new Error(result?.error || 'Failed to publish monthly data');
+                                    }
+                                    alert(`Published ${publishMonthInput} to core financial reports.`);
+                                    masterDataStore.clearCompanyCache(selectedCompanyId);
+                                  } catch (error: any) {
+                                    alert(`Publish failed: ${error?.message || 'Unknown error'}`);
+                                  } finally {
+                                    setIsPublishingMonthlyData(false);
+                                  }
+                                }}
+                                disabled={isPublishingMonthlyData}
+                                style={{
+                                  padding: '8px 12px',
+                                  background: isPublishingMonthlyData ? '#9ca3af' : '#7c3aed',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  fontWeight: '700',
+                                  cursor: isPublishingMonthlyData ? 'not-allowed' : 'pointer',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {isPublishingMonthlyData ? 'Publishing...' : 'Publish Monthly Data'}
+                              </button>
+                            </div>
+                          )}
+
                           {/* Only show Process button for CSV data - Xero/QB data is already processed */}
                           {csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId && (
                           <button
@@ -8623,6 +8688,7 @@ function FinancialScorePage() {
 
                                 // Process the CSV data using mappings
                                 const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
+                                const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(csvTrialBalanceData, aiMappings);
 
                                 // Save to database
                                 const response = await fetch('/api/financials', {
@@ -8644,6 +8710,31 @@ function FinancialScorePage() {
 
                                 const result = await response.json();
                                 console.log(`? Processed and saved ${processedData.length} months of CSV data`);
+
+                                // Persist detailed daily post-mapped data for Operations > Daily Financials
+                                try {
+                                  const dailyResponse = await fetch('/api/operational-sync/daily-financials', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      companyId: selectedCompanyId,
+                                      platform: 'CSV_TRIAL_BALANCE',
+                                      runId: `csv-map-${Date.now()}`,
+                                      frequency: 'daily',
+                                      records: dailyMapped.dailySnapshots,
+                                      mappedLines: dailyMapped.mappedLines,
+                                    }),
+                                  });
+                                  if (!dailyResponse.ok) {
+                                    const dailyErrorBody = await dailyResponse.json().catch(() => ({}));
+                                    console.error('Failed to persist daily mapped financial data:', dailyErrorBody);
+                                  } else {
+                                    const dailyResult = await dailyResponse.json();
+                                    console.log(`✅ Saved ${dailyResult.recordsIngested || 0} daily snapshots (${dailyMapped.mappedLines.length} mapped lines submitted)`);
+                                  }
+                                } catch (dailySaveError) {
+                                  console.error('Error persisting daily mapped financial data:', dailySaveError);
+                                }
 
                                 // Automatically create master data from the processed data
                                 try {

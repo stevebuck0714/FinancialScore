@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
+import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialRecordsFromMetadata, ingestDailyFinancialSnapshots } from '@/lib/financial/daily-financial-ingest';
 
 function normalizePullTime(value: unknown): string {
   if (typeof value !== 'string') return '08:00';
@@ -128,6 +129,30 @@ export async function GET(request: NextRequest) {
         console.log(`\n💼 Syncing company: ${connection.companyId} (${connection.platform})`);
 
         const syncResult = await runOperationalSyncForConnection(connection, connection.syncFrequency || 'daily');
+        const dailyRecords = extractDailyFinancialRecordsFromMetadata(connection.connectionMetadata);
+        const dailyMappedLines = extractDailyFinancialMappedLinesFromMetadata(connection.connectionMetadata);
+        let dailyFinancialIngested = 0;
+        let dailyFinancialSkipped = 0;
+        let dailyFinancialError: string | null = null;
+
+        if (dailyRecords.length > 0) {
+          const ingestResult = await ingestDailyFinancialSnapshots({
+            companyId: connection.companyId,
+            platform: String(connection.platform),
+            runId: `${connection.id}:${Date.now()}`,
+            frequency: 'daily',
+            records: dailyRecords,
+            mappedLines: dailyMappedLines,
+          });
+          dailyFinancialIngested = ingestResult.ingested;
+          dailyFinancialSkipped = ingestResult.skipped;
+          dailyFinancialError = ingestResult.error || null;
+          if (ingestResult.error) {
+            console.error(`⚠️ ${connection.company?.name}: Daily financial ingest issue: ${ingestResult.error}`);
+          } else if (ingestResult.ingested > 0) {
+            console.log(`📘 ${connection.company?.name}: Daily financial snapshots ingested: ${ingestResult.ingested}`);
+          }
+        }
 
         totalRecords += syncResult.recordsCreated;
         if (syncResult.success) {
@@ -157,6 +182,9 @@ export async function GET(request: NextRequest) {
           success: syncResult.success,
           recordsCreated: syncResult.recordsCreated,
           errors: syncResult.errors,
+          dailyFinancialRecordsIngested: dailyFinancialIngested,
+          dailyFinancialRecordsSkipped: dailyFinancialSkipped,
+          dailyFinancialError,
         });
         
       } catch (error: any) {

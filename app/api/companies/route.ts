@@ -243,10 +243,6 @@ export async function POST(request: NextRequest) {
       addressState,
       addressZip,
       addressCountry,
-      industrySector,
-      industrySectorCategory,
-      accountingSystem,
-      companySizeCategory,
       affiliateCode,
       linesOfBusiness,
       tier1SupportOwner,
@@ -262,7 +258,6 @@ export async function POST(request: NextRequest) {
       addressState,
       addressZip,
       addressCountry,
-      industrySector,
       affiliateCode,
     });
 
@@ -602,7 +597,6 @@ export async function POST(request: NextRequest) {
       addressState,
       addressZip,
       addressCountry,
-      industrySector,
       pricingUsed: { monthlyPrice, quarterlyPrice, annualPrice }, // Pricing determined but not stored in Company table
       setupFee,
       affiliateCode: validatedAffiliateCode,
@@ -673,10 +667,6 @@ export async function POST(request: NextRequest) {
           addressState,
           addressZip,
           addressCountry,
-          industrySector,
-          ...(includeIndustrySectorCategory ? { industrySectorCategory: industrySectorCategory || null } : {}),
-          ...(includeAccountingSystem ? { accountingSystem: accountingSystem || null } : {}),
-          ...(includeCompanySizeCategory ? { companySizeCategory: companySizeCategory || null } : {}),
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES WORK IN BOTH ENVIRONMENTS
           // Always store pricing fields regardless of environment for affiliate codes
           // Ensure $0 values are stored as 0, not null
@@ -731,10 +721,6 @@ export async function POST(request: NextRequest) {
           addressState: true,
           addressZip: true,
           addressCountry: true,
-          industrySector: true,
-          ...(includeIndustrySectorCategory ? { industrySectorCategory: true } : {}),
-          ...(includeAccountingSystem ? { accountingSystem: true } : {}),
-          ...(includeCompanySizeCategory ? { companySizeCategory: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           subscriptionMonthlyPrice: true,

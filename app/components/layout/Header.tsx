@@ -147,14 +147,8 @@ export default function Header({
         <div 
           style={{ cursor: 'pointer', flexShrink: 0, width: '300px', minWidth: '300px', maxWidth: '300px' }} 
           onClick={() => {
-            if (currentUser.role === 'consultant') {
-              setCurrentView('consultant-dashboard');
-              return;
-            }
-            // Company users may be restricted from the dashboard.
-            if (canAccess('company-dashboard')) {
-              handleNavigation('dashboard');
-            }
+            // Company identity in header routes to Company Dashboard workspace.
+            handleNavigation('admin');
           }}
           title={headerCompanyName}
         >
