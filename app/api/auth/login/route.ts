@@ -5,7 +5,6 @@ import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/au
 import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
 import { clearMfaDeviceCookie, getMfaDeviceCookieName } from '@/lib/mfa-device-cookie';
-import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 
 export async function POST(request: NextRequest) {
   try {
@@ -124,8 +123,16 @@ export async function POST(request: NextRequest) {
       console.log('🔓 MFA check skipped (non-production or disabled).');
     }
 
-    await ensureLegacyCompanyAccess(user.id);
-    const accessibleCompanies = await listAccessibleCompaniesForUser(user.id);
+    const accessibleCompanies = user.companyId && user.company?.name
+      ? [
+          {
+            companyId: user.companyId,
+            name: user.company.name,
+            companyRole: user.companyRole || null,
+            sidebarAccess: user.sidebarAccess ?? null,
+          },
+        ]
+      : [];
     const cookieActiveCompanyId = request.cookies.get('fs_active_company')?.value;
     const activeCompanyId =
       accessibleCompanies.find((c) => c.companyId === cookieActiveCompanyId)?.companyId ||
