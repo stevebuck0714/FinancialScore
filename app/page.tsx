@@ -156,10 +156,6 @@ function FinancialScorePage() {
   };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
-  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
-  const [selectingCompanyId, setSelectingCompanyId] = useState<string | null>(null);
-  const [companyPickerError, setCompanyPickerError] = useState('');
-  const [companyPickerPromptedThisSession, setCompanyPickerPromptedThisSession] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -346,55 +342,6 @@ function FinancialScorePage() {
     if (!Array.isArray(raw)) return COMPANY_USER_SECTIONS as unknown as string[];
     return raw as string[];
   }, [currentUser, isCompanyUser, isCompanyAdmin]);
-
-  const companyPickerOptions = useMemo(() => {
-    const fromMembership = Array.isArray((currentUser as any)?.accessibleCompanies)
-      ? ((currentUser as any).accessibleCompanies as Array<{ companyId: string; name: string }>)
-          .filter((c) => c?.companyId && c?.name)
-          .map((c) => ({ companyId: c.companyId, name: c.name }))
-      : [];
-    if (fromMembership.length > 0) return fromMembership;
-
-    if (currentUser?.role === 'consultant' && Array.isArray(companies)) {
-      return companies
-        .filter((c) => c?.id && c?.name)
-        .map((c) => ({ companyId: c.id, name: c.name }));
-    }
-    return [];
-  }, [currentUser, companies]);
-
-  const hasValidActiveCompanyForSession = useMemo(() => {
-    const candidateCompanyId =
-      selectedCompanyId ||
-      ((currentUser as any)?.activeCompanyId as string | undefined) ||
-      (currentUser?.companyId as string | undefined) ||
-      '';
-
-    if (!candidateCompanyId || companyPickerOptions.length === 0) return false;
-    return companyPickerOptions.some((option) => option.companyId === candidateCompanyId);
-  }, [selectedCompanyId, currentUser, companyPickerOptions]);
-
-  useEffect(() => {
-    if (!isLoggedIn || !currentUser) return;
-    if (currentUser.role === 'siteadmin' || currentUser.userType === 'assessment') return;
-    if (companyPickerPromptedThisSession) return;
-    if (companyPickerOptions.length <= 1) return;
-    if (hasValidActiveCompanyForSession) {
-      setShowCompanyPicker(false);
-      setCompanyPickerError('');
-      return;
-    }
-
-    setCompanyPickerError('');
-    setShowCompanyPicker(true);
-    setCompanyPickerPromptedThisSession(true);
-  }, [
-    isLoggedIn,
-    currentUser,
-    companyPickerPromptedThisSession,
-    companyPickerOptions,
-    hasValidActiveCompanyForSession,
-  ]);
 
   const viewToCompanySection = (view: string): string | null => {
     if (view === 'dashboard') return 'company-dashboard';
@@ -3286,10 +3233,6 @@ function FinancialScorePage() {
     setIsLoggedIn(false);
     setCurrentView('login');
     setSelectedCompanyId('');
-    setShowCompanyPicker(false);
-    setSelectingCompanyId(null);
-    setCompanyPickerError('');
-    setCompanyPickerPromptedThisSession(false);
     setExistingCompanyUserName('');
     setExistingCompanyUserEmail('');
     setExistingAssessmentUserName('');
@@ -4226,31 +4169,9 @@ function FinancialScorePage() {
       await applyActiveCompany(companyId);
       // Navigate to Company Management for the selected company.
       setCurrentView('admin');
-      setShowCompanyPicker(false);
-      setCompanyPickerError('');
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Failed to switch company';
-      setCompanyPickerError(message);
       alert(message);
-    }
-  };
-
-  const handleConfirmCompanyPicker = async (companyId: string) => {
-    setSelectingCompanyId(companyId);
-    setCompanyPickerError('');
-    try {
-      await applyActiveCompany(companyId);
-      setShowCompanyPicker(false);
-      if (currentUser?.role === 'consultant') {
-        setCurrentView('consultant-dashboard');
-      } else if (currentUser?.userType === 'company') {
-        setCurrentView('daily-alerts');
-      }
-    } catch (error) {
-      const message = error instanceof ApiError ? error.message : 'Failed to set active company';
-      setCompanyPickerError(message);
-    } finally {
-      setSelectingCompanyId(null);
     }
   };
 
@@ -5905,69 +5826,6 @@ function FinancialScorePage() {
           handleNavigation={handleNavigation}
         />
       </div>
-
-      {showCompanyPicker && companyPickerOptions.length > 1 && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15, 23, 42, 0.45)',
-            zIndex: 2200,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              width: 'min(540px, 96vw)',
-              background: 'white',
-              border: '1px solid #e2e8f0',
-              borderRadius: '12px',
-              boxShadow: '0 16px 40px rgba(15, 23, 42, 0.25)',
-              padding: '18px',
-            }}
-          >
-            <div style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>Select Company</div>
-            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px' }}>
-              Choose which company to access for this session.
-            </div>
-
-            <div style={{ marginTop: '14px', display: 'grid', gap: '8px' }}>
-              {companyPickerOptions.map((option) => {
-                const isActive = selectedCompanyId === option.companyId;
-                const isSelecting = selectingCompanyId === option.companyId;
-                return (
-                  <button
-                    key={option.companyId}
-                    onClick={() => handleConfirmCompanyPicker(option.companyId)}
-                    disabled={Boolean(selectingCompanyId)}
-                    style={{
-                      textAlign: 'left',
-                      border: isActive ? '2px solid #1f70c1' : '1px solid #dbe2ea',
-                      background: isActive ? '#eff6ff' : '#ffffff',
-                      borderRadius: '10px',
-                      padding: '12px',
-                      cursor: selectingCompanyId ? 'not-allowed' : 'pointer',
-                      opacity: selectingCompanyId && !isSelecting ? 0.6 : 1,
-                      fontWeight: 700,
-                      color: '#0f172a',
-                    }}
-                  >
-                    {option.name}
-                    {isSelecting ? ' (Switching...)' : isActive ? ' (Current)' : ''}
-                  </button>
-                );
-              })}
-            </div>
-
-            {companyPickerError && (
-              <div style={{ marginTop: '12px', fontSize: '13px', color: '#b91c1c' }}>{companyPickerError}</div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Main Content Area with Sidebar */}
       <div className="app-shell-content" style={{ display: 'flex', overflow: 'hidden', marginTop: '70px', height: 'calc(100vh - 70px)' }}>
